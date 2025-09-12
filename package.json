@@ -1,0 +1,52 @@
+{
+  "name": "vite-react-typescript-starter",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
+    "chromatic": "npx chromatic --project-token=YOUR_PROJECT_TOKEN",
+    "test": "NODE_OPTIONS='--loader ts-node/esm' playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report"
+  },
+  "dependencies": {
+    "@deck.gl/aggregation-layers": "^9.1.14",
+    "@deck.gl/core": "^9.1.14",
+    "@deck.gl/layers": "^9.1.14",
+    "@deck.gl/react": "^9.1.14",
+    "@headlessui/react": "^2.2.7",
+    "@supabase/supabase-js": "^2.39.0",
+    "lucide-react": "^0.344.0",
+    "mapbox-gl": "^3.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-map-gl": "^7.1.7",
+    "zustand": "^5.0.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.1",
+    "@playwright/test": "^1.54.2",
+    "@types/mapbox-gl": "^3.1.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.18",
+    "eslint": "^9.9.1",
+    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
+    "eslint-plugin-react-refresh": "^0.4.11",
+    "globals": "^15.9.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3",
+    "typescript-eslint": "^8.3.0",
+    "vite": "^5.4.2"
+  }
+}
