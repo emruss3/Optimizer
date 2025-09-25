@@ -1,12 +1,11 @@
 import React from 'react';
-import { X, Building2, Calculator, ArrowLeftRight, Combine } from 'lucide-react';
+import { X, Building2, Calculator, ArrowLeftRight } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 import { useProject } from '../hooks/useProject';
 import { useUnderwriting } from '../hooks/useUnderwriting';
 import ProjectPanel from './ProjectPanel';
 import UnderwritingPanel from './UnderwritingPanel';
 import ScenarioCompare from './ScenarioCompare';
-import AssemblagePanel from './AssemblagePanel';
 
 export default function RightDrawer() {
   const { openDrawer, setDrawer, closeDrawer, isMobile } = useUIStore();
@@ -134,19 +133,6 @@ export default function RightDrawer() {
               <ArrowLeftRight className="w-4 h-4" />
               <span className="hidden sm:inline">Compare</span>
             </button>
-            <button
-              onClick={() => setDrawer('ASSEMBLAGE')}
-              className={`flex-1 flex items-center justify-center space-x-2 px-4 py-3 text-sm font-medium transition-colors focus-ring ${
-                openDrawer === 'ASSEMBLAGE'
-                  ? 'border-b-2 border-orange-600 text-orange-600 bg-orange-50'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-              aria-current={openDrawer === 'ASSEMBLAGE' ? 'page' : undefined}
-              data-testid="assemblage-tab"
-            >
-              <Combine className="w-4 h-4" />
-              <span className="hidden sm:inline">Assemblage</span>
-            </button>
           </div>
         </div>
         
@@ -165,9 +151,6 @@ export default function RightDrawer() {
               project={project}
               massing={calculateMassing}
             />
-          )}
-          {openDrawer === 'ASSEMBLAGE' && (
-            <AssemblagePanel />
           )}
         </div>
       </div>

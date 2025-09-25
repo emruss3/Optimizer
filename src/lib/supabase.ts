@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { GeoJSONGeometry } from '../types/parcel';
 
 console.log('VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
 console.log('VITE_SUPABASE_ANON_KEY present:', Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY));
@@ -17,6 +18,8 @@ export const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+import { RegridZoningData } from '../types/zoning';
+
 // Types for our database tables
 export interface Parcel {
   id: string;
@@ -24,7 +27,9 @@ export interface Parcel {
   deededacreage: number;
   sqft: number;
   zoning: string;
-  geometry?: any;
+  geometry?: GeoJSONGeometry;
+  // Enhanced zoning data
+  zoning_data?: RegridZoningData;
 }
 
 export interface Zoning {
@@ -35,10 +40,22 @@ export interface Zoning {
   min_front_setback_ft: number;
   min_side_setback_ft: number;
   min_rear_setback_ft: number;
+  // Enhanced fields from Regrid schema
+  zoning_type?: string;
+  zoning_subtype?: string;
+  zoning_description?: string;
+  permitted_land_uses?: Record<string, string[]>;
+  min_lot_area_sq_ft?: number;
+  min_lot_width_ft?: number;
+  max_building_height_ft?: number;
+  max_coverage_pct?: number;
+  min_landscaped_space_pct?: number;
+  min_open_space_pct?: number;
+  municipality_name?: string;
 }
 
 export interface ParcelGeoJSON {
   type: 'Feature';
   properties: Parcel;
-  geometry: any;
+  geometry: GeoJSONGeometry;
 }

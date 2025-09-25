@@ -1,40 +1,47 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { MAPBOX_TOKEN, MAP_STYLE, PARCELS_TILE_URL, NASHVILLE_CENTER } from '../lib/mapbox';
 import mapboxgl from 'mapbox-gl';
-import { supabase } from '../lib/supabase';
-import { fetchParcelAtPoint } from '../lib/parcelApi';
 import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
 import { sizeColorExpr, zoningColorExpr } from '../map/styleExpressions';
+import { SelectedParcel } from '../types/parcel';
 
-// Helper to fetch parcel details
-async function fetchParcelById(id: number) {
-  if (!supabase) throw new Error('Supabase not initialized');
-  
-  const { data, error } = await supabase
-    .from('parcels')
-    .select('ogc_fid, parcelnumb, address, owner, zoning, sqft, deededacreage, landval, parval, geometry')
-    .eq('ogc_fid', id)
-    .single();
-    
-  if (error) throw error;
-  return data;
-}
 
 interface MapViewProps {
-  onParcelClick: (parcel: any) => void;
+  onParcelClick: (parcel: SelectedParcel) => void;
   selectedParcelIds: string[];
   activeProjectId: string | null;
   activeProjectName: string | null;
 }
 
-export default function MapView({ 
+const MapView = React.memo(function MapView({ 
   onParcelClick
 }: MapViewProps) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [containerError, setContainerError] = React.useState<string | null>(null);
   const [mapError, setMapError] = React.useState<string | null>(null);
+  
+  // Memoized filter calculations
+  const { filterMode, zoningFilters } = useUIStore();
+  const sizeFilter = useMemo(() => 
+    filterMode === "large" ? [">=", ["to-number", ["get", "sqft"]], 5000] :
+    filterMode === "huge"  ? [">=", ["to-number", ["get", "sqft"]], 20000] :
+    true,
+    [filterMode]
+  );
+  
+  const zoningFilter = useMemo(() => {
+    const zones = zoningFilters?.activeZones ?? [];
+    return zones.length
+      ? ["in", ["to-string", ["get", "zoning"]], ...zones]
+      : true;
+  }, [zoningFilters?.activeZones]);
+  
+  const combinedFilter = useMemo(() => 
+    ["all", sizeFilter, zoningFilter],
+    [sizeFilter, zoningFilter]
+  );
 
   // Create map once and add vector tiles
   useEffect(() => {
@@ -95,32 +102,68 @@ export default function MapView({
         map.on("mouseenter", "parcels-fill", () => (map.getCanvas().style.cursor = "pointer"));
         map.on("mouseleave", "parcels-fill", () => (map.getCanvas().style.cursor = ""));
         
-        // Robust click handler using RPC
+        // Click handler with fast path via ogc_fid and fallback to point-in-polygon
         map.on("click", "parcels-fill", async (e) => {
+          const hit = e.features?.[0] ?? map.queryRenderedFeatures(e.point, { layers: ["parcels-fill"] })[0];
           const { setDrawer, setSelectedParcel } = useUIStore.getState();
           const { activeProjectId, addParcel } = useActiveProject.getState();
 
           try {
-            const ll = e.lngLat ?? map.unproject(e.point);
-            const parcel = await fetchParcelAtPoint(ll.lng, ll.lat);
+            // Import supabase for the RPC call
+            const { createClient } = await import('@supabase/supabase-js');
+            const supabase = createClient(
+              import.meta.env.VITE_SUPABASE_URL,
+              import.meta.env.VITE_SUPABASE_ANON_KEY
+            );
 
-            if (activeProjectId) {
-              await addParcel(parcel.ogc_fid);
-              setDrawer("PROJECT");
-            } else {
-              setSelectedParcel(parcel);
-              // Keep existing onParcelClick for compatibility with existing drawer
-              onParcelClick(parcel);
+            // 1) fast path via ogc_fid from tile
+            const fid = Number((hit?.id as string | number) ?? hit?.properties?.ogc_fid);
+            if (Number.isFinite(fid)) {
+              const { data, error } = await supabase.rpc("get_parcel_by_id", { p_ogc_fid: fid });
+              if (error) throw error;
+              const row = Array.isArray(data) ? data[0] : data;
+              if (!row) throw new Error("not found");
+              if (activeProjectId) { 
+                await addParcel(fid); 
+                setDrawer("PROJECT"); 
+              } else { 
+                // Use the existing ParcelDrawer system
+                onParcelClick(row);
+              }
+              return;
             }
-          } catch (err) {
-            console.error("parcel click failed", err);
+
+            // 2) fallback: point-in-polygon
+            const { lng, lat } = e.lngLat;
+            const { data, error } = await supabase.rpc("get_parcel_at_point", { lon: lng, lat });
+            if (error) throw error;
+            const row = Array.isArray(data) ? data[0] : data;
+            if (!row) return;
+            if (activeProjectId) { 
+              await addParcel(row.ogc_fid); 
+              setDrawer("PROJECT"); 
+            } else { 
+              // Use the existing ParcelDrawer system
+              onParcelClick(row);
+            }
+
+          } catch (err) { 
+            console.error("parcel click failed", err); 
           }
         });
 
-        // TEMP debug
+        // Debug click handler
         map.on("click", (e) => {
           const hit = map.queryRenderedFeatures(e.point, { layers: ["parcels-fill"] })[0];
-          if (hit) console.log("click →", { id: hit.id, props: hit.properties });
+          if (hit) {
+            console.log("click →", { 
+              id: hit.id, 
+              props: hit.properties,
+              source: hit.source,
+              sourceLayer: hit.sourceLayer
+            });
+            console.log("Available properties:", Object.keys(hit.properties || {}));
+          }
         });
       }
     })
@@ -142,7 +185,7 @@ export default function MapView({
         mapRef.current = null;
       }
     };
-  }, [onParcelClick]);
+  }, []); // Remove onParcelClick dependency to prevent map recreation
 
   // Project highlights - show selected parcels with orange outline
   const refreshProjectHighlights = useCallback(() => {
@@ -202,11 +245,21 @@ export default function MapView({
     return () => window.removeEventListener("resize", onResize);
   }, []);
   
-  // Resize when drawer open/close state changes
+  // Resize when drawer open/close state changes (only for layout-affecting drawers)
   useEffect(() => {
     const unsub = useUIStore.subscribe(
       (s) => s.openDrawer, 
-      () => requestAnimationFrame(() => mapRef.current?.resize())
+      (newDrawer, prevDrawer) => {
+        // Only resize for drawers that actually affect the layout (not parcel selection)
+        if (newDrawer !== prevDrawer && newDrawer !== null) {
+          // Use a longer delay to ensure the layout has settled
+          setTimeout(() => {
+            if (mapRef.current) {
+              mapRef.current.resize();
+            }
+          }, 150);
+        }
+      }
     );
     return () => unsub();
   }, []);
@@ -257,36 +310,19 @@ export default function MapView({
   }, []);
 
   // Apply map filters based on UI state
-  function applyMapFilters() {
+  const applyMapFilters = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const { filterMode, zoningFilters } = useUIStore.getState() as any;
-
-    const sizeFilter =
-      filterMode === "large" ? [">=", ["to-number", ["get", "sqft"]], 5000] :
-      filterMode === "huge"  ? [">=", ["to-number", ["get", "sqft"]], 20000] :
-      true;
-
-    const zones = zoningFilters?.activeZones ?? [];
-    const zoningFilter = zones.length
-      ? ["in", ["to-string", ["get", "zoning"]], ...zones]
-      : true;
-
-    const combined = ["all", sizeFilter, zoningFilter];
-
     ["parcels-fill", "parcels-outline"].forEach((id) => {
-      if (map.getLayer(id)) map.setFilter(id, combined as any);
+      if (map.getLayer(id)) map.setFilter(id, combinedFilter as (string | number | boolean | null)[]);
     });
-  }
+  }, [combinedFilter]);
 
   // Apply filters on mount and whenever UI filters change
   useEffect(() => {
     applyMapFilters();
-    const unsub1 = useUIStore.subscribe((s) => s.filterMode, applyMapFilters);
-    const unsub2 = useUIStore.subscribe((s) => s.zoningFilters?.activeZones, applyMapFilters);
-    return () => { unsub1(); unsub2(); };
-  }, []);
+  }, [applyMapFilters]);
 
   // Container height validation
   useEffect(() => {
@@ -365,4 +401,6 @@ export default function MapView({
       {/* Map will be created in useEffect */}
     </div>
   );
-}
+});
+
+export default MapView;

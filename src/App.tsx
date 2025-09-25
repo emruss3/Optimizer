@@ -14,7 +14,6 @@ import CommandPalette from './components/CommandPalette';
 import AppGrid from './layout/AppGrid';
 import DrawerOverlay from './components/DrawerOverlay';
 import RealtimeComments from './components/RealtimeComments';
-import MinimalParcelDrawer from './components/MinimalParcelDrawer';
 
 // Skip to content for screen readers
 function SkipToContent() {
@@ -143,9 +142,6 @@ function App() {
           />
         </div>
       )}
-      
-      {/* Minimal Parcel Drawer */}
-      <MinimalParcelDrawer />
       
       {/* Parcel Drawer */}
       <ParcelDrawer 

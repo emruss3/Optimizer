@@ -1,5 +1,5 @@
 import React from 'react';
-import { Map, Search, Filter, Settings, Building2, Calculator, ArrowLeftRight, Share, Combine, Command } from 'lucide-react';
+import { Map, Search, Filter, Settings, Building2, Calculator, ArrowLeftRight, Share, Command } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 import { useParcelSelection } from '../hooks/useParcelSelection';
 import { useActiveProject } from '../store/project';
@@ -32,7 +32,7 @@ export default function Header() {
     { id: 'mixed-use-23', name: 'Mixed Use 2023' },
   ];
 
-  const handleProjectSelect = (project: any) => {
+  const handleProjectSelect = (project: { id: string; name: string }) => {
     if (activeProjectId === project.id) {
       // Deactivate current project
       clearActiveProject();
@@ -186,21 +186,6 @@ export default function Header() {
             </button>
           </Guard>
           
-          {/* Assemblage button */}
-          <Guard roles={['analyst']}>
-            <button 
-              onClick={() => setDrawer(openDrawer === 'ASSEMBLAGE' ? null : 'ASSEMBLAGE')}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium ${
-                openDrawer === 'ASSEMBLAGE' 
-                  ? 'bg-orange-100 text-orange-700' 
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-              }`}
-              data-testid="assemblage-button"
-            >
-              <Combine className="w-4 h-4" />
-              <span className="text-sm hidden md:inline">Assemblage</span>
-            </button>
-          </Guard>
           
           {/* Share button */}
           {activeProjectId && (

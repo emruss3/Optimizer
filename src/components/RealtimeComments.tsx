@@ -216,9 +216,8 @@ export default function RealtimeComments({ projectId, parcelId, onClose }: Realt
           )}
         </h3>
         <button
-          onClick={() => setIsExpanded(false)}
+          onClick={onClose || (() => setIsExpanded(false))}
           className="text-gray-400 hover:text-gray-600"
-         onClick={onClose || (() => setIsExpanded(false))}
         >
           ×
         </button>

@@ -1,8 +1,48 @@
+// Regrid Standardized Zoning Schema Interface
+import { SelectedParcel } from './parcel';
+export interface RegridZoningData {
+  // Core Zoning Identification & Description
+  zoning_id?: number;
+  zoning: string;
+  zoning_description?: string;
+  zoning_type?: string;
+  zoning_subtype?: string;
+  zoning_objective?: string;
+  zoning_code_link?: string;
+
+  // Permitted Land Uses
+  permitted_land_uses?: Record<string, string[]>; // JSON object
+  permitted_land_uses_as_of_right?: string; // Comma-separated flags
+  permitted_land_uses_conditional?: string; // Comma-separated flags
+
+  // Lot & Building Dimensions/Regulations
+  min_lot_area_sq_ft?: number;
+  min_lot_width_ft?: number;
+  max_building_height_ft?: number;
+  max_far?: number;
+  min_front_setback_ft?: number;
+  min_rear_setback_ft?: number;
+  min_side_setback_ft?: number;
+
+  // Coverage & Density Regulations
+  max_coverage_pct?: number;
+  max_impervious_coverage_pct?: number;
+  min_landscaped_space_pct?: number;
+  min_open_space_pct?: number;
+  max_density_du_per_acre?: number;
+
+  // Administrative & Geographic Information
+  zoning_data_date?: string;
+  municipality_id?: number;
+  municipality_name?: string;
+  geoid?: string;
+}
+
 export interface ZoningRule {
   id: string;
   name: string;
   description: string;
-  category: 'setback' | 'height' | 'coverage' | 'far' | 'parking' | 'density';
+  category: 'setback' | 'height' | 'coverage' | 'far' | 'parking' | 'density' | 'lot_size' | 'land_use';
   value: number;
   unit: string;
   enforced: boolean;
@@ -63,7 +103,7 @@ export interface SpatialFeature {
 
 export interface SitePlanData {
   id: string;
-  parcels: any[];
+  parcels: SelectedParcel[];
   features: SpatialFeature[];
   compliance: ZoningCompliance;
   metadata: {

@@ -1,11 +1,12 @@
 import React from 'react';
 import { create } from 'zustand';
 import CommandPalette from '../components/CommandPalette';
+import { SelectedParcel } from '../types/parcel';
 
-type Drawer = 'PROJECT' | 'UNDERWRITING' | null;
-type Drawer = 'PROJECT' | 'UNDERWRITING' | 'SCENARIO_COMPARE' | 'ASSEMBLAGE' | null;
+type Drawer = 'PROJECT' | 'UNDERWRITING' | 'SCENARIO_COMPARE' | 'PARCEL' | null;
 type FilterMode = 'all' | 'large' | 'huge';
 type ColorMode = 'size' | 'zoning';
+type SelectionMode = 'single' | 'multi';
 
 interface ZoningFilters {
   activeZones: string[];
@@ -18,8 +19,8 @@ interface UIState {
   closeDrawer: () => void;
   
   // Parcel drawer state
-  selectedParcel: any | null;
-  setSelectedParcel: (parcel: any | null) => void;
+  selectedParcel: SelectedParcel | null;
+  setSelectedParcel: (parcel: SelectedParcel | null) => void;
   
   // Filter modal
   filterModalOpen: boolean;
@@ -29,9 +30,15 @@ interface UIState {
   filterMode: FilterMode;
   colorMode: ColorMode;
   zoningFilters: ZoningFilters;
+  selectionMode: SelectionMode;
+  selectedParcelIds: string[];
   setFilterMode: (mode: FilterMode) => void;
   setColorMode: (mode: ColorMode) => void;
   setZoningFilters: (filters: ZoningFilters) => void;
+  setSelectionMode: (mode: SelectionMode) => void;
+  addSelectedParcel: (id: string) => void;
+  removeSelectedParcel: (id: string) => void;
+  clearSelectedParcels: () => void;
   
   // Mobile state
   leftNavOpen: boolean;
@@ -66,11 +73,21 @@ export const useUIStore = create<UIState>((set, get) => ({
   
   // Map controls
   filterMode: 'all',
-  colorMode: 'size',
+  colorMode: 'zoning',
   zoningFilters: { activeZones: [] },
+  selectionMode: 'single',
+  selectedParcelIds: [],
   setFilterMode: (mode) => set({ filterMode: mode }),
   setColorMode: (mode) => set({ colorMode: mode }),
   setZoningFilters: (filters) => set({ zoningFilters: filters }),
+  setSelectionMode: (mode) => set({ selectionMode: mode }),
+  addSelectedParcel: (id) => set((state) => ({
+    selectedParcelIds: [...state.selectedParcelIds.filter(existingId => existingId !== id), id]
+  })),
+  removeSelectedParcel: (id) => set((state) => ({
+    selectedParcelIds: state.selectedParcelIds.filter(existingId => existingId !== id)
+  })),
+  clearSelectedParcels: () => set({ selectedParcelIds: [] }),
   
   // Mobile navigation
   leftNavOpen: false,

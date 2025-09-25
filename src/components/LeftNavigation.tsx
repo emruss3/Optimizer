@@ -1,7 +1,6 @@
 import React from 'react';
 import { 
-  Home, Search, Map, Building, TrendingUp, Settings, 
-  FileText, Users, Database, Filter, Bookmark, Menu, X
+  Map, Settings, FileText, Users, Bookmark, Menu, X
 } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 import MapControls from './MapControls';
@@ -18,18 +17,13 @@ export default function LeftNavigation() {
   };
 
   const navigationItems = [
-    { id: 'home', label: 'Dashboard', icon: Home },
     { id: 'map', label: 'Map View', icon: Map },
-    { id: 'search', label: 'Search', icon: Search },
-    { id: 'projects', label: 'Projects', icon: Building },
-    { id: 'analysis', label: 'Analysis', icon: TrendingUp },
+    { id: 'saved', label: 'Saved Parcels', icon: Bookmark },
     { id: 'reports', label: 'Reports', icon: FileText },
-    { id: 'saved', label: 'Saved', icon: Bookmark },
   ];
 
   const bottomItems = [
     { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'data', label: 'Data Sources', icon: Database },
   ];
 
   const NavContent = () => (
@@ -89,24 +83,24 @@ export default function LeftNavigation() {
           </div>
         )}
 
-        {/* Filters Section */}
+        {/* Recent Activity Section */}
         <div className="mt-6">
           <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            Quick Filters
+            Recent Activity
           </h3>
           <div className="space-y-1">
-            <button className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg focus-ring">
-              <span>For Sale</span>
-              <span className="text-xs text-gray-500">1,234</span>
-            </button>
-            <button className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg focus-ring">
-              <span>Large Lots</span>
-              <span className="text-xs text-gray-500">567</span>
-            </button>
-            <button className="w-full flex items-center justify-between px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg focus-ring">
-              <span>High IRR</span>
-              <span className="text-xs text-gray-500">89</span>
-            </button>
+            <div className="px-3 py-2 text-sm text-gray-600">
+              <div className="font-medium">2312 Heiman St</div>
+              <div className="text-xs text-gray-500">Viewed 2 hours ago</div>
+            </div>
+            <div className="px-3 py-2 text-sm text-gray-600">
+              <div className="font-medium">1501 Jefferson St</div>
+              <div className="text-xs text-gray-500">Analyzed yesterday</div>
+            </div>
+            <div className="px-3 py-2 text-sm text-gray-600">
+              <div className="font-medium">890 26th Ave N</div>
+              <div className="text-xs text-gray-500">Added to project</div>
+            </div>
           </div>
         </div>
       </div>

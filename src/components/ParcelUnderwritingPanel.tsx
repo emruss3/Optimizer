@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { computeUnderwriting, getDefaultCosts, UnderwritingInputs, UnderwritingOutputs } from '../lib/finance';
 import CostEditor from './CostEditor';
 import { useDetailedCosts } from '../hooks/useDetailedCosts';
+import { SelectedParcel } from '../types/parcel';
 import { Program } from '../lib/costSchema';
 
 interface DefaultCosts {
@@ -31,12 +32,35 @@ interface DefaultCosts {
 
 
 interface ParcelUnderwritingPanelProps {
-  parcel: any;
+  parcel: SelectedParcel;
   onClose?: () => void;
 }
 
-// Helper function to map zoning to use type
-function getUseTypeFromZoning(zoning: string): string {
+// Helper function to map zoning to use type using enhanced zoning data
+function getUseTypeFromZoning(parcel: SelectedParcel): string {
+  // First try to use the enhanced zoning data
+  if (parcel.zoning_type) {
+    switch (parcel.zoning_type.toLowerCase()) {
+      case 'residential':
+        if (parcel.zoning_subtype?.toLowerCase().includes('single')) return 'Single-Family';
+        if (parcel.zoning_subtype?.toLowerCase().includes('multi')) return 'Multi-Family';
+        if (parcel.zoning_subtype?.toLowerCase().includes('townhouse')) return 'Townhouse';
+        return 'Multi-Family';
+      case 'commercial':
+        return 'Commercial';
+      case 'industrial':
+        return 'Industrial';
+      case 'mixed-use':
+        return 'Mixed-Use';
+      case 'agricultural':
+        return 'Agricultural';
+      default:
+        return 'General';
+    }
+  }
+  
+  // Fallback to legacy zoning code parsing
+  const zoning = parcel.zoning || '';
   if (zoning.startsWith('RS')) return 'Single-Family';
   if (zoning.startsWith('R')) return 'Multi-Family';
   if (zoning.startsWith('RM')) return 'Mixed-Use';
@@ -45,7 +69,7 @@ function getUseTypeFromZoning(zoning: string): string {
   return 'General';
 }
 
-export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnderwritingPanelProps) {
+const ParcelUnderwritingPanel = React.memo(function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnderwritingPanelProps) {
   const [defaultCosts, setDefaultCosts] = useState<DefaultCosts | null>(null);
   const [editableCosts, setEditableCosts] = useState<Partial<DefaultCosts>>({});
   const [loading, setLoading] = useState(false);
@@ -56,7 +80,7 @@ export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnder
 
   // Calculate program for detailed cost editor
   const program = useMemo((): Program => {
-    const acres = parcel.deededacreage || parcel.gisacre || 0;
+    const acres = parcel.deeded_acres || parcel.deededacreage || parcel.gisacre || 0;
     const sqft = parcel.sqft || (acres * 43560);
     const buildableSf = sqft * 2.0; // Assume 2.0 FAR for demo
     const units = Math.floor(acres * 25); // 25 units per acre estimate
@@ -79,7 +103,7 @@ export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnder
   // Load default costs when parcel changes
   useEffect(() => {
     if (parcel?.zoning) {
-      loadDefaultCosts(parcel.zoning);
+      loadDefaultCosts(parcel);
     }
   }, [parcel?.zoning]);
 
@@ -92,17 +116,17 @@ export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnder
       const finalCosts = { ...defaultCosts, ...editableCosts };
       
       // Calculate project parameters
-      const acres = parcel.deededacreage || parcel.gisacre || 0;
+      const acres = parcel.deeded_acres || parcel.deededacreage || parcel.gisacre || 0;
       const sqft = parcel.sqft || (acres * 43560);
       
       // Use detailed cost breakdown if available, otherwise use simple calculation
       const landCost = acres * finalCosts.land_cost_per_acre;
-      const totalCost = totalCostFromEditor || (() => {
-        const hardCost = sqft * finalCosts.hard_cost_per_sf * 2.0; // Assume 2.0 FAR
-        const softCost = hardCost * (finalCosts.soft_cost_percentage / 100);
-        const contingency = (hardCost + softCost) * (finalCosts.contingency_percentage / 100);
-        return landCost + hardCost + softCost + contingency;
-      })();
+      // Calculate costs
+      const hardCost = sqft * finalCosts.hard_cost_per_sf * 2.0; // Assume 2.0 FAR
+      const softCost = hardCost * (finalCosts.soft_cost_percentage / 100);
+      const contingency = (hardCost + softCost) * (finalCosts.contingency_percentage / 100);
+      
+      const totalCost = totalCostFromEditor || (landCost + hardCost + softCost + contingency);
       
       const loanAmount = totalCost * (finalCosts.loan_to_cost / 100);
       
@@ -137,14 +161,14 @@ export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnder
     }
   }, [defaultCosts, editableCosts, strategy, parcel, loading, totalCostFromEditor]);
 
-  const loadDefaultCosts = async (zoning: string) => {
+  const loadDefaultCosts = async (parcel: SelectedParcel) => {
     setLoading(true);
     try {
       // Use client-side default costs
-      const rpcData = getDefaultCosts(zoning);
+      const rpcData = getDefaultCosts(parcel.zoning);
       
       const costs: DefaultCosts = {
-        use_type: getUseTypeFromZoning(zoning),
+        use_type: getUseTypeFromZoning(parcel),
         land_cost_per_acre: rpcData.land_cost_per_acre || 500000,
         hard_cost_per_sf: rpcData.hard_cost_per_sf || 180,
         soft_cost_percentage: 20,
@@ -269,9 +293,15 @@ export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnder
         <div className="mt-2">
           <p className="text-sm text-gray-600">
             {parcel.address} • {parcel.parcelnumb} • {parcel.zoning}
+            {parcel.zoning_type && (
+              <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                {parcel.zoning_type}
+                {parcel.zoning_subtype && ` - ${parcel.zoning_subtype}`}
+              </span>
+            )}
           </p>
           <p className="text-xs text-gray-500">
-            {(parcel.deededacreage || parcel.gisacre || 0).toFixed(2)} acres • 
+            {(parcel.deeded_acres || parcel.deededacreage || parcel.gisacre || 0).toFixed(2)} acres • 
             {(parcel.sqft || 0).toLocaleString()} sq ft
           </p>
         </div>
@@ -298,6 +328,66 @@ export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnder
           </button>
         </div>
       </div>
+
+      {/* Enhanced Zoning Information */}
+      {(parcel.zoning_type || parcel.max_far || parcel.max_density_du_per_acre) && (
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center space-x-2 mb-3">
+            <Target className="w-5 h-5 text-blue-600" />
+            <h4 className="font-semibold text-gray-900">Zoning Constraints</h4>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            {parcel.max_far && (
+              <div>
+                <span className="text-gray-600">Max FAR:</span>
+                <span className="ml-2 font-medium text-gray-900">{parcel.max_far}</span>
+              </div>
+            )}
+            {parcel.max_density_du_per_acre && (
+              <div>
+                <span className="text-gray-600">Max Density:</span>
+                <span className="ml-2 font-medium text-gray-900">{parcel.max_density_du_per_acre} DU/acre</span>
+              </div>
+            )}
+            {parcel.max_building_height_ft && (
+              <div>
+                <span className="text-gray-600">Max Height:</span>
+                <span className="ml-2 font-medium text-gray-900">{parcel.max_building_height_ft} ft</span>
+              </div>
+            )}
+            {parcel.max_coverage_pct && (
+              <div>
+                <span className="text-gray-600">Max Coverage:</span>
+                <span className="ml-2 font-medium text-gray-900">{parcel.max_coverage_pct}%</span>
+              </div>
+            )}
+            {parcel.min_lot_area_sq_ft && (
+              <div>
+                <span className="text-gray-600">Min Lot Area:</span>
+                <span className="ml-2 font-medium text-gray-900">{parcel.min_lot_area_sq_ft.toLocaleString()} sq ft</span>
+              </div>
+            )}
+            {parcel.min_front_setback_ft && (
+              <div>
+                <span className="text-gray-600">Front Setback:</span>
+                <span className="ml-2 font-medium text-gray-900">{parcel.min_front_setback_ft} ft</span>
+              </div>
+            )}
+          </div>
+          {parcel.permitted_land_uses && (
+            <div className="mt-3">
+              <div className="text-gray-600 text-sm font-medium mb-2">Permitted Uses:</div>
+              <div className="flex flex-wrap gap-1">
+                {Object.entries(parcel.permitted_land_uses).slice(0, 3).map(([category, uses]) => (
+                  <span key={category} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                    {category}: {Array.isArray(uses) ? uses.slice(0, 2).join(', ') : uses}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Key Metrics Grid */}
       {metrics && (
@@ -529,4 +619,6 @@ export default function ParcelUnderwritingPanel({ parcel, onClose }: ParcelUnder
       )}
     </div>
   );
-}
+});
+
+export default ParcelUnderwritingPanel;

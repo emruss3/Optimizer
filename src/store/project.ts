@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { ParcelSet, toArray, setKey } from '../lib/parcelSet';
+import { SelectedParcel } from '../types/parcel';
 
 interface ActiveProjectState {
   // Core state
@@ -10,7 +11,7 @@ interface ActiveProjectState {
   
   // Actions
   set: (id: string | null, name?: string | null) => void;
-  addParcel: (parcelId: string, parcelData?: any) => Promise<void>;
+  addParcel: (parcelId: string, parcelData?: SelectedParcel) => Promise<void>;
   removeParcel: (parcelId: string) => Promise<void>;
   clear: () => void;
   
@@ -45,7 +46,7 @@ export const useActiveProject = create<ActiveProjectState>((set, get) => ({
   },
 
   // Add parcel to active project
-  addParcel: async (parcelId: string, parcelData?: any) => {
+  addParcel: async (parcelId: string, parcelData?: SelectedParcel) => {
     const state = get();
     if (!state.id) {
       console.warn('No active project - cannot add parcel');

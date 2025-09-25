@@ -1,9 +1,9 @@
 import React from 'react';
 import MapComponent from './Map';
-import { SelectedParcel } from '../types/project';
+import { SelectedParcel } from '../types/parcel';
 
 interface MapPanelProps {
-  onParcelClick: (parcel: any) => void;
+  onParcelClick: (parcel: SelectedParcel) => void;
   activeProjectName: string | null;
 }
 

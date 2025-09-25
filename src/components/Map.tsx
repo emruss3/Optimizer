@@ -3,9 +3,10 @@ import MapView from './MapView';
 import { useParcelSelection } from '../hooks/useParcelSelection';
 import { Target } from 'lucide-react';
 import { useYieldEngine } from '../hooks/useYieldEngine';
+import { SelectedParcel } from '../types/parcel';
 
 // Map Optimize Massing Button Component
-function MapOptimizeButton({ parcelIds }: { parcelIds: string[] }) {
+const MapOptimizeButton = React.memo(function MapOptimizeButton({ parcelIds }: { parcelIds: string[] }) {
   const { optimizeYieldScenarios, isOptimizing } = useYieldEngine();
   const { activeProjectId } = useParcelSelection();
   
@@ -53,13 +54,13 @@ function MapOptimizeButton({ parcelIds }: { parcelIds: string[] }) {
       </button>
     </div>
   );
-}
+});
 
 interface MapComponentProps {
-  onParcelClick: (parcel: any) => void;
+  onParcelClick: (parcel: SelectedParcel) => void;
 }
 
-export default function MapComponent({ onParcelClick }: MapComponentProps) {
+const MapComponent = React.memo(function MapComponent({ onParcelClick }: MapComponentProps) {
   const { activeProjectId, activeProjectName, parcelIds: selectedParcelIds } = useParcelSelection();
 
   return (
@@ -75,4 +76,6 @@ export default function MapComponent({ onParcelClick }: MapComponentProps) {
       <MapOptimizeButton parcelIds={selectedParcelIds} />
     </div>
   );
-}
+});
+
+export default MapComponent;

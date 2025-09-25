@@ -7,19 +7,6 @@ export default defineConfig({
   build: {
     // Performance budget enforcement - <200KB initial JS
     chunkSizeWarningLimit: 200, // 200KB warning limit per chunk
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          // Separate heavy libraries into their own chunks for code splitting
-          'react-vendor': ['react', 'react-dom'],
-          'map-vendor': ['react-map-gl', 'mapbox-gl'], // Lazy loaded
-          'deck-vendor': ['@deck.gl/react', '@deck.gl/core', '@deck.gl/layers', '@deck.gl/aggregation-layers'], // Lazy loaded
-          'ui-vendor': ['lucide-react'],
-          'supabase-vendor': ['@supabase/supabase-js'],
-          'state-vendor': ['zustand']
-        },
-      },
-    },
     // Additional performance optimizations
     reportCompressedSize: true,
     minify: 'esbuild',

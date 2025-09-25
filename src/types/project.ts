@@ -1,3 +1,6 @@
+import { RegridZoningData } from './zoning';
+import { GeoJSONGeometry } from './parcel';
+
 export interface SelectedParcel {
   id: string;
   parcelnumb: string;
@@ -5,18 +8,23 @@ export interface SelectedParcel {
   deededacreage: number;
   sqft: number;
   zoning: string;
-  geometry: any;
+  geometry: GeoJSONGeometry;
   landval?: number;
   parval?: number;
   lat?: string;
   lon?: string;
-  // Zoning constraints
+  
+  // Enhanced Zoning Data (from Regrid schema)
+  zoning_data?: RegridZoningData;
+  
+  // Legacy Zoning constraints (for backward compatibility)
   max_far?: number;
   max_height_ft?: number;
   max_coverage_pct?: number;
   min_front_setback_ft?: number;
   min_rear_setback_ft?: number;
   min_side_setback_ft?: number;
+  
   // Additional site characteristics
   slope?: 'flat' | 'moderate' | 'steep';
   flood_zone?: string;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { ChevronDown, ChevronRight, RotateCcw, MousePointer, MousePointer2 } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 
 interface MapControlsProps {
@@ -13,7 +13,16 @@ interface MapControlsProps {
 }
 
 export default function MapControls({ onReload, parcelStats }: MapControlsProps) {
-  const { filterMode, colorMode, setFilterMode, setColorMode } = useUIStore();
+  const { 
+    filterMode, 
+    colorMode, 
+    selectionMode, 
+    selectedParcelIds,
+    setFilterMode, 
+    setColorMode, 
+    setSelectionMode,
+    clearSelectedParcels 
+  } = useUIStore();
   const [isExpanded, setIsExpanded] = React.useState(true);
 
   const changeFilterMode = (mode: 'all' | 'large' | 'huge') => {
@@ -67,6 +76,46 @@ export default function MapControls({ onReload, parcelStats }: MapControlsProps)
             </div>
           </div>
           
+          {/* Selection Mode Selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Selection Mode:</label>
+            <div className="space-y-2">
+              <button
+                onClick={() => setSelectionMode('single')}
+                className={`w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center space-x-2 ${
+                  selectionMode === 'single' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <MousePointer className="w-4 h-4" />
+                <span>Single Parcel</span>
+              </button>
+              <button
+                onClick={() => setSelectionMode('multi')}
+                className={`w-full px-3 py-2 rounded text-sm font-medium transition-colors flex items-center space-x-2 ${
+                  selectionMode === 'multi' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <MousePointer2 className="w-4 h-4" />
+                <span>Multi-Parcel</span>
+              </button>
+            </div>
+            {selectionMode === 'multi' && selectedParcelIds.length > 0 && (
+              <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-800">
+                {selectedParcelIds.length} parcel{selectedParcelIds.length !== 1 ? 's' : ''} selected
+                <button
+                  onClick={clearSelectedParcels}
+                  className="ml-2 text-blue-600 hover:text-blue-800 underline"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Filter Mode Selector */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Size:</label>
