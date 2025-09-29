@@ -4427,10 +4427,10 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
                     {Math.round(element.rotation || 0)}°
                   </text>
                   
-                  {/* Rotation guide line from center to handle */}
+                  {/* Rotation guide line from vertex to handle */}
                   <line
-                    x1={center.x}
-                    y1={center.y}
+                    x1={vertexX}
+                    y1={vertexY}
                     x2={handleX}
                     y2={handleY}
                     stroke="#0078d4"
