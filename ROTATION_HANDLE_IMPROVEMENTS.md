@@ -224,3 +224,8 @@ The rotation handle now:
 - **Maintains professional appearance** matching PowerPoint-style handles
 
 Users can now easily see and interact with the rotation handle without it being hidden behind text or other elements!
+
+
+
+
+

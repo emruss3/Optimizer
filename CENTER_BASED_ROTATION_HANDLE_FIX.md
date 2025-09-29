@@ -166,3 +166,8 @@ The rotation handle now provides:
 - **Universal compatibility** with all element types and shapes
 
 The rotation handle is now **stable, reliable, and professional** - no more finicky vertex-based behavior!
+
+
+
+
+

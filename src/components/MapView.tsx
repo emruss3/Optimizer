@@ -15,7 +15,10 @@ interface MapViewProps {
 }
 
 const MapView = React.memo(function MapView({ 
-  onParcelClick
+  onParcelClick,
+  selectedParcelIds,
+  activeProjectId,
+  activeProjectName
 }: MapViewProps) {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);

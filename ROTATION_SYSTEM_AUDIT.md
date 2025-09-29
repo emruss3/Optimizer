@@ -116,3 +116,8 @@ const handleY = center.y - Math.cos(elementRotation * Math.PI / 180) * handleDis
 5. **Test and validate the new system**
 
 This strategy addresses the fundamental issues with the current rotation system and provides a clear path to implement PowerPoint-like rotation behavior.
+
+
+
+
+

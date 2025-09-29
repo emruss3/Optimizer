@@ -77,3 +77,8 @@ The rotation handle should now behave exactly like PowerPoint:
 - Shift key provides 15-degree snapping
 
 **The rotation system is now properly implemented and ready for testing!**
+
+
+
+
+

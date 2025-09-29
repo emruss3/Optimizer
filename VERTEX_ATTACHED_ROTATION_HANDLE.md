@@ -179,3 +179,8 @@ The rotation handle now:
 - **Provides intuitive interaction** with clear rotation point
 
 Users now have a **professional, intuitive rotation experience** that matches PowerPoint's vertex-attached rotation behavior!
+
+
+
+
+

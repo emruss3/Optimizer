@@ -69,3 +69,8 @@ The rotation handle should now behave exactly like PowerPoint:
 - Visual connection line from center to handle
 
 **This matches the PowerPoint behavior shown in the reference images!**
+
+
+
+
+

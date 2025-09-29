@@ -171,3 +171,8 @@ The rotation bar now appears in the toolbar when elements are selected, providin
 - **Seamless integration** with existing rotation features
 
 The site planner now has a complete rotation control system with both quick 90° buttons and precise angle control via the rotation bar!
+
+
+
+
+

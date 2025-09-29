@@ -76,3 +76,8 @@ The rotation handle should now behave exactly like the reference images:
 - Handle appears "attached" to the shape
 
 **This matches the vertex-attached behavior from your previous reference images!**
+
+
+
+
+

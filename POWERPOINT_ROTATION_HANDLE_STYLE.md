@@ -167,3 +167,8 @@ The rotation handle now perfectly matches the PowerPoint style shown in the imag
 - **Consistent color scheme** throughout the interface
 
 Users will now have a **familiar, professional rotation experience** that matches PowerPoint's design and behavior!
+
+
+
+
+
