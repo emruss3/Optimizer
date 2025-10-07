@@ -21,6 +21,7 @@ import { RealUnderwritingWorkflow } from './components/RealUnderwritingWorkflow'
 import { MapInteractionEnhancer } from './components/MapInteractionEnhancer';
 import { WorkflowAudit } from './components/WorkflowAudit';
 import { WorkflowConnectionTest } from './components/WorkflowConnectionTest';
+import { ParcelAnalysisDemo } from './components/ParcelAnalysisDemo';
 import { useProject } from './hooks/useProject';
 import { useActiveProject } from './store/project';
 import LeftNavigation from './components/LeftNavigation';
@@ -57,6 +58,7 @@ function App() {
   const [showRealUnderwritingWorkflow, setShowRealUnderwritingWorkflow] = useState(false);
   const [showWorkflowAudit, setShowWorkflowAudit] = useState(false);
   const [showWorkflowConnectionTest, setShowWorkflowConnectionTest] = useState(false);
+  const [showParcelAnalysisDemo, setShowParcelAnalysisDemo] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [toasts, setToasts] = useState<Array<{id: string, type: 'success' | 'error' | 'warning' | 'info', title: string, message?: string}>>([]);
   const { isMobile, setIsMobile, commandPaletteOpen, setCommandPalette } = useUIStore();
@@ -203,6 +205,14 @@ function App() {
     setShowWorkflowConnectionTest(false);
   };
 
+  const handleOpenParcelAnalysisDemo = () => {
+    setShowParcelAnalysisDemo(true);
+  };
+
+  const handleCloseParcelAnalysisDemo = () => {
+    setShowParcelAnalysisDemo(false);
+  };
+
   const handleOpenUnifiedProjectWorkflow = () => {
     setShowUnifiedProjectWorkflow(true);
   };
@@ -246,6 +256,7 @@ function App() {
           onOpenRealUnderwritingWorkflow={handleOpenRealUnderwritingWorkflow}
           onOpenWorkflowAudit={handleOpenWorkflowAudit}
           onOpenWorkflowConnectionTest={handleOpenWorkflowConnectionTest}
+          onOpenParcelAnalysisDemo={handleOpenParcelAnalysisDemo}
         />
         </header>
 
@@ -379,6 +390,24 @@ function App() {
         isOpen={showWorkflowConnectionTest}
         onClose={handleCloseWorkflowConnectionTest}
       />
+
+      {/* Parcel Analysis Demo */}
+      {showParcelAnalysisDemo && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h2 className="text-xl font-semibold">Parcel Analysis Demo</h2>
+              <button
+                onClick={handleCloseParcelAnalysisDemo}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <ParcelAnalysisDemo />
+          </div>
+        </div>
+      )}
 
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">

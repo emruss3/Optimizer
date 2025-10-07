@@ -19,9 +19,10 @@ interface HeaderProps {
   onOpenRealUnderwritingWorkflow?: () => void;
   onOpenWorkflowAudit?: () => void;
   onOpenWorkflowConnectionTest?: () => void;
+  onOpenParcelAnalysisDemo?: () => void;
 }
 
-export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, onOpenSimpleProjectManager, onOpenConnectedProjectWorkflow, onOpenUnifiedProjectWorkflow, onOpenRealUnderwritingWorkflow, onOpenWorkflowAudit, onOpenWorkflowConnectionTest }: HeaderProps) {
+export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, onOpenSimpleProjectManager, onOpenConnectedProjectWorkflow, onOpenUnifiedProjectWorkflow, onOpenRealUnderwritingWorkflow, onOpenWorkflowAudit, onOpenWorkflowConnectionTest, onOpenParcelAnalysisDemo }: HeaderProps) {
   const { setDrawer, setFilterModal, openDrawer, setCommandPalette } = useUIStore();
   const { activeProjectId, activeProjectName } = useParcelSelection();
   const { set: setActiveProject, clear: clearActiveProject } = useActiveProject();
@@ -194,6 +195,18 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
           >
             <Command className="w-4 h-4" />
             <span className="text-sm hidden md:inline">Test</span>
+          </button>
+
+          {/* Parcel Analysis Demo button */}
+          <button 
+            onClick={onOpenParcelAnalysisDemo}
+            className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-blue-600 text-white hover:bg-blue-700"
+            data-testid="parcel-analysis-demo-button"
+            title="Parcel Analysis Demo"
+            aria-label="Open Parcel Analysis Demo"
+          >
+            <Building2 className="w-4 h-4" />
+            <span className="text-sm hidden md:inline">Analysis Demo</span>
           </button>
           
           {/* Underwriting button */}
