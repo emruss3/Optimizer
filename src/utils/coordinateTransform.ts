@@ -1,279 +1,474 @@
-/**
- * Centralized Coordinate Transformation Utilities
- * 
- * This module provides all coordinate transformation functions used across
- * the site planner components, consolidating scattered transformation logic
- * into a single, maintainable location.
- */
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
 
-// Constants for coordinate transformations
-export const COORDINATE_CONSTANTS = {
-  FEET_PER_METER: 3.28084,
-  METERS_PER_FOOT: 0.3048,
-  DEFAULT_GRID_SIZE: 12,
-  SVG_UNITS_PER_FOOT: 12, // 12 SVG units = 1 foot
-} as const;
+import proj4 from 'proj4';
+import * as turf from '@turf/turf';
+
+// Define coordinate systems
+proj4.defs('EPSG:3857', '+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs');
+proj4.defs('EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs');
+
+// Constants
+export const FEET_PER_METER = 3.28084;
+export const METERS_PER_FOOT = 0.3048;
+export const DEFAULT_GRID_SIZE = 12;
+
+// Types
+export interface Bounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface CoordinateSystem {
+  type: 'webmercator' | 'wgs84' | 'svg' | 'feet';
+  units: 'meters' | 'degrees' | 'pixels' | 'feet';
+}
 
 /**
- * Coordinate transformation utilities
+ * Centralized coordinate transformation utilities
+ * Consolidates all CRS/units logic from across the codebase
  */
 export class CoordinateTransform {
+  // Constants
+  static readonly FEET_PER_METER = FEET_PER_METER;
+  static readonly METERS_PER_FOOT = METERS_PER_FOOT;
+  static readonly DEFAULT_GRID_SIZE = DEFAULT_GRID_SIZE;
+
+  // =====================================================
+  // UNIT CONVERSIONS
+  // =====================================================
+
   /**
    * Convert meters to feet
    */
   static metersToFeet(meters: number): number {
-    return meters * COORDINATE_CONSTANTS.FEET_PER_METER;
+    return meters * this.FEET_PER_METER;
   }
 
   /**
    * Convert feet to meters
    */
   static feetToMeters(feet: number): number {
-    return feet * COORDINATE_CONSTANTS.METERS_PER_FOOT;
+    return feet * this.METERS_PER_FOOT;
   }
 
   /**
-   * Convert SVG units to feet
-   * @param svgCoord SVG coordinate value
-   * @param gridSize Grid size (default: 12 SVG units per foot)
+   * Convert square meters to square feet
    */
-  static svgToFeet(svgCoord: number, gridSize: number = COORDINATE_CONSTANTS.DEFAULT_GRID_SIZE): number {
+  static squareMetersToSquareFeet(sqMeters: number): number {
+    return sqMeters * (this.FEET_PER_METER ** 2);
+  }
+
+  /**
+   * Convert square feet to square meters
+   */
+  static squareFeetToSquareMeters(sqFeet: number): number {
+    return sqFeet * (this.METERS_PER_FOOT ** 2);
+  }
+
+  // =====================================================
+  // COORDINATE SYSTEM TRANSFORMATIONS
+  // =====================================================
+
+  /**
+   * Project GeoJSON geometry from WGS84 (EPSG:4326) to Web Mercator (EPSG:3857)
+   */
+  static projectTo3857(geom: any): any {
+    if (!geom || !geom.type) {
+      throw new Error('Invalid GeoJSON geometry provided');
+    }
+
+    // Handle different geometry types
+    if (geom.type === 'Feature') {
+      return turf.feature(this.projectTo3857(geom.geometry), geom.properties);
+    }
+
+    if (geom.type === 'FeatureCollection') {
+      return turf.featureCollection(
+        (geom as any).features.map((feature: any) => 
+          this.projectTo3857(feature)
+        )
+      );
+    }
+
+    // Project coordinates based on geometry type
+    const projectCoords = (coords: any): any => {
+      if (Array.isArray(coords)) {
+        if (typeof coords[0] === 'number') {
+          // Single coordinate pair [lng, lat]
+          const [lng, lat] = coords;
+          const [x, y] = proj4('EPSG:4326', 'EPSG:3857', [lng, lat]);
+          return [x, y];
+        } else {
+          // Array of coordinates
+          return coords.map(projectCoords);
+        }
+      }
+      return coords;
+    };
+
+    const projectedGeom = {
+      ...geom,
+      coordinates: projectCoords((geom as any).coordinates)
+    };
+
+    return projectedGeom;
+  }
+
+  /**
+   * Project GeoJSON geometry from Web Mercator (EPSG:3857) to WGS84 (EPSG:4326)
+   */
+  static projectTo4326(geom: any): any {
+    if (!geom || !geom.type) {
+      throw new Error('Invalid GeoJSON geometry provided');
+    }
+
+    // Handle different geometry types
+    if (geom.type === 'Feature') {
+      return turf.feature(this.projectTo4326(geom.geometry), geom.properties);
+    }
+
+    if (geom.type === 'FeatureCollection') {
+      return turf.featureCollection(
+        (geom as any).features.map((feature: any) => 
+          this.projectTo4326(feature)
+        )
+      );
+    }
+
+    // Project coordinates based on geometry type
+    const projectCoords = (coords: any): any => {
+      if (Array.isArray(coords)) {
+        if (typeof coords[0] === 'number') {
+          // Single coordinate pair [x, y]
+          const [x, y] = coords;
+          const [lng, lat] = proj4('EPSG:3857', 'EPSG:4326', [x, y]);
+          return [lng, lat];
+        } else {
+          // Array of coordinates
+          return coords.map(projectCoords);
+        }
+      }
+      return coords;
+    };
+
+    const projectedGeom = {
+      ...geom,
+      coordinates: projectCoords((geom as any).coordinates)
+    };
+
+    return projectedGeom;
+  }
+
+  // =====================================================
+  // WEB MERCATOR TO FEET CONVERSIONS
+  // =====================================================
+
+  /**
+   * Convert Web Mercator coordinates (meters) to feet
+   */
+  static webMercatorToFeet(coords: number[][]): number[][] {
+    return coords.map(coord => [
+      this.metersToFeet(coord[0]),
+      this.metersToFeet(coord[1])
+    ]);
+  }
+
+  /**
+   * Convert feet coordinates to Web Mercator (meters)
+   */
+  static feetToWebMercator(coords: number[][]): number[][] {
+    return coords.map(coord => [
+      this.feetToMeters(coord[0]),
+      this.feetToMeters(coord[1])
+    ]);
+  }
+
+  // =====================================================
+  // SVG COORDINATE TRANSFORMATIONS
+  // =====================================================
+
+  /**
+   * Convert SVG coordinate to feet
+   */
+  static svgToFeet(svgCoord: number, gridSize: number = this.DEFAULT_GRID_SIZE): number {
     return svgCoord / gridSize;
   }
 
   /**
-   * Convert feet to SVG units
-   * @param feetCoord Feet coordinate value
-   * @param gridSize Grid size (default: 12 SVG units per foot)
+   * Convert feet coordinate to SVG
    */
-  static feetToSVG(feetCoord: number, gridSize: number = COORDINATE_CONSTANTS.DEFAULT_GRID_SIZE): number {
+  static feetToSVG(feetCoord: number, gridSize: number = this.DEFAULT_GRID_SIZE): number {
     return feetCoord * gridSize;
   }
 
   /**
-   * Convert Web Mercator meters to feet
-   * @param meters Web Mercator coordinate in meters
+   * Convert SVG coordinates array to feet
    */
-  static webMercatorMetersToFeet(meters: number): number {
-    return this.metersToFeet(meters);
-  }
-
-  /**
-   * Convert feet to Web Mercator meters
-   * @param feet Feet coordinate value
-   */
-  static feetToWebMercatorMeters(feet: number): number {
-    return this.feetToMeters(feet);
-  }
-
-  /**
-   * Transform coordinate arrays from Web Mercator meters to feet
-   * @param coords Array of [x, y] coordinates in Web Mercator meters
-   */
-  static webMercatorCoordsToFeet(coords: number[][]): number[][] {
-    return coords.map(([x, y]) => [
-      this.webMercatorMetersToFeet(x),
-      this.webMercatorMetersToFeet(y)
+  static svgCoordsToFeet(coords: number[][], gridSize: number = this.DEFAULT_GRID_SIZE): number[][] {
+    return coords.map(coord => [
+      this.svgToFeet(coord[0], gridSize),
+      this.svgToFeet(coord[1], gridSize)
     ]);
   }
 
   /**
-   * Transform coordinate arrays from feet to Web Mercator meters
-   * @param coords Array of [x, y] coordinates in feet
+   * Convert feet coordinates array to SVG
    */
-  static feetCoordsToWebMercator(coords: number[][]): number[][] {
-    return coords.map(([x, y]) => [
-      this.feetToWebMercatorMeters(x),
-      this.feetToWebMercatorMeters(y)
+  static feetCoordsToSVG(coords: number[][], gridSize: number = this.DEFAULT_GRID_SIZE): number[][] {
+    return coords.map(coord => [
+      this.feetToSVG(coord[0], gridSize),
+      this.feetToSVG(coord[1], gridSize)
     ]);
   }
 
-  /**
-   * Transform coordinate arrays from SVG units to feet
-   * @param coords Array of [x, y] coordinates in SVG units
-   * @param gridSize Grid size (default: 12 SVG units per foot)
-   */
-  static svgCoordsToFeet(coords: number[][], gridSize: number = COORDINATE_CONSTANTS.DEFAULT_GRID_SIZE): number[][] {
-    return coords.map(([x, y]) => [
-      this.svgToFeet(x, gridSize),
-      this.svgToFeet(y, gridSize)
-    ]);
-  }
+  // =====================================================
+  // BOUNDING BOX OPERATIONS
+  // =====================================================
 
   /**
-   * Transform coordinate arrays from feet to SVG units
-   * @param coords Array of [x, y] coordinates in feet
-   * @param gridSize Grid size (default: 12 SVG units per foot)
+   * Calculate bounding box from coordinates
    */
-  static feetCoordsToSVG(coords: number[][], gridSize: number = COORDINATE_CONSTANTS.DEFAULT_GRID_SIZE): number[][] {
-    return coords.map(([x, y]) => [
-      this.feetToSVG(x, gridSize),
-      this.feetToSVG(y, gridSize)
-    ]);
-  }
-
-  /**
-   * Calculate bounds from coordinate array
-   * @param coords Array of [x, y] coordinates
-   */
-  static calculateBounds(coords: number[][]): {
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-    width: number;
-    height: number;
-  } {
-    if (coords.length === 0) {
-      return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
-    }
-
-    const bounds = coords.reduce(
-      (acc, [x, y]) => ({
-        minX: Math.min(acc.minX, x),
-        minY: Math.min(acc.minY, y),
-        maxX: Math.max(acc.maxX, x),
-        maxY: Math.max(acc.maxY, y),
+  static calculateBounds(coords: number[][]): Bounds {
+    return coords.reduce(
+      (acc, coord) => ({
+        minX: Math.min(acc.minX, coord[0]),
+        minY: Math.min(acc.minY, coord[1]),
+        maxX: Math.max(acc.maxX, coord[0]),
+        maxY: Math.max(acc.maxY, coord[1])
       }),
       { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
     );
+  }
+
+  /**
+   * Transform bounding box between coordinate systems
+   */
+  static transformBounds(bounds: Bounds, fromSystem: 'webmercator' | 'feet' | 'svg', toSystem: 'feet' | 'svg', gridSize: number = this.DEFAULT_GRID_SIZE): Bounds {
+    if (fromSystem === toSystem) return bounds;
+
+    switch (`${fromSystem}-${toSystem}`) {
+      case 'webmercator-feet':
+        return {
+          minX: this.metersToFeet(bounds.minX),
+          minY: this.metersToFeet(bounds.minY),
+          maxX: this.metersToFeet(bounds.maxX),
+          maxY: this.metersToFeet(bounds.maxY)
+        };
+      
+      case 'feet-svg':
+        return {
+          minX: this.feetToSVG(bounds.minX, gridSize),
+          minY: this.feetToSVG(bounds.minY, gridSize),
+          maxX: this.feetToSVG(bounds.maxX, gridSize),
+          maxY: this.feetToSVG(bounds.maxY, gridSize)
+        };
+      
+      case 'svg-feet':
+        return {
+          minX: this.svgToFeet(bounds.minX, gridSize),
+          minY: this.svgToFeet(bounds.minY, gridSize),
+          maxX: this.svgToFeet(bounds.maxX, gridSize),
+          maxY: this.svgToFeet(bounds.maxY, gridSize)
+        };
+      
+      default:
+        throw new Error(`Unsupported coordinate system transformation: ${fromSystem} to ${toSystem}`);
+    }
+  }
+
+  /**
+   * Normalize coordinates to start at (0,0)
+   */
+  static normalizeCoordinates(coords: number[][], bounds?: Bounds): { coords: number[][], bounds: Bounds } {
+    const calculatedBounds = bounds || this.calculateBounds(coords);
+    
+    const normalizedCoords = coords.map(coord => [
+      coord[0] - calculatedBounds.minX,
+      coord[1] - calculatedBounds.minY
+    ]);
 
     return {
-      ...bounds,
-      width: bounds.maxX - bounds.minX,
-      height: bounds.maxY - bounds.minY,
+      coords: normalizedCoords,
+      bounds: calculatedBounds
     };
   }
 
+  // =====================================================
+  // GRID SNAPPING UTILITIES
+  // =====================================================
+
   /**
-   * Normalize coordinates to start at (0, 0)
-   * @param coords Array of [x, y] coordinates
+   * Snap coordinate to grid
    */
-  static normalizeCoordinates(coords: number[][]): number[][] {
-    if (coords.length === 0) return coords;
-    
-    const bounds = this.calculateBounds(coords);
-    return coords.map(([x, y]) => [
-      x - bounds.minX,
-      y - bounds.minY
-    ]);
+  static snapToGrid(coord: number, gridSize: number = this.DEFAULT_GRID_SIZE): number {
+    return Math.round(coord / gridSize) * gridSize;
   }
 
   /**
-   * Calculate area of a polygon from coordinates
-   * @param coords Array of [x, y] coordinates forming a closed polygon
+   * Snap coordinates array to grid
    */
-  static calculatePolygonArea(coords: number[][]): number {
-    if (coords.length < 3) return 0;
-    
+  static snapCoordsToGrid(coords: number[][], gridSize: number = this.DEFAULT_GRID_SIZE): number[][] {
+    return coords.map(coord => [
+      this.snapToGrid(coord[0], gridSize),
+      this.snapToGrid(coord[1], gridSize)
+    ]);
+  }
+
+  // =====================================================
+  // GEOMETRY CALCULATIONS
+  // =====================================================
+
+  /**
+   * Calculate polygon area in square feet
+   */
+  static calculatePolygonArea(coords: number[][], fromSystem: 'webmercator' | 'feet' | 'svg' = 'feet', gridSize: number = this.DEFAULT_GRID_SIZE): number {
+    let coordsInFeet: number[][];
+
+    switch (fromSystem) {
+      case 'webmercator':
+        coordsInFeet = this.webMercatorToFeet(coords);
+        break;
+      case 'svg':
+        coordsInFeet = this.svgCoordsToFeet(coords, gridSize);
+        break;
+      case 'feet':
+      default:
+        coordsInFeet = coords;
+        break;
+    }
+
+    // Use shoelace formula for polygon area
     let area = 0;
-    for (let i = 0; i < coords.length; i++) {
-      const j = (i + 1) % coords.length;
-      area += coords[i][0] * coords[j][1];
-      area -= coords[j][0] * coords[i][1];
+    for (let i = 0; i < coordsInFeet.length; i++) {
+      const j = (i + 1) % coordsInFeet.length;
+      area += coordsInFeet[i][0] * coordsInFeet[j][1];
+      area -= coordsInFeet[j][0] * coordsInFeet[i][1];
     }
     return Math.abs(area) / 2;
   }
 
   /**
-   * Calculate perimeter of a polygon from coordinates
-   * @param coords Array of [x, y] coordinates forming a closed polygon
+   * Calculate polygon perimeter in feet
    */
-  static calculatePolygonPerimeter(coords: number[][]): number {
-    if (coords.length < 2) return 0;
-    
+  static calculatePolygonPerimeter(coords: number[][], fromSystem: 'webmercator' | 'feet' | 'svg' = 'feet', gridSize: number = this.DEFAULT_GRID_SIZE): number {
+    let coordsInFeet: number[][];
+
+    switch (fromSystem) {
+      case 'webmercator':
+        coordsInFeet = this.webMercatorToFeet(coords);
+        break;
+      case 'svg':
+        coordsInFeet = this.svgCoordsToFeet(coords, gridSize);
+        break;
+      case 'feet':
+      default:
+        coordsInFeet = coords;
+        break;
+    }
+
     let perimeter = 0;
-    for (let i = 0; i < coords.length; i++) {
-      const j = (i + 1) % coords.length;
-      const dx = coords[j][0] - coords[i][0];
-      const dy = coords[j][1] - coords[i][1];
+    for (let i = 0; i < coordsInFeet.length; i++) {
+      const j = (i + 1) % coordsInFeet.length;
+      const dx = coordsInFeet[j][0] - coordsInFeet[i][0];
+      const dy = coordsInFeet[j][1] - coordsInFeet[i][1];
       perimeter += Math.sqrt(dx * dx + dy * dy);
     }
     return perimeter;
   }
 
-  /**
-   * Snap coordinate to grid
-   * @param coord Coordinate value
-   * @param gridSize Grid size
-   * @param enabled Whether snapping is enabled
-   */
-  static snapToGrid(coord: number, gridSize: number, enabled: boolean = true): number {
-    if (!enabled) return coord;
-    return Math.round(coord / gridSize) * gridSize;
-  }
+  // =====================================================
+  // BATCH TRANSFORMATIONS
+  // =====================================================
 
   /**
-   * Snap coordinate array to grid
-   * @param coords Array of [x, y] coordinates
-   * @param gridSize Grid size
-   * @param enabled Whether snapping is enabled
+   * Transform coordinates between systems
    */
-  static snapCoordsToGrid(
+  static transformCoordinates(
     coords: number[][], 
-    gridSize: number, 
-    enabled: boolean = true
+    fromSystem: 'webmercator' | 'wgs84' | 'svg' | 'feet', 
+    toSystem: 'webmercator' | 'wgs84' | 'svg' | 'feet',
+    gridSize: number = this.DEFAULT_GRID_SIZE
   ): number[][] {
-    if (!enabled) return coords;
-    return coords.map(([x, y]) => [
-      this.snapToGrid(x, gridSize, enabled),
-      this.snapToGrid(y, gridSize, enabled)
-    ]);
+    if (fromSystem === toSystem) return coords;
+
+    // Convert to feet as intermediate system
+    let coordsInFeet: number[][];
+    
+    switch (fromSystem) {
+      case 'webmercator':
+        coordsInFeet = this.webMercatorToFeet(coords);
+        break;
+      case 'wgs84':
+        // First project to web mercator, then to feet
+        const projected = coords.map(coord => proj4('EPSG:4326', 'EPSG:3857', coord));
+        coordsInFeet = this.webMercatorToFeet(projected);
+        break;
+      case 'svg':
+        coordsInFeet = this.svgCoordsToFeet(coords, gridSize);
+        break;
+      case 'feet':
+      default:
+        coordsInFeet = coords;
+        break;
+    }
+
+    // Convert from feet to target system
+    switch (toSystem) {
+      case 'webmercator':
+        return this.feetToWebMercator(coordsInFeet);
+      case 'wgs84':
+        const webMercator = this.feetToWebMercator(coordsInFeet);
+        return webMercator.map(coord => proj4('EPSG:3857', 'EPSG:4326', coord));
+      case 'svg':
+        return this.feetCoordsToSVG(coordsInFeet, gridSize);
+      case 'feet':
+      default:
+        return coordsInFeet;
+    }
   }
 }
 
-/**
- * Legacy function exports for backward compatibility
- * These maintain the same interface as the original functions
- */
-
-/**
- * @deprecated Use CoordinateTransform.svgToFeet instead
- */
-export const svgToFeet = (svgCoord: number, gridSize: number = COORDINATE_CONSTANTS.DEFAULT_GRID_SIZE): number => {
-  return CoordinateTransform.svgToFeet(svgCoord, gridSize);
-};
-
-/**
- * @deprecated Use CoordinateTransform.feetToSVG instead
- */
-export const feetToSVG = (feetCoord: number, gridSize: number = COORDINATE_CONSTANTS.DEFAULT_GRID_SIZE): number => {
-  return CoordinateTransform.feetToSVG(feetCoord, gridSize);
-};
+// =====================================================
+// LEGACY FUNCTION EXPORTS (for backward compatibility)
+// =====================================================
 
 /**
  * @deprecated Use CoordinateTransform.metersToFeet instead
  */
-export const metersToFeet = (meters: number): number => {
-  return CoordinateTransform.metersToFeet(meters);
-};
+export const toFeetFromMeters = CoordinateTransform.metersToFeet;
 
 /**
  * @deprecated Use CoordinateTransform.feetToMeters instead
  */
-export const feetToMeters = (feet: number): number => {
-  return CoordinateTransform.feetToMeters(feet);
-};
+export const toMetersFromFeet = CoordinateTransform.feetToMeters;
 
 /**
- * @deprecated Use CoordinateTransform.snapToGrid instead
+ * @deprecated Use CoordinateTransform.projectTo3857 instead
  */
-export const snapToGrid = (value: number, gridSize: number, enabled: boolean = true): number => {
-  return CoordinateTransform.snapToGrid(value, gridSize, enabled);
-};
+export const projectTo3857 = CoordinateTransform.projectTo3857;
 
 /**
- * @deprecated Use CoordinateTransform.calculatePolygonArea instead
+ * @deprecated Use CoordinateTransform.projectTo4326 instead
  */
-export const calculatePolygonArea = (coords: number[][]): number => {
-  return CoordinateTransform.calculatePolygonArea(coords);
-};
+export const projectTo4326 = CoordinateTransform.projectTo4326;
 
 /**
- * @deprecated Use CoordinateTransform.calculatePolygonPerimeter instead
+ * @deprecated Use CoordinateTransform.svgToFeet instead
  */
-export const calculatePolygonPerimeter = (coords: number[][]): number => {
-  return CoordinateTransform.calculatePolygonPerimeter(coords);
-};
+export const svgToFeet = CoordinateTransform.svgToFeet;
 
-export default CoordinateTransform;
+/**
+ * @deprecated Use CoordinateTransform.feetToSVG instead
+ */
+export const feetToSVG = CoordinateTransform.feetToSVG;
+
+// Export constants for backward compatibility
+export { FEET_PER_METER, METERS_PER_FOOT, DEFAULT_GRID_SIZE };

@@ -2,511 +2,422 @@
 // Proprietary and confidential. Not for distribution.
 
 import { supabase } from '../lib/supabase';
+import { CoordinateTransform } from '../utils/coordinateTransform';
 import { GeoJSONGeometry } from '../types/parcel';
-import { projectTo3857, areaSqFt, lengthFt, toFeetFromMeters } from '../lib/geometry/coords';
 
-export interface ParcelGeometryData {
+// Types for parcel geometry data
+export interface ParcelGeometry3857 {
   ogc_fid: number;
-  address: string;
-  sqft: number;
-  deeded_acres: number;
-  geometry_4326: GeoJSONGeometry;
-  geometry_local: GeoJSONGeometry;
-  geometry_simplified: GeoJSONGeometry;
-  parcel_width_ft: number;
-  parcel_depth_ft: number;
+  geometry_3857: GeoJSONGeometry;
+  area_sqft: number;
   perimeter_ft: number;
   centroid_x: number;
   centroid_y: number;
-  bbox_min_x_ft: number;
-  bbox_min_y_ft: number;
-  bbox_max_x_ft: number;
-  bbox_max_y_ft: number;
+}
+
+export interface ParcelBuildableEnvelope {
+  ogc_fid: number;
+  buildable_geom: GeoJSONGeometry;
+  area_sqft: number;
+  edge_types: {
+    front: boolean;
+    side: boolean;
+    rear: boolean;
+    easement: boolean;
+  };
+  setbacks_applied: {
+    front: number;
+    side: number;
+    rear: number;
+  };
+  easements_removed: number;
 }
 
 export interface SitePlannerGeometry {
-  width: number;
-  depth: number;
-  area: number;
-  perimeter: number;
-  coordinates: number[][]; // Normalized coordinates in feet, starting at (0,0)
+  coordinates: number[][];
   bounds: {
     minX: number;
     minY: number;
     maxX: number;
     maxY: number;
   };
+  width: number;
+  depth: number;
+  area: number;
+  perimeter: number;
   centroid: {
     x: number;
     y: number;
   };
-}
-
-/** DB row for the simpler 3857 function */
-interface ParcelGeometry3857Row {
-  ogc_fid: number;
-  geometry_3857: GeoJSONGeometry;
-  sqft: number;
-  address: string | null;
+  normalizedCoordinates: number[][];
 }
 
 /**
- * Fetch parcel geometry via the same baseline as the MVT tiles (EPSG:3857)
+ * Enhanced parcel geometry service
+ * Consolidates all geometry fetching and processing logic
  */
-export async function fetchParcelGeometry3857(
-  ogcFid: string | number
-): Promise<SitePlannerGeometry | null> {
-  try {
-    const numericId = typeof ogcFid === 'string' ? parseInt(ogcFid) : ogcFid;
-    console.log('🔍 fetchParcelGeometry3857 called with ogc_fid:', numericId);
-    
-    const { data, error } = await supabase.rpc('get_parcel_geometry_3857', {
-      p_ogc_fid: numericId,
-    });
-
-    console.log('📡 RPC get_parcel_geometry_3857 response:', { data, error });
-
-    if (error) {
-      console.error('❌ Error from get_parcel_geometry_3857:', error);
-      return null;
-    }
-    if (!data || data.length === 0) {
-      console.warn('⚠️ get_parcel_geometry_3857 returned no data for ogc_fid:', numericId);
+export class ParcelGeometryService {
+  /**
+   * Fetch parcel geometry in EPSG:3857 (Web Mercator)
+   */
+  async fetchParcelGeometry3857(ogcFid: number): Promise<ParcelGeometry3857 | null> {
+    if (!supabase) {
+      console.error('❌ Supabase client not initialized');
       return null;
     }
 
-    console.log('✅ get_parcel_geometry_3857 returned data:', data[0]);
-    const row = data[0] as ParcelGeometry3857Row;
-    return parse3857Geometry(row);
-  } catch (e) {
-    console.error('❌ Exception in fetchParcelGeometry3857:', e);
-    return null;
-  }
-}
+    try {
+      console.log('🔍 Fetching parcel geometry in EPSG:3857 for OGC_FID:', ogcFid);
+      
+      const { data, error } = await supabase.rpc('get_parcel_geometry_3857', {
+        p_ogc_fid: ogcFid
+      });
 
-function parse3857Geometry(row: ParcelGeometry3857Row): SitePlannerGeometry | null {
-  const geom = row.geometry_3857;
-  if (!geom) return null;
-
-  console.log('🔍 Parsing 3857 geometry for ogc_fid:', row.ogc_fid);
-  console.log('📦 Geometry type:', geom.type);
-
-  let coords: number[][];
-  if (geom.type === 'Polygon') {
-    coords = (geom.coordinates as number[][][])[0];
-  } else if (geom.type === 'MultiPolygon') {
-    coords = (geom.coordinates as number[][][][])[0][0];
-  } else {
-    console.warn('❌ Unsupported geometry type:', geom.type);
-    return null;
-  }
-  if (!coords || coords.length < 3) {
-    console.warn('❌ Insufficient coordinates:', coords?.length);
-    return null;
-  }
-
-  console.log('📍 Coordinate count:', coords.length);
-  console.log('📍 First coordinate (Web Mercator meters):', coords[0]);
-
-  // Calculate bounds in Web Mercator meters first
-  const boundsMeters = coords.reduce(
-    (acc, c) => ({
-      minX: Math.min(acc.minX, c[0]),
-      minY: Math.min(acc.minY, c[1]),
-      maxX: Math.max(acc.maxX, c[0]),
-      maxY: Math.max(acc.maxY, c[1]),
-    }),
-    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-  );
-
-  console.log('📏 Bounds in Web Mercator (meters):', boundsMeters);
-
-  // Calculate dimensions in meters, then convert to feet using centralized function
-  const widthMeters = boundsMeters.maxX - boundsMeters.minX;
-  const depthMeters = boundsMeters.maxY - boundsMeters.minY;
-  const width = toFeetFromMeters(widthMeters);
-  const depth = toFeetFromMeters(depthMeters);
-
-  console.log('📐 Dimensions in meters:', { widthMeters, depthMeters });
-  console.log('📐 Dimensions in feet:', { width, depth });
-
-  const area = row.sqft ?? Math.round(width * depth);
-  
-  // Normalize coordinates: subtract mins, then convert to feet using centralized function
-  const normalized = coords.map(([x, y]) => [
-    toFeetFromMeters(x - boundsMeters.minX),
-    toFeetFromMeters(y - boundsMeters.minY)
-  ]);
-
-  console.log('📍 First normalized coordinate (feet):', normalized[0]);
-  console.log('📍 Last normalized coordinate (feet):', normalized[normalized.length - 1]);
-
-  const result = {
-    width,
-    depth,
-    area,
-    perimeter: (width + depth) * 2,
-    coordinates: normalized,
-    bounds: { minX: 0, minY: 0, maxX: width, maxY: depth },
-    centroid: { x: width / 2, y: depth / 2 },
-  };
-
-  console.log('✅ Successfully parsed geometry:', {
-    width: result.width.toFixed(1),
-    depth: result.depth.toFixed(1),
-    area: result.area,
-    coordinateCount: result.coordinates.length
-  });
-
-  return result;
-}
-
-/**
- * Fetch parcel geometry optimized for site planning
- */
-export async function fetchParcelGeometryForSitePlanner(
-  parcelId: string
-): Promise<SitePlannerGeometry | null> {
-  try {
-    console.log('🔍 Fetching parcel geometry for site planner:', parcelId);
-    
-    const { data, error } = await supabase.rpc('get_parcel_geometry_for_siteplan', {
-      p_ogc_fid: parseInt(parcelId)
-    });
-
-    if (error) {
-      console.error('❌ Error fetching parcel geometry:', error);
-      return null;
-    }
-
-    if (!data || data.length === 0) {
-      console.warn('⚠️ No geometry data found for parcel:', parcelId);
-      return null;
-    }
-
-    const parcelData = data[0] as ParcelGeometryData;
-    console.log('📦 Raw parcel geometry data:', parcelData);
-
-    return parseGeometryForSitePlanner(parcelData);
-  } catch (error) {
-    console.error('❌ Exception fetching parcel geometry:', error);
-    return null;
-  }
-}
-
-/**
- * Parse the database geometry into format suitable for site planner
- */
-export function parseGeometryForSitePlanner(
-  data: ParcelGeometryData
-): SitePlannerGeometry {
-  console.log('🔧 Parsing geometry for site planner...');
-  
-  // Use the local projected geometry (Web Mercator in meters)
-  const geometry = data.geometry_local || data.geometry_simplified || data.geometry_4326;
-  
-  if (!geometry) {
-    console.warn('⚠️ No geometry available, creating fallback');
-    return createFallbackGeometry(data.sqft);
-  }
-
-  try {
-    // Extract coordinates from GeoJSON
-    let coordinates: number[][];
-    
-    if (geometry.type === 'Polygon') {
-      coordinates = geometry.coordinates[0] as number[][];
-    } else if (geometry.type === 'MultiPolygon') {
-      coordinates = (geometry.coordinates as number[][][])[0][0];
-    } else {
-      console.warn('⚠️ Unsupported geometry type:', geometry.type);
-      return createFallbackGeometry(data.sqft);
-    }
-
-    console.log('📐 Original coordinates (first 3):', coordinates.slice(0, 3));
-
-    // Convert from meters to feet and calculate bounds using centralized function
-    const coordinatesInFeet = coordinates.map(coord => [
-      toFeetFromMeters(coord[0]),
-      toFeetFromMeters(coord[1])
-    ]);
-
-    // Calculate bounds
-    const bounds = coordinatesInFeet.reduce(
-      (acc, coord) => ({
-        minX: Math.min(acc.minX, coord[0]),
-        minY: Math.min(acc.minY, coord[1]),
-        maxX: Math.max(acc.maxX, coord[0]),
-        maxY: Math.max(acc.maxY, coord[1])
-      }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
-    );
-
-    // Normalize coordinates to start at (0,0)
-    const normalizedCoordinates = coordinatesInFeet.map(coord => [
-      coord[0] - bounds.minX,
-      coord[1] - bounds.minY
-    ]);
-
-    const width = bounds.maxX - bounds.minX;
-    const depth = bounds.maxY - bounds.minY;
-    const area = data.sqft;
-    const perimeter = data.perimeter_ft;
-
-    // Calculate normalized centroid
-    const centroid = {
-      x: (data.centroid_x * METERS_TO_FEET) - bounds.minX,
-      y: (data.centroid_y * METERS_TO_FEET) - bounds.minY
-    };
-
-    console.log('✅ Parsed geometry successfully:', {
-      width: width.toFixed(1),
-      depth: depth.toFixed(1),
-      area,
-      points: normalizedCoordinates.length,
-      bounds
-    });
-
-    return {
-      width,
-      depth,
-      area,
-      perimeter,
-      coordinates: normalizedCoordinates,
-      bounds: {
-        minX: 0,
-        minY: 0,
-        maxX: width,
-        maxY: depth
-      },
-      centroid
-    };
-
-  } catch (error) {
-    console.error('❌ Error parsing geometry:', error);
-    return createFallbackGeometry(data.sqft);
-  }
-}
-
-/**
- * Fetch parcel buildable envelope with proper setback analysis
- */
-export async function fetchParcelBuildableEnvelope(
-  ogcFid: string | number,
-  setbacks?: { front?: number; rear?: number; side?: number }
-): Promise<{
-  parcelGeometry: SitePlannerGeometry;
-  buildableEnvelope: SitePlannerGeometry;
-  edgeClassifications: Record<string, any>;
-  metrics: Record<string, any>;
-} | null> {
-  try {
-    const numericId = typeof ogcFid === 'string' ? parseInt(ogcFid) : ogcFid;
-    console.log('🔍 fetchParcelBuildableEnvelope called with ogc_fid:', numericId);
-    
-    const { data, error } = await supabase.rpc('get_parcel_front_edge_with_roads', {
-      p_ogc_fid: numericId,
-      p_front_setback: setbacks?.front || 25,
-      p_rear_setback: setbacks?.rear || 20,
-      p_side_setback: setbacks?.side || 15
-    });
-
-    console.log('📡 RPC get_parcel_buildable_envelope response:', { data, error });
-
-    if (error) {
-      console.error('❌ Error from get_parcel_buildable_envelope:', error);
-      // Fallback to the existing 3857 function
-      const fallbackGeometry = await fetchParcelGeometry3857(ogcFid);
-      if (fallbackGeometry) {
-        return {
-          parcelGeometry: fallbackGeometry,
-          buildableEnvelope: fallbackGeometry, // Use same geometry as fallback
-          edgeClassifications: { method: 'fallback' },
-          metrics: { note: 'Using fallback geometry' }
-        };
+      if (error) {
+        console.error('❌ Error fetching parcel geometry:', error);
+        return null;
       }
-      return null;
-    }
-    
-    if (!data || data.length === 0) {
-      console.warn('⚠️ get_parcel_buildable_envelope returned no data for ogc_fid:', numericId);
-      return null;
-    }
 
-    const result = data[0];
-    console.log('✅ get_parcel_buildable_envelope returned data:', result);
-    
-    // Parse the parcel geometry from GeoJSON
-    const parcelGeometry = parseGeoJSONToSitePlanner(result.parcel_geom_geojson, result);
-    const buildableGeometry = parseGeoJSONToSitePlanner(result.buildable_envelope_geojson, result);
-    
-    if (!parcelGeometry || !buildableGeometry) {
-      console.error('❌ Failed to parse geometries');
-      return null;
-    }
-    
-    return {
-      parcelGeometry,
-      buildableEnvelope: buildableGeometry,
-      edgeClassifications: result.edge_analysis,
-      metrics: {
-        ...result.parcel_metrics,
-        roadInfo: result.nearest_road_info
+      if (!data || data.length === 0) {
+        console.warn('⚠️ No geometry data found for OGC_FID:', ogcFid);
+        return null;
       }
-    };
-  } catch (e) {
-    console.error('❌ Exception in fetchParcelBuildableEnvelope:', e);
-    return null;
-  }
-}
 
-/**
- * Parse GeoJSON to SitePlannerGeometry format
- */
-function parseGeoJSONToSitePlanner(geojson: Record<string, any>, parcelData?: Record<string, any>): SitePlannerGeometry | null {
-  if (!geojson || !geojson.coordinates) return null;
-  
-  let coords: number[][];
-  if (geojson.type === 'Polygon') {
-    coords = geojson.coordinates[0];
-  } else if (geojson.type === 'MultiPolygon') {
-    coords = geojson.coordinates[0][0];
-  } else {
-    console.warn('❌ Unsupported GeoJSON type:', geojson.type);
-    return null;
+      const geometryData = data[0] as ParcelGeometry3857;
+      console.log('✅ Parcel geometry fetched successfully:', geometryData);
+      return geometryData;
+    } catch (error) {
+      console.error('❌ Exception fetching parcel geometry:', error);
+      return null;
+    }
   }
-  
-  // Calculate bounds in WGS84 degrees
-  const bounds = coords.reduce(
-    (acc, c) => ({
-      minX: Math.min(acc.minX, c[0]),
-      minY: Math.min(acc.minY, c[1]),
-      maxX: Math.max(acc.maxX, c[0]),
-      maxY: Math.max(acc.maxY, c[1]),
-    }),
-    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-  );
-  
-  // Use actual parcel dimensions from database if available, otherwise calculate from coordinates
-  let width, depth;
-  if (parcelData && parcelData.parcel_width_ft && parcelData.parcel_depth_ft) {
-    width = parcelData.parcel_width_ft;
-    depth = parcelData.parcel_depth_ft;
-    console.log('✅ Using actual parcel dimensions from database:', { width, depth });
-  } else {
-    // Convert degrees to feet (more accurate conversion)
-    // At latitude ~40°N (typical for US), 1 degree ≈ 69 miles ≈ 364,320 feet
-    // But we need to account for longitude compression at different latitudes
-    const DEGREES_TO_FEET_LAT = 364320; // 1 degree latitude in feet
-    const DEGREES_TO_FEET_LON = 279000; // 1 degree longitude at ~40°N in feet (approximate)
+
+  /**
+   * Fetch buildable envelope for a parcel
+   */
+  async fetchParcelBuildableEnvelope(ogcFid: number): Promise<ParcelBuildableEnvelope | null> {
+    if (!supabase) {
+      console.error('❌ Supabase client not initialized');
+      return null;
+    }
+
+    try {
+      console.log('🏗️ Fetching buildable envelope for OGC_FID:', ogcFid);
+      
+      const { data, error } = await supabase.rpc('get_parcel_buildable_envelope', {
+        p_ogc_fid: ogcFid
+      });
+
+      if (error) {
+        console.error('❌ Error fetching buildable envelope:', error);
+        return null;
+      }
+
+      if (!data || data.length === 0) {
+        console.warn('⚠️ No buildable envelope data found for OGC_FID:', ogcFid);
+        return null;
+      }
+
+      const envelopeData = data[0] as ParcelBuildableEnvelope;
+      console.log('✅ Buildable envelope fetched successfully:', envelopeData);
+      return envelopeData;
+    } catch (error) {
+      console.error('❌ Exception fetching buildable envelope:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Parse geometry for site planner use
+   * Converts from Web Mercator to feet and normalizes coordinates
+   */
+  parseGeometryForSitePlanner(geometryData: ParcelGeometry3857): SitePlannerGeometry {
+    console.log('🔧 Parsing geometry for site planner...');
     
-    width = (bounds.maxX - bounds.minX) * DEGREES_TO_FEET_LON;
-    depth = (bounds.maxY - bounds.minY) * DEGREES_TO_FEET_LAT;
-    console.log('⚠️ Using calculated dimensions from coordinates:', { width, depth });
-  }
-  
-  // Normalize coordinates to start at (0,0) in feet
-  const normalized = coords.map(([x, y]) => [
-    (x - bounds.minX) * (parcelData && parcelData.parcel_width_ft ? (width / (bounds.maxX - bounds.minX)) : 279000),
-    (y - bounds.minY) * (parcelData && parcelData.parcel_depth_ft ? (depth / (bounds.maxY - bounds.minY)) : 364320)
-  ]);
-  
-  // Use actual parcel area from database if available
-  const area = parcelData && parcelData.sqft ? parcelData.sqft : width * depth;
-  
-  return {
-    width,
-    depth,
-    area,
-    perimeter: (width + depth) * 2,
-    coordinates: normalized,
-    bounds: { minX: 0, minY: 0, maxX: width, maxY: depth },
-    centroid: { x: width / 2, y: depth / 2 },
-  };
-}
+    const geometry = geometryData.geometry_3857;
+    
+    if (!geometry) {
+      console.warn('⚠️ No geometry available, creating fallback');
+      return this.createFallbackGeometry(geometryData.area_sqft);
+    }
 
-/**
- * Parse PostGIS geometry to SitePlannerGeometry format
- */
-function parseGeometryFromPostGIS(geom: Record<string, any>): SitePlannerGeometry | null {
-  if (!geom || !geom.coordinates) return null;
-  
-  let coords: number[][];
-  if (geom.type === 'Polygon') {
-    coords = geom.coordinates[0];
-  } else if (geom.type === 'MultiPolygon') {
-    coords = geom.coordinates[0][0];
-  } else {
-    console.warn('❌ Unsupported geometry type:', geom.type);
-    return null;
-  }
-  
-  // Calculate bounds in Web Mercator meters
-  const boundsMeters = coords.reduce(
-    (acc, c) => ({
-      minX: Math.min(acc.minX, c[0]),
-      minY: Math.min(acc.minY, c[1]),
-      maxX: Math.max(acc.maxX, c[0]),
-      maxY: Math.max(acc.maxY, c[1]),
-    }),
-    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-  );
-  
-  // Convert to feet and normalize using centralized function
-  const widthMeters = boundsMeters.maxX - boundsMeters.minX;
-  const depthMeters = boundsMeters.maxY - boundsMeters.minY;
-  const width = toFeetFromMeters(widthMeters);
-  const depth = toFeetFromMeters(depthMeters);
-  
-  // Normalize coordinates to start at (0,0)
-  const normalized = coords.map(([x, y]) => [
-    toFeetFromMeters(x - boundsMeters.minX),
-    toFeetFromMeters(y - boundsMeters.minY)
-  ]);
-  
-  return {
-    width,
-    depth,
-    area: width * depth, // Simplified area calculation
-    perimeter: (width + depth) * 2,
-    coordinates: normalized,
-    bounds: { minX: 0, minY: 0, maxX: width, maxY: depth },
-    centroid: { x: width / 2, y: depth / 2 },
-  };
-}
+    try {
+      // Extract coordinates from GeoJSON
+      let coordinates: number[][];
+      
+      if (geometry.type === 'Polygon') {
+        coordinates = geometry.coordinates[0] as number[][];
+      } else if (geometry.type === 'MultiPolygon') {
+        coordinates = (geometry.coordinates as number[][][])[0][0];
+      } else {
+        console.warn('⚠️ Unsupported geometry type:', geometry.type);
+        return this.createFallbackGeometry(geometryData.area_sqft);
+      }
 
-/**
- * Create fallback geometry when actual geometry is not available
- */
-function createFallbackGeometry(sqft: number): SitePlannerGeometry {
-  const area = sqft || 4356;
-  const aspectRatio = 1.5; // Typical lot ratio
-  const width = Math.sqrt(area * aspectRatio);
-  const depth = area / width;
-  
-  console.log('📦 Created fallback geometry:', { width, depth, area });
-  
-  return {
-    width,
-    depth,
-    area,
-    perimeter: (width + depth) * 2,
-    coordinates: [
+      console.log('📐 Original coordinates (first 3):', coordinates.slice(0, 3));
+
+      // Convert from Web Mercator meters to feet using centralized transform
+      const coordinatesInFeet = CoordinateTransform.webMercatorToFeet(coordinates);
+
+      // Calculate bounds using centralized function
+      const bounds = CoordinateTransform.calculateBounds(coordinatesInFeet);
+
+      // Normalize coordinates to start at (0,0)
+      const { coords: normalizedCoordinates } = CoordinateTransform.normalizeCoordinates(coordinatesInFeet, bounds);
+
+      const width = bounds.maxX - bounds.minX;
+      const depth = bounds.maxY - bounds.minY;
+      const area = geometryData.area_sqft;
+      const perimeter = geometryData.perimeter_ft;
+
+      // Calculate normalized centroid
+      const centroid = {
+        x: CoordinateTransform.metersToFeet(geometryData.centroid_x) - bounds.minX,
+        y: CoordinateTransform.metersToFeet(geometryData.centroid_y) - bounds.minY
+      };
+
+      const result: SitePlannerGeometry = {
+        coordinates: coordinatesInFeet,
+        bounds,
+        width,
+        depth,
+        area,
+        perimeter,
+        centroid,
+        normalizedCoordinates
+      };
+
+      console.log('✅ Geometry parsed successfully:', {
+        width: result.width.toFixed(2),
+        depth: result.depth.toFixed(2),
+        area: result.area.toLocaleString(),
+        perimeter: result.perimeter.toFixed(2)
+      });
+
+      return result;
+    } catch (error) {
+      console.error('❌ Error parsing geometry:', error);
+      return this.createFallbackGeometry(geometryData.area_sqft);
+    }
+  }
+
+  /**
+   * Parse buildable envelope for site planner use
+   */
+  parseBuildableEnvelopeForSitePlanner(envelopeData: ParcelBuildableEnvelope): SitePlannerGeometry {
+    console.log('🔧 Parsing buildable envelope for site planner...');
+    
+    const geometry = envelopeData.buildable_geom;
+    
+    if (!geometry) {
+      console.warn('⚠️ No buildable geometry available');
+      return this.createFallbackGeometry(envelopeData.area_sqft);
+    }
+
+    try {
+      // Extract coordinates from GeoJSON
+      let coordinates: number[][];
+      
+      if (geometry.type === 'Polygon') {
+        coordinates = geometry.coordinates[0] as number[][];
+      } else if (geometry.type === 'MultiPolygon') {
+        coordinates = (geometry.coordinates as number[][][])[0][0];
+      } else {
+        console.warn('⚠️ Unsupported buildable geometry type:', geometry.type);
+        return this.createFallbackGeometry(envelopeData.area_sqft);
+      }
+
+      console.log('📐 Buildable coordinates (first 3):', coordinates.slice(0, 3));
+
+      // Convert from Web Mercator meters to feet
+      const coordinatesInFeet = CoordinateTransform.webMercatorToFeet(coordinates);
+
+      // Calculate bounds
+      const bounds = CoordinateTransform.calculateBounds(coordinatesInFeet);
+
+      // Normalize coordinates
+      const { coords: normalizedCoordinates } = CoordinateTransform.normalizeCoordinates(coordinatesInFeet, bounds);
+
+      const width = bounds.maxX - bounds.minX;
+      const depth = bounds.maxY - bounds.minY;
+      const area = envelopeData.area_sqft;
+      const perimeter = CoordinateTransform.calculatePolygonPerimeter(coordinatesInFeet, 'feet');
+
+      // Calculate normalized centroid
+      const centroid = {
+        x: width / 2,
+        y: depth / 2
+      };
+
+      const result: SitePlannerGeometry = {
+        coordinates: coordinatesInFeet,
+        bounds,
+        width,
+        depth,
+        area,
+        perimeter,
+        centroid,
+        normalizedCoordinates
+      };
+
+      console.log('✅ Buildable envelope parsed successfully:', {
+        width: result.width.toFixed(2),
+        depth: result.depth.toFixed(2),
+        area: result.area.toLocaleString(),
+        perimeter: result.perimeter.toFixed(2),
+        setbacks: envelopeData.setbacks_applied,
+        easements: envelopeData.easements_removed
+      });
+
+      return result;
+    } catch (error) {
+      console.error('❌ Error parsing buildable envelope:', error);
+      return this.createFallbackGeometry(envelopeData.area_sqft);
+    }
+  }
+
+  /**
+   * Create fallback geometry for parcels without valid geometry
+   */
+  private createFallbackGeometry(areaSqft: number): SitePlannerGeometry {
+    console.log('🔧 Creating fallback geometry for area:', areaSqft);
+    
+    // Create a square parcel based on area
+    const sideLength = Math.sqrt(areaSqft);
+    const halfSide = sideLength / 2;
+    
+    const coordinates = [
+      [-halfSide, -halfSide],
+      [halfSide, -halfSide],
+      [halfSide, halfSide],
+      [-halfSide, halfSide],
+      [-halfSide, -halfSide]
+    ];
+
+    const bounds = {
+      minX: -halfSide,
+      minY: -halfSide,
+      maxX: halfSide,
+      maxY: halfSide
+    };
+
+    const normalizedCoordinates = [
       [0, 0],
-      [width, 0],
-      [width, depth],
-      [0, depth],
+      [sideLength, 0],
+      [sideLength, sideLength],
+      [0, sideLength],
       [0, 0]
-    ],
-    bounds: {
-      minX: 0,
-      minY: 0,
-      maxX: width,
-      maxY: depth
-    },
-    centroid: {
-      x: width / 2,
-      y: depth / 2
+    ];
+
+    return {
+      coordinates,
+      bounds,
+      width: sideLength,
+      depth: sideLength,
+      area: areaSqft,
+      perimeter: sideLength * 4,
+      centroid: { x: 0, y: 0 },
+      normalizedCoordinates
+    };
+  }
+
+  /**
+   * Validate geometry data
+   */
+  validateGeometry(geometry: SitePlannerGeometry): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (!geometry.coordinates || geometry.coordinates.length < 3) {
+      errors.push('Invalid coordinates: must have at least 3 points');
     }
-  };
+
+    if (geometry.area <= 0) {
+      errors.push('Invalid area: must be greater than 0');
+    }
+
+    if (geometry.width <= 0 || geometry.depth <= 0) {
+      errors.push('Invalid dimensions: width and depth must be greater than 0');
+    }
+
+    if (geometry.perimeter <= 0) {
+      errors.push('Invalid perimeter: must be greater than 0');
+    }
+
+    // Check for self-intersecting polygon
+    if (geometry.coordinates.length >= 4) {
+      const coords = geometry.coordinates;
+      for (let i = 0; i < coords.length - 1; i++) {
+        for (let j = i + 2; j < coords.length - 1; j++) {
+          if (this.linesIntersect(coords[i], coords[i + 1], coords[j], coords[j + 1])) {
+            errors.push('Self-intersecting polygon detected');
+            break;
+          }
+        }
+        if (errors.length > 0) break;
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * Check if two line segments intersect
+   */
+  private linesIntersect(p1: number[], p2: number[], p3: number[], p4: number[]): boolean {
+    const [x1, y1] = p1;
+    const [x2, y2] = p2;
+    const [x3, y3] = p3;
+    const [x4, y4] = p4;
+
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 1e-10) return false; // Lines are parallel
+
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  }
+
+  /**
+   * Get geometry statistics
+   */
+  getGeometryStats(geometry: SitePlannerGeometry): {
+    area: number;
+    perimeter: number;
+    width: number;
+    depth: number;
+    aspectRatio: number;
+    compactness: number;
+  } {
+    const aspectRatio = geometry.width / geometry.depth;
+    const compactness = (4 * Math.PI * geometry.area) / (geometry.perimeter * geometry.perimeter);
+
+    return {
+      area: geometry.area,
+      perimeter: geometry.perimeter,
+      width: geometry.width,
+      depth: geometry.depth,
+      aspectRatio,
+      compactness
+    };
+  }
 }
+
+// Export singleton instance
+export const parcelGeometryService = new ParcelGeometryService();
+
+// Export convenience functions
+export const fetchParcelGeometry3857 = (ogcFid: number) => 
+  parcelGeometryService.fetchParcelGeometry3857(ogcFid);
+
+export const fetchParcelBuildableEnvelope = (ogcFid: number) => 
+  parcelGeometryService.fetchParcelBuildableEnvelope(ogcFid);
+
+export const parseGeometryForSitePlanner = (geometryData: ParcelGeometry3857) => 
+  parcelGeometryService.parseGeometryForSitePlanner(geometryData);
+
+export const parseBuildableEnvelopeForSitePlanner = (envelopeData: ParcelBuildableEnvelope) => 
+  parcelGeometryService.parseBuildableEnvelopeForSitePlanner(envelopeData);

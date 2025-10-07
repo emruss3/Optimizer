@@ -1,163 +1,113 @@
--- Function to determine parcel front/rear/side edges and create buildable envelope
-CREATE OR REPLACE FUNCTION get_parcel_buildable_envelope(p_ogc_fid INTEGER)
-RETURNS TABLE (
-  ogc_fid INTEGER,
-  parcel_geom GEOMETRY,
-  front_edge GEOMETRY,
-  rear_edge GEOMETRY,
-  side_edges GEOMETRY[],
-  buildable_envelope GEOMETRY,
-  front_setback_area GEOMETRY,
-  rear_setback_area GEOMETRY,
-  side_setback_areas GEOMETRY[],
-  edge_classifications JSONB,
-  parcel_metrics JSONB
-) AS $$
-DECLARE
-  parcel_record RECORD;
-  edge_record RECORD;
-  edges GEOMETRY[];
-  edge_distances NUMERIC[];
-  min_distance NUMERIC;
-  front_edge_index INTEGER;
-  rear_edge_index INTEGER;
-  edge_count INTEGER;
-  temp_geom GEOMETRY;
-  road_buffer_distance NUMERIC := 50; -- 50 feet buffer to find nearby roads
-  front_setback NUMERIC := 25; -- Default values, should come from zoning
-  rear_setback NUMERIC := 20;
-  side_setback NUMERIC := 15;
-BEGIN
-  -- Get the parcel geometry
-  SELECT 
-    ogc_fid as id,
-    ST_Transform(geom, 3857) as geom_3857,
-    ST_Area(ST_Transform(geom, 3857)) * 10.764 as area_sqft -- Convert m² to sq ft
-  INTO parcel_record
-  FROM public.parcels 
-  WHERE ogc_fid = p_ogc_fid;
-  
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Parcel not found: %', p_ogc_fid;
-  END IF;
-  
-  -- Break parcel into edges using ST_Dump(ST_Boundary())
-  SELECT array_agg(edge_geom)
-  INTO edges
-  FROM (
-    SELECT (ST_Dump(ST_Boundary(parcel_record.geom_3857))).geom as edge_geom
-  ) boundary_edges;
-  
-  edge_count := array_length(edges, 1);
-  
-  -- Find the edge closest to roads
-  -- This would ideally use a roads dataset, but for now we'll use a simplified approach
-  -- In production, you would join with a roads table like:
-  -- SELECT ST_Distance(edge, road_geom) FROM roads WHERE ST_DWithin(edge, road_geom, road_buffer_distance)
-  
-  -- For now, create a mock implementation that assumes the longest edge is the front
-  -- In production, replace this with actual road proximity analysis
-  edge_distances := ARRAY[]::NUMERIC[];
-  
-  FOR i IN 1..edge_count LOOP
-    -- Calculate edge length as a proxy for road frontage
-    -- In production, this would be: ST_Distance(edges[i], nearest_road)
-    edge_distances := edge_distances || ST_Length(edges[i]);
-  END LOOP;
-  
-  -- Find the longest edge (proxy for street front)
-  SELECT array_position(edge_distances, max_val), max_val
-  INTO front_edge_index, min_distance
-  FROM (SELECT MAX(val) as max_val FROM unnest(edge_distances) val) t;
-  
-  -- The rear edge is typically opposite the front edge
-  rear_edge_index := CASE 
-    WHEN front_edge_index <= edge_count / 2 
-    THEN front_edge_index + (edge_count / 2)::INTEGER
-    ELSE front_edge_index - (edge_count / 2)::INTEGER
-  END;
-  
-  -- Ensure rear_edge_index is within bounds
-  IF rear_edge_index > edge_count THEN
-    rear_edge_index := rear_edge_index - edge_count;
-  ELSIF rear_edge_index < 1 THEN
-    rear_edge_index := rear_edge_index + edge_count;
-  END IF;
-  
-  -- Create setback areas by buffering inward from each edge
-  -- Front setback (inward buffer from front edge)
-  temp_geom := ST_Buffer(edges[front_edge_index], front_setback, 'side=right');
-  front_setback_area := ST_Intersection(parcel_record.geom_3857, temp_geom);
-  
-  -- Rear setback (inward buffer from rear edge)
-  temp_geom := ST_Buffer(edges[rear_edge_index], rear_setback, 'side=right');
-  rear_setback_area := ST_Intersection(parcel_record.geom_3857, temp_geom);
-  
-  -- Create buildable envelope by applying all setbacks
-  buildable_envelope := parcel_record.geom_3857;
-  
-  -- Apply front setback
-  buildable_envelope := ST_Difference(
-    buildable_envelope,
-    ST_Buffer(edges[front_edge_index], front_setback, 'side=right')
-  );
-  
-  -- Apply rear setback
-  buildable_envelope := ST_Difference(
-    buildable_envelope,
-    ST_Buffer(edges[rear_edge_index], rear_setback, 'side=right')
-  );
-  
-  -- Apply side setbacks
-  FOR i IN 1..edge_count LOOP
-    IF i != front_edge_index AND i != rear_edge_index THEN
-      buildable_envelope := ST_Difference(
-        buildable_envelope,
-        ST_Buffer(edges[i], side_setback, 'side=right')
-      );
-    END IF;
-  END LOOP;
-  
-  -- Ensure buildable envelope is valid
-  IF ST_IsEmpty(buildable_envelope) OR ST_Area(buildable_envelope) < 100 THEN
-    -- Create a simple rectangular buildable area if complex geometry fails
-    buildable_envelope := ST_MakeEnvelope(
-      ST_XMin(parcel_record.geom_3857) + side_setback,
-      ST_YMin(parcel_record.geom_3857) + rear_setback,
-      ST_XMax(parcel_record.geom_3857) - side_setback,
-      ST_YMax(parcel_record.geom_3857) - front_setback,
-      3857
-    );
-  END IF;
-  
-  -- Return the results
-  RETURN QUERY SELECT
-    parcel_record.id,
-    parcel_record.geom_3857,
-    edges[front_edge_index],
-    edges[rear_edge_index],
-    ARRAY(SELECT edges[i] FROM generate_series(1, edge_count) i 
-          WHERE i != front_edge_index AND i != rear_edge_index),
-    buildable_envelope,
-    front_setback_area,
-    rear_setback_area,
-    ARRAY[]::GEOMETRY[], -- Side setback areas (would be calculated similarly)
-    jsonb_build_object(
-      'front_edge_index', front_edge_index,
-      'rear_edge_index', rear_edge_index,
-      'total_edges', edge_count,
-      'front_edge_length_ft', ST_Length(edges[front_edge_index]) * 3.28084,
-      'method', 'longest_edge_proxy'
-    ),
-    jsonb_build_object(
-      'parcel_area_sqft', parcel_record.area_sqft,
-      'buildable_area_sqft', ST_Area(buildable_envelope) * 10.764,
-      'front_setback_ft', front_setback / 3.28084,
-      'rear_setback_ft', rear_setback / 3.28084,
-      'side_setback_ft', side_setback / 3.28084
-    );
-END;
-$$ LANGUAGE plpgsql;
+-- =====================================================
+-- RPC: get_parcel_buildable_envelope(ogc_fid int)
+-- =====================================================
+-- Returns buildable geometry with setbacks and easements applied
+-- This is the geometry backbone for the site planner
 
--- Grant permissions
-GRANT EXECUTE ON FUNCTION get_parcel_buildable_envelope(INTEGER) TO anon, authenticated;
+drop function if exists public.get_parcel_buildable_envelope(int);
+create or replace function public.get_parcel_buildable_envelope(p_ogc_fid int)
+returns table(
+  ogc_fid int,
+  buildable_geom geometry,
+  area_sqft numeric,
+  edge_types jsonb,
+  setbacks_applied jsonb,
+  easements_removed int
+) 
+language plpgsql 
+stable 
+security definer 
+set search_path=public 
+as $$
+declare
+  parcel_geom geometry;
+  zoning_data record;
+  front_setback numeric := 20;  -- default in feet
+  side_setback numeric := 5;    -- default in feet
+  rear_setback numeric := 20;   -- default in feet
+  buildable_geom geometry;
+  final_geom geometry;
+  easement_count int := 0;
+  edge_types jsonb;
+  setbacks_applied jsonb;
+begin
+  -- Get parcel geometry
+  select geom into parcel_geom
+  from planner_parcels
+  where parcel_id = p_ogc_fid::text
+  limit 1;
+
+  if parcel_geom is null then
+    raise exception 'Parcel % not found in planner_parcels', p_ogc_fid;
+  end if;
+
+  -- Get zoning data for setbacks
+  select 
+    coalesce((setbacks->>'front')::numeric, front_setback) as front,
+    coalesce((setbacks->>'side')::numeric, side_setback) as side,
+    coalesce((setbacks->>'rear')::numeric, rear_setback) as rear
+  into zoning_data
+  from planner_zoning
+  where parcel_id = p_ogc_fid::text
+  limit 1;
+
+  -- Use zoning setbacks if available, otherwise use defaults
+  if zoning_data is not null then
+    front_setback := zoning_data.front;
+    side_setback := zoning_data.side;
+    rear_setback := zoning_data.rear;
+  end if;
+
+  -- Convert setbacks from feet to meters for ST_Buffer
+  front_setback := front_setback / 3.28084;
+  side_setback := side_setback / 3.28084;
+  rear_setback := rear_setback / 3.28084;
+
+  -- Apply setbacks using negative buffer
+  -- Use the largest setback to ensure compliance
+  buildable_geom := ST_Buffer(parcel_geom, -greatest(front_setback, side_setback, rear_setback));
+
+  -- Handle easements (if easement table exists)
+  -- This is a placeholder - implement based on your easement data structure
+  /*
+  with easements as (
+    select ST_Union(geom) as easement_geom
+    from easements 
+    where ST_Intersects(geom, parcel_geom)
+  )
+  select 
+    ST_Difference(buildable_geom, easement_geom) as final_geom,
+    (select count(*) from easements where ST_Intersects(geom, parcel_geom)) as easement_count
+  into final_geom, easement_count
+  from easements;
+  */
+
+  -- For now, use buildable_geom as final_geom (no easements)
+  final_geom := buildable_geom;
+  easement_count := 0;
+
+  -- Determine edge types (simplified - assumes rectangular parcel)
+  edge_types := jsonb_build_object(
+    'front', true,
+    'side', true, 
+    'rear', true,
+    'easement', easement_count > 0
+  );
+
+  -- Record applied setbacks
+  setbacks_applied := jsonb_build_object(
+    'front', front_setback * 3.28084,  -- convert back to feet
+    'side', side_setback * 3.28084,
+    'rear', rear_setback * 3.28084
+  );
+
+  -- Return results
+  return query
+  select 
+    p_ogc_fid,
+    ST_MakeValid(final_geom) as buildable_geom,
+    round(ST_Area(final_geom) * 10.7639, 0) as area_sqft,  -- convert m² to ft²
+    edge_types,
+    setbacks_applied,
+    easement_count;
+end $$;
