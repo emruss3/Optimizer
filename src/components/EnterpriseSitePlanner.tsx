@@ -11,7 +11,7 @@ import {
   MousePointer, Edit3, Maximize, MoreHorizontal, X, Save
 } from 'lucide-react';
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
-import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, parseBuildableEnvelopeForSitePlanner, SitePlannerGeometry } from '../services/parcelGeometry';
+import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, SitePlannerGeometry } from '../services/parcelGeometry';
 import { toFeetFromMeters, areaSqFt, lengthFt } from '../lib/geometry/coords';
 import { checkAndImportOSMRoads } from '../services/osmRoads';
 import { supabase } from '../lib/supabase';
@@ -2710,8 +2710,6 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
                 setTimeout(async () => {
                   const updatedEnvelopeData = await fetchParcelBuildableEnvelope(parcel.ogc_fid);
                   if (updatedEnvelopeData) {
-                    const updatedBuildableGeometry = parseBuildableEnvelopeForSitePlanner(updatedEnvelopeData);
-                    setBuildableEnvelope(updatedBuildableGeometry);
                     setEdgeClassifications(updatedEnvelopeData.edge_types);
                     console.log('🔄 Updated edge classifications after road import:', updatedEnvelopeData.edge_types);
                   }
@@ -2743,80 +2741,28 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
         console.log('Loaded envelope data:', envelopeData);
         
         if (envelopeData) {
-          // Parse the buildable envelope for site planner use
-          const buildableGeometry = parseBuildableEnvelopeForSitePlanner(envelopeData);
-          setBuildableEnvelope(buildableGeometry);
-          setEdgeClassifications(envelopeData.edge_types);
+          // The new function returns a different structure
           console.log('Edge classifications:', envelopeData.edge_types);
           console.log('Setbacks applied:', envelopeData.setbacks_applied);
+          console.log('Buildable area:', envelopeData.area_sqft);
           
-          // Use the correct buildable area from the database
-          if (buildableGeometry && buildableGeometry.coordinates && buildableGeometry.coordinates.length > 0) {
-            console.log('🔍 Converting database buildable envelope to elements:', {
-              coordinates: buildableGeometry.coordinates.length,
-              area: buildableGeometry.area,
-              width: buildableGeometry.width,
-              depth: buildableGeometry.depth
-            });
-            
-            // Convert coordinates to match parcel coordinate system
-            console.log('🔍 Raw buildable envelope coordinates (first 3):', buildableGeometry.coordinates.slice(0, 3));
-            console.log('🔍 Buildable geometry bounds:', buildableGeometry.bounds);
-            console.log('🔍 Total buildable envelope coordinates:', buildableGeometry.coordinates.length);
-            
-            // Use the buildable geometry coordinates directly
-            const parcelCoords = buildableGeometry.coordinates;
-            const frontSetback = envelopeData.setbacks_applied.front || 25;
-            const sideSetback = envelopeData.setbacks_applied.side || 15;
-            const rearSetback = envelopeData.setbacks_applied.rear || 20;
-            
-            console.log('🔍 Applying dynamic setbacks:', {
-              front: frontSetback,
-              side: sideSetback,
-              rear: rearSetback,
-              parcelCoords: parcelCoords.length
-            });
-            
-            // Calculate parcel centroid
-            const centroidX = parcelCoords.reduce((sum, [x]) => sum + x, 0) / parcelCoords.length;
-            const centroidY = parcelCoords.reduce((sum, [, y]) => sum + y, 0) / parcelCoords.length;
-            
-            // Convert parcel coordinates from feet to SVG units
-            const parcelCoordsSVG = parcelCoords.map(([x, y]: [number, number]) => [x * gridSize, y * gridSize]);
-            
-            // Calculate centroid in SVG units
-            const centroidXSVG = parcelCoordsSVG.reduce((sum, [x]) => sum + x, 0) / parcelCoordsSVG.length;
-            const centroidYSVG = parcelCoordsSVG.reduce((sum, [, y]) => sum + y, 0) / parcelCoordsSVG.length;
-            
-            // Use simple centroid-based scaling with proper setback ratio
-            // For a 1.8 acre parcel with 15-25ft setbacks, use 0.9 ratio (10% reduction)
-            const setbackRatio = 0.9;
-            
-            // Scale each vertex toward the centroid in SVG units
-            const vertices = parcelCoordsSVG.map(([x, y]: [number, number], index: number) => {
-              const scaledX = centroidXSVG + (x - centroidXSVG) * setbackRatio;
-              const scaledY = centroidYSVG + (y - centroidYSVG) * setbackRatio;
-              
-              if (index < 3) {
-                console.log(`🔍 Vertex ${index}: (${x}, ${y}) -> scaled (${scaledX.toFixed(1)}, ${scaledY.toFixed(1)})`);
-              }
-              
-              return {
-                id: generateId(),
-                x: scaledX,
-                y: scaledY
-              };
-            });
-            
-            // Calculate the actual area from the scaled vertices
-            const actualBuildableAreaSVG = calculatePolygonArea(vertices);
-            const actualBuildableAreaSqFt = actualBuildableAreaSVG / (gridSize * gridSize);
-            
-            // CRITICAL FIX: Use the correct parcel area for buildable area calculation
-            const correctParcelAreaSqFt = parcel.sqft || (parcel.deeded_acres * 43560) || 78408;
-            const correctBuildableAreaSqFt = correctParcelAreaSqFt * 0.9; // 90% of parcel for setbacks
-            
-            console.log('🔍 Buildable area calculation:', {
+          // For now, just log the data - we'll need to adapt the UI to the new structure
+          setEdgeClassifications(envelopeData.edge_types);
+          
+          // Note: The new envelope data structure is different
+          // We'll need to adapt the UI to work with the new structure
+          console.log('🔍 New envelope data structure:', {
+            ogc_fid: envelopeData.ogc_fid,
+            area_sqft: envelopeData.area_sqft,
+            edge_types: envelopeData.edge_types,
+            setbacks_applied: envelopeData.setbacks_applied
+          });
+        } else {
+          console.warn('⚠️ No envelope data found for parcel:', parcel.ogc_fid);
+        }
+      } catch (error) {
+        console.error('Error loading parcel geometry:', error);
+      }
               parcelAreaSqFt: correctParcelAreaSqFt,
               buildableAreaSqFt: correctBuildableAreaSqFt,
               actualSVGArea: actualBuildableAreaSVG,
