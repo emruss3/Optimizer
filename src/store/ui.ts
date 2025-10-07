@@ -1,3 +1,6 @@
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
+
 import React from 'react';
 import { create } from 'zustand';
 import CommandPalette from '../components/CommandPalette';

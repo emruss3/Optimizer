@@ -26,9 +26,10 @@ interface ParcelDrawerProps {
   onClose: () => void;
   onAddToProject?: (parcel: SelectedParcel) => void;
   hasActiveProject?: boolean;
+  onCreateProjectFromParcel?: (parcel: SelectedParcel) => void;
 }
 
-const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose, onAddToProject, hasActiveProject }: ParcelDrawerProps) {
+const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose, onAddToProject, hasActiveProject, onCreateProjectFromParcel }: ParcelDrawerProps) {
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
   const [showMultiParcelAnalysis, setShowMultiParcelAnalysis] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'underwriting'>('overview');
@@ -230,6 +231,16 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
                   >
                     <Plus className="w-4 h-4" />
                     <span>Add to Project</span>
+                  </button>
+                )}
+
+                {!hasActiveProject && onCreateProjectFromParcel && (
+                  <button
+                    onClick={() => onCreateProjectFromParcel(parcel)}
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Create Project from Parcel</span>
                   </button>
                 )}
               </div>

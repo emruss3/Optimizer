@@ -1,3 +1,6 @@
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
+
 import { RegridZoningData } from './zoning';
 
 /**

@@ -1,3 +1,6 @@
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 

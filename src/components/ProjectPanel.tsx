@@ -10,6 +10,7 @@ import { ProjectState, SelectedParcel, SiteplanConfig, BuildingMassing } from '.
 import { useZoningCompliance } from '../hooks/useZoningCompliance';
 import ZoningComplianceIndicator from './ZoningComplianceIndicator';
 import { useProject } from '../hooks/useProject';
+import { useActiveProject } from '../store/project';
 import { supabase } from '../lib/supabase';
 import RealtimeComments from './RealtimeComments';
 import Guard from './Guard';

@@ -1,3 +1,6 @@
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
+
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { 
   Building, Car, TreePine, Settings, Play, RotateCcw, RotateCw, TrendingUp,
@@ -5,12 +8,15 @@ import {
   Home, Building2, Eye, Ruler, Move, Square, Circle, Trash2,
   Copy, AlignLeft, AlignCenter, AlignRight, AlignStartVertical,
   AlignCenterVertical, AlignEndVertical, ZoomIn, ZoomOut, Grid,
-  MousePointer, Edit3, Maximize, MoreHorizontal, X
+  MousePointer, Edit3, Maximize, MoreHorizontal, X, Save
 } from 'lucide-react';
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
 import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, SitePlannerGeometry } from '../services/parcelGeometry';
+import { toFeetFromMeters, areaSqFt, lengthFt } from '../lib/geometry/coords';
 import { checkAndImportOSMRoads } from '../services/osmRoads';
 import { supabase } from '../lib/supabase';
+import { useMouseHandlers } from '../features/site-planner/hooks/useMouseHandlers';
+import { SitePlannerElement } from '../features/site-planner/types';
 
 // Types and Interfaces
 interface Vertex {
@@ -552,7 +558,7 @@ const findValidBuildingPosition = (
   return null;
 };
 
-// Coordinate conversion functions
+// Coordinate conversion functions using centralized geometry utilities
 const svgToFeet = (svgCoord: number, gridSize: number = 12): number => {
   return svgCoord / gridSize; // Convert SVG units to feet (12 SVG units = 1 foot)
 };
@@ -566,7 +572,7 @@ const updateElementGeometry = (element: Element, gridSize: number = 12): Element
   const areaSVG = calculatePolygonArea(element.vertices);
   const perimeterSVG = calculatePolygonPerimeter(element.vertices);
   
-  // Convert SVG units to square feet
+  // Convert SVG units to square feet using centralized function
   const areaSqFt = areaSVG / (gridSize * gridSize);
   const perimeterFeet = perimeterSVG / gridSize;
   
@@ -636,7 +642,7 @@ const calculateRotationDelta = (startAngle: number, currentAngle: number): numbe
   return delta;
 };
 
-const createParkingLayout = (element: Element): JSX.Element[] => {
+const createParkingLayout = (element: Element, gridSize: number = 12): JSX.Element[] => {
   if (element.type !== 'parking') return [];
   
   // Create a clipping path for the parking area to ensure stripes stay within bounds
@@ -666,8 +672,8 @@ const createParkingLayout = (element: Element): JSX.Element[] => {
   const height = bounds.maxY - bounds.minY;
   
   // Standard parking space: 9' x 18' with proper scaling
-  const spaceWidth = 108; // 9 feet in SVG units (9 * 12)
-  const spaceLength = 216; // 18 feet in SVG units (18 * 12)
+  const spaceWidth = feetToSVG(9, gridSize); // 9 feet in SVG units
+  const spaceLength = feetToSVG(18, gridSize); // 18 feet in SVG units
   
   // Calculate how many spaces fit
   const spacesPerRow = Math.max(1, Math.floor(width / spaceWidth));
@@ -2397,10 +2403,102 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
   marketData,
   onInvestmentAnalysis
 }: EnterpriseSitePlannerProps) {
+  // Safety check for undefined parcel
+  if (!parcel) {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-50">
+        <div className="text-center">
+          <div className="text-gray-500 mb-2">No parcel selected</div>
+          <div className="text-sm text-gray-400">Please select a parcel to begin site planning</div>
+        </div>
+      </div>
+    );
+  }
+
   // State Management
   const [elements, setElements] = useState<Element[]>([]);
   const [selectedElements, setSelectedElements] = useState<string[]>([]);
   const [hoveredElement, setHoveredElement] = useState<string | null>(null);
+  
+  // Convert elements to SitePlannerElement format for mouse handlers
+  const sitePlannerElements: SitePlannerElement[] = useMemo(() => 
+    elements.map(element => ({
+      id: element.id,
+      type: element.type as 'building' | 'parking' | 'landscape' | 'road',
+      vertices: element.vertices,
+      properties: element.properties,
+      transform: {
+        x: 0,
+        y: 0,
+        rotation: element.rotation || 0,
+        scaleX: 1,
+        scaleY: 1
+      },
+      selected: selectedElements.includes(element.id),
+      locked: false
+    })), [elements, selectedElements]
+  );
+
+  // Undo/Redo handlers
+  const handleUndo = useCallback(() => {
+    // Implementation for undo
+    console.log('Undo triggered');
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    // Implementation for redo
+    console.log('Redo triggered');
+  }, []);
+
+  const handleSaveState = useCallback((state: any) => {
+    // Implementation for saving state
+    console.log('State saved:', state);
+  }, []);
+
+  // Professional UI state - moved before useMouseHandlers
+  const [showGrid, setShowGrid] = useState(true);
+  const [snapToGridEnabled, setSnapToGridEnabled] = useState(true);
+  const [gridSize, setGridSize] = useState(12);
+
+  // Mouse handlers integration
+  const {
+    dragState,
+    multiSelectState,
+    rotationHandle,
+    undoRedoState,
+    onMouseDown: handleMouseDown,
+    onMouseMove: handleMouseMove,
+    onMouseUp: handleMouseUp,
+    applySnapping,
+    updateElementPosition,
+    updateElementRotation,
+    updateElementScale
+  } = useMouseHandlers({
+    elements: sitePlannerElements,
+    onElementsChange: (newElements) => {
+      // Convert back to Element format
+      const updatedElements = newElements.map(siteElement => {
+        const originalElement = elements.find(e => e.id === siteElement.id);
+        return {
+          ...originalElement!,
+          vertices: siteElement.vertices,
+          rotation: siteElement.transform.rotation,
+          properties: siteElement.properties
+        };
+      });
+      setElements(updatedElements);
+      
+      // Update selected elements
+      const newSelectedElements = newElements.filter(e => e.selected).map(e => e.id);
+      setSelectedElements(newSelectedElements);
+    },
+    gridSize,
+    snapToGrid: snapToGridEnabled,
+    snapDistance: 10,
+    onUndo: handleUndo,
+    onRedo: handleRedo,
+    onSaveState: handleSaveState
+  });
   const [showParcelDimensions, setShowParcelDimensions] = useState(false);
   const [showBuildableDimensions, setShowBuildableDimensions] = useState(false);
   const [activeTool, setActiveTool] = useState<string>('select');
@@ -2413,11 +2511,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
   const [rotationCenter, setRotationCenter] = useState<{x: number, y: number} | null>(null);
   const [rotationElementId, setRotationElementId] = useState<string | null>(null);
   const [rotationStartAngle, setRotationStartAngle] = useState(0);
-  
-  // Professional UI state
-  const [showGrid, setShowGrid] = useState(true);
-  const [snapToGridEnabled, setSnapToGridEnabled] = useState(true);
-  const [gridSize, setGridSize] = useState(12);
+  const [showLoadNotification, setShowLoadNotification] = useState(false);
   const [layers, setLayers] = useState<Layer[]>([
     { id: 'buildings', name: 'Buildings', visible: true, locked: false, color: '#3b82f6' },
     { id: 'parking', name: 'Parking', visible: true, locked: false, color: '#f59e0b' },
@@ -2426,12 +2520,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
     { id: 'annotations', name: 'Annotations', visible: true, locked: false, color: '#ef4444' }
   ]);
   const [activeLayer, setActiveLayer] = useState<string>('buildings');
-  const [dragState, setDragState] = useState<DragState>({
-    isDragging: false,
-    dragType: 'element',
-    offset: { x: 0, y: 0 },
-    originalPosition: { x: 0, y: 0 }
-  });
+  // Old drag state removed - now handled by useMouseHandlers
   
   // Advanced features state
   const [measurementPoints, setMeasurementPoints] = useState<{x: number, y: number}[]>([]);
@@ -2566,6 +2655,28 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
   );
   
   const buildingCount = useMemo(() => buildingElements.length, [buildingElements]);
+  
+  // Load saved site plan from localStorage
+  const loadSavedSitePlan = useCallback((showAlert = true) => {
+    if (!parcel?.ogc_fid) return;
+    
+    try {
+      const savedSitePlans = JSON.parse(localStorage.getItem('savedSitePlans') || '{}');
+      const savedPlan = savedSitePlans[parcel.ogc_fid.toString()];
+      
+      if (savedPlan && savedPlan.elements) {
+        console.log('Loading saved site plan:', savedPlan);
+        setElements(savedPlan.elements);
+        if (showAlert) {
+          alert('✅ Loaded saved site plan! Your previous design has been restored.');
+        }
+        return true; // Indicate that a plan was loaded
+      }
+    } catch (error) {
+      console.error('Failed to load saved site plan:', error);
+    }
+    return false; // No plan was loaded
+  }, [parcel?.ogc_fid]);
   
   // Load parcel geometry and buildable envelope on mount
   useEffect(() => {
@@ -2867,15 +2978,34 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
       }
     };
 
-    if (parcel.ogc_fid) {
+    if (parcel?.ogc_fid) {
       loadParcelGeometry();
+      // Auto-load saved site plan without alert
+      loadSavedSitePlan(false);
     }
-  }, [parcel.ogc_fid]);
+  }, [parcel?.ogc_fid, loadSavedSitePlan]);
+
+  // Auto-load saved site plan when parcel changes (silent)
+  useEffect(() => {
+    if (parcel?.ogc_fid && elements.length === 0) {
+      // Only auto-load if no elements are currently displayed
+      const savedSitePlans = JSON.parse(localStorage.getItem('savedSitePlans') || '{}');
+      const savedPlan = savedSitePlans[parcel.ogc_fid.toString()];
+      
+      if (savedPlan && savedPlan.elements && savedPlan.elements.length > 0) {
+        console.log('Auto-loading saved site plan for parcel:', parcel.ogc_fid);
+        setElements(savedPlan.elements);
+        // Show subtle notification
+        setShowLoadNotification(true);
+        setTimeout(() => setShowLoadNotification(false), 3000);
+      }
+    }
+  }, [parcel?.ogc_fid, elements.length]);
 
   // Initialize with sample elements and setback areas (fallback only)
   useEffect(() => {
     // Only run this if we don't have database envelope and no elements
-    if (parcelGeometry && elements.length === 0 && !buildableEnvelope && parcel.ogc_fid) {
+    if (parcelGeometry && elements.length === 0 && !buildableEnvelope && parcel?.ogc_fid) {
       console.log('🔍 Creating local buildable area since no database envelope available');
       console.log('🔍 Initializing elements - elements.length:', elements.length);
       console.log('🔍 Current elements:', elements.map(el => ({ type: el.type, name: el.properties.name })));
@@ -2890,7 +3020,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
       
       // Create reliable inset polygon using simple scaling method
       const setbackFeet = 15; // Use consistent 15' setback
-      const setbackSVG = setbackFeet * 12; // Convert feet to SVG units
+      const setbackSVG = feetToSVG(setbackFeet, gridSize); // Convert feet to SVG units
       
       // Calculate parcel centroid and dimensions
       const centroidX = coords.reduce((sum, [x]) => sum + x, 0) / coords.length;
@@ -3076,10 +3206,10 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
           const parcelBounds = parcelGeometry.bounds;
           
           // Calculate distances from building to parcel edges
-          const distanceFromLeft = (buildingBounds.minX - parcelBounds.minX) * scale / 12; // Convert to feet
-          const distanceFromRight = (parcelBounds.maxX - buildingBounds.maxX) * scale / 12;
-          const distanceFromTop = (buildingBounds.minY - parcelBounds.minY) * scale / 12; // North side
-          const distanceFromBottom = (parcelBounds.maxY - buildingBounds.maxY) * scale / 12; // South side (front)
+          const distanceFromLeft = svgToFeet((buildingBounds.minX - parcelBounds.minX) * scale, gridSize); // Convert to feet
+          const distanceFromRight = svgToFeet((parcelBounds.maxX - buildingBounds.maxX) * scale, gridSize);
+          const distanceFromTop = svgToFeet((buildingBounds.minY - parcelBounds.minY) * scale, gridSize); // North side
+          const distanceFromBottom = svgToFeet((parcelBounds.maxY - buildingBounds.maxY) * scale, gridSize); // South side (front)
           
           // Check setbacks (front/south, rear is north/top)
           if (distanceFromBottom < siteConstraints.frontSetback) {
@@ -3114,21 +3244,22 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
   }, [elements, parcelGeometry, siteConstraints, scale]);
 
   // Event Handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  // Old mouse handler - replaced by useMouseHandlers
+  const handleMouseDownOld = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     try {
-      const svg = canvasRef.current;
-      if (!svg) return;
-      
-      // Convert mouse coordinates to SVG coordinates
-      const pt = svg.createSVGPoint();
-      pt.x = e.clientX;
-      pt.y = e.clientY;
-      const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-      
-      const x = snapToGrid(svgPoint.x, gridSize, snapToGridEnabled);
-      const y = snapToGrid(svgPoint.y, gridSize, snapToGridEnabled);
-      
-      console.log('Mouse down at SVG coords:', { x, y });
+    const svg = canvasRef.current;
+    if (!svg) return;
+    
+    // Convert mouse coordinates to SVG coordinates
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    
+    const x = snapToGrid(svgPoint.x, gridSize, snapToGridEnabled);
+    const y = snapToGrid(svgPoint.y, gridSize, snapToGridEnabled);
+    
+    console.log('Mouse down at SVG coords:', { x, y });
     
     if (activeTool === 'building') {
       // Create new building with realistic size (60' x 40' = 2,400 sq ft)
@@ -3163,8 +3294,8 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
       // Create new parking area with realistic size (120' x 80' = 9,600 sq ft)
       const parkingWidthFeet = 120;  // 120 feet wide
       const parkingDepthFeet = 80;   // 80 feet deep
-      const parkingWidthSVG = parkingWidthFeet * gridSize;  // Convert to SVG units
-      const parkingDepthSVG = parkingDepthFeet * gridSize;  // Convert to SVG units
+      const parkingWidthSVG = feetToSVG(parkingWidthFeet, gridSize);  // Convert to SVG units
+      const parkingDepthSVG = feetToSVG(parkingDepthFeet, gridSize);  // Convert to SVG units
       
       const newVertices: Vertex[] = [
         { id: generateId(), x: snapToGrid(x - parkingWidthSVG/2, gridSize, snapToGridEnabled), y: snapToGrid(y - parkingDepthSVG/2, gridSize, snapToGridEnabled) },
@@ -3288,39 +3419,40 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
     console.log(`🔍 CAD Zoom: ${newZoom.toFixed(2)}x (actual: ${actualZoom.toFixed(2)}x) at (${svgX.toFixed(0)}, ${svgY.toFixed(0)})`);
   }, [zoom, viewBox, baselineZoom]);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  // Old mouse move handler - replaced by useMouseHandlers
+  const handleMouseMoveOld = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     try {
-      // Handle panning (CAD-style)
-      if (isPanning) {
-        const deltaX = e.clientX - lastPanPoint.x;
-        const deltaY = e.clientY - lastPanPoint.y;
-        
-        // Get current viewBox
-        const currentViewBox = viewBox.split(' ').map(Number);
-        const [currentX, currentY, currentWidth, currentHeight] = currentViewBox;
-        
-        // Calculate new viewBox position (pan in SVG coordinates)
-        const newX = currentX - (deltaX / 1200) * currentWidth; // 1200 is SVG width
-        const newY = currentY - (deltaY / 800) * currentHeight;  // 800 is SVG height
-        
-        setPan({ x: newX, y: newY });
-        setLastPanPoint({ x: e.clientX, y: e.clientY });
-        
-        // Update viewBox
-        setViewBox(`${newX} ${newY} ${currentWidth} ${currentHeight}`);
-        return;
-      }
+    // Handle panning (CAD-style)
+    if (isPanning) {
+      const deltaX = e.clientX - lastPanPoint.x;
+      const deltaY = e.clientY - lastPanPoint.y;
       
+      // Get current viewBox
+      const currentViewBox = viewBox.split(' ').map(Number);
+      const [currentX, currentY, currentWidth, currentHeight] = currentViewBox;
+      
+      // Calculate new viewBox position (pan in SVG coordinates)
+      const newX = currentX - (deltaX / 1200) * currentWidth; // 1200 is SVG width
+      const newY = currentY - (deltaY / 800) * currentHeight;  // 800 is SVG height
+      
+      setPan({ x: newX, y: newY });
+      setLastPanPoint({ x: e.clientX, y: e.clientY });
+      
+      // Update viewBox
+      setViewBox(`${newX} ${newY} ${currentWidth} ${currentHeight}`);
+      return;
+    }
+    
       // Handle rotation - track mouse movement in a circle
       if (isRotating && rotationCenter && rotationElementId) {
-        const svg = canvasRef.current;
-        if (!svg) return;
-        
-        const pt = svg.createSVGPoint();
-        pt.x = e.clientX;
-        pt.y = e.clientY;
-        const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-        
+      const svg = canvasRef.current;
+      if (!svg) return;
+      
+      const pt = svg.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+      
         // Calculate angle from center to current mouse position
         const currentAngle = Math.atan2(svgPoint.y - rotationCenter.y, svgPoint.x - rotationCenter.x);
         
@@ -3336,70 +3468,70 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
         }
         
         // Apply rotation to the specific element being rotated
-        setElements(prev => prev.map(element => {
+      setElements(prev => prev.map(element => {
           if (element.id === rotationElementId) {
             return rotateElement(element, angleDeg, rotationCenter);
-          }
-          return element;
-        }));
-        return;
-      }
-      
-      if (!dragState.isDragging) return;
-      
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      
-      // Convert mouse coordinates to SVG coordinates
-      const svg = canvasRef.current;
-      if (!svg) return;
-      
-      const pt = svg.createSVGPoint();
-      pt.x = e.clientX;
-      pt.y = e.clientY;
-      const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-      
-      const x = snapToGrid(svgPoint.x, gridSize, snapToGridEnabled);
-      const y = snapToGrid(svgPoint.y, gridSize, snapToGridEnabled);
-      
-      if (dragState.dragType === 'vertex' && dragState.elementId && dragState.vertexId) {
-        // Update vertex position - use direct coordinates, not deltas
-        setElements(prev => prev.map(element => {
-          if (element.id !== dragState.elementId) return element;
-          
-          const updatedVertices = element.vertices.map(vertex => {
-            if (vertex.id === dragState.vertexId) {
-              return { ...vertex, x, y };
-            }
-            return vertex;
-          });
-          
-          return updateElementGeometry({
-            ...element,
-            vertices: updatedVertices
-          }, gridSize);
-        }));
-      } else if (dragState.dragType === 'element' && dragState.elementId) {
-        // Move entire element using deltas
-        const deltaX = x - dragState.originalPosition.x;
-        const deltaY = y - dragState.originalPosition.y;
+        }
+        return element;
+      }));
+      return;
+    }
+    
+    if (!dragState.isDragging) return;
+    
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    
+    // Convert mouse coordinates to SVG coordinates
+    const svg = canvasRef.current;
+    if (!svg) return;
+    
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    
+    const x = snapToGrid(svgPoint.x, gridSize, snapToGridEnabled);
+    const y = snapToGrid(svgPoint.y, gridSize, snapToGridEnabled);
+    
+    if (dragState.dragType === 'vertex' && dragState.elementId && dragState.vertexId) {
+      // Update vertex position - use direct coordinates, not deltas
+      setElements(prev => prev.map(element => {
+        if (element.id !== dragState.elementId) return element;
         
-        setElements(prev => prev.map(element => {
-          if (element.id !== dragState.elementId) return element;
-          
-          // Use the stored original vertices to avoid accumulating errors
-          const updatedVertices = dragState.originalVertices?.map(vertex => ({
-            ...vertex,
-            x: snapToGrid(vertex.x + deltaX, gridSize, snapToGridEnabled),
-            y: snapToGrid(vertex.y + deltaY, gridSize, snapToGridEnabled)
-          })) || element.vertices;
-          
-          return updateElementGeometry({
-            ...element,
-            vertices: updatedVertices
-          }, gridSize);
-        }));
-      }
+        const updatedVertices = element.vertices.map(vertex => {
+          if (vertex.id === dragState.vertexId) {
+            return { ...vertex, x, y };
+          }
+          return vertex;
+        });
+        
+        return updateElementGeometry({
+          ...element,
+          vertices: updatedVertices
+        }, gridSize);
+      }));
+    } else if (dragState.dragType === 'element' && dragState.elementId) {
+      // Move entire element using deltas
+      const deltaX = x - dragState.originalPosition.x;
+      const deltaY = y - dragState.originalPosition.y;
+      
+      setElements(prev => prev.map(element => {
+        if (element.id !== dragState.elementId) return element;
+        
+        // Use the stored original vertices to avoid accumulating errors
+        const updatedVertices = dragState.originalVertices?.map(vertex => ({
+          ...vertex,
+          x: snapToGrid(vertex.x + deltaX, gridSize, snapToGridEnabled),
+          y: snapToGrid(vertex.y + deltaY, gridSize, snapToGridEnabled)
+        })) || element.vertices;
+        
+        return updateElementGeometry({
+          ...element,
+          vertices: updatedVertices
+        }, gridSize);
+      }));
+    }
     } catch (error) {
       console.error('❌ Error in handleMouseMove:', error);
       // Reset drag state on error to prevent stuck dragging
@@ -3417,7 +3549,8 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
     snapToGridEnabled
   ]);
 
-  const handleMouseUp = useCallback(() => {
+  // Old mouse up handler - replaced by useMouseHandlers
+  const handleMouseUpOld = useCallback(() => {
     try {
       // Complete drag state cleanup
       setDragState(prev => ({ 
@@ -3436,11 +3569,11 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
         setIsPanning(false);
         setLastPanPoint({ x: 0, y: 0 });
       }
-      
-      // End rotation
-      if (isRotating) {
-        setIsRotating(false);
-        setRotationCenter(null);
+    
+    // End rotation
+    if (isRotating) {
+      setIsRotating(false);
+      setRotationCenter(null);
         setRotationStartAngle(0);
         setRotationElementId(null);
       }
@@ -4080,7 +4213,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
           {/* Parking stripes */}
           {element.type === 'parking' && (
             <g>
-              {createParkingLayout(element)}
+              {createParkingLayout(element, gridSize)}
             </g>
           )}
           
@@ -4447,8 +4580,88 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
     );
   }, [elements, selectedElements, hoveredElement, isVertexMode, selectedVertices, hoveredVertex, complianceViolations, scale, gridSize, isRotating, rotationCenter, rotationElementId]);
 
+  // Render rotation handle
+  const renderRotationHandle = useMemo(() => {
+    if (!rotationHandle || !rotationHandle.visible) return null;
+    
+    return (
+      <g>
+        {/* Rotation handle line */}
+        <line
+          x1={rotationHandle.x}
+          y1={rotationHandle.y + 20}
+          x2={rotationHandle.x}
+          y2={rotationHandle.y}
+          stroke="#3b82f6"
+          strokeWidth="2"
+          strokeDasharray="5,5"
+        />
+        {/* Rotation handle circle */}
+        <circle
+          cx={rotationHandle.x}
+          cy={rotationHandle.y}
+          r="8"
+          fill="#3b82f6"
+          stroke="#ffffff"
+          strokeWidth="2"
+          className="cursor-grab"
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            // Handle rotation start
+            const element = elements.find(el => selectedElements.includes(el.id));
+            if (element) {
+              handleMouseDown(e, element.id);
+            }
+          }}
+        />
+        {/* Rotation handle icon */}
+        <text
+          x={rotationHandle.x}
+          y={rotationHandle.y + 3}
+          textAnchor="middle"
+          fontSize="10"
+          fill="#ffffff"
+          fontWeight="bold"
+        >
+          ↻
+        </text>
+      </g>
+    );
+  }, [rotationHandle, elements, selectedElements, handleMouseDown]);
+
+  // Render multi-select box
+  const renderMultiSelectBox = useMemo(() => {
+    if (!multiSelectState) return null;
+    
+    const left = Math.min(multiSelectState.startX, multiSelectState.currentX);
+    const top = Math.min(multiSelectState.startY, multiSelectState.currentY);
+    const width = Math.abs(multiSelectState.currentX - multiSelectState.startX);
+    const height = Math.abs(multiSelectState.currentY - multiSelectState.startY);
+    
+    return (
+      <rect
+        x={left}
+        y={top}
+        width={width}
+        height={height}
+        fill="rgba(59, 130, 246, 0.1)"
+        stroke="#3b82f6"
+        strokeWidth="1"
+        strokeDasharray="3,3"
+      />
+    );
+  }, [multiSelectState]);
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
+      {/* Auto-load Notification */}
+      {showLoadNotification && (
+        <div className="fixed top-4 right-4 z-50 bg-green-100 border border-green-400 text-green-700 px-4 py-2 rounded-lg shadow-lg flex items-center space-x-2">
+          <CheckCircle className="w-4 h-4" />
+          <span className="text-sm font-medium">✅ Site plan restored from previous session</span>
+        </div>
+      )}
+      
       {/* Toolbar - Compact */}
       <div className="bg-white border-b border-gray-200 p-2">
         <div className="flex items-center justify-between">
@@ -4834,6 +5047,12 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               {renderElements}
             </g>
             
+            {/* Rotation handle */}
+            {renderRotationHandle}
+            
+            {/* Multi-select box */}
+            {renderMultiSelectBox}
+            
             {/* Measurement overlay */}
             {activeMeasurement && (
               <g>
@@ -4944,6 +5163,69 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
           </div>
           
           <div className="space-y-1">
+          {/* Save/Load Buttons */}
+          <div className="mb-2 space-y-2">
+            {/* Save Button */}
+            <div className="p-2 bg-green-50 rounded border border-green-200">
+              <button
+                onClick={async () => {
+                  try {
+                    // Create site plan data
+                    const sitePlanData = {
+                      id: `siteplan-${parcel.ogc_fid}-${Date.now()}`,
+                      name: `${parcel.address} - Site Plan`,
+                      parcelId: parcel.ogc_fid.toString(),
+                      elements: elements,
+                      parcel: parcel,
+                      timestamp: new Date().toISOString(),
+                      metadata: {
+                        version: 1,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                      }
+                    };
+
+                    // Save to localStorage for persistence
+                    const savedSitePlans = JSON.parse(localStorage.getItem('savedSitePlans') || '{}');
+                    savedSitePlans[parcel.ogc_fid.toString()] = sitePlanData;
+                    localStorage.setItem('savedSitePlans', JSON.stringify(savedSitePlans));
+
+                    // Also save to sessionStorage for current session
+                    sessionStorage.setItem('currentSitePlan', JSON.stringify(sitePlanData));
+
+                    // Trigger custom event for other components
+                    const event = new CustomEvent('sitePlanSave', { 
+                      detail: sitePlanData
+                    });
+                    window.dispatchEvent(event);
+
+                    alert('✅ Site plan saved successfully! Your design will persist when you navigate between tabs.');
+                  } catch (error) {
+                    console.error('Failed to save site plan:', error);
+                    alert('❌ Failed to save site plan. Please try again.');
+                  }
+                }}
+                className="w-full px-3 py-2 bg-green-600 text-white hover:bg-green-700 rounded-md text-sm font-medium flex items-center justify-center space-x-2"
+              >
+                <Save className="w-4 h-4" />
+                <span>💾 Save Site Plan</span>
+              </button>
+            </div>
+
+            {/* Load Button */}
+            <div className="p-2 bg-blue-50 rounded border border-blue-200">
+              <button
+                onClick={() => {
+                  loadSavedSitePlan();
+                }}
+                className="w-full px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md text-sm font-medium flex items-center justify-center space-x-2"
+              >
+                <Eye className="w-4 h-4" />
+                <span>📂 Load Saved Plan</span>
+              </button>
+            </div>
+          </div>
+
           {/* AI Optimization - Ultra Compact */}
           <div className="mb-1 p-1.5 bg-gradient-to-r from-purple-50 to-pink-50 rounded border border-purple-200">
             <div className="flex items-center justify-between">

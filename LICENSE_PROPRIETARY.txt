@@ -1,0 +1,3 @@
+This software and all associated files are proprietary and confidential. 
+Unauthorized copying, redistribution, or modification of this code, 
+via any medium, is strictly prohibited without written consent from Big Plan Technologies.

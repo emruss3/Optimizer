@@ -1,3 +1,6 @@
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
+
 import React from 'react';
 import { Map, Search, Filter, Settings, Building2, Calculator, ArrowLeftRight, Share, Command } from 'lucide-react';
 import { useUIStore } from '../store/ui';
@@ -7,12 +10,24 @@ import Guard from './Guard';
 import ShareInviteDialog from './ShareInviteDialog';
 import { MessageCircle } from 'lucide-react';
 
-export default function Header() {
+interface HeaderProps {
+  onOpenUnifiedWorkspace?: () => void;
+  onOpenProjectWorkflow?: () => void;
+  onOpenSimpleProjectManager?: () => void;
+  onOpenConnectedProjectWorkflow?: () => void;
+  onOpenUnifiedProjectWorkflow?: () => void;
+  onOpenRealUnderwritingWorkflow?: () => void;
+  onOpenWorkflowAudit?: () => void;
+  onOpenWorkflowConnectionTest?: () => void;
+}
+
+export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, onOpenSimpleProjectManager, onOpenConnectedProjectWorkflow, onOpenUnifiedProjectWorkflow, onOpenRealUnderwritingWorkflow, onOpenWorkflowAudit, onOpenWorkflowConnectionTest }: HeaderProps) {
   const { setDrawer, setFilterModal, openDrawer, setCommandPalette } = useUIStore();
   const { activeProjectId, activeProjectName } = useParcelSelection();
   const { set: setActiveProject, clear: clearActiveProject } = useActiveProject();
   const [showShareDialog, setShowShareDialog] = React.useState(false);
   const [unreadComments, setUnreadComments] = React.useState(0);
+  const [showLandingPage, setShowLandingPage] = React.useState(false);
   
   // Mock unread comments - in real app would come from realtime subscription
   React.useEffect(() => {
@@ -85,6 +100,9 @@ export default function Header() {
             <span>Real-time Data</span>
           </div>
           
+          {/* Navigation Divider */}
+          <div className="hidden md:block w-px h-6 bg-gray-300 mx-2"></div>
+          
           {/* Project dropdown */}
           <div className="relative">
             <button 
@@ -142,18 +160,40 @@ export default function Header() {
             )}
           </div>
           
-          {/* Workspace drawer button */}
+        {/* Unified Project Workflow button */}
+        <button
+          onClick={onOpenUnifiedProjectWorkflow}
+          className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-green-600 text-white hover:bg-green-700"
+          data-testid="unified-project-workflow-button"
+          title="Open unified project workflow"
+          aria-label="Open unified project workflow"
+        >
+          <Building2 className="w-4 h-4" />
+          <span className="text-sm hidden md:inline">New Project</span>
+        </button>
+
+        {/* Real Underwriting Workflow button */}
+        <button
+          onClick={onOpenRealUnderwritingWorkflow}
+          className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-purple-600 text-white hover:bg-purple-700"
+          data-testid="real-underwriting-workflow-button"
+          title="Open real underwriting workflow"
+          aria-label="Open real underwriting workflow"
+        >
+          <Calculator className="w-4 h-4" />
+          <span className="text-sm hidden md:inline">Underwriting</span>
+        </button>
+
+          {/* Debug: Workflow Connection Test button */}
           <button 
-            onClick={() => setDrawer(openDrawer === 'PROJECT' ? null : 'PROJECT')}
-            className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium ${
-              openDrawer === 'PROJECT' 
-                ? 'bg-blue-100 text-blue-700' 
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-            data-testid="workspace-button"
+            onClick={onOpenWorkflowConnectionTest}
+            className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-gray-600 text-white hover:bg-gray-700"
+            data-testid="workflow-connection-test-button"
+            title="Test workflow connections"
+            aria-label="Test workflow connections"
           >
-            <Calculator className="w-4 h-4" />
-            <span className="text-sm hidden md:inline">Workspace</span>
+            <Command className="w-4 h-4" />
+            <span className="text-sm hidden md:inline">Test</span>
           </button>
           
           {/* Underwriting button */}
@@ -165,13 +205,15 @@ export default function Header() {
                 : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
             }`}
             data-testid="analysis-button"
+            title="Financial analysis and underwriting"
+            aria-label="Open financial analysis"
           >
             <Calculator className="w-4 h-4" />
             <span className="text-sm hidden md:inline">Analysis</span>
           </button>
           
-          {/* Scenario Compare button */}
-          <Guard roles={['analyst']}>
+          {/* Scenario Compare button - Show when project has multiple parcels */}
+          {activeProjectId && (
             <button 
               onClick={() => setDrawer(openDrawer === 'SCENARIO_COMPARE' ? null : 'SCENARIO_COMPARE')}
               className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium ${
@@ -180,11 +222,12 @@ export default function Header() {
                   : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
               }`}
               data-testid="scenario-compare-button"
+              title="Compare development scenarios"
             >
               <ArrowLeftRight className="w-4 h-4" />
               <span className="text-sm hidden md:inline">Compare</span>
             </button>
-          </Guard>
+          )}
           
           
           {/* Share button */}

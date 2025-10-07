@@ -63,3 +63,24 @@ export function AnalysisPanelSkeleton() {
     </div>
   );
 }
+
+export function SkeletonParcelList() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <div key={index} className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <SkeletonLoader lines={1} height="1.25rem" width="60%" />
+            <SkeletonLoader lines={1} height="1rem" width="20%" />
+          </div>
+          <SkeletonLoader lines={2} height="1rem" width="100%" />
+          <div className="flex items-center space-x-4 mt-3">
+            <SkeletonLoader lines={1} height="1rem" width="30%" />
+            <SkeletonLoader lines={1} height="1rem" width="25%" />
+            <SkeletonLoader lines={1} height="1rem" width="20%" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -1,3 +1,6 @@
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
+
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { ParcelSet, toArray, setKey } from '../lib/parcelSet';
@@ -48,6 +51,8 @@ export const useActiveProject = create<ActiveProjectState>((set, get) => ({
   // Add parcel to active project
   addParcel: async (parcelId: string, parcelData?: SelectedParcel) => {
     const state = get();
+    console.log('🔍 addParcel called:', { parcelId, parcelData, activeProjectId: state.id, currentParcels: state.selectedParcels.size });
+    
     if (!state.id) {
       console.warn('No active project - cannot add parcel');
       return;
@@ -58,6 +63,7 @@ export const useActiveProject = create<ActiveProjectState>((set, get) => ({
 
     // Check if parcel already exists
     if (state.selectedParcels.has(pid)) {
+      console.log('Parcel already exists in project');
       // Flash toast for duplicate
       set({ error: 'Parcel already in project' });
       setTimeout(() => set({ error: null }), 3000);
@@ -67,6 +73,7 @@ export const useActiveProject = create<ActiveProjectState>((set, get) => ({
     // Optimistic UI update
     const wasEmpty = state.selectedParcels.size === 0;
     const newParcels = new Set([...state.selectedParcels, pid]) as ParcelSet;
+    console.log('🔍 Adding parcel to project:', { pid, newParcelsSize: newParcels.size });
     set({ 
       selectedParcels: newParcels,
       isLoading: true,
@@ -92,6 +99,7 @@ export const useActiveProject = create<ActiveProjectState>((set, get) => ({
       }
 
       set({ isLoading: false });
+      console.log('✅ Parcel successfully added to project:', { pid, projectId: state.id });
       
       // Success toast
       set({ error: 'Parcel added to project ✓' });

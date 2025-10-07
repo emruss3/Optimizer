@@ -1,5 +1,9 @@
+// © 2025 ER Technologies. All rights reserved.
+// Proprietary and confidential. Not for distribution.
+
 import { supabase } from '../lib/supabase';
 import { GeoJSONGeometry } from '../types/parcel';
+import { projectTo3857, areaSqFt, lengthFt, toFeetFromMeters } from '../lib/geometry/coords';
 
 export interface ParcelGeometryData {
   ogc_fid: number;
@@ -117,22 +121,21 @@ function parse3857Geometry(row: ParcelGeometry3857Row): SitePlannerGeometry | nu
 
   console.log('📏 Bounds in Web Mercator (meters):', boundsMeters);
 
-  // Calculate dimensions in meters, then convert to feet
-  const FEET_PER_METER = 3.28084;
+  // Calculate dimensions in meters, then convert to feet using centralized function
   const widthMeters = boundsMeters.maxX - boundsMeters.minX;
   const depthMeters = boundsMeters.maxY - boundsMeters.minY;
-  const width = widthMeters * FEET_PER_METER;
-  const depth = depthMeters * FEET_PER_METER;
+  const width = toFeetFromMeters(widthMeters);
+  const depth = toFeetFromMeters(depthMeters);
 
   console.log('📐 Dimensions in meters:', { widthMeters, depthMeters });
   console.log('📐 Dimensions in feet:', { width, depth });
 
   const area = row.sqft ?? Math.round(width * depth);
   
-  // Normalize coordinates: subtract mins, then convert to feet
+  // Normalize coordinates: subtract mins, then convert to feet using centralized function
   const normalized = coords.map(([x, y]) => [
-    (x - boundsMeters.minX) * FEET_PER_METER,
-    (y - boundsMeters.minY) * FEET_PER_METER
+    toFeetFromMeters(x - boundsMeters.minX),
+    toFeetFromMeters(y - boundsMeters.minY)
   ]);
 
   console.log('📍 First normalized coordinate (feet):', normalized[0]);
@@ -222,11 +225,10 @@ export function parseGeometryForSitePlanner(
 
     console.log('📐 Original coordinates (first 3):', coordinates.slice(0, 3));
 
-    // Convert from meters to feet and calculate bounds
-    const METERS_TO_FEET = 3.28084;
+    // Convert from meters to feet and calculate bounds using centralized function
     const coordinatesInFeet = coordinates.map(coord => [
-      coord[0] * METERS_TO_FEET,
-      coord[1] * METERS_TO_FEET
+      toFeetFromMeters(coord[0]),
+      toFeetFromMeters(coord[1])
     ]);
 
     // Calculate bounds
@@ -450,17 +452,16 @@ function parseGeometryFromPostGIS(geom: Record<string, any>): SitePlannerGeometr
     { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
   );
   
-  // Convert to feet and normalize
-  const FEET_PER_METER = 3.28084;
+  // Convert to feet and normalize using centralized function
   const widthMeters = boundsMeters.maxX - boundsMeters.minX;
   const depthMeters = boundsMeters.maxY - boundsMeters.minY;
-  const width = widthMeters * FEET_PER_METER;
-  const depth = depthMeters * FEET_PER_METER;
+  const width = toFeetFromMeters(widthMeters);
+  const depth = toFeetFromMeters(depthMeters);
   
   // Normalize coordinates to start at (0,0)
   const normalized = coords.map(([x, y]) => [
-    (x - boundsMeters.minX) * FEET_PER_METER,
-    (y - boundsMeters.minY) * FEET_PER_METER
+    toFeetFromMeters(x - boundsMeters.minX),
+    toFeetFromMeters(y - boundsMeters.minY)
   ]);
   
   return {

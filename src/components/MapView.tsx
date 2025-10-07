@@ -127,7 +127,7 @@ const MapView = React.memo(function MapView({
               const row = Array.isArray(data) ? data[0] : data;
               if (!row) throw new Error("not found");
               if (activeProjectId) { 
-                await addParcel(fid); 
+                await addParcel(String(fid), row); 
                 setDrawer("PROJECT"); 
               } else { 
                 // Use the existing ParcelDrawer system
@@ -143,7 +143,7 @@ const MapView = React.memo(function MapView({
             const row = Array.isArray(data) ? data[0] : data;
             if (!row) return;
             if (activeProjectId) { 
-              await addParcel(row.ogc_fid); 
+              await addParcel(String(row.ogc_fid), row); 
               setDrawer("PROJECT"); 
             } else { 
               // Use the existing ParcelDrawer system
