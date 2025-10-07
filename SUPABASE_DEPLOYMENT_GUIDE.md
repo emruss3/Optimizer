@@ -1,211 +1,263 @@
-# 🚀 Supabase Planner Functions Deployment Guide
+# 🚀 Supabase Deployment Guide
 
-## 📋 Overview
+## ⚠️ **CRITICAL: Functions Not Deployed**
 
-This guide walks you through deploying the complete planner schema to your Supabase database. The schema includes views, RPC functions, and indexes for parcel analysis and site planning.
+The application is failing because the new Supabase RPC functions haven't been deployed yet. Follow these steps to deploy:
 
-## 🗂️ Files Created
+---
 
-### Core SQL Files
-- `supabase/functions/planner_parcels.sql` - Parcel geometry view
-- `supabase/functions/planner_zoning.sql` - Dynamic zoning view with FAR detection
-- `supabase/functions/planner_join.sql` - Joined parcel + zoning view
-- `supabase/functions/get_buildable_envelope.sql` - Envelope calculation RPC
-- `supabase/functions/score_pad.sql` - Pad scoring RPC
-- `supabase/functions/get_parcel_detail.sql` - One-call detail RPC
-- `supabase/functions/planner_indexes.sql` - Spatial indexes
-- `supabase/functions/planner_complete.sql` - **Single file with everything**
-- `supabase/functions/planner_test.sql` - Test script
+## 📋 **DEPLOYMENT STEPS**
 
-### Frontend Integration
-- `src/services/parcelAnalysis.ts` - TypeScript service
-- `src/hooks/useParcelAnalysis.ts` - React hook
-- `src/components/ParcelAnalysisDemo.tsx` - Demo component
-- `src/components/SupabaseIntegrationExample.tsx` - Code example
+### **Step 1: Deploy Core Planner Functions**
 
-## 🚀 Deployment Steps
+Run these SQL scripts in **Supabase Studio** → **SQL Editor** in this exact order:
 
-### Option 1: Single File Deployment (Recommended)
-
-1. **Open Supabase Studio**
-   - Go to your Supabase project dashboard
-   - Navigate to SQL Editor
-
-2. **Run the Complete Schema**
-   ```sql
-   -- Copy and paste the entire contents of:
-   -- supabase/functions/planner_complete.sql
-   ```
-   - Click "Run" to execute the entire schema
-
-3. **Verify Deployment**
-   ```sql
-   -- Run the test script:
-   -- supabase/functions/planner_test.sql
-   ```
-
-### Option 2: Individual File Deployment
-
-If you prefer to run files individually:
-
-1. Run in this exact order:
-   ```sql
-   -- 1. Create views
-   \i planner_parcels.sql
-   \i planner_zoning.sql
-   \i planner_join.sql
-   
-   -- 2. Create functions
-   \i get_buildable_envelope.sql
-   \i score_pad.sql
-   \i get_parcel_detail.sql
-   
-   -- 3. Create indexes
-   \i planner_indexes.sql
-   ```
-
-## 🧪 Testing the Deployment
-
-### 1. Test Views
 ```sql
--- Check if views exist and have data
-select count(*) from planner_parcels;
-select count(*) from planner_zoning;
-select count(*) from planner_join;
+-- 1. Create planner views
+\i supabase/functions/planner_parcels.sql
+\i supabase/functions/planner_zoning.sql  
+\i supabase/functions/planner_join.sql
+
+-- 2. Create RPC functions
+\i supabase/functions/get_buildable_envelope.sql
+\i supabase/functions/score_pad.sql
+\i supabase/functions/get_parcel_detail.sql
+\i supabase/functions/get_parcel_buildable_envelope.sql
+
+-- 3. Create indexes
+\i supabase/functions/planner_indexes.sql
 ```
 
-### 2. Test Functions
+### **Step 2: Alternative - Single Deployment**
+
+Or run the consolidated script:
+
 ```sql
--- Test with a specific parcel ID
-select public.get_buildable_envelope('47037');
-
--- Test scoring
-select public.score_pad(
-  '47037',
-  public.get_buildable_envelope('47037'),
-  null
-);
-
--- Test complete detail function
-select * from public.get_parcel_detail('47037');
+-- Run the complete planner schema
+\i supabase/functions/planner_complete.sql
 ```
 
-### 3. Frontend Testing
-1. **Start the development server** (already running on http://localhost:5173/)
-2. **Click "Analysis Demo"** in the header
-3. **Test with parcel ID "47037"** or any valid parcel ID
-4. **View the integration example** for exact code usage
+### **Step 3: Verify Deployment**
 
-## 📊 Schema Overview
+Test the functions:
 
-### Views
-- **`planner_parcels`** - Standardized parcel geometry in EPSG:3857
-- **`planner_zoning`** - Dynamic zoning with automatic FAR column detection
-- **`planner_join`** - Combined parcel + zoning data
-
-### RPC Functions
-- **`get_buildable_envelope(parcel_id)`** - Returns buildable area geometry
-- **`score_pad(parcel_id, pad_geometry, parking_geometry)`** - Scores a development pad
-- **`get_parcel_detail(parcel_id)`** - One-call for all parcel data
-
-### Indexes
-- **`gix_parcels_wkb4326`** - Spatial index on parcel geometry
-- **`gix_zoning_geom`** - Spatial index on zoning geometry
-
-## 🔧 Configuration Notes
-
-### Dynamic FAR Detection
-The `planner_zoning` view automatically detects dynamic FAR columns:
-- `effective_far`, `dynamic_far`, `calc_far`, `computed_far`, `current_far`
-- `far_dynamic`, `far_effective`, `far_calc`, `far_current`
-
-If your dynamic FAR column has a different name, add it to the detection array in `planner_zoning.sql`.
-
-### Coordinate Systems
-- **Input**: Parcels can be in any coordinate system
-- **Processing**: Automatically transformed to EPSG:3857 (Web Mercator)
-- **Output**: All functions return EPSG:3857 geometry
-
-### Error Handling
-- Functions include proper error handling for missing parcels
-- Invalid geometry is automatically cleaned with `ST_MakeValid`
-- Missing zoning data uses sensible defaults
-
-## 🎯 Frontend Integration
-
-### Basic Usage
-```typescript
-import { parcelAnalysisService } from './services/parcelAnalysis';
-
-// Fetch parcel data
-const parcel = await parcelAnalysisService.fetchParcelData('47037');
-
-// Get buildable envelope
-const envelope = await parcelAnalysisService.getBuildableEnvelope('47037');
-
-// Score a pad
-const score = await parcelAnalysisService.scorePad('47037', padGeometry, parkingGeometry);
-```
-
-### React Hook Usage
-```typescript
-import { useParcelAnalysis } from './hooks/useParcelAnalysis';
-
-const { parcel, envelope, score, analyzeParcel } = useParcelAnalysis();
-
-// Run complete analysis
-await analyzeParcel('47037', padGeometry, parkingGeometry);
-```
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-1. **"Parcel not found"**
-   - Check if parcel ID exists in `planner_parcels` view
-   - Verify parcel has valid geometry
-
-2. **"Function does not exist"**
-   - Ensure all SQL files were run successfully
-   - Check function names match exactly
-
-3. **"Geometry errors"**
-   - Verify input geometry is valid GeoJSON
-   - Check coordinate system (should be EPSG:3857)
-
-4. **"No zoning data"**
-   - Check if parcel exists in `planner_zoning` view
-   - Verify zoning table has data for the parcel
-
-### Debug Queries
 ```sql
--- Check parcel exists
-select * from planner_parcels where parcel_id = '47037';
+-- Test parcel detail function
+SELECT * FROM get_parcel_detail('47037');
 
--- Check zoning data
-select * from planner_zoning where parcel_id = '47037';
+-- Test buildable envelope function  
+SELECT * FROM get_parcel_buildable_envelope(661807);
 
--- Check joined data
-select * from planner_join where parcel_id = '47037';
+-- Test envelope function
+SELECT * FROM get_buildable_envelope('47037');
 ```
 
-## ✅ Success Criteria
+---
 
-After deployment, you should be able to:
+## 🔧 **MANUAL DEPLOYMENT (If SQL Editor Fails)**
 
-1. ✅ Query `planner_parcels`, `planner_zoning`, and `planner_join` views
-2. ✅ Call `get_buildable_envelope()` function successfully
-3. ✅ Call `score_pad()` function successfully
-4. ✅ Call `get_parcel_detail()` function successfully
-5. ✅ Use the frontend demo with real data
-6. ✅ See proper error handling for invalid parcel IDs
+If the `\i` commands don't work, copy and paste each file's contents directly:
 
-## 📞 Support
+### **1. planner_parcels.sql**
+```sql
+-- View: planner_parcels (stable MultiPolygon,3857)
+drop view if exists planner_parcels;
+create view planner_parcels as
+select
+  coalesce(
+    geoid::text,
+    nullif(parcelnumb,''),
+    nullif(state_parcelnumb,''),
+    ogc_fid::text
+  ) as parcel_id,
+  coalesce(
+    ( ST_Multi(ST_CollectionExtract(ST_Transform(ST_MakeValid(wkb_geometry_4326),3857),3)) )::geometry(MultiPolygon,3857),
+    ( ST_Multi(ST_CollectionExtract(ST_Transform(ST_MakeValid(wkb_geometry       ),3857),3)) )::geometry(MultiPolygon,3857)
+  ) as geom
+from public.parcels
+where coalesce(wkb_geometry_4326, wkb_geometry) is not null
+  and not ST_IsEmpty(coalesce(wkb_geometry_4326, wkb_geometry));
+```
 
-If you encounter issues:
-1. Check the test script output
-2. Verify your parcel and zoning tables have data
-3. Ensure Supabase RLS policies allow function execution
-4. Check the browser console for frontend errors
+### **2. get_parcel_buildable_envelope.sql**
+```sql
+-- RPC: get_parcel_buildable_envelope(ogc_fid int)
+drop function if exists public.get_parcel_buildable_envelope(int);
+create or replace function public.get_parcel_buildable_envelope(p_ogc_fid int)
+returns table(
+  ogc_fid int,
+  buildable_geom geometry,
+  area_sqft numeric,
+  edge_types jsonb,
+  setbacks_applied jsonb,
+  easements_removed int
+) 
+language plpgsql 
+stable 
+security definer 
+set search_path=public 
+as $$
+declare
+  parcel_geom geometry;
+  zoning_data record;
+  front_setback numeric := 20;  -- default in feet
+  side_setback numeric := 5;    -- default in feet
+  rear_setback numeric := 20;   -- default in feet
+  buildable_geom geometry;
+  final_geom geometry;
+  easement_count int := 0;
+  edge_types jsonb;
+  setbacks_applied jsonb;
+begin
+  -- Get parcel geometry
+  select geom into parcel_geom
+  from planner_parcels
+  where parcel_id = p_ogc_fid::text
+  limit 1;
 
-The complete planner schema is now ready for production use! 🎉
+  if parcel_geom is null then
+    raise exception 'Parcel % not found in planner_parcels', p_ogc_fid;
+  end if;
+
+  -- Get zoning data for setbacks
+  select 
+    coalesce((setbacks->>'front')::numeric, front_setback) as front,
+    coalesce((setbacks->>'side')::numeric, side_setback) as side,
+    coalesce((setbacks->>'rear')::numeric, rear_setback) as rear
+  into zoning_data
+  from planner_zoning
+  where parcel_id = p_ogc_fid::text
+  limit 1;
+
+  -- Use zoning setbacks if available, otherwise use defaults
+  if zoning_data is not null then
+    front_setback := zoning_data.front;
+    side_setback := zoning_data.side;
+    rear_setback := zoning_data.rear;
+  end if;
+
+  -- Convert setbacks from feet to meters for ST_Buffer
+  front_setback := front_setback / 3.28084;
+  side_setback := side_setback / 3.28084;
+  rear_setback := rear_setback / 3.28084;
+
+  -- Apply setbacks using negative buffer
+  -- Use the largest setback to ensure compliance
+  buildable_geom := ST_Buffer(parcel_geom, -greatest(front_setback, side_setback, rear_setback));
+
+  -- Handle easements (if easement table exists)
+  -- This is a placeholder - implement based on your easement data structure
+  /*
+  with easements as (
+    select ST_Union(geom) as easement_geom
+    from easements 
+    where ST_Intersects(geom, parcel_geom)
+  )
+  select 
+    ST_Difference(buildable_geom, easement_geom) as final_geom,
+    (select count(*) from easements where ST_Intersects(geom, parcel_geom)) as easement_count
+  into final_geom, easement_count
+  from easements;
+  */
+
+  -- For now, use buildable_geom as final_geom (no easements)
+  final_geom := buildable_geom;
+  easement_count := 0;
+
+  -- Determine edge types (simplified - assumes rectangular parcel)
+  edge_types := jsonb_build_object(
+    'front', true,
+    'side', true, 
+    'rear', true,
+    'easement', easement_count > 0
+  );
+
+  -- Record applied setbacks
+  setbacks_applied := jsonb_build_object(
+    'front', front_setback * 3.28084,  -- convert back to feet
+    'side', side_setback * 3.28084,
+    'rear', rear_setback * 3.28084
+  );
+
+  -- Return results
+  return query
+  select 
+    p_ogc_fid,
+    ST_MakeValid(final_geom) as buildable_geom,
+    round(ST_Area(final_geom) * 10.7639, 0) as area_sqft,  -- convert m² to ft²
+    edge_types,
+    setbacks_applied,
+    easement_count;
+end $$;
+```
+
+---
+
+## 🧪 **TESTING AFTER DEPLOYMENT**
+
+### **Test 1: Basic Function Call**
+```sql
+SELECT * FROM get_parcel_buildable_envelope(661807);
+```
+
+### **Test 2: Check Function Exists**
+```sql
+SELECT routine_name, routine_type 
+FROM information_schema.routines 
+WHERE routine_schema = 'public' 
+AND routine_name LIKE '%parcel%';
+```
+
+### **Test 3: Frontend Integration Test**
+After deployment, test in the app:
+1. Open parcel analysis demo
+2. Enter parcel ID: `661807`
+3. Click "Fetch Buildable Envelope"
+4. Should see envelope data instead of 404 error
+
+---
+
+## 🚨 **TROUBLESHOOTING**
+
+### **Error: Function Not Found (PGRST202)**
+- **Cause**: Function not deployed to Supabase
+- **Fix**: Run the SQL scripts above in Supabase Studio
+
+### **Error: View Does Not Exist**
+- **Cause**: Views not created in correct order
+- **Fix**: Run `planner_parcels.sql` → `planner_zoning.sql` → `planner_join.sql` first
+
+### **Error: Permission Denied**
+- **Cause**: Insufficient database permissions
+- **Fix**: Ensure you're using the correct Supabase project and have admin access
+
+### **Error: Geometry Type Mismatch**
+- **Cause**: Coordinate system issues
+- **Fix**: Ensure PostGIS extension is enabled in Supabase
+
+---
+
+## 📊 **VERIFICATION CHECKLIST**
+
+- [ ] `planner_parcels` view exists
+- [ ] `planner_zoning` view exists  
+- [ ] `planner_join` view exists
+- [ ] `get_buildable_envelope` function exists
+- [ ] `get_parcel_buildable_envelope` function exists
+- [ ] `score_pad` function exists
+- [ ] `get_parcel_detail` function exists
+- [ ] Spatial indexes created
+- [ ] Test queries return data
+- [ ] Frontend can call functions without 404 errors
+
+---
+
+## 🎯 **NEXT STEPS**
+
+1. **Deploy Functions**: Run the SQL scripts in Supabase Studio
+2. **Test Functions**: Verify with test queries
+3. **Update Frontend**: Test the parcel analysis demo
+4. **Monitor Logs**: Check for any remaining errors
+5. **Optimize**: Add any missing indexes or constraints
+
+**Status**: ⚠️ **DEPLOYMENT REQUIRED** - Functions exist in code but not in database

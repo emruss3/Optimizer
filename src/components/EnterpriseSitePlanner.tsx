@@ -11,7 +11,7 @@ import {
   MousePointer, Edit3, Maximize, MoreHorizontal, X, Save
 } from 'lucide-react';
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
-import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, SitePlannerGeometry } from '../services/parcelGeometry';
+import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, parseBuildableEnvelopeForSitePlanner, SitePlannerGeometry } from '../services/parcelGeometry';
 import { toFeetFromMeters, areaSqFt, lengthFt } from '../lib/geometry/coords';
 import { checkAndImportOSMRoads } from '../services/osmRoads';
 import { supabase } from '../lib/supabase';
@@ -2710,9 +2710,10 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
                 setTimeout(async () => {
                   const updatedEnvelopeData = await fetchParcelBuildableEnvelope(parcel.ogc_fid);
                   if (updatedEnvelopeData) {
-                    setBuildableEnvelope(updatedEnvelopeData.buildableEnvelope);
-                    setEdgeClassifications(updatedEnvelopeData.edgeClassifications);
-                    console.log('🔄 Updated edge classifications after road import:', updatedEnvelopeData.edgeClassifications);
+                    const updatedBuildableGeometry = parseBuildableEnvelopeForSitePlanner(updatedEnvelopeData);
+                    setBuildableEnvelope(updatedBuildableGeometry);
+                    setEdgeClassifications(updatedEnvelopeData.edge_types);
+                    console.log('🔄 Updated edge classifications after road import:', updatedEnvelopeData.edge_types);
                   }
                 }, 1000);
               } else {
@@ -2738,41 +2739,36 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
         }
         
         // Then load the parcel geometry with road-based analysis
-        const envelopeData = await fetchParcelBuildableEnvelope(parcel.ogc_fid, {
-          front: siteConstraints.frontSetback,
-          rear: siteConstraints.rearSetback,
-          side: siteConstraints.sideSetback
-        });
+        const envelopeData = await fetchParcelBuildableEnvelope(parcel.ogc_fid);
         console.log('Loaded envelope data:', envelopeData);
         
         if (envelopeData) {
-          const { parcelGeometry: geometry, buildableEnvelope, edgeClassifications: edges, metrics } = envelopeData;
-          setBuildableEnvelope(buildableEnvelope);
-          setEdgeClassifications(edges);
-          console.log('Edge classifications:', edges);
-          console.log('Parcel metrics:', metrics);
+          // Parse the buildable envelope for site planner use
+          const buildableGeometry = parseBuildableEnvelopeForSitePlanner(envelopeData);
+          setBuildableEnvelope(buildableGeometry);
+          setEdgeClassifications(envelopeData.edge_types);
+          console.log('Edge classifications:', envelopeData.edge_types);
+          console.log('Setbacks applied:', envelopeData.setbacks_applied);
           
           // Use the correct buildable area from the database
-          if (buildableEnvelope && buildableEnvelope.coordinates && buildableEnvelope.coordinates.length > 0) {
+          if (buildableGeometry && buildableGeometry.coordinates && buildableGeometry.coordinates.length > 0) {
             console.log('🔍 Converting database buildable envelope to elements:', {
-              coordinates: buildableEnvelope.coordinates.length,
-              area: buildableEnvelope.area,
-              width: buildableEnvelope.width,
-              depth: buildableEnvelope.depth
+              coordinates: buildableGeometry.coordinates.length,
+              area: buildableGeometry.area,
+              width: buildableGeometry.width,
+              depth: buildableGeometry.depth
             });
             
             // Convert coordinates to match parcel coordinate system
-            console.log('🔍 Raw buildable envelope coordinates (first 3):', buildableEnvelope.coordinates.slice(0, 3));
-            console.log('🔍 Parcel geometry bounds:', geometry.bounds);
-            console.log('🔍 Parcel geometry coordinates (first 3):', geometry.coordinates.slice(0, 3));
-            console.log('🔍 Total buildable envelope coordinates:', buildableEnvelope.coordinates.length);
+            console.log('🔍 Raw buildable envelope coordinates (first 3):', buildableGeometry.coordinates.slice(0, 3));
+            console.log('🔍 Buildable geometry bounds:', buildableGeometry.bounds);
+            console.log('🔍 Total buildable envelope coordinates:', buildableGeometry.coordinates.length);
             
-            // Create buildable area using a simple centroid-based scaling approach
-            // This is more reliable than complex polygon inset algorithms
-            const parcelCoords = geometry.coordinates;
-            const frontSetback = metrics.front_setback_ft || 25;
-            const sideSetback = metrics.side_setback_ft || 15;
-            const rearSetback = metrics.rear_setback_ft || 20;
+            // Use the buildable geometry coordinates directly
+            const parcelCoords = buildableGeometry.coordinates;
+            const frontSetback = envelopeData.setbacks_applied.front || 25;
+            const sideSetback = envelopeData.setbacks_applied.side || 15;
+            const rearSetback = envelopeData.setbacks_applied.rear || 20;
             
             console.log('🔍 Applying dynamic setbacks:', {
               front: frontSetback,
