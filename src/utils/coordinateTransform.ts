@@ -470,5 +470,4 @@ export const svgToFeet = CoordinateTransform.svgToFeet;
  */
 export const feetToSVG = CoordinateTransform.feetToSVG;
 
-// Export constants for backward compatibility
-export { FEET_PER_METER, METERS_PER_FOOT, DEFAULT_GRID_SIZE };
+// Constants are already exported at the top of the file
