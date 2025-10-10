@@ -8,11 +8,20 @@ import { GeoJSONGeometry } from '../types/parcel';
 // Types for parcel geometry data
 export interface ParcelGeometry3857 {
   ogc_fid: number;
+  address: string;
+  sqft: number;
+  deeded_acres: number;
+  geometry_4326: GeoJSONGeometry;
   geometry_3857: GeoJSONGeometry;
-  area_sqft: number;
+  parcel_width_ft: number;
+  parcel_depth_ft: number;
   perimeter_ft: number;
   centroid_x: number;
   centroid_y: number;
+  bbox_min_x_ft: number;
+  bbox_min_y_ft: number;
+  bbox_max_x_ft: number;
+  bbox_max_y_ft: number;
 }
 
 export interface ParcelBuildableEnvelope {
@@ -69,22 +78,34 @@ export class ParcelGeometryService {
     try {
       console.log('🔍 Fetching parcel geometry in EPSG:3857 for OGC_FID:', ogcFid);
       
-      const { data, error } = await supabase.rpc('get_parcel_geometry_3857', {
+      const { data, error } = await supabase.rpc('get_parcel_geometry_for_siteplan', {
         p_ogc_fid: ogcFid
       });
 
       if (error) {
         console.error('❌ Error fetching parcel geometry:', error);
+        console.error('❌ Error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
         return null;
       }
 
       if (!data || data.length === 0) {
         console.warn('⚠️ No geometry data found for OGC_FID:', ogcFid);
+        console.warn('⚠️ This might mean the function is not deployed or the parcel does not exist');
         return null;
       }
 
       const geometryData = data[0] as ParcelGeometry3857;
       console.log('✅ Parcel geometry fetched successfully:', geometryData);
+      console.log('✅ Geometry data structure:', {
+        hasGeometry: !!geometryData.geometry_3857,
+        hasArea: !!geometryData.sqft,
+        hasDimensions: !!geometryData.parcel_width_ft && !!geometryData.parcel_depth_ft
+      });
       return geometryData;
     } catch (error) {
       console.error('❌ Exception fetching parcel geometry:', error);
@@ -138,7 +159,7 @@ export class ParcelGeometryService {
     
     if (!geometry) {
       console.warn('⚠️ No geometry available, creating fallback');
-      return this.createFallbackGeometry(geometryData.area_sqft);
+      return this.createFallbackGeometry(geometryData.sqft);
     }
 
     try {
@@ -151,7 +172,7 @@ export class ParcelGeometryService {
         coordinates = (geometry.coordinates as number[][][])[0][0];
       } else {
         console.warn('⚠️ Unsupported geometry type:', geometry.type);
-        return this.createFallbackGeometry(geometryData.area_sqft);
+        return this.createFallbackGeometry(geometryData.sqft);
       }
 
       console.log('📐 Original coordinates (first 3):', coordinates.slice(0, 3));
@@ -165,9 +186,9 @@ export class ParcelGeometryService {
       // Normalize coordinates to start at (0,0)
       const { coords: normalizedCoordinates } = CoordinateTransform.normalizeCoordinates(coordinatesInFeet, bounds);
 
-      const width = bounds.maxX - bounds.minX;
-      const depth = bounds.maxY - bounds.minY;
-      const area = geometryData.area_sqft;
+      const width = geometryData.parcel_width_ft;
+      const depth = geometryData.parcel_depth_ft;
+      const area = geometryData.sqft;
       const perimeter = geometryData.perimeter_ft;
 
       // Calculate normalized centroid
@@ -197,7 +218,7 @@ export class ParcelGeometryService {
       return result;
     } catch (error) {
       console.error('❌ Error parsing geometry:', error);
-      return this.createFallbackGeometry(geometryData.area_sqft);
+      return this.createFallbackGeometry(geometryData.sqft);
     }
   }
 

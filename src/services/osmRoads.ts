@@ -21,17 +21,45 @@ export async function importRoadsFromOSM(ogcFid: number) {
     
     console.log('📦 Parcel data:', parcelData);
     
-    // Parse parcel geometry
+    // Parse parcel geometry with better error handling
     let geometry;
-    if (typeof parcelData.wkb_geometry_4326 === 'string') {
-      geometry = JSON.parse(parcelData.wkb_geometry_4326);
-    } else {
-      geometry = parcelData.wkb_geometry_4326;
-    }
+    let centerLon: number;
+    let centerLat: number;
     
-    const coordinates = geometry.coordinates[0];
-    const centerLon = coordinates.reduce((sum: number, coord: number[]) => sum + coord[0], 0) / coordinates.length;
-    const centerLat = coordinates.reduce((sum: number, coord: number[]) => sum + coord[1], 0) / coordinates.length;
+    try {
+      if (typeof parcelData.wkb_geometry_4326 === 'string') {
+        geometry = JSON.parse(parcelData.wkb_geometry_4326);
+      } else {
+        geometry = parcelData.wkb_geometry_4326;
+      }
+      
+      console.log('🔍 Parsed geometry:', geometry);
+      
+      // Handle different geometry types
+      let coordinates;
+      if (geometry.type === 'Polygon' && geometry.coordinates && geometry.coordinates[0]) {
+        coordinates = geometry.coordinates[0];
+      } else if (geometry.type === 'MultiPolygon' && geometry.coordinates && geometry.coordinates[0] && geometry.coordinates[0][0]) {
+        coordinates = geometry.coordinates[0][0];
+      } else {
+        console.error('❌ Unsupported geometry type or structure:', geometry);
+        throw new Error('Unsupported geometry type');
+      }
+      
+      console.log('📍 Coordinates array length:', coordinates.length);
+      
+      centerLon = coordinates.reduce((sum: number, coord: number[]) => sum + coord[0], 0) / coordinates.length;
+      centerLat = coordinates.reduce((sum: number, coord: number[]) => sum + coord[1], 0) / coordinates.length;
+      
+      console.log('📍 Calculated center:', { centerLon, centerLat });
+      
+      if (isNaN(centerLon) || isNaN(centerLat)) {
+        throw new Error('Invalid coordinates calculated');
+      }
+    } catch (error) {
+      console.error('❌ Error parsing parcel geometry:', error);
+      throw new Error(`Failed to parse parcel geometry: ${error.message}`);
+    }
     
     // Calculate bounding box for road search (500m radius)
     const buffer = 0.005; // ~500 meters in degrees
@@ -46,7 +74,10 @@ export async function importRoadsFromOSM(ogcFid: number) {
     console.log(`📦 Bounding box: ${bbox.south},${bbox.west},${bbox.north},${bbox.east}`);
     
     // Build Overpass API query for roads in the area
-    const overpassQuery = `[out:json][timeout:25];(way["highway"~"^(primary|secondary|tertiary|residential|trunk|unclassified)$"](${bbox.south},${bbox.west},${bbox.north},${bbox.east}););out geom;`;
+    const overpassQuery = `[out:json][timeout:25];
+(way["highway"~"^(primary|secondary|tertiary|residential|trunk|unclassified)$"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+);
+out geom;`;
     
     // Query OpenStreetMap Overpass API (no CORS restrictions)
     const overpassUrl = 'https://overpass-api.de/api/interpreter';
