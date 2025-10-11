@@ -5,23 +5,21 @@ import { supabase } from '../lib/supabase';
 import { CoordinateTransform } from '../utils/coordinateTransform';
 import { GeoJSONGeometry } from '../types/parcel';
 
-// Types for parcel geometry data
+// Types for parcel geometry data - canonical format
 export interface ParcelGeometry3857 {
   ogc_fid: number;
   address: string;
   sqft: number;
-  deeded_acres: number;
-  geometry_4326: GeoJSONGeometry;
   geometry_3857: GeoJSONGeometry;
-  parcel_width_ft: number;
-  parcel_depth_ft: number;
-  perimeter_ft: number;
+  bounds_3857: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  };
   centroid_x: number;
   centroid_y: number;
-  bbox_min_x_ft: number;
-  bbox_min_y_ft: number;
-  bbox_max_x_ft: number;
-  bbox_max_y_ft: number;
+  perimeter_ft: number;
 }
 
 export interface ParcelBuildableEnvelope {
@@ -39,7 +37,10 @@ export interface ParcelBuildableEnvelope {
     side: number;
     rear: number;
   };
-  easements_removed: number;
+  easements_removed: {
+    count: number;
+    areas: any[];
+  };
 }
 
 export interface SitePlannerGeometry {
@@ -59,6 +60,18 @@ export interface SitePlannerGeometry {
     y: number;
   };
   normalizedCoordinates: number[][];
+  // Envelope metadata for intelligent features
+  setbacks_applied?: {
+    front: number;
+    side: number;
+    rear: number;
+  };
+  edge_types?: {
+    front: boolean;
+    side: boolean;
+    rear: boolean;
+    easement: boolean;
+  };
 }
 
 /**
@@ -78,7 +91,7 @@ export class ParcelGeometryService {
     try {
       console.log('🔍 Fetching parcel geometry in EPSG:3857 for OGC_FID:', ogcFid);
       
-      const { data, error } = await supabase.rpc('get_parcel_geometry_for_siteplan', {
+      const { data, error } = await supabase.rpc('get_parcel_geometry_3857', {
         p_ogc_fid: ogcFid
       });
 
@@ -186,8 +199,9 @@ export class ParcelGeometryService {
       // Normalize coordinates to start at (0,0)
       const { coords: normalizedCoordinates } = CoordinateTransform.normalizeCoordinates(coordinatesInFeet, bounds);
 
-      const width = geometryData.parcel_width_ft;
-      const depth = geometryData.parcel_depth_ft;
+      // Calculate dimensions from bounds
+      const width = bounds.maxX - bounds.minX;
+      const depth = bounds.maxY - bounds.minY;
       const area = geometryData.sqft;
       const perimeter = geometryData.perimeter_ft;
 
@@ -278,7 +292,9 @@ export class ParcelGeometryService {
         area,
         perimeter,
         centroid,
-        normalizedCoordinates
+        normalizedCoordinates,
+        setbacks_applied: envelopeData.setbacks_applied,
+        edge_types: envelopeData.edge_types
       };
 
       console.log('✅ Buildable envelope parsed successfully:', {

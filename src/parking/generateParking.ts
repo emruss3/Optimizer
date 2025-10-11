@@ -1,426 +1,407 @@
 // © 2025 ER Technologies. All rights reserved.
 // Proprietary and confidential. Not for distribution.
 
+import { GeoJSON } from '../types/parcel';
 import { CoordinateTransform } from '../utils/coordinateTransform';
 
-// Types
-export interface ParkingStall {
-  id: string;
-  type: 'standard' | 'compact' | 'ada' | 'motorcycle';
-  geometry: {
-    type: 'Polygon';
-    coordinates: number[][][];
+export type ParkingParams = {
+  angles: Array<90 | 60 | 45 | 0>; // 0 = parallel
+  stall: { 
+    width_ft: number; 
+    depth_ft: number; 
+    aisle_ft: number; 
   };
-  center: [number, number];
-  angle: number;
-  width: number;
-  length: number;
-}
+  ada_pct: number;
+  curbCuts?: GeoJSON.FeatureCollection; // optional mask
+};
 
-export interface ParkingAisle {
+export type ParkingKPI = {
+  stall_count: number;
+  ratio: number;
+  drive_continuity_penalty: number;
+  ada_stalls: number;
+  efficiency: number; // stalls per 1000 sq ft
+};
+
+export type ParkingResult = {
+  features: GeoJSON.FeatureCollection;
+  kpis: ParkingKPI;
+  angle: number;
+  modules: ParkingModule[];
+};
+
+export type ParkingModule = {
   id: string;
-  geometry: {
-    type: 'Polygon';
-    coordinates: number[][][];
-  };
-  width: number;
   angle: number;
-  stalls: string[]; // stall IDs
-}
-
-export interface ParkingConfiguration {
-  angle: number; // 90, 60, 45, or 0 (parallel)
-  stallWidth: number; // feet
-  stallLength: number; // feet
-  aisleWidth: number; // feet
-  adaPercentage: number; // 0-1
-  compactPercentage: number; // 0-1
-  curbCuts: boolean;
-  driveContinuity: boolean;
-}
-
-export interface ParkingResult {
   stalls: ParkingStall[];
   aisles: ParkingAisle[];
-  kpis: {
-    totalStalls: number;
-    standardStalls: number;
-    compactStalls: number;
-    adaStalls: number;
-    motorcycleStalls: number;
-    totalArea: number; // sq ft
-    efficiency: number; // stalls per 1000 sq ft
-    adaCompliance: boolean;
-    driveContinuity: boolean;
-  };
-  geometry: {
-    type: 'FeatureCollection';
-    features: Array<{
-      type: 'Feature';
-      properties: {
-        type: 'stall' | 'aisle';
-        stallType?: string;
-        aisleId?: string;
-      };
-      geometry: {
-        type: 'Polygon';
-        coordinates: number[][][];
-      };
-    }>;
-  };
-}
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+};
 
-export interface ParkingInputs {
-  buildablePolygon: number[][];
-  configuration: ParkingConfiguration;
-  constraints?: {
-    minStallWidth?: number;
-    maxStallWidth?: number;
-    minAisleWidth?: number;
-    maxAisleWidth?: number;
-    requiredAdaStalls?: number;
-  };
-}
+export type ParkingStall = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  depth: number;
+  angle: number;
+  isADA: boolean;
+  type: 'standard' | 'compact' | 'ada';
+};
+
+export type ParkingAisle = {
+  id: string;
+  coords: number[][];
+  width: number;
+};
 
 /**
- * Parking generation engine
- * Creates parking layouts with various angles and configurations
+ * Deterministic parking generator with intelligent layout optimization
+ * Generates parking layouts based on buildable polygon and parameters
  */
 export class ParkingGenerator {
-  // Standard dimensions (in feet)
-  private static readonly STANDARD_STALL_WIDTH = 9;
-  private static readonly STANDARD_STALL_LENGTH = 18;
-  private static readonly COMPACT_STALL_WIDTH = 8;
-  private static readonly COMPACT_STALL_LENGTH = 16;
-  private static readonly ADA_STALL_WIDTH = 9;
-  private static readonly ADA_STALL_LENGTH = 18;
-  private static readonly MOTORCYCLE_STALL_WIDTH = 4;
-  private static readonly MOTORCYCLE_STALL_LENGTH = 8;
-  private static readonly MIN_AISLE_WIDTH = 20;
-  private static readonly ADA_AISLE_WIDTH = 5;
+  private static readonly DEFAULT_STALL_WIDTH = 9; // feet
+  private static readonly DEFAULT_STALL_DEPTH = 18; // feet
+  private static readonly DEFAULT_AISLE_WIDTH = 24; // feet
+  private static readonly MIN_MODULE_WIDTH = 50; // feet
+  private static readonly MIN_MODULE_DEPTH = 30; // feet
 
   /**
-   * Generate parking layout for a buildable area
+   * Generate parking layout for given buildable polygon
    */
-  static generateParking(inputs: ParkingInputs): ParkingResult {
-    console.log('🅿️ Generating parking layout...', inputs.configuration);
+  static generateParking(
+    buildableFeetPolygon: GeoJSON.Polygon,
+    params: ParkingParams
+  ): ParkingResult[] {
+    const results: ParkingResult[] = [];
 
-    const { buildablePolygon, configuration, constraints } = inputs;
-    
-    // Validate inputs
-    const validation = this.validateInputs(inputs);
-    if (!validation.isValid) {
-      throw new Error(`Invalid parking inputs: ${validation.errors.join(', ')}`);
+    // Extract polygon coordinates in feet
+    const coords = this.extractPolygonCoordinates(buildableFeetPolygon);
+    if (coords.length < 3) {
+      return results;
     }
 
-    // Calculate parking layout based on angle
-    let result: ParkingResult;
+    // Calculate polygon bounds and area
+    const bounds = CoordinateTransform.calculateBounds(coords);
+    const area = CoordinateTransform.calculatePolygonArea(coords, 'feet');
+
+    // Try each angle
+    for (const angle of params.angles) {
+      const result = this.generateParkingForAngle(
+        coords,
+        bounds,
+        area,
+        angle,
+        params
+      );
+      
+      if (result.stalls.length > 0) {
+        results.push(result);
+      }
+    }
+
+    // Sort by efficiency (stalls per 1000 sq ft)
+    results.sort((a, b) => b.kpis.efficiency - a.kpis.efficiency);
+
+    return results;
+  }
+
+  /**
+   * Generate parking for a specific angle
+   */
+  private static generateParkingForAngle(
+    polygonCoords: number[][],
+    bounds: { minX: number; minY: number; maxX: number; maxY: number },
+    area: number,
+    angle: number,
+    params: ParkingParams
+  ): ParkingResult {
+    const modules: ParkingModule[] = [];
+    const allStalls: ParkingStall[] = [];
+    const allAisles: ParkingAisle[] = [];
+
+    // Calculate module dimensions based on angle
+    const moduleDims = this.calculateModuleDimensions(angle, params.stall);
     
-    switch (configuration.angle) {
-      case 90:
-        result = this.generate90DegreeParking(buildablePolygon, configuration, constraints);
-        break;
-      case 60:
-        result = this.generate60DegreeParking(buildablePolygon, configuration, constraints);
-        break;
-      case 45:
-        result = this.generate45DegreeParking(buildablePolygon, configuration, constraints);
-        break;
-      case 0:
-        result = this.generateParallelParking(buildablePolygon, configuration, constraints);
-        break;
-      default:
-        throw new Error(`Unsupported parking angle: ${configuration.angle}`);
+    // Generate candidate module positions
+    const candidatePositions = this.generateCandidatePositions(
+      polygonCoords,
+      bounds,
+      moduleDims,
+      angle
+    );
+
+    // Greedy placement of modules
+    for (const position of candidatePositions) {
+      const module = this.createParkingModule(
+        position,
+        moduleDims,
+        angle,
+        params,
+        polygonCoords
+      );
+
+      if (module && this.isModuleValid(module, polygonCoords)) {
+        modules.push(module);
+        allStalls.push(...module.stalls);
+        allAisles.push(...module.aisles);
+      }
     }
 
     // Calculate KPIs
-    result.kpis = this.calculateKPIs(result, buildablePolygon, configuration);
+    const kpis = this.calculateKPIs(allStalls, area, params);
 
-    // Generate GeoJSON geometry
-    result.geometry = this.generateGeoJSON(result);
+    // Create GeoJSON features
+    const features = this.createGeoJSONFeatures(allStalls, allAisles);
 
-    console.log('✅ Parking layout generated:', {
-      totalStalls: result.kpis.totalStalls,
-      efficiency: result.kpis.efficiency.toFixed(2),
-      adaCompliance: result.kpis.adaCompliance
-    });
-
-    return result;
+    return {
+      features,
+      kpis,
+      angle,
+      modules
+    };
   }
 
   /**
-   * Generate 90-degree parking layout
+   * Calculate module dimensions based on angle and stall parameters
    */
-  private static generate90DegreeParking(
-    polygon: number[][],
-    config: ParkingConfiguration,
-    constraints?: any
-  ): ParkingResult {
-    const bounds = CoordinateTransform.calculateBounds(polygon);
+  private static calculateModuleDimensions(
+    angle: number,
+    stall: ParkingParams['stall']
+  ): { width: number; depth: number } {
+    const { width_ft, depth_ft, aisle_ft } = stall;
+
+    switch (angle) {
+      case 90:
+        // Perpendicular parking
+        return {
+          width: width_ft * 2 + aisle_ft,
+          depth: depth_ft + aisle_ft
+        };
+      case 60:
+        // Angled parking
+        return {
+          width: width_ft * 2 + aisle_ft,
+          depth: depth_ft * 0.866 + aisle_ft // cos(30°) ≈ 0.866
+        };
+      case 45:
+        // Angled parking
+        return {
+          width: width_ft * 2 + aisle_ft,
+          depth: depth_ft * 0.707 + aisle_ft // cos(45°) ≈ 0.707
+        };
+      case 0:
+        // Parallel parking
+        return {
+          width: width_ft + aisle_ft,
+          depth: depth_ft + aisle_ft
+        };
+      default:
+        return {
+          width: width_ft * 2 + aisle_ft,
+          depth: depth_ft + aisle_ft
+        };
+    }
+  }
+
+  /**
+   * Generate candidate positions for parking modules
+   */
+  private static generateCandidatePositions(
+    polygonCoords: number[][],
+    bounds: { minX: number; minY: number; maxX: number; maxY: number },
+    moduleDims: { width: number; depth: number },
+    angle: number
+  ): Array<{ x: number; y: number }> {
+    const positions: Array<{ x: number; y: number }> = [];
+    const step = 20; // 20-foot grid
+
+    // Generate grid positions within bounds
+    for (let x = bounds.minX; x <= bounds.maxX - moduleDims.width; x += step) {
+      for (let y = bounds.minY; y <= bounds.maxY - moduleDims.depth; y += step) {
+        // Check if position is within polygon
+        if (this.isPointInPolygon([x, y], polygonCoords)) {
+          positions.push({ x, y });
+        }
+      }
+    }
+
+    return positions;
+  }
+
+  /**
+   * Create a parking module at given position
+   */
+  private static createParkingModule(
+    position: { x: number; y: number },
+    moduleDims: { width: number; depth: number },
+    angle: number,
+    params: ParkingParams,
+    polygonCoords: number[][]
+  ): ParkingModule | null {
+    const { x, y } = position;
+    const { width, depth } = moduleDims;
+    const { stall, ada_pct } = params;
+
     const stalls: ParkingStall[] = [];
     const aisles: ParkingAisle[] = [];
 
-    // Calculate grid dimensions
-    const stallWidth = config.stallWidth;
-    const stallLength = config.stallLength;
-    const aisleWidth = Math.max(config.aisleWidth, this.MIN_AISLE_WIDTH);
+    // Calculate number of stalls that fit
+    const stallsPerRow = Math.floor(width / stall.width_ft);
+    const rows = Math.floor(depth / (stall.depth_ft + stall.aisle_ft));
 
-    // Calculate how many stalls fit in width and depth
-    const usableWidth = bounds.maxX - bounds.minX;
-    const usableDepth = bounds.maxY - bounds.minY;
+    if (stallsPerRow < 1 || rows < 1) {
+      return null;
+    }
 
-    const stallsPerRow = Math.floor(usableWidth / stallWidth);
-    const rows = Math.floor(usableDepth / (stallLength + aisleWidth));
-
-    let stallId = 0;
-    let aisleId = 0;
-
-    // Generate stalls and aisles
+    // Generate stalls
     for (let row = 0; row < rows; row++) {
-      const yStart = bounds.minY + (row * (stallLength + aisleWidth));
-      const yEnd = yStart + stallLength;
-
-      // Create aisle if not first row
-      if (row > 0) {
-        const aisleGeometry = this.createAisleGeometry(
-          bounds.minX, yStart - aisleWidth,
-          bounds.maxX, yStart,
-          aisleWidth
-        );
-        
-        aisles.push({
-          id: `aisle_${aisleId++}`,
-          geometry: aisleGeometry,
-          width: aisleWidth,
-          angle: 0,
-          stalls: []
-        });
-      }
-
-      // Create stalls for this row
       for (let col = 0; col < stallsPerRow; col++) {
-        const xStart = bounds.minX + (col * stallWidth);
-        const xEnd = xStart + stallWidth;
-
-        const stallType = this.determineStallType(stallId, config);
-        const stallGeometry = this.createStallGeometry(xStart, yStart, xEnd, yEnd, stallType);
-
+        const stallX = x + col * stall.width_ft;
+        const stallY = y + row * (stall.depth_ft + stall.aisle_ft);
+        
+        const isADA = Math.random() < ada_pct / 100;
+        
         stalls.push({
-          id: `stall_${stallId++}`,
-          type: stallType,
-          geometry: stallGeometry,
-          center: [(xStart + xEnd) / 2, (yStart + yEnd) / 2],
-          angle: 0,
-          width: stallWidth,
-          length: stallLength
+          id: `stall_${x}_${y}_${row}_${col}`,
+          x: stallX,
+          y: stallY,
+          width: stall.width_ft,
+          depth: stall.depth_ft,
+          angle,
+          isADA,
+          type: isADA ? 'ada' : 'standard'
         });
       }
     }
 
-    return { stalls, aisles, kpis: {} as any, geometry: {} as any };
-  }
-
-  /**
-   * Generate 60-degree parking layout
-   */
-  private static generate60DegreeParking(
-    polygon: number[][],
-    config: ParkingConfiguration,
-    constraints?: any
-  ): ParkingResult {
-    // Simplified 60-degree implementation
-    // In practice, this would use more complex geometric calculations
-    return this.generate90DegreeParking(polygon, config, constraints);
-  }
-
-  /**
-   * Generate 45-degree parking layout
-   */
-  private static generate45DegreeParking(
-    polygon: number[][],
-    config: ParkingConfiguration,
-    constraints?: any
-  ): ParkingResult {
-    // Simplified 45-degree implementation
-    return this.generate90DegreeParking(polygon, config, constraints);
-  }
-
-  /**
-   * Generate parallel parking layout
-   */
-  private static generateParallelParking(
-    polygon: number[][],
-    config: ParkingConfiguration,
-    constraints?: any
-  ): ParkingResult {
-    const bounds = CoordinateTransform.calculateBounds(polygon);
-    const stalls: ParkingStall[] = [];
-    const aisles: ParkingAisle[] = [];
-
-    const stallWidth = config.stallWidth;
-    const stallLength = config.stallLength;
-    const aisleWidth = Math.max(config.aisleWidth, this.MIN_AISLE_WIDTH);
-
-    // For parallel parking, stalls are arranged along the perimeter
-    const usableWidth = bounds.maxX - bounds.minX;
-    const usableDepth = bounds.maxY - bounds.minY;
-
-    // Calculate how many parallel stalls fit
-    const stallsPerSide = Math.floor(usableWidth / stallLength);
-    const sides = Math.floor(usableDepth / (stallWidth + aisleWidth));
-
-    let stallId = 0;
-
-    // Generate parallel stalls
-    for (let side = 0; side < sides; side++) {
-      const xStart = bounds.minX + (side * (stallWidth + aisleWidth));
-      const xEnd = xStart + stallWidth;
-
-      for (let col = 0; col < stallsPerSide; col++) {
-        const yStart = bounds.minY + (col * stallLength);
-        const yEnd = yStart + stallLength;
-
-        const stallType = this.determineStallType(stallId, config);
-        const stallGeometry = this.createStallGeometry(xStart, yStart, xEnd, yEnd, stallType);
-
-        stalls.push({
-          id: `stall_${stallId++}`,
-          type: stallType,
-          geometry: stallGeometry,
-          center: [(xStart + xEnd) / 2, (yStart + yEnd) / 2],
-          angle: 90, // Parallel to edge
-          width: stallWidth,
-          length: stallLength
-        });
-      }
+    // Generate aisles
+    for (let row = 0; row < rows - 1; row++) {
+      const aisleY = y + (row + 1) * (stall.depth_ft + stall.aisle_ft) - stall.aisle_ft / 2;
+      
+      aisles.push({
+        id: `aisle_${x}_${y}_${row}`,
+        coords: [
+          [x, aisleY],
+          [x + width, aisleY]
+        ],
+        width: stall.aisle_ft
+      });
     }
 
-    return { stalls, aisles, kpis: {} as any, geometry: {} as any };
-  }
-
-  /**
-   * Determine stall type based on configuration and position
-   */
-  private static determineStallType(stallIndex: number, config: ParkingConfiguration): ParkingStall['type'] {
-    const totalStalls = 100; // This would be calculated based on actual layout
-    const adaStalls = Math.ceil(totalStalls * config.adaPercentage);
-    const compactStalls = Math.ceil(totalStalls * config.compactPercentage);
-
-    if (stallIndex < adaStalls) return 'ada';
-    if (stallIndex < adaStalls + compactStalls) return 'compact';
-    if (stallIndex < adaStalls + compactStalls + 5) return 'motorcycle'; // 5 motorcycle stalls
-    return 'standard';
-  }
-
-  /**
-   * Create stall geometry
-   */
-  private static createStallGeometry(
-    x1: number, y1: number, x2: number, y2: number, 
-    stallType: ParkingStall['type']
-  ): ParkingStall['geometry'] {
-    const coordinates = [[
-      [x1, y1],
-      [x2, y1],
-      [x2, y2],
-      [x1, y2],
-      [x1, y1]
-    ]];
-
     return {
-      type: 'Polygon',
-      coordinates
+      id: `module_${x}_${y}`,
+      angle,
+      stalls,
+      aisles,
+      bounds: { minX: x, minY: y, maxX: x + width, maxY: y + depth }
     };
   }
 
   /**
-   * Create aisle geometry
+   * Check if module is valid (within polygon and no overlaps)
    */
-  private static createAisleGeometry(
-    x1: number, y1: number, x2: number, y2: number,
-    width: number
-  ): ParkingAisle['geometry'] {
-    const coordinates = [[
-      [x1, y1],
-      [x2, y1],
-      [x2, y2],
-      [x1, y2],
-      [x1, y1]
-    ]];
+  private static isModuleValid(
+    module: ParkingModule,
+    polygonCoords: number[][]
+  ): boolean {
+    // Check if all corners are within polygon
+    const corners = [
+      [module.bounds.minX, module.bounds.minY],
+      [module.bounds.maxX, module.bounds.minY],
+      [module.bounds.maxX, module.bounds.maxY],
+      [module.bounds.minX, module.bounds.maxY]
+    ];
 
-    return {
-      type: 'Polygon',
-      coordinates
-    };
+    return corners.every(corner => this.isPointInPolygon(corner, polygonCoords));
   }
 
   /**
-   * Calculate KPIs for the parking layout
+   * Calculate KPIs for parking layout
    */
   private static calculateKPIs(
-    result: ParkingResult,
-    polygon: number[][],
-    config: ParkingConfiguration
-  ): ParkingResult['kpis'] {
-    const totalStalls = result.stalls.length;
-    const standardStalls = result.stalls.filter(s => s.type === 'standard').length;
-    const compactStalls = result.stalls.filter(s => s.type === 'compact').length;
-    const adaStalls = result.stalls.filter(s => s.type === 'ada').length;
-    const motorcycleStalls = result.stalls.filter(s => s.type === 'motorcycle').length;
-
-    // Calculate total area
-    const totalArea = CoordinateTransform.calculatePolygonArea(polygon, 'feet');
-    const efficiency = totalStalls / (totalArea / 1000); // stalls per 1000 sq ft
-
-    // Check ADA compliance (minimum 2% or 1 stall, whichever is greater)
-    const requiredAdaStalls = Math.max(1, Math.ceil(totalStalls * 0.02));
-    const adaCompliance = adaStalls >= requiredAdaStalls;
-
-    // Check drive continuity (simplified - assumes true if aisles exist)
-    const driveContinuity = result.aisles.length > 0;
+    stalls: ParkingStall[],
+    area: number,
+    params: ParkingParams
+  ): ParkingKPI {
+    const stall_count = stalls.length;
+    const ada_stalls = stalls.filter(s => s.isADA).length;
+    const ratio = area > 0 ? stall_count / (area / 1000) : 0; // stalls per 1000 sq ft
+    const efficiency = area > 0 ? (stall_count / area) * 1000 : 0;
+    
+    // Simple drive continuity penalty (can be enhanced)
+    const drive_continuity_penalty = this.calculateDriveContinuityPenalty(stalls);
 
     return {
-      totalStalls,
-      standardStalls,
-      compactStalls,
-      adaStalls,
-      motorcycleStalls,
-      totalArea,
-      efficiency,
-      adaCompliance,
-      driveContinuity
+      stall_count,
+      ratio,
+      drive_continuity_penalty,
+      ada_stalls,
+      efficiency
     };
   }
 
   /**
-   * Generate GeoJSON geometry for the parking layout
+   * Calculate drive continuity penalty
    */
-  private static generateGeoJSON(result: ParkingResult): ParkingResult['geometry'] {
-    const features = [];
+  private static calculateDriveContinuityPenalty(stalls: ParkingStall[]): number {
+    // Simple implementation - can be enhanced with actual drive path analysis
+    const isolatedStalls = stalls.filter(stall => {
+      // Check if stall has neighbors within reasonable distance
+      const hasNeighbors = stalls.some(other => 
+        other.id !== stall.id &&
+        Math.abs(other.x - stall.x) < 20 &&
+        Math.abs(other.y - stall.y) < 20
+      );
+      return !hasNeighbors;
+    });
+
+    return isolatedStalls.length / stalls.length;
+  }
+
+  /**
+   * Create GeoJSON features from stalls and aisles
+   */
+  private static createGeoJSONFeatures(
+    stalls: ParkingStall[],
+    aisles: ParkingAisle[]
+  ): GeoJSON.FeatureCollection {
+    const features: GeoJSON.Feature[] = [];
 
     // Add stall features
-    for (const stall of result.stalls) {
+    stalls.forEach(stall => {
+      const coords = this.createStallCoordinates(stall);
       features.push({
         type: 'Feature',
-        properties: {
-          type: 'stall',
-          stallType: stall.type
+        geometry: {
+          type: 'Polygon',
+          coordinates: [coords]
         },
-        geometry: stall.geometry
+        properties: {
+          id: stall.id,
+          type: 'parking_stall',
+          stall_type: stall.type,
+          is_ada: stall.isADA,
+          angle: stall.angle
+        }
       });
-    }
+    });
 
     // Add aisle features
-    for (const aisle of result.aisles) {
+    aisles.forEach(aisle => {
       features.push({
         type: 'Feature',
-        properties: {
-          type: 'aisle',
-          aisleId: aisle.id
+        geometry: {
+          type: 'LineString',
+          coordinates: aisle.coords
         },
-        geometry: aisle.geometry
+        properties: {
+          id: aisle.id,
+          type: 'parking_aisle',
+          width: aisle.width
+        }
       });
-    }
+    });
 
     return {
       type: 'FeatureCollection',
@@ -429,70 +410,76 @@ export class ParkingGenerator {
   }
 
   /**
-   * Validate parking inputs
+   * Create coordinates for a parking stall
    */
-  private static validateInputs(inputs: ParkingInputs): { isValid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    if (!inputs.buildablePolygon || inputs.buildablePolygon.length < 3) {
-      errors.push('Invalid buildable polygon');
+  private static createStallCoordinates(stall: ParkingStall): number[][] {
+    const { x, y, width, depth, angle } = stall;
+    
+    if (angle === 0) {
+      // Parallel parking - simple rectangle
+      return [
+        [x, y],
+        [x + width, y],
+        [x + width, y + depth],
+        [x, y + depth],
+        [x, y]
+      ];
     }
 
-    if (![90, 60, 45, 0].includes(inputs.configuration.angle)) {
-      errors.push('Invalid parking angle');
-    }
+    // Angled parking - rotated rectangle
+    const radians = (angle * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
 
-    if (inputs.configuration.stallWidth < 7 || inputs.configuration.stallWidth > 12) {
-      errors.push('Invalid stall width');
-    }
+    const corners = [
+      [0, 0],
+      [width, 0],
+      [width, depth],
+      [0, depth]
+    ];
 
-    if (inputs.configuration.stallLength < 15 || inputs.configuration.stallLength > 25) {
-      errors.push('Invalid stall length');
-    }
-
-    if (inputs.configuration.aisleWidth < 18) {
-      errors.push('Aisle width too narrow');
-    }
-
-    if (inputs.configuration.adaPercentage < 0 || inputs.configuration.adaPercentage > 0.1) {
-      errors.push('Invalid ADA percentage');
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
+    return corners.map(([dx, dy]) => [
+      x + dx * cos - dy * sin,
+      y + dx * sin + dy * cos
+    ]);
   }
 
   /**
-   * Optimize parking layout for maximum efficiency
+   * Extract coordinates from polygon
    */
-  static optimizeParking(inputs: ParkingInputs): ParkingResult {
-    const angles = [90, 60, 45, 0];
-    let bestResult: ParkingResult | null = null;
-    let bestEfficiency = 0;
+  private static extractPolygonCoordinates(polygon: GeoJSON.Polygon): number[][] {
+    if (!polygon.coordinates || polygon.coordinates.length === 0) {
+      return [];
+    }
+    return polygon.coordinates[0] as number[][];
+  }
 
-    for (const angle of angles) {
-      const config = { ...inputs.configuration, angle };
-      try {
-        const result = this.generateParking({ ...inputs, configuration: config });
-        if (result.kpis.efficiency > bestEfficiency) {
-          bestEfficiency = result.kpis.efficiency;
-          bestResult = result;
-        }
-      } catch (error) {
-        console.warn(`Failed to generate parking for angle ${angle}:`, error);
+  /**
+   * Check if point is inside polygon using ray casting algorithm
+   */
+  private static isPointInPolygon(point: number[], polygon: number[][]): boolean {
+    const [x, y] = point;
+    let inside = false;
+
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const [xi, yi] = polygon[i];
+      const [xj, yj] = polygon[j];
+
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
       }
     }
 
-    if (!bestResult) {
-      throw new Error('Failed to generate any valid parking layout');
-    }
-
-    return bestResult;
+    return inside;
   }
 }
 
-// Export convenience functions
-export const generateParking = (inputs: ParkingInputs) => ParkingGenerator.generateParking(inputs);
-export const optimizeParking = (inputs: ParkingInputs) => ParkingGenerator.optimizeParking(inputs);
+/**
+ * Main function to generate parking layouts
+ */
+export function generateParking(
+  buildableFeetPolygon: GeoJSON.Polygon,
+  params: ParkingParams
+): ParkingResult[] {
+  return ParkingGenerator.generateParking(buildableFeetPolygon, params);
+}

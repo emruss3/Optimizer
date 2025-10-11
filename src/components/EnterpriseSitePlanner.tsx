@@ -2659,17 +2659,72 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               area_sqft: envelopeData.area_sqft
             });
             
-            // Create a simple rectangular buildable area element
-            // For now, create a basic rectangle that represents the buildable area
-            const buildableWidth = 200; // SVG units
-            const buildableHeight = 200; // SVG units
+            // Parse the real buildable geometry from the database
+            let vertices: Vertex[] = [];
             
-            const vertices = [
-              { id: generateId(), x: 0, y: 0 },
-              { id: generateId(), x: buildableWidth, y: 0 },
-              { id: generateId(), x: buildableWidth, y: buildableHeight },
-              { id: generateId(), x: 0, y: buildableHeight }
-            ];
+            if (envelopeData.buildable_geom && envelopeData.buildable_geom.coordinates) {
+              console.log('🔍 Parsing real buildable geometry from database');
+              
+              // Extract coordinates from GeoJSON
+              let coords: number[][];
+              if (envelopeData.buildable_geom.type === 'Polygon') {
+                coords = envelopeData.buildable_geom.coordinates[0] as number[][];
+              } else if (envelopeData.buildable_geom.type === 'MultiPolygon') {
+                coords = (envelopeData.buildable_geom.coordinates as number[][][])[0][0];
+              } else {
+                console.warn('⚠️ Unsupported buildable geometry type:', envelopeData.buildable_geom.type);
+                coords = [];
+              }
+              
+              if (coords.length > 0) {
+                // Convert from Web Mercator meters to feet, then to SVG units
+                // Using 12 SVG units = 1 ft conversion
+                const svgUnitsPerFoot = 12;
+                const metersToFeet = 3.28084;
+                
+                // Convert coordinates and normalize to start at (0,0)
+                const coordsInFeet = coords.map(([x, y]) => [
+                  x * metersToFeet,
+                  y * metersToFeet
+                ]);
+                
+                // Find bounds
+                const bounds = coordsInFeet.reduce((acc, [x, y]) => ({
+                  minX: Math.min(acc.minX, x),
+                  maxX: Math.max(acc.maxX, x),
+                  minY: Math.min(acc.minY, y),
+                  maxY: Math.max(acc.maxY, y)
+                }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+                
+                // Normalize coordinates to start at (0,0) and convert to SVG units
+                vertices = coordsInFeet.map(([x, y], index) => ({
+                  id: generateId(),
+                  x: (x - bounds.minX) * svgUnitsPerFoot,
+                  y: (y - bounds.minY) * svgUnitsPerFoot
+                }));
+                
+                console.log('✅ Parsed real buildable geometry:', {
+                  originalCoords: coords.length,
+                  vertices: vertices.length,
+                  bounds: bounds,
+                  svgUnitsPerFoot
+                });
+              }
+            }
+            
+            // Fallback to simple rectangle if no real geometry
+            if (vertices.length === 0) {
+              console.log('⚠️ Using fallback rectangle for buildable area');
+              const buildableWidth = 200; // SVG units
+              const buildableHeight = 200; // SVG units
+              
+              vertices = [
+                { id: generateId(), x: 0, y: 0 },
+                { id: generateId(), x: buildableWidth, y: 0 },
+                { id: generateId(), x: buildableWidth, y: buildableHeight },
+                { id: generateId(), x: 0, y: buildableHeight }
+              ];
+            }
             
             // Use the actual buildable area from the Supabase function
             const correctBuildableAreaSqFt = envelopeData.area_sqft || 0;
@@ -2748,66 +2803,63 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             });
           }
           
-          if (geometry && geometry.coordinates) {
-            // Convert geometry coordinates from feet to SVG units for rendering
-            const convertedGeometry = {
-              ...geometry,
-              coordinates: geometry.coordinates.map(([x, y]: [number, number]) => [
-                x * gridSize,
-                y * gridSize
-              ]),
-              bounds: {
-                minX: geometry.bounds.minX * gridSize,
-                minY: geometry.bounds.minY * gridSize,
-                maxX: geometry.bounds.maxX * gridSize,
-                maxY: geometry.bounds.maxY * gridSize
-              },
-              width: geometry.width * gridSize,
-              depth: geometry.depth * gridSize
-            };
+          // Set up viewport based on buildable area bounds
+          if (finalBuildableArea && finalBuildableArea.vertices.length > 0) {
+            const bounds = finalBuildableArea.vertices.reduce(
+              (acc, vertex) => ({
+                minX: Math.min(acc.minX, vertex.x),
+                maxX: Math.max(acc.maxX, vertex.x),
+                minY: Math.min(acc.minY, vertex.y),
+                maxY: Math.max(acc.maxY, vertex.y)
+              }),
+              { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
+            );
             
-            setParcelGeometry(convertedGeometry);
-            setParcelBounds({ width: convertedGeometry.width, height: convertedGeometry.depth });
+            const width = bounds.maxX - bounds.minX;
+            const height = bounds.maxY - bounds.minY;
             
-            // Calculate baseline zoom where parcel fills view at 1x
-            const baseline = calculateBaselineZoom(convertedGeometry.width, convertedGeometry.depth);
+            setParcelBounds({ width, height });
+            
+            // Calculate baseline zoom where buildable area fills view at 1x
+            const baseline = calculateBaselineZoom(width, height);
             setBaselineZoom(baseline);
             setZoom(1); // Start at 1x (which will be the baseline zoom)
             
-            // Center the parcel and make it fill most of the viewing area
-            const padding = Math.max(convertedGeometry.width, convertedGeometry.depth) * 0.1; // 10% padding
-            const viewBoxString = `${convertedGeometry.bounds.minX - padding} ${convertedGeometry.bounds.minY - padding} ${convertedGeometry.width + (padding * 2)} ${convertedGeometry.depth + (padding * 2)}`;
+            // Center the buildable area and make it fill most of the viewing area
+            const padding = Math.max(width, height) * 0.1; // 10% padding
+            const viewBoxString = `${bounds.minX - padding} ${bounds.minY - padding} ${width + (padding * 2)} ${height + (padding * 2)}`;
             setViewBox(viewBoxString);
             
-            console.log('✅ Parcel geometry loaded:', { 
-              width: geometry.width, 
-              height: geometry.depth,
-              area: geometry.area,
-              coordinates: geometry.coordinates.length,
-              bounds: geometry.bounds,
+            console.log('✅ Buildable area viewport set:', { 
+              width, 
+              height,
+              bounds,
               viewBox: viewBoxString
             });
           }
         } else {
           console.warn('⚠️ No envelope data available, falling back to basic geometry');
           // Fallback to basic geometry loading
-          const geometry = await fetchParcelGeometry3857(parcel.ogc_fid);
-          if (geometry && geometry.coordinates) {
+          const geometryData = await fetchParcelGeometry3857(parcel.ogc_fid);
+          if (geometryData && geometryData.geometry_3857) {
+            // Parse the geometry using the parcel geometry service
+            const parsedGeometry = parseGeometryForSitePlanner(geometryData);
+            
             // Convert geometry coordinates from feet to SVG units for rendering
             const convertedGeometry = {
-              ...geometry,
-              coordinates: geometry.coordinates.map(([x, y]: [number, number]) => [
+              ...parsedGeometry,
+              coordinates: parsedGeometry.coordinates.map(([x, y]: [number, number]) => [
                 x * gridSize,
                 y * gridSize
               ]),
               bounds: {
-                minX: geometry.bounds.minX * gridSize,
-                minY: geometry.bounds.minY * gridSize,
-                maxX: geometry.bounds.maxX * gridSize,
-                maxY: geometry.bounds.maxY * gridSize
+                minX: parsedGeometry.bounds.minX * gridSize,
+                minY: parsedGeometry.bounds.minY * gridSize,
+                maxX: parsedGeometry.bounds.maxX * gridSize,
+                maxY: parsedGeometry.bounds.maxY * gridSize
               },
-              width: geometry.width * gridSize,
-              depth: geometry.depth * gridSize
+              width: parsedGeometry.width * gridSize,
+              depth: parsedGeometry.depth * gridSize
             };
             
             setParcelGeometry(convertedGeometry);
