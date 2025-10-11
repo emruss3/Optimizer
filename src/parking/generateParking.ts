@@ -56,7 +56,7 @@ export type ParkingAisle = {
 };
 
 /**
- * Deterministic parking generator with TestFit-like behavior
+ * Deterministic parking generator with intelligent layout optimization
  * Generates parking layouts based on buildable polygon and parameters
  */
 export class ParkingGenerator {

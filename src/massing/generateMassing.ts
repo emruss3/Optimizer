@@ -53,7 +53,7 @@ export type MassingCourt = {
 };
 
 /**
- * Deterministic massing generator with TestFit-like behavior
+ * Deterministic massing generator with intelligent layout optimization
  * Generates building bars and courtyards based on buildable polygon and parameters
  */
 export class MassingGenerator {
