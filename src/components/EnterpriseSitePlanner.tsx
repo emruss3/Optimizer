@@ -2560,6 +2560,12 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
     elements.filter(el => el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')), 
     [elements]
   );
+
+  // Get the main buildable area element for UI display
+  const buildableAreaElement = useMemo(() => 
+    elements.find(el => el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')),
+    [elements]
+  );
   
   const totalParkingSpaces = useMemo(() => 
     parkingElements.reduce((total, el) => total + (el.properties.parkingSpaces || 0), 0), 
@@ -5004,10 +5010,6 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             <div className="space-y-0.5">
               {LAYOUT_TEMPLATES.map(template => {
                   // Calculate actual buildable area from the green buildable area element
-                  const buildableAreaElement = elements.find(el => 
-                    el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')
-                  );
-                  
                   let buildableAreaSqFt = 0;
                   if (buildableAreaElement) {
                     // Use the SAME calculation as the visual display
