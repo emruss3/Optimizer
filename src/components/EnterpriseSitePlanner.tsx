@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
 import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, parseGeometryForSitePlanner, SitePlannerGeometry } from '../services/parcelGeometry';
+import { CoordinateTransform } from '../utils/coordinateTransform';
 import { checkAndImportOSMRoads } from '../services/osmRoads';
 import { supabase } from '../lib/supabase';
 
@@ -2835,6 +2836,25 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               bounds,
               viewBox: viewBoxString
             });
+
+            // Set parcel geometry for template generation
+            const parcelGeometryData: SitePlannerGeometry = {
+              coordinates: coordinatesInFeet,
+              bounds,
+              width,
+              depth: height,
+              area: envelopeData.area_sqft,
+              perimeter: CoordinateTransform.calculatePolygonPerimeter(coordinatesInFeet, 'feet'),
+              centroid: {
+                x: width / 2,
+                y: height / 2
+              },
+              normalizedCoordinates: normalizedCoordinates,
+              setbacks_applied: envelopeData.setbacks_applied,
+              edge_types: envelopeData.edge_types
+            };
+            setParcelGeometry(parcelGeometryData);
+            console.log('✅ Parcel geometry set for template generation:', parcelGeometryData);
           }
         } else {
           console.warn('⚠️ No envelope data available, falling back to basic geometry');
