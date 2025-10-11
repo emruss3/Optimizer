@@ -318,12 +318,16 @@ END $$;
 -- 4) INDEXES LAST
 -- ============================================================================
 
--- 4.1 planner_indexes
-CREATE INDEX IF NOT EXISTS idx_planner_parcels_parcel_id ON planner_parcels(parcel_id);
-CREATE INDEX IF NOT EXISTS idx_planner_parcels_geom ON planner_parcels USING GIST(geom);
-CREATE INDEX IF NOT EXISTS idx_planner_zoning_parcel_id ON planner_zoning(parcel_id);
-CREATE INDEX IF NOT EXISTS idx_planner_join_parcel_id ON planner_join(parcel_id);
-CREATE INDEX IF NOT EXISTS idx_planner_join_geom ON planner_join USING GIST(geom);
+-- 4.1 Indexes on underlying tables (views cannot have indexes)
+-- Indexes on public.parcels (underlying table for planner_parcels)
+CREATE INDEX IF NOT EXISTS idx_parcels_geoid ON public.parcels(geoid);
+CREATE INDEX IF NOT EXISTS idx_parcels_ogc_fid ON public.parcels(ogc_fid);
+CREATE INDEX IF NOT EXISTS idx_parcels_geom_4326 ON public.parcels USING GIST(wkb_geometry_4326);
+CREATE INDEX IF NOT EXISTS idx_parcels_geom ON public.parcels USING GIST(wkb_geometry);
+
+-- Indexes on public.zoning (underlying table for planner_zoning)
+CREATE INDEX IF NOT EXISTS idx_zoning_geoid ON public.zoning(geoid);
+CREATE INDEX IF NOT EXISTS idx_zoning_zoning ON public.zoning(zoning);
 
 -- Grant permissions
 GRANT EXECUTE ON FUNCTION public.get_parcel_geometry_3857(int) TO anon, authenticated;
