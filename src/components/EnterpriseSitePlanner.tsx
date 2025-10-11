@@ -2683,17 +2683,18 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
                 coords = [];
               }
               
+              // Convert from Web Mercator meters to feet, then to SVG units
+              // Using 12 SVG units = 1 ft conversion
+              const svgUnitsPerFoot = 12;
+              const metersToFeet = 3.28084;
+              
+              // Convert coordinates and normalize to start at (0,0)
+              const coordsInFeet = coords.map(([x, y]) => [
+                x * metersToFeet,
+                y * metersToFeet
+              ]);
+              
               if (coords.length > 0) {
-                // Convert from Web Mercator meters to feet, then to SVG units
-                // Using 12 SVG units = 1 ft conversion
-                const svgUnitsPerFoot = 12;
-                const metersToFeet = 3.28084;
-                
-                // Convert coordinates and normalize to start at (0,0)
-                const coordsInFeet = coords.map(([x, y]) => [
-                  x * metersToFeet,
-                  y * metersToFeet
-                ]);
                 
                 // Find bounds
                 const bounds = coordsInFeet.reduce((acc, [x, y]) => ({
