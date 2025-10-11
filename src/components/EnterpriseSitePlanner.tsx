@@ -3659,15 +3659,16 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
 
   const applyLayoutTemplate = useCallback((templateId: string) => {
     const template = LAYOUT_TEMPLATES.find(t => t.id === templateId);
-    if (!template || !parcelGeometry) {
-      console.error('❌ Template not found or no parcel geometry:', templateId);
-      return;
-    }
     
-    // Find the buildable area element
+    // Find the buildable area element first
     const buildableAreaElement = elements.find(el => 
       el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')
     );
+    
+    if (!template || !buildableAreaElement) {
+      console.error('❌ Template not found or no buildable area element:', templateId);
+      return;
+    }
     
     console.log('🔍 Available elements:', elements.map(el => ({ 
       type: el.type, 
