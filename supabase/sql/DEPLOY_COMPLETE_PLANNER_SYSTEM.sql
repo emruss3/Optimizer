@@ -6,8 +6,9 @@
 -- 1) BASE TABLES / VIEWS
 -- ============================================================================
 
--- 1.1 planner_parcels view
-DROP VIEW IF EXISTS planner_parcels;
+-- 1.1 planner_parcels view (drop dependencies first)
+DROP VIEW IF EXISTS planner_join CASCADE;
+DROP VIEW IF EXISTS planner_parcels CASCADE;
 CREATE VIEW planner_parcels AS
 SELECT
   COALESCE(
@@ -25,6 +26,7 @@ WHERE COALESCE(wkb_geometry_4326, wkb_geometry) IS NOT NULL
   AND NOT ST_IsEmpty(COALESCE(wkb_geometry_4326, wkb_geometry));
 
 -- 1.2 planner_zoning view (dynamic FAR detection)
+DROP VIEW IF EXISTS planner_zoning CASCADE;
 DO $dynfar$
 DECLARE
   dyn_far_col text;
@@ -46,7 +48,6 @@ BEGIN
   END;
 
   sql_zoning := format($f$
-    DROP VIEW IF EXISTS planner_zoning;
     CREATE VIEW planner_zoning AS
     SELECT
       geoid::text AS parcel_id,
@@ -69,7 +70,7 @@ END
 $dynfar$ LANGUAGE plpgsql;
 
 -- 1.3 planner_join view
-DROP VIEW IF EXISTS planner_join;
+DROP VIEW IF EXISTS planner_join CASCADE;
 CREATE VIEW planner_join AS
 SELECT
   p.parcel_id,
