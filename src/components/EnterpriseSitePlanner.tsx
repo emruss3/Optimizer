@@ -2845,12 +2845,12 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
 
             // Set parcel geometry for template generation
             const parcelGeometryData: SitePlannerGeometry = {
-              coordinates: coordinatesInFeet,
+              coordinates: coordsInFeet,
               bounds,
               width,
               depth: height,
               area: envelopeData.area_sqft,
-              perimeter: CoordinateTransform.calculatePolygonPerimeter(coordinatesInFeet, 'feet'),
+              perimeter: CoordinateTransform.calculatePolygonPerimeter(coordsInFeet, 'feet'),
               centroid: {
                 x: width / 2,
                 y: height / 2
