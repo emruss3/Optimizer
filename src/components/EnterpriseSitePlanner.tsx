@@ -2875,6 +2875,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             setViewBox(viewBoxString);
           }
         }
+        }
       } catch (error) {
         console.error('Error loading parcel geometry:', error);
       }
