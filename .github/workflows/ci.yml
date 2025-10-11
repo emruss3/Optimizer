@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main, fix/planner-parity]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: TypeScript type check
+        run: npm run typecheck
+        
+      - name: ESLint
+        run: npm run lint
+        
+      - name: Unit tests
+        run: npm run test -- --ci
+        
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+        
+      - name: E2E tests
+        run: npm run e2e:ci
+        
+      - name: SQL smoke tests
+        run: |
+          if [ -n "$SUPABASE_DB_URL" ]; then
+            npm run db:smoke
+          else
+            echo "Skipping SQL smoke tests - no database URL provided"
+          fi
+        
+      - name: Security scan (OSV)
+        run: npx @google/osv-scanner -r .
