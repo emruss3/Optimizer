@@ -8,7 +8,7 @@ import {
   MousePointer, Edit3, Maximize, MoreHorizontal, X
 } from 'lucide-react';
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
-import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, SitePlannerGeometry } from '../services/parcelGeometry';
+import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, parseGeometryForSitePlanner, SitePlannerGeometry } from '../services/parcelGeometry';
 import { checkAndImportOSMRoads } from '../services/osmRoads';
 import { supabase } from '../lib/supabase';
 

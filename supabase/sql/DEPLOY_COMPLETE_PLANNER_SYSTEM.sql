@@ -264,10 +264,10 @@ DECLARE
   parcel_geoid text;
 BEGIN
   -- 1) fetch parcel geom (3857)
-  SELECT ST_Transform(wkb_geometry_4326, 3857), geoid::text 
+  SELECT ST_Transform(p.wkb_geometry_4326, 3857), p.geoid::text 
   INTO parcel_geom, parcel_geoid
-  FROM public.parcels 
-  WHERE ogc_fid = p_ogc_fid
+  FROM public.parcels p
+  WHERE p.ogc_fid = p_ogc_fid
   LIMIT 1;
   
   IF parcel_geom IS NULL THEN
