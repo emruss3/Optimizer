@@ -60,6 +60,18 @@ export interface SitePlannerGeometry {
     y: number;
   };
   normalizedCoordinates: number[][];
+  // Envelope metadata for intelligent features
+  setbacks_applied?: {
+    front: number;
+    side: number;
+    rear: number;
+  };
+  edge_types?: {
+    front: boolean;
+    side: boolean;
+    rear: boolean;
+    easement: boolean;
+  };
 }
 
 /**
@@ -280,7 +292,9 @@ export class ParcelGeometryService {
         area,
         perimeter,
         centroid,
-        normalizedCoordinates
+        normalizedCoordinates,
+        setbacks_applied: envelopeData.setbacks_applied,
+        edge_types: envelopeData.edge_types
       };
 
       console.log('✅ Buildable envelope parsed successfully:', {

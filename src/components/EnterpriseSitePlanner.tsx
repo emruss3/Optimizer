@@ -2804,8 +2804,8 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
           }
           
           // Set up viewport based on buildable area bounds
-          if (buildableAreaElement && buildableAreaElement.vertices.length > 0) {
-            const bounds = buildableAreaElement.vertices.reduce(
+          if (finalBuildableArea && finalBuildableArea.vertices.length > 0) {
+            const bounds = finalBuildableArea.vertices.reduce(
               (acc, vertex) => ({
                 minX: Math.min(acc.minX, vertex.x),
                 maxX: Math.max(acc.maxX, vertex.x),
