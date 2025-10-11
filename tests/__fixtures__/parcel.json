@@ -1,0 +1,136 @@
+{
+  "test_parcels": [
+    {
+      "ogc_fid": 661807,
+      "address": "123 Test Street, Nashville, TN 37203",
+      "expected_area_sqft": 50000,
+      "zoning": {
+        "base": "MUG",
+        "max_far": 2.5,
+        "max_height_ft": 60,
+        "setbacks": {
+          "front": 20,
+          "side": 5,
+          "rear": 20
+        },
+        "permitted_uses": ["Multi-Family", "Mixed-Use", "Office", "Retail"],
+        "parking_ratio": 1.5
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-86.7845, 36.1627],
+          [-86.7840, 36.1627],
+          [-86.7840, 36.1632],
+          [-86.7845, 36.1632],
+          [-86.7845, 36.1627]
+        ]]
+      }
+    },
+    {
+      "ogc_fid": 661808,
+      "address": "456 Development Ave, Nashville, TN 37203",
+      "expected_area_sqft": 75000,
+      "zoning": {
+        "base": "MUL",
+        "max_far": 3.0,
+        "max_height_ft": 80,
+        "setbacks": {
+          "front": 25,
+          "side": 10,
+          "rear": 25
+        },
+        "permitted_uses": ["Multi-Family", "Office", "Hotel"],
+        "parking_ratio": 1.2
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-86.7850, 36.1630],
+          [-86.7840, 36.1630],
+          [-86.7840, 36.1640],
+          [-86.7850, 36.1640],
+          [-86.7850, 36.1630]
+        ]]
+      }
+    },
+    {
+      "ogc_fid": 661809,
+      "address": "789 Residential Rd, Nashville, TN 37203",
+      "expected_area_sqft": 30000,
+      "zoning": {
+        "base": "R6",
+        "max_far": 1.5,
+        "max_height_ft": 40,
+        "setbacks": {
+          "front": 15,
+          "side": 5,
+          "rear": 15
+        },
+        "permitted_uses": ["Single-Family", "Townhouse", "Duplex"],
+        "parking_ratio": 2.0
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-86.7860, 36.1625],
+          [-86.7855, 36.1625],
+          [-86.7855, 36.1630],
+          [-86.7860, 36.1630],
+          [-86.7860, 36.1625]
+        ]]
+      }
+    }
+  ],
+  "test_scenarios": {
+    "high_density": {
+      "description": "High-density mixed-use development",
+      "target_far": 2.5,
+      "parking_angle": 90,
+      "bar_count": 3,
+      "floors": 6
+    },
+    "low_density": {
+      "description": "Low-density residential",
+      "target_far": 1.0,
+      "parking_angle": 0,
+      "bar_count": 1,
+      "floors": 2
+    },
+    "office_focused": {
+      "description": "Office-focused development",
+      "target_far": 2.0,
+      "parking_angle": 60,
+      "bar_count": 2,
+      "floors": 4
+    }
+  },
+  "expected_kpi_ranges": {
+    "coverage": {
+      "min": 0.0,
+      "max": 0.8,
+      "target": 0.35
+    },
+    "far": {
+      "min": 0.0,
+      "max": 3.0,
+      "target": 2.0
+    },
+    "parking_ratio": {
+      "min": 0.0,
+      "max": 3.0,
+      "target": 1.5
+    },
+    "open_space": {
+      "min": 0.0,
+      "max": 1.0,
+      "target": 0.2
+    }
+  },
+  "performance_benchmarks": {
+    "scheme_generation_time_ms": 5000,
+    "kpi_update_time_ms": 300,
+    "export_time_ms": 2000,
+    "max_schemes": 20
+  }
+}

@@ -37,10 +37,7 @@ export interface ParcelBuildableEnvelope {
     side: number;
     rear: number;
   };
-  easements_removed: {
-    count: number;
-    areas: any[];
-  };
+  easements_removed: number; // Changed from object to number to match SQL signature
 }
 
 export interface SitePlannerGeometry {
