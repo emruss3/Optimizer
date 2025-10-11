@@ -1,578 +1,366 @@
 // © 2025 ER Technologies. All rights reserved.
 // Proprietary and confidential. Not for distribution.
 
-import { ParkingResult } from '../parking/generateParking';
-import { MassingResult } from '../massing/generateMassing';
+import { generateMassing, MassingPreset, MassingResult } from '../massing/generateMassing';
+import { generateParking, ParkingParams, ParkingResult } from '../parking/generateParking';
+import { GeoJSON } from '../types/parcel';
 
-// Types
-export interface SchemeConfiguration {
-  orientation: 'north-south' | 'east-west' | 'optimal';
-  parkingAngle: 90 | 60 | 45 | 0;
+export type SchemeParams = {
+  orientationDeg: number;
+  parkingAngle: 0 | 45 | 60 | 90;
   barCount: number;
-  barLength: number;
+  barLenFt: number;
   floors: number;
-  parkingRatio: number; // 0-1
-  buildingCoverage: number; // 0-1
-}
+  padElevationFt?: number;
+};
 
-export interface SchemeMetrics {
-  totalNRSF: number;
-  totalParkingStalls: number;
-  parkingRatio: number;
-  buildingCoverage: number;
-  far: number;
-  efficiency: number; // NRSF per parking stall
-  costPerSF: number; // Estimated
-  revenuePerSF: number; // Estimated
-  netPresentValue: number;
-  internalRateOfReturn: number;
-  paybackPeriod: number;
-}
+export type SchemeScore = {
+  parking_achieved: number;    // 0-1, based on parking ratio achieved
+  nrsf: number;               // Net Rentable Square Feet
+  cut_fill_cost: number;      // Cost penalty for site work
+  violations: number;         // Zoning/regulation violations
+  total_score: number;        // Weighted combination of all factors
+};
 
-export interface Scheme {
+export type Scheme = {
   id: string;
-  name: string;
-  configuration: SchemeConfiguration;
+  params: SchemeParams;
   massing: MassingResult;
-  parking: ParkingResult;
-  metrics: SchemeMetrics;
-  thumbnail?: string; // Base64 encoded image
-  rank: number;
-  paretoOptimal: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
+  parking: ParkingResult[];
+  score: SchemeScore;
+  thumbnail?: string; // Base64 encoded thumbnail
+  created_at: Date;
+};
 
-export interface SchemeComparison {
+export type ParetoSet = {
   schemes: Scheme[];
-  paretoFront: Scheme[];
-  bestByMetric: {
-    highestNRSF: Scheme;
-    highestEfficiency: Scheme;
-    highestNPV: Scheme;
-    highestIRR: Scheme;
-    lowestPayback: Scheme;
-  };
-}
-
-export interface SchemeFilters {
-  minNRSF?: number;
-  maxNRSF?: number;
-  minParkingStalls?: number;
-  maxParkingStalls?: number;
-  minEfficiency?: number;
-  maxEfficiency?: number;
-  minNPV?: number;
-  maxNPV?: number;
-  minIRR?: number;
-  maxIRR?: number;
-  maxPaybackPeriod?: number;
-  paretoOptimalOnly?: boolean;
-}
+  dominated_count: number;
+  total_evaluated: number;
+};
 
 /**
- * Scheme store for enumeration and pareto optimization
- * Manages multiple development schemes and their comparisons
+ * Scheme store for managing and optimizing development schemes
+ * Implements pareto optimization for multi-objective decision making
  */
 export class SchemeStore {
   private schemes: Map<string, Scheme> = new Map();
-  private paretoFront: Scheme[] = [];
-  private nextId = 1;
+  private paretoSet: Scheme[] = [];
 
   /**
-   * Add a new scheme to the store
+   * Enumerate schemes based on base parameters
    */
-  addScheme(
-    configuration: SchemeConfiguration,
-    massing: MassingResult,
-    parking: ParkingResult,
-    name?: string
-  ): Scheme {
-    const id = `scheme_${this.nextId++}`;
-    const schemeName = name || this.generateSchemeName(configuration);
-    
-    const metrics = this.calculateSchemeMetrics(massing, parking, configuration);
-    const rank = this.calculateSchemeRank(metrics);
+  static enumerateSchemes(base: Partial<SchemeParams>): SchemeParams[] {
+    const schemes: SchemeParams[] = [];
 
-    const scheme: Scheme = {
-      id,
-      name: schemeName,
-      configuration,
-      massing,
-      parking,
-      metrics,
-      rank,
-      paretoOptimal: false,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    // Define parameter ranges
+    const orientations = [0, 15, 30, 45, 60, 75, 90];
+    const parkingAngles: Array<0 | 45 | 60 | 90> = [0, 45, 60, 90];
+    const barCounts = [1, 2, 3, 4, 5];
+    const barLengths = [100, 150, 200, 250, 300];
+    const floorCounts = [1, 2, 3, 4, 5, 6, 8, 10];
 
-    this.schemes.set(id, scheme);
-    this.updateParetoFront();
-    this.updateSchemeRanks();
-
-    console.log('✅ Scheme added:', {
-      id: scheme.id,
-      name: scheme.name,
-      rank: scheme.rank,
-      paretoOptimal: scheme.paretoOptimal
-    });
-
-    return scheme;
-  }
-
-  /**
-   * Get all schemes
-   */
-  getAllSchemes(): Scheme[] {
-    return Array.from(this.schemes.values()).sort((a, b) => a.rank - b.rank);
-  }
-
-  /**
-   * Get schemes by filters
-   */
-  getSchemesByFilters(filters: SchemeFilters): Scheme[] {
-    let schemes = this.getAllSchemes();
-
-    if (filters.paretoOptimalOnly) {
-      schemes = schemes.filter(s => s.paretoOptimal);
+    // Generate combinations (limit to reasonable number)
+    for (const orientation of orientations) {
+      for (const parkingAngle of parkingAngles) {
+        for (const barCount of barCounts) {
+          for (const barLen of barLengths) {
+            for (const floors of floorCounts) {
+              schemes.push({
+                orientationDeg: orientation,
+                parkingAngle,
+                barCount,
+                barLenFt: barLen,
+                floors,
+                padElevationFt: base.padElevationFt || 0
+              });
+            }
+          }
+        }
+      }
     }
 
-    if (filters.minNRSF !== undefined) {
-      schemes = schemes.filter(s => s.metrics.totalNRSF >= filters.minNRSF!);
-    }
-
-    if (filters.maxNRSF !== undefined) {
-      schemes = schemes.filter(s => s.metrics.totalNRSF <= filters.maxNRSF!);
-    }
-
-    if (filters.minParkingStalls !== undefined) {
-      schemes = schemes.filter(s => s.metrics.totalParkingStalls >= filters.minParkingStalls!);
-    }
-
-    if (filters.maxParkingStalls !== undefined) {
-      schemes = schemes.filter(s => s.metrics.totalParkingStalls <= filters.maxParkingStalls!);
-    }
-
-    if (filters.minEfficiency !== undefined) {
-      schemes = schemes.filter(s => s.metrics.efficiency >= filters.minEfficiency!);
-    }
-
-    if (filters.maxEfficiency !== undefined) {
-      schemes = schemes.filter(s => s.metrics.efficiency <= filters.maxEfficiency!);
-    }
-
-    if (filters.minNPV !== undefined) {
-      schemes = schemes.filter(s => s.metrics.netPresentValue >= filters.minNPV!);
-    }
-
-    if (filters.maxNPV !== undefined) {
-      schemes = schemes.filter(s => s.metrics.netPresentValue <= filters.maxNPV!);
-    }
-
-    if (filters.minIRR !== undefined) {
-      schemes = schemes.filter(s => s.metrics.internalRateOfReturn >= filters.minIRR!);
-    }
-
-    if (filters.maxIRR !== undefined) {
-      schemes = schemes.filter(s => s.metrics.internalRateOfReturn <= filters.maxIRR!);
-    }
-
-    if (filters.maxPaybackPeriod !== undefined) {
-      schemes = schemes.filter(s => s.metrics.paybackPeriod <= filters.maxPaybackPeriod!);
+    // Limit to reasonable number of schemes (sample if too many)
+    if (schemes.length > 1000) {
+      return this.sampleSchemes(schemes, 1000);
     }
 
     return schemes;
   }
 
   /**
-   * Get scheme by ID
+   * Sample schemes to limit total count
+   */
+  private static sampleSchemes(schemes: SchemeParams[], maxCount: number): SchemeParams[] {
+    const step = Math.floor(schemes.length / maxCount);
+    return schemes.filter((_, index) => index % step === 0).slice(0, maxCount);
+  }
+
+  /**
+   * Score a scheme based on multiple criteria
+   */
+  static score(scheme: Scheme): SchemeScore {
+    const { massing, parking } = scheme;
+    
+    // Calculate parking achievement (0-1)
+    const parking_achieved = this.calculateParkingAchievement(parking);
+    
+    // NRSF score (normalized)
+    const nrsf = massing.kpis.nrsf;
+    
+    // Cut/fill cost (simplified calculation)
+    const cut_fill_cost = this.calculateCutFillCost(scheme.params, massing);
+    
+    // Violations penalty
+    const violations = this.calculateViolations(scheme.params, massing);
+    
+    // Weighted total score
+    const weights = {
+      parking: 0.3,
+      nrsf: 0.4,
+      cost: 0.2,
+      violations: 0.1
+    };
+    
+    const total_score = 
+      parking_achieved * weights.parking +
+      (nrsf / 100000) * weights.nrsf + // Normalize NRSF
+      (1 - cut_fill_cost / 1000000) * weights.cost + // Invert cost (lower is better)
+      (1 - violations) * weights.violations; // Invert violations (lower is better)
+
+    return {
+      parking_achieved,
+      nrsf,
+      cut_fill_cost,
+      violations,
+      total_score: Math.max(0, Math.min(1, total_score))
+    };
+  }
+
+  /**
+   * Calculate parking achievement score
+   */
+  private static calculateParkingAchievement(parking: ParkingResult[]): number {
+    if (parking.length === 0) return 0;
+    
+    // Use the best parking result
+    const bestParking = parking.reduce((best, current) => 
+      current.kpis.efficiency > best.kpis.efficiency ? current : best
+    );
+    
+    // Normalize efficiency (assume 10 stalls per 1000 sq ft is good)
+    return Math.min(1, bestParking.kpis.efficiency / 10);
+  }
+
+  /**
+   * Calculate cut/fill cost
+   */
+  private static calculateCutFillCost(params: SchemeParams, massing: MassingResult): number {
+    // Simplified calculation based on building area and elevation
+    const buildingArea = massing.kpis.nrsf / massing.kpis.floors;
+    const elevationCost = (params.padElevationFt || 0) * buildingArea * 5; // $5 per sq ft per foot
+    const siteWorkCost = buildingArea * 2; // $2 per sq ft for basic site work
+    
+    return elevationCost + siteWorkCost;
+  }
+
+  /**
+   * Calculate violations penalty
+   */
+  private static calculateViolations(params: SchemeParams, massing: MassingResult): number {
+    let violations = 0;
+    
+    // FAR violation (assume max FAR of 2.0)
+    if (massing.kpis.far > 2.0) {
+      violations += (massing.kpis.far - 2.0) * 0.5;
+    }
+    
+    // Coverage violation (assume max coverage of 0.8)
+    if (massing.kpis.coverage > 0.8) {
+      violations += (massing.kpis.coverage - 0.8) * 0.5;
+    }
+    
+    // Height violation (assume max height of 120 ft)
+    const maxHeight = massing.kpis.floors * 12; // 12 ft per floor
+    if (maxHeight > 120) {
+      violations += (maxHeight - 120) / 120;
+    }
+    
+    return Math.min(1, violations); // Cap at 1.0
+  }
+
+  /**
+   * Find pareto optimal set
+   */
+  static pareto(schemes: Scheme[]): ParetoSet {
+    if (schemes.length === 0) {
+      return { schemes: [], dominated_count: 0, total_evaluated: 0 };
+    }
+
+    const paretoSet: Scheme[] = [];
+    let dominatedCount = 0;
+
+    for (const scheme of schemes) {
+      let isDominated = false;
+      
+      // Check if this scheme is dominated by any existing pareto scheme
+      for (const paretoScheme of paretoSet) {
+        if (this.isDominated(scheme, paretoScheme)) {
+          isDominated = true;
+          break;
+        }
+      }
+      
+      if (!isDominated) {
+        // Remove any existing pareto schemes that are dominated by this one
+        const newParetoSet = paretoSet.filter(paretoScheme => 
+          !this.isDominated(paretoScheme, scheme)
+        );
+        
+        newParetoSet.push(scheme);
+        paretoSet.length = 0;
+        paretoSet.push(...newParetoSet);
+      } else {
+        dominatedCount++;
+      }
+    }
+
+    return {
+      schemes: paretoSet,
+      dominated_count: dominatedCount,
+      total_evaluated: schemes.length
+    };
+  }
+
+  /**
+   * Check if scheme A is dominated by scheme B
+   */
+  private static isDominated(schemeA: Scheme, schemeB: Scheme): boolean {
+    const scoreA = schemeA.score;
+    const scoreB = schemeB.score;
+    
+    // A is dominated by B if B is better in all objectives
+    return (
+      scoreB.parking_achieved >= scoreA.parking_achieved &&
+      scoreB.nrsf >= scoreA.nrsf &&
+      scoreB.cut_fill_cost <= scoreA.cut_fill_cost &&
+      scoreB.violations <= scoreA.violations &&
+      (scoreB.parking_achieved > scoreA.parking_achieved ||
+       scoreB.nrsf > scoreA.nrsf ||
+       scoreB.cut_fill_cost < scoreA.cut_fill_cost ||
+       scoreB.violations < scoreA.violations)
+    );
+  }
+
+  /**
+   * Generate a complete scheme
+   */
+  async generateScheme(
+    params: SchemeParams,
+    buildablePolygon: GeoJSON.Polygon,
+    massingPreset: MassingPreset,
+    parkingParams: ParkingParams
+  ): Promise<Scheme> {
+    const id = this.generateSchemeId(params);
+    
+    // Generate massing
+    const massing = generateMassing(buildablePolygon, massingPreset);
+    
+    // Generate parking for each angle
+    const parking = generateParking(buildablePolygon, {
+      ...parkingParams,
+      angles: [params.parkingAngle]
+    });
+    
+    // Create scheme
+    const scheme: Scheme = {
+      id,
+      params,
+      massing,
+      parking,
+      score: { parking_achieved: 0, nrsf: 0, cut_fill_cost: 0, violations: 0, total_score: 0 },
+      created_at: new Date()
+    };
+    
+    // Score the scheme
+    scheme.score = SchemeStore.score(scheme);
+    
+    return scheme;
+  }
+
+  /**
+   * Generate unique scheme ID
+   */
+  private generateSchemeId(params: SchemeParams): string {
+    return `scheme_${params.orientationDeg}_${params.parkingAngle}_${params.barCount}_${params.barLenFt}_${params.floors}`;
+  }
+
+  /**
+   * Store a scheme
+   */
+  storeScheme(scheme: Scheme): void {
+    this.schemes.set(scheme.id, scheme);
+  }
+
+  /**
+   * Get a scheme by ID
    */
   getScheme(id: string): Scheme | undefined {
     return this.schemes.get(id);
   }
 
   /**
+   * Get all schemes
+   */
+  getAllSchemes(): Scheme[] {
+    return Array.from(this.schemes.values());
+  }
+
+  /**
+   * Update pareto set
+   */
+  updateParetoSet(): void {
+    const allSchemes = this.getAllSchemes();
+    const paretoResult = SchemeStore.pareto(allSchemes);
+    this.paretoSet = paretoResult.schemes;
+  }
+
+  /**
    * Get pareto optimal schemes
    */
-  getParetoOptimalSchemes(): Scheme[] {
-    return this.paretoFront;
-  }
-
-  /**
-   * Get scheme comparison
-   */
-  getSchemeComparison(): SchemeComparison {
-    const allSchemes = this.getAllSchemes();
-    const paretoFront = this.getParetoOptimalSchemes();
-
-    const bestByMetric = {
-      highestNRSF: allSchemes.reduce((best, current) => 
-        current.metrics.totalNRSF > best.metrics.totalNRSF ? current : best
-      ),
-      highestEfficiency: allSchemes.reduce((best, current) => 
-        current.metrics.efficiency > best.metrics.efficiency ? current : best
-      ),
-      highestNPV: allSchemes.reduce((best, current) => 
-        current.metrics.netPresentValue > best.metrics.netPresentValue ? current : best
-      ),
-      highestIRR: allSchemes.reduce((best, current) => 
-        current.metrics.internalRateOfReturn > best.metrics.internalRateOfReturn ? current : best
-      ),
-      lowestPayback: allSchemes.reduce((best, current) => 
-        current.metrics.paybackPeriod < best.metrics.paybackPeriod ? current : best
-      )
-    };
-
-    return {
-      schemes: allSchemes,
-      paretoFront,
-      bestByMetric
-    };
-  }
-
-  /**
-   * Update scheme
-   */
-  updateScheme(id: string, updates: Partial<Scheme>): Scheme | null {
-    const scheme = this.schemes.get(id);
-    if (!scheme) return null;
-
-    const updatedScheme = {
-      ...scheme,
-      ...updates,
-      updatedAt: new Date()
-    };
-
-    this.schemes.set(id, updatedScheme);
-    this.updateParetoFront();
-    this.updateSchemeRanks();
-
-    return updatedScheme;
-  }
-
-  /**
-   * Delete scheme
-   */
-  deleteScheme(id: string): boolean {
-    const deleted = this.schemes.delete(id);
-    if (deleted) {
-      this.updateParetoFront();
-      this.updateSchemeRanks();
-    }
-    return deleted;
+  getParetoSet(): Scheme[] {
+    return this.paretoSet;
   }
 
   /**
    * Clear all schemes
    */
-  clearSchemes(): void {
+  clear(): void {
     this.schemes.clear();
-    this.paretoFront = [];
-    this.nextId = 1;
+    this.paretoSet = [];
   }
 
   /**
-   * Generate similar schemes based on an existing scheme
+   * Get scheme statistics
    */
-  generateSimilarSchemes(baseScheme: Scheme, count: number = 5): Scheme[] {
-    const similarSchemes: Scheme[] = [];
-    const baseConfig = baseScheme.configuration;
-
-    // Generate variations
-    const orientations: SchemeConfiguration['orientation'][] = ['north-south', 'east-west', 'optimal'];
-    const parkingAngles: SchemeConfiguration['parkingAngle'][] = [90, 60, 45, 0];
-    const barCounts = [baseConfig.barCount - 1, baseConfig.barCount, baseConfig.barCount + 1].filter(n => n > 0);
-    const barLengths = [baseConfig.barLength - 10, baseConfig.barLength, baseConfig.barLength + 10].filter(l => l > 0);
-    const floors = [baseConfig.floors - 1, baseConfig.floors, baseConfig.floors + 1].filter(f => f > 0);
-
-    let generated = 0;
-    for (const orientation of orientations) {
-      for (const parkingAngle of parkingAngles) {
-        for (const barCount of barCounts) {
-          for (const barLength of barLengths) {
-            for (const floor of floors) {
-              if (generated >= count) break;
-
-              const config: SchemeConfiguration = {
-                ...baseConfig,
-                orientation,
-                parkingAngle,
-                barCount,
-                barLength,
-                floors: floor
-              };
-
-              // Create a placeholder scheme (in real implementation, would regenerate massing/parking)
-              const similarScheme = this.createPlaceholderScheme(config, `Similar to ${baseScheme.name}`);
-              similarSchemes.push(similarScheme);
-              generated++;
-            }
-            if (generated >= count) break;
-          }
-          if (generated >= count) break;
-        }
-        if (generated >= count) break;
-      }
-      if (generated >= count) break;
-    }
-
-    return similarSchemes;
-  }
-
-  /**
-   * Calculate scheme metrics
-   */
-  private calculateSchemeMetrics(
-    massing: MassingResult,
-    parking: ParkingResult,
-    config: SchemeConfiguration
-  ): SchemeMetrics {
-    const totalNRSF = massing.kpis.totalNRSF;
-    const totalParkingStalls = parking.kpis.totalStalls;
-    const parkingRatio = totalParkingStalls / (totalNRSF / 1000); // stalls per 1000 SF
-    const buildingCoverage = massing.kpis.coverage;
-    const far = massing.kpis.far;
-    const efficiency = totalNRSF / totalParkingStalls;
-
-    // Simplified financial calculations
-    const costPerSF = this.estimateCostPerSF(config);
-    const revenuePerSF = this.estimateRevenuePerSF(config);
-    const netPresentValue = this.calculateNPV(totalNRSF, costPerSF, revenuePerSF);
-    const internalRateOfReturn = this.calculateIRR(totalNRSF, costPerSF, revenuePerSF);
-    const paybackPeriod = this.calculatePaybackPeriod(totalNRSF, costPerSF, revenuePerSF);
-
+  getStatistics(): {
+    total_schemes: number;
+    pareto_schemes: number;
+    best_score: number;
+    avg_score: number;
+  } {
+    const allSchemes = this.getAllSchemes();
+    const scores = allSchemes.map(s => s.score.total_score);
+    
     return {
-      totalNRSF,
-      totalParkingStalls,
-      parkingRatio,
-      buildingCoverage,
-      far,
-      efficiency,
-      costPerSF,
-      revenuePerSF,
-      netPresentValue,
-      internalRateOfReturn,
-      paybackPeriod
+      total_schemes: allSchemes.length,
+      pareto_schemes: this.paretoSet.length,
+      best_score: scores.length > 0 ? Math.max(...scores) : 0,
+      avg_score: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0
     };
-  }
-
-  /**
-   * Calculate scheme rank based on multiple criteria
-   */
-  private calculateSchemeRank(metrics: SchemeMetrics): number {
-    // Weighted scoring system
-    const weights = {
-      efficiency: 0.3,
-      npv: 0.25,
-      irr: 0.2,
-      coverage: 0.15,
-      parkingRatio: 0.1
-    };
-
-    // Normalize metrics (simplified)
-    const normalizedEfficiency = Math.min(metrics.efficiency / 1000, 1); // Cap at 1000 SF per stall
-    const normalizedNPV = Math.max(0, Math.min(metrics.netPresentValue / 10000000, 1)); // Cap at $10M
-    const normalizedIRR = Math.min(metrics.internalRateOfReturn, 0.3) / 0.3; // Cap at 30%
-    const normalizedCoverage = metrics.buildingCoverage;
-    const normalizedParkingRatio = Math.min(metrics.parkingRatio / 5, 1); // Cap at 5 stalls per 1000 SF
-
-    const score = 
-      normalizedEfficiency * weights.efficiency +
-      normalizedNPV * weights.npv +
-      normalizedIRR * weights.irr +
-      normalizedCoverage * weights.coverage +
-      normalizedParkingRatio * weights.parkingRatio;
-
-    return Math.round(score * 100); // Convert to 0-100 scale
-  }
-
-  /**
-   * Update pareto front
-   */
-  private updateParetoFront(): void {
-    const schemes = Array.from(this.schemes.values());
-    this.paretoFront = [];
-
-    for (const scheme of schemes) {
-      let isParetoOptimal = true;
-
-      for (const otherScheme of schemes) {
-        if (scheme.id === otherScheme.id) continue;
-
-        // Check if other scheme dominates this one
-        if (this.dominates(otherScheme, scheme)) {
-          isParetoOptimal = false;
-          break;
-        }
-      }
-
-      if (isParetoOptimal) {
-        this.paretoFront.push(scheme);
-      }
-    }
-
-    // Update pareto optimal flags
-    for (const scheme of schemes) {
-      scheme.paretoOptimal = this.paretoFront.some(p => p.id === scheme.id);
-    }
-  }
-
-  /**
-   * Check if scheme A dominates scheme B
-   */
-  private dominates(schemeA: Scheme, schemeB: Scheme): boolean {
-    const metricsA = schemeA.metrics;
-    const metricsB = schemeB.metrics;
-
-    // A dominates B if A is better in at least one metric and not worse in any
-    const betterInAtLeastOne = 
-      metricsA.totalNRSF > metricsB.totalNRSF ||
-      metricsA.efficiency > metricsB.efficiency ||
-      metricsA.netPresentValue > metricsB.netPresentValue ||
-      metricsA.internalRateOfReturn > metricsB.internalRateOfReturn ||
-      metricsA.paybackPeriod < metricsB.paybackPeriod;
-
-    const notWorseInAny = 
-      metricsA.totalNRSF >= metricsB.totalNRSF &&
-      metricsA.efficiency >= metricsB.efficiency &&
-      metricsA.netPresentValue >= metricsB.netPresentValue &&
-      metricsA.internalRateOfReturn >= metricsB.internalRateOfReturn &&
-      metricsA.paybackPeriod <= metricsB.paybackPeriod;
-
-    return betterInAtLeastOne && notWorseInAny;
-  }
-
-  /**
-   * Update scheme ranks
-   */
-  private updateSchemeRanks(): void {
-    const schemes = Array.from(this.schemes.values());
-    schemes.sort((a, b) => b.rank - a.rank); // Sort by rank descending
-
-    // Update ranks based on position
-    schemes.forEach((scheme, index) => {
-      scheme.rank = index + 1;
-    });
-  }
-
-  /**
-   * Generate scheme name
-   */
-  private generateSchemeName(config: SchemeConfiguration): string {
-    const orientation = config.orientation.replace('-', ' ').toUpperCase();
-    const parking = `${config.parkingAngle}°`;
-    const bars = `${config.barCount} bars`;
-    const floors = `${config.floors}F`;
-    
-    return `${orientation} ${parking} ${bars} ${floors}`;
-  }
-
-  /**
-   * Create placeholder scheme for similar scheme generation
-   */
-  private createPlaceholderScheme(config: SchemeConfiguration, name: string): Scheme {
-    const id = `scheme_${this.nextId++}`;
-    
-    // Create placeholder massing and parking results
-    const massing: MassingResult = {
-      bars: [],
-      kpis: {
-        totalNRSF: config.barCount * config.barLength * 20 * config.floors, // Rough estimate
-        totalGSF: 0,
-        far: 0,
-        coverage: config.buildingCoverage,
-        averageHeight: config.floors * 10,
-        totalFloors: config.barCount * config.floors,
-        efficiency: 0.85,
-        courtCompliance: true,
-        setbackCompliance: true
-      },
-      geometry: { type: 'FeatureCollection', features: [] }
-    };
-
-    const parking: ParkingResult = {
-      stalls: [],
-      aisles: [],
-      kpis: {
-        totalStalls: Math.ceil(massing.kpis.totalNRSF / 1000 * config.parkingRatio),
-        standardStalls: 0,
-        compactStalls: 0,
-        adaStalls: 0,
-        motorcycleStalls: 0,
-        totalArea: 0,
-        efficiency: 0,
-        adaCompliance: true,
-        driveContinuity: true
-      },
-      geometry: { type: 'FeatureCollection', features: [] }
-    };
-
-    const metrics = this.calculateSchemeMetrics(massing, parking, config);
-    const rank = this.calculateSchemeRank(metrics);
-
-    return {
-      id,
-      name,
-      configuration: config,
-      massing,
-      parking,
-      metrics,
-      rank,
-      paretoOptimal: false,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-  }
-
-  // Financial calculation helpers
-  private estimateCostPerSF(config: SchemeConfiguration): number {
-    // Simplified cost estimation
-    const baseCost = 200; // $200/SF base
-    const heightMultiplier = 1 + (config.floors - 1) * 0.1; // 10% increase per floor
-    const complexityMultiplier = config.parkingAngle === 0 ? 1.1 : 1.0; // Parallel parking costs more
-    
-    return baseCost * heightMultiplier * complexityMultiplier;
-  }
-
-  private estimateRevenuePerSF(config: SchemeConfiguration): number {
-    // Simplified revenue estimation
-    const baseRevenue = 300; // $300/SF base
-    const heightMultiplier = 1 + (config.floors - 1) * 0.05; // 5% increase per floor
-    const efficiencyMultiplier = config.buildingCoverage > 0.7 ? 1.1 : 1.0;
-    
-    return baseRevenue * heightMultiplier * efficiencyMultiplier;
-  }
-
-  private calculateNPV(totalNRSF: number, costPerSF: number, revenuePerSF: number): number {
-    const totalCost = totalNRSF * costPerSF;
-    const annualRevenue = totalNRSF * revenuePerSF * 0.1; // 10% of revenue annually
-    const discountRate = 0.08; // 8% discount rate
-    const years = 10;
-    
-    let npv = -totalCost;
-    for (let year = 1; year <= years; year++) {
-      npv += annualRevenue / Math.pow(1 + discountRate, year);
-    }
-    
-    return npv;
-  }
-
-  private calculateIRR(totalNRSF: number, costPerSF: number, revenuePerSF: number): number {
-    const totalCost = totalNRSF * costPerSF;
-    const annualRevenue = totalNRSF * revenuePerSF * 0.1;
-    
-    // Simplified IRR calculation
-    return annualRevenue / totalCost;
-  }
-
-  private calculatePaybackPeriod(totalNRSF: number, costPerSF: number, revenuePerSF: number): number {
-    const totalCost = totalNRSF * costPerSF;
-    const annualRevenue = totalNRSF * revenuePerSF * 0.1;
-    
-    return totalCost / annualRevenue;
   }
 }
 
-// Export singleton instance
-export const schemeStore = new SchemeStore();
+// Export convenience functions
+export const enumerateSchemes = SchemeStore.enumerateSchemes;
+export const score = SchemeStore.score;
+export const pareto = SchemeStore.pareto;
