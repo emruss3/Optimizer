@@ -8,7 +8,8 @@ import {
   MousePointer, Edit3, Maximize, MoreHorizontal, X
 } from 'lucide-react';
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
-import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, SitePlannerGeometry } from '../services/parcelGeometry';
+import { fetchParcelGeometry3857, fetchParcelBuildableEnvelope, parseGeometryForSitePlanner, SitePlannerGeometry } from '../services/parcelGeometry';
+import { CoordinateTransform } from '../utils/coordinateTransform';
 import { checkAndImportOSMRoads } from '../services/osmRoads';
 import { supabase } from '../lib/supabase';
 
@@ -1567,7 +1568,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
           totalUnits: 1,
           totalSqFt: (finalHouse.properties.area || 0),
           parkingSpaces: 2,
-          density: 1 / (parcelGeometry.area / 43560),
+          density: 1 / (buildableArea.properties.area / 43560),
           coverage: ((finalHouse.properties.area || 0) / buildableArea.properties.area) * 100,
           estimatedRevenue: optimalHouseSqFt * marketData.avgRentPerSqFt * 12,
           estimatedCost: optimalHouseSqFt * marketData.constructionCostPerSqFt
@@ -1691,8 +1692,8 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
           totalUnits: 2,
           totalSqFt: duplexSqFt,
           parkingSpaces: 4,
-          density: 2 / (parcelGeometry.area / 43560),
-          coverage: (duplexSqFt / parcelGeometry.area) * 100,
+          density: 2 / (buildableArea.properties.area / 43560),
+          coverage: (duplexSqFt / buildableArea.properties.area) * 100,
           estimatedRevenue: 2 * unitSqFt * marketData.avgRentPerSqFt * 12,
           estimatedCost: duplexSqFt * marketData.constructionCostPerSqFt
         }
@@ -1717,7 +1718,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       const buildableWidth = (bounds.maxX - bounds.minX) / gridSize; // Convert to feet
       const buildableHeight = (bounds.maxY - bounds.minY) / gridSize; // Convert to feet
       const buildableAreaSqFt = Math.round(buildableArea.properties.area || 0);
-      const parcelAcres = parcelGeometry.area / 43560;
+      const parcelAcres = buildableArea.properties.area / 43560;
       
       // ARCHITECTURAL CONSTRAINTS ANALYSIS
       const maxUnitsByDensity = zoning.maxDensity ? Math.floor(parcelAcres * zoning.maxDensity) : 999;
@@ -2106,7 +2107,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
           totalSqFt: maxUnits * 800,
           parkingSpaces: requiredParkingSpaces,
           density: maxUnits / parcelAcres,
-          coverage: (maxUnits * 600 / parcelGeometry.area) * 100,
+          coverage: (maxUnits * 600 / buildableArea.properties.area) * 100,
           estimatedRevenue: maxUnits * 800 * marketData.avgRentPerSqFt * 12,
           estimatedCost: maxUnits * 800 * marketData.constructionCostPerSqFt
         }
@@ -2139,7 +2140,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       // Calculate optimal office size based on FAR and market conditions
       const maxBuildingSqFt = Math.min(
         buildableAreaSqFt * (zoning.maxCoverage / 100),
-        (parcelGeometry.area * zoning.maxFAR)
+        (buildableArea.properties.area * zoning.maxFAR)
       );
       
       // Calculate office building size as function of buildable area
@@ -2207,7 +2208,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
           totalSqFt: targetBuildingSqFt,
           parkingSpaces: requiredSpaces,
           density: 0, // Not applicable for office
-          coverage: (targetBuildingSqFt / parcelGeometry.area) * 100,
+          coverage: (targetBuildingSqFt / buildableArea.properties.area) * 100,
           estimatedRevenue: targetBuildingSqFt * marketData.avgRentPerSqFt * 12,
           estimatedCost: targetBuildingSqFt * marketData.constructionCostPerSqFt
         }
@@ -2295,7 +2296,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
           totalSqFt: buildingSqFt,
           parkingSpaces: Math.ceil(buildingSqFt / 200),
           density: 0,
-          coverage: (buildingSqFt / parcelGeometry.area) * 100,
+          coverage: (buildingSqFt / buildableArea.properties.area) * 100,
           estimatedRevenue: buildingSqFt * marketData.avgRentPerSqFt * 12,
           estimatedCost: buildingSqFt * marketData.constructionCostPerSqFt
         }
@@ -2324,7 +2325,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       const width = bounds.maxX - bounds.minX;
       const height = bounds.maxY - bounds.minY;
       const buildableAreaSqFt = Math.round(buildableArea.properties.area || 0);
-      const parcelAcres = parcelGeometry.area / 43560;
+      const parcelAcres = buildableArea.properties.area / 43560;
       
       // Calculate hotel size as function of buildable area
       const hotelSqFt = Math.min(buildableAreaSqFt * 0.5, 30000); // 50% of buildable area, max 30k sq ft
@@ -2382,7 +2383,7 @@ const LAYOUT_TEMPLATES: LayoutTemplate[] = [
           totalSqFt: hotelSqFt,
           parkingSpaces: requiredSpaces,
           density: estimatedRooms / parcelAcres,
-          coverage: (hotelSqFt / parcelGeometry.area) * 100,
+          coverage: (hotelSqFt / buildableArea.properties.area) * 100,
           estimatedRevenue: estimatedRooms * 150 * 365, // $150/night average
           estimatedCost: hotelSqFt * marketData.constructionCostPerSqFt * 1.5 // Hotels cost more
         }
@@ -2557,6 +2558,12 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
   
   const buildableAreaElements = useMemo(() => 
     elements.filter(el => el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')), 
+    [elements]
+  );
+
+  // Get the main buildable area element for UI display
+  const buildableAreaElement = useMemo(() => 
+    elements.find(el => el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')),
     [elements]
   );
   
@@ -2801,10 +2808,9 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               // Add the new buildable area element
               return [...filteredElements, finalBuildableArea];
             });
-          }
-          
-          // Set up viewport based on buildable area bounds
-          if (finalBuildableArea && finalBuildableArea.vertices.length > 0) {
+
+            // Set up viewport based on buildable area bounds
+            if (finalBuildableArea && finalBuildableArea.vertices.length > 0) {
             const bounds = finalBuildableArea.vertices.reduce(
               (acc, vertex) => ({
                 minX: Math.min(acc.minX, vertex.x),
@@ -2836,6 +2842,25 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               bounds,
               viewBox: viewBoxString
             });
+
+            // Set parcel geometry for template generation
+            const parcelGeometryData: SitePlannerGeometry = {
+              coordinates: coordinatesInFeet,
+              bounds,
+              width,
+              depth: height,
+              area: envelopeData.area_sqft,
+              perimeter: CoordinateTransform.calculatePolygonPerimeter(coordinatesInFeet, 'feet'),
+              centroid: {
+                x: width / 2,
+                y: height / 2
+              },
+              normalizedCoordinates: normalizedCoordinates,
+              setbacks_applied: envelopeData.setbacks_applied,
+              edge_types: envelopeData.edge_types
+            };
+            setParcelGeometry(parcelGeometryData);
+            console.log('✅ Parcel geometry set for template generation:', parcelGeometryData);
           }
         } else {
           console.warn('⚠️ No envelope data available, falling back to basic geometry');
@@ -2876,6 +2901,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             setViewBox(viewBoxString);
           }
         }
+        }
       } catch (error) {
         console.error('Error loading parcel geometry:', error);
       }
@@ -2893,8 +2919,8 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
       console.log('🔍 Creating local buildable area since no database envelope available');
       console.log('🔍 Initializing elements - elements.length:', elements.length);
       console.log('🔍 Current elements:', elements.map(el => ({ type: el.type, name: el.properties.name })));
-      const coords = parcelGeometry.coordinates;
-      const bounds = parcelGeometry.bounds;
+      const coords = buildableArea.vertices.map(v => [v.x, v.y]);
+      const bounds = buildableArea.bounds;
       const newElements: Element[] = [];
       
       // Create buildable area that follows the actual parcel shape
@@ -2928,8 +2954,8 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
         avgDistance: avgDistance.toFixed(1),
         actualInset: actualInset.toFixed(1),
         insetRatio: insetRatio.toFixed(3),
-        parcelArea: parcelGeometry.area,
-        expectedBuildableArea: (parcelGeometry.area * insetRatio * insetRatio).toFixed(0)
+        parcelArea: buildableArea.properties.area,
+        expectedBuildableArea: (buildableArea.properties.area * insetRatio * insetRatio).toFixed(0)
       });
       
       // Create inset vertices by scaling toward centroid
@@ -2982,7 +3008,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
         setbackUsed: setbackFeet,
         insetRatio: insetRatio.toFixed(3),
         actualInsetDistance: actualInset.toFixed(1),
-        parcelAreaSqFt: parcelGeometry.area,
+        parcelAreaSqFt: buildableArea.properties.area,
         buildableAreaSqFt: (finalBuildableArea.properties.area || 0).toFixed(0)
       });
       
@@ -3023,9 +3049,9 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
       const violations: string[] = [];
       let score = 100;
       
-      const parcelArea = parcelGeometry.area || 1;
-      const parcelWidth = parcelGeometry.width || 1;
-      const parcelDepth = parcelGeometry.depth || 1;
+      const parcelArea = buildableArea.properties.area || 1;
+      const parcelWidth = buildableArea.bounds.maxX - buildableArea.bounds.minX;
+      const parcelDepth = buildableArea.bounds.maxY - buildableArea.bounds.minY;
       
       // Calculate metrics
       const totalBuildingArea = elements
@@ -3087,7 +3113,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             maxY: Math.max(acc.maxY, vertex.y)
           }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
           
-          const parcelBounds = parcelGeometry.bounds;
+          const parcelBounds = buildableArea.bounds;
           
           // Calculate distances from building to parcel edges
           const distanceFromLeft = (buildingBounds.minX - parcelBounds.minX) * scale / 12; // Convert to feet
@@ -3639,15 +3665,16 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
 
   const applyLayoutTemplate = useCallback((templateId: string) => {
     const template = LAYOUT_TEMPLATES.find(t => t.id === templateId);
-    if (!template || !parcelGeometry) {
-      console.error('❌ Template not found or no parcel geometry:', templateId);
-      return;
-    }
     
-    // Find the buildable area element
+    // Find the buildable area element first
     const buildableAreaElement = elements.find(el => 
       el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')
     );
+    
+    if (!template || !buildableAreaElement) {
+      console.error('❌ Template not found or no buildable area element:', templateId);
+      return;
+    }
     
     console.log('🔍 Available elements:', elements.map(el => ({ 
       type: el.type, 
@@ -3934,9 +3961,12 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
 
   // Render parcel outline
   const renderParcelOutline = useMemo(() => {
-    if (!parcelGeometry || !parcelGeometry.coordinates) return null;
+    const buildableAreaElement = elements.find(el => 
+      el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')
+    );
+    if (!buildableAreaElement || !buildableAreaElement.vertices) return null;
     
-    const coords = parcelGeometry.coordinates;
+    const coords = buildableAreaElement.vertices.map(v => [v.x, v.y]);
     const pathData = coords.map(([x, y]: [number, number], index: number) => {
       return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
     }).join(' ') + ' Z';
@@ -4815,8 +4845,8 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               <g>
                 {/* Dynamic street front label */}
                 <text
-                  x={parcelGeometry.bounds.minX + parcelGeometry.width / 2}
-                  y={parcelGeometry.bounds.maxY + 40}
+                  x={buildableAreaElement ? buildableAreaElement.bounds.minX + (buildableAreaElement.bounds.maxX - buildableAreaElement.bounds.minX) / 2 : 0}
+                  y={buildableAreaElement ? buildableAreaElement.bounds.maxY + 40 : 0}
                   textAnchor="middle"
                   fontSize={Math.max(72, getScaledFontSize(60))}
                   fill="#ef4444"
@@ -4832,7 +4862,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
                 </text>
                 
                 {/* Compass indicator */}
-                <g transform={`translate(${parcelGeometry.bounds.maxX - 50}, ${parcelGeometry.bounds.minY + 50})`}>
+                <g transform={`translate(${buildableAreaElement ? buildableAreaElement.bounds.maxX - 50 : 0}, ${buildableAreaElement ? buildableAreaElement.bounds.minY + 50 : 0})`}>
                   <circle cx="0" cy="0" r="25" fill="white" stroke="#374151" strokeWidth="2" />
                   <text x="0" y="-8" textAnchor="middle" fontSize={Math.max(56, getScaledFontSize(48))} fill="#374151" fontWeight="bold" stroke="white" strokeWidth="2" paintOrder="stroke fill">N</text>
                   <text x="0" y="15" textAnchor="middle" fontSize={Math.max(56, getScaledFontSize(48))} fill="#ef4444" fontWeight="bold" stroke="white" strokeWidth="2" paintOrder="stroke fill">S</text>
@@ -4980,18 +5010,14 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             <div className="space-y-0.5">
               {LAYOUT_TEMPLATES.map(template => {
                   // Calculate actual buildable area from the green buildable area element
-                  const buildableAreaElement = elements.find(el => 
-                    el.type === 'greenspace' && el.properties.name?.includes('Buildable Area')
-                  );
-                  
                   let buildableAreaSqFt = 0;
                   if (buildableAreaElement) {
                     // Use the SAME calculation as the visual display
                     buildableAreaSqFt = Math.round(buildableAreaElement.properties.area || 0);
                   } else {
                     // Fallback estimate
-                    buildableAreaSqFt = parcelGeometry ? 
-                      (parcelGeometry.width * parcelGeometry.height * 0.7) / 144 : 0;
+                    buildableAreaSqFt = buildableAreaElement ? 
+                      (buildableAreaElement.properties.area || 0) : 0;
                   }
                   
                   const canFit = buildableAreaSqFt >= template.minArea;
@@ -5132,9 +5158,9 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               <div className="mb-3 p-2 bg-blue-50 rounded">
                 <h5 className="font-medium text-blue-900 mb-1 text-sm">Development Potential:</h5>
                 <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-xs text-blue-800">
-                  <div><strong>Units:</strong> {parcelGeometry ? Math.floor(((parcel.sqft || parcelGeometry.area) / 43560) * 20) : 'N/A'}</div>
+                  <div><strong>Units:</strong> {parcelGeometry ? Math.floor(((parcel.sqft || buildableArea.properties.area) / 43560) * 20) : 'N/A'}</div>
                   <div><strong>Stories:</strong> {Math.floor((parcel.zoning_data?.max_building_height_ft || 45) / 10)}</div>
-                  <div><strong>Floor Area:</strong> {parcelGeometry ? Math.round((parcel.sqft || parcelGeometry.area) * (parcel.zoning_data?.max_far || 2.5) / 1000).toLocaleString() : 'N/A'}k sf</div>
+                  <div><strong>Floor Area:</strong> {parcelGeometry ? Math.round((parcel.sqft || buildableArea.properties.area) * (parcel.zoning_data?.max_far || 2.5) / 1000).toLocaleString() : 'N/A'}k sf</div>
                   <div><strong>Coverage:</strong> {Math.round(((parcel.sqft || parcelGeometry?.area) || 0) * 0.4 / 1000).toLocaleString()}k sf</div>
                 </div>
               </div>
@@ -5209,7 +5235,7 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="text-center">
                 <div className="text-sm font-bold text-blue-600">
-                  {parcelGeometry ? `${parcelGeometry.width.toFixed(0)}' × ${parcelGeometry.depth.toFixed(0)}'` : 'N/A'}
+                  {buildableAreaElement ? `${(buildableAreaElement.bounds.maxX - buildableAreaElement.bounds.minX).toFixed(0)}' × ${(buildableAreaElement.bounds.maxY - buildableAreaElement.bounds.minY).toFixed(0)}'` : 'N/A'}
                 </div>
                 <div className="text-xs text-gray-600">Parcel Size</div>
               </div>

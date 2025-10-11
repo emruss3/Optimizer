@@ -1,6 +1,5 @@
--- Final corrected version of get_parcel_buildable_envelope function
+-- Quick fix for get_parcel_buildable_envelope function ambiguity
 -- This fixes the "column reference ogc_fid is ambiguous" error
--- Deployed and tested successfully - returns 517,250 sq ft buildable area
 
 DROP FUNCTION IF EXISTS public.get_parcel_buildable_envelope(int);
 
