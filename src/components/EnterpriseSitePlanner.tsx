@@ -2659,17 +2659,72 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
               area_sqft: envelopeData.area_sqft
             });
             
-            // Create a simple rectangular buildable area element
-            // For now, create a basic rectangle that represents the buildable area
-            const buildableWidth = 200; // SVG units
-            const buildableHeight = 200; // SVG units
+            // Parse the real buildable geometry from the database
+            let vertices: Vertex[] = [];
             
-            const vertices = [
-              { id: generateId(), x: 0, y: 0 },
-              { id: generateId(), x: buildableWidth, y: 0 },
-              { id: generateId(), x: buildableWidth, y: buildableHeight },
-              { id: generateId(), x: 0, y: buildableHeight }
-            ];
+            if (envelopeData.buildable_geom && envelopeData.buildable_geom.coordinates) {
+              console.log('🔍 Parsing real buildable geometry from database');
+              
+              // Extract coordinates from GeoJSON
+              let coords: number[][];
+              if (envelopeData.buildable_geom.type === 'Polygon') {
+                coords = envelopeData.buildable_geom.coordinates[0] as number[][];
+              } else if (envelopeData.buildable_geom.type === 'MultiPolygon') {
+                coords = (envelopeData.buildable_geom.coordinates as number[][][])[0][0];
+              } else {
+                console.warn('⚠️ Unsupported buildable geometry type:', envelopeData.buildable_geom.type);
+                coords = [];
+              }
+              
+              if (coords.length > 0) {
+                // Convert from Web Mercator meters to feet, then to SVG units
+                // Using 12 SVG units = 1 ft conversion
+                const svgUnitsPerFoot = 12;
+                const metersToFeet = 3.28084;
+                
+                // Convert coordinates and normalize to start at (0,0)
+                const coordsInFeet = coords.map(([x, y]) => [
+                  x * metersToFeet,
+                  y * metersToFeet
+                ]);
+                
+                // Find bounds
+                const bounds = coordsInFeet.reduce((acc, [x, y]) => ({
+                  minX: Math.min(acc.minX, x),
+                  maxX: Math.max(acc.maxX, x),
+                  minY: Math.min(acc.minY, y),
+                  maxY: Math.max(acc.maxY, y)
+                }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+                
+                // Normalize coordinates to start at (0,0) and convert to SVG units
+                vertices = coordsInFeet.map(([x, y], index) => ({
+                  id: generateId(),
+                  x: (x - bounds.minX) * svgUnitsPerFoot,
+                  y: (y - bounds.minY) * svgUnitsPerFoot
+                }));
+                
+                console.log('✅ Parsed real buildable geometry:', {
+                  originalCoords: coords.length,
+                  vertices: vertices.length,
+                  bounds: bounds,
+                  svgUnitsPerFoot
+                });
+              }
+            }
+            
+            // Fallback to simple rectangle if no real geometry
+            if (vertices.length === 0) {
+              console.log('⚠️ Using fallback rectangle for buildable area');
+              const buildableWidth = 200; // SVG units
+              const buildableHeight = 200; // SVG units
+              
+              vertices = [
+                { id: generateId(), x: 0, y: 0 },
+                { id: generateId(), x: buildableWidth, y: 0 },
+                { id: generateId(), x: buildableWidth, y: buildableHeight },
+                { id: generateId(), x: 0, y: buildableHeight }
+              ];
+            }
             
             // Use the actual buildable area from the Supabase function
             const correctBuildableAreaSqFt = envelopeData.area_sqft || 0;

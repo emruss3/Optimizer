@@ -19,11 +19,9 @@ export interface ScorePadResult {
 }
 
 export interface ScorePadParams {
-  parcel_id: string;
-  building_geometry: any; // GeoJSON geometry
-  parking_geometry?: any; // GeoJSON geometry
-  landscape_geometry?: any; // GeoJSON geometry
-  zoning_data?: Record<string, any>;
+  p_parcel_id: string;
+  p_pad_3857: any; // GeoJSON geometry in EPSG:3857
+  p_parking_3857?: any; // GeoJSON geometry in EPSG:3857
 }
 
 /**
@@ -32,11 +30,9 @@ export interface ScorePadParams {
 export async function scorePad(params: ScorePadParams): Promise<ScorePadResult> {
   try {
     const { data, error } = await supabase.rpc('score_pad', {
-      parcel_id: params.parcel_id,
-      building_geometry: params.building_geometry,
-      parking_geometry: params.parking_geometry || null,
-      landscape_geometry: params.landscape_geometry || null,
-      zoning_data: params.zoning_data || {}
+      p_parcel_id: params.p_parcel_id,
+      p_pad_3857: params.p_pad_3857,
+      p_parking_3857: params.p_parking_3857 || null
     });
 
     if (error) {
@@ -58,23 +54,19 @@ export async function scorePad(params: ScorePadParams): Promise<ScorePadResult> 
  * Batch score multiple site plan layouts
  */
 export async function batchScorePad(
-  parcel_id: string,
+  p_parcel_id: string,
   layouts: Array<{
     id: string;
-    building_geometry: any;
-    parking_geometry?: any;
-    landscape_geometry?: any;
-    zoning_data?: Record<string, any>;
+    p_pad_3857: any;
+    p_parking_3857?: any;
   }>
 ): Promise<Array<{ id: string; result: ScorePadResult }>> {
   const results = await Promise.allSettled(
     layouts.map(async (layout) => {
       const result = await scorePad({
-        parcel_id,
-        building_geometry: layout.building_geometry,
-        parking_geometry: layout.parking_geometry,
-        landscape_geometry: layout.landscape_geometry,
-        zoning_data: layout.zoning_data
+        p_parcel_id,
+        p_pad_3857: layout.p_pad_3857,
+        p_parking_3857: layout.p_parking_3857
       });
       return { id: layout.id, result };
     })
