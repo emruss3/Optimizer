@@ -2683,17 +2683,18 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
                 coords = [];
               }
               
+              // Convert from Web Mercator meters to feet, then to SVG units
+              // Using 12 SVG units = 1 ft conversion
+              const svgUnitsPerFoot = 12;
+              const metersToFeet = 3.28084;
+              
+              // Convert coordinates and normalize to start at (0,0)
+              const coordsInFeet = coords.map(([x, y]) => [
+                x * metersToFeet,
+                y * metersToFeet
+              ]);
+              
               if (coords.length > 0) {
-                // Convert from Web Mercator meters to feet, then to SVG units
-                // Using 12 SVG units = 1 ft conversion
-                const svgUnitsPerFoot = 12;
-                const metersToFeet = 3.28084;
-                
-                // Convert coordinates and normalize to start at (0,0)
-                const coordsInFeet = coords.map(([x, y]) => [
-                  x * metersToFeet,
-                  y * metersToFeet
-                ]);
                 
                 // Find bounds
                 const bounds = coordsInFeet.reduce((acc, [x, y]) => ({
@@ -2845,12 +2846,12 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
 
             // Set parcel geometry for template generation
             const parcelGeometryData: SitePlannerGeometry = {
-              coordinates: coordinatesInFeet,
+              coordinates: coordsInFeet,
               bounds,
               width,
               depth: height,
               area: envelopeData.area_sqft,
-              perimeter: CoordinateTransform.calculatePolygonPerimeter(coordinatesInFeet, 'feet'),
+              perimeter: CoordinateTransform.calculatePolygonPerimeter(coordsInFeet, 'feet'),
               centroid: {
                 x: width / 2,
                 y: height / 2
@@ -5235,7 +5236,17 @@ const EnterpriseSitePlanner = React.memo(function EnterpriseSitePlanner({
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="text-center">
                 <div className="text-sm font-bold text-blue-600">
-                  {buildableAreaElement ? `${(buildableAreaElement.bounds.maxX - buildableAreaElement.bounds.minX).toFixed(0)}' × ${(buildableAreaElement.bounds.maxY - buildableAreaElement.bounds.minY).toFixed(0)}'` : 'N/A'}
+                  {buildableAreaElement && buildableAreaElement.vertices ? (() => {
+                    const bounds = buildableAreaElement.vertices.reduce((acc, vertex) => ({
+                      minX: Math.min(acc.minX, vertex.x),
+                      maxX: Math.max(acc.maxX, vertex.x),
+                      minY: Math.min(acc.minY, vertex.y),
+                      maxY: Math.max(acc.maxY, vertex.y)
+                    }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+                    const width = (bounds.maxX - bounds.minX) / 12; // Convert SVG units to feet
+                    const height = (bounds.maxY - bounds.minY) / 12; // Convert SVG units to feet
+                    return `${width.toFixed(0)}' × ${height.toFixed(0)}'`;
+                  })() : 'N/A'}
                 </div>
                 <div className="text-xs text-gray-600">Parcel Size</div>
               </div>
