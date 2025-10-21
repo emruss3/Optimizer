@@ -115,3 +115,7 @@ export interface SiteMetrics {
   violations: string[];
   warnings: string[];
 }
+
+export interface WorkerAPI {
+  generateSitePlan: (parcel: GeoJSON.Polygon | GeoJSON.MultiPolygon, config: PlannerConfig) => Promise<PlannerOutput>;
+}

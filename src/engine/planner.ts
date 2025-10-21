@@ -1,6 +1,6 @@
-import type { Polygon } from 'geojson';
+import type { Polygon, MultiPolygon } from 'geojson';
 import type { PlannerConfig, PlannerOutput, Element, Envelope } from './types';
-import { createEnvelope, areaSqft } from './geometry';
+import { createEnvelope, areaSqft, union, difference, polygons, sortByArea } from './geometry';
 import { generateBuildingFootprints } from './building';
 import { generateParking } from './parking';
 import { calculateMetrics } from './analysis';
@@ -9,14 +9,17 @@ import { calculateMetrics } from './analysis';
  * Main site planning orchestrator
  */
 export function generateSitePlan(
-  parcelGeoJSON: Polygon,
+  parcelGeoJSON: Polygon | MultiPolygon,
   config: PlannerConfig
 ): PlannerOutput {
   const startTime = performance.now();
   
   try {
+    // Handle MultiPolygon by selecting largest ring
+    const parcelPolygon = selectLargestRing(parcelGeoJSON);
+    
     // Create envelope from parcel geometry
-    const envelope = createEnvelope(parcelGeoJSON);
+    const envelope = createEnvelope(parcelPolygon);
     const parcelAreaSqFt = envelope.areaSqFt;
     
     // Generate building footprints
@@ -56,7 +59,7 @@ export function generateSitePlan(
     // Calculate metrics
     const metrics = calculateMetrics(allElements, parcelAreaSqFt, config);
     
-    // Add greenspace elements if needed
+    // Generate true greenspace geometry
     const greenspaceElements = generateGreenspaceElements(
       envelope.geometry,
       allElements,
@@ -98,7 +101,7 @@ export function generateSitePlan(
 }
 
 /**
- * Generate greenspace elements
+ * Generate greenspace elements using true geometry operations
  */
 function generateGreenspaceElements(
   envelope: Polygon,
@@ -107,34 +110,75 @@ function generateGreenspaceElements(
 ): Element[] {
   const greenspaceElements: Element[] = [];
   
-  // Calculate remaining area for greenspace
-  const totalUsedArea = existingElements.reduce((sum, element) => 
-    sum + (element.properties.areaSqFt || 0), 0);
-  const envelopeArea = areaSqft(envelope);
-  const remainingArea = envelopeArea - totalUsedArea;
-  
-  // Target 20% greenspace minimum
-  const targetGreenspace = envelopeArea * 0.2;
-  
-  if (remainingArea > targetGreenspace) {
-    // Create a simple greenspace element
-    const greenspaceElement: Element = {
-      id: 'greenspace_1',
-      type: 'greenspace',
-      name: 'Open Space',
-      geometry: envelope, // Simplified - would need proper calculation
-      properties: {
-        areaSqFt: Math.min(remainingArea, targetGreenspace),
-        use: 'landscaping'
-      },
-      metadata: {
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        source: 'ai-generated'
-      }
-    };
+  try {
+    // Convert existing elements to polygons
+    const usedPolygons = elementsToPolygons(existingElements);
     
-    greenspaceElements.push(greenspaceElement);
+    // Union all used areas
+    const used = union(...usedPolygons);
+    
+    // Calculate difference to get free space
+    const free = difference(envelope, used);
+    
+    // Extract candidate polygons from free space
+    const candidates = sortByArea(polygons(free)).slice(0, 3);
+    
+    // Cap at 20% of site area
+    const maxGreenspaceArea = areaSqft(envelope) * 0.2;
+    let totalGreenspaceArea = 0;
+    
+    for (let i = 0; i < candidates.length && totalGreenspaceArea < maxGreenspaceArea; i++) {
+      const candidate = candidates[i];
+      const candidateArea = areaSqft(candidate);
+      
+      if (candidateArea > 100) { // Minimum 100 sqft
+        const greenspaceArea = Math.min(candidateArea, maxGreenspaceArea - totalGreenspaceArea);
+        
+        const greenspaceElement: Element = {
+          id: `greenspace_${i + 1}`,
+          type: 'greenspace',
+          name: `Open Space ${i + 1}`,
+          geometry: candidate,
+          properties: {
+            areaSqFt: greenspaceArea,
+            use: 'landscaping'
+          },
+          metadata: {
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            source: 'ai-generated'
+          }
+        };
+        
+        greenspaceElements.push(greenspaceElement);
+        totalGreenspaceArea += greenspaceArea;
+      }
+    }
+  } catch (error) {
+    console.warn('Error generating greenspace geometry:', error);
+    // Fallback to simple greenspace
+    const envelopeArea = areaSqft(envelope);
+    const targetGreenspace = envelopeArea * 0.2;
+    
+    if (targetGreenspace > 100) {
+      const greenspaceElement: Element = {
+        id: 'greenspace_1',
+        type: 'greenspace',
+        name: 'Open Space',
+        geometry: envelope,
+        properties: {
+          areaSqFt: targetGreenspace,
+          use: 'landscaping'
+        },
+        metadata: {
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          source: 'ai-generated'
+        }
+      };
+      
+      greenspaceElements.push(greenspaceElement);
+    }
   }
   
   return greenspaceElements;

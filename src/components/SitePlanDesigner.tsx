@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Slider } from 'lucide-react';
 import type { Element, PlannerConfig, SiteMetrics } from '../engine/types';
-import { getPlannerWorker } from '../workers/workerManager';
+import { workerManager } from '../workers/workerManager';
 
 interface SitePlanDesignerProps {
   parcel: any; // SelectedParcel
@@ -14,8 +14,13 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   children,
   onPlanGenerated
 }) => {
-  // Validate parcel data
-  const isValidParcel = parcel && parcel.ogc_fid && parcel.geometry && parcel.geometry.type === 'Polygon';
+  // Validate parcel data and handle MultiPolygon
+  const isValidParcel = parcel && parcel.ogc_fid && parcel.geometry && 
+    (parcel.geometry.type === 'Polygon' || parcel.geometry.type === 'MultiPolygon');
+  
+  // Normalize parcel ID and geometry
+  const normalizedParcelId = parcel ? String(parcel.ogc_fid) : 'unknown';
+  const normalizedGeometry = parcel?.geometry;
   
   // Debug logging
   useEffect(() => {
@@ -31,8 +36,8 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   }, [parcel, isValidParcel, children]);
   
   const [config, setConfig] = useState<PlannerConfig>({
-    parcelId: String(parcel?.ogc_fid || 'unknown'),
-    buildableArea: parcel?.geometry || { type: 'Polygon', coordinates: [] },
+    parcelId: normalizedParcelId,
+    buildableArea: normalizedGeometry || { type: 'Polygon', coordinates: [] },
     zoning: {
       frontSetbackFt: 20,
       sideSetbackFt: 10,
@@ -61,9 +66,11 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentElements, setCurrentElements] = useState<Element[]>([]);
   const [currentMetrics, setCurrentMetrics] = useState<SiteMetrics | null>(null);
+  const [requestId, setRequestId] = useState(0);
+  const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
 
-  // Generate site plan when config changes
-  const generatePlan = useCallback(async () => {
+  // Generate site plan when config changes (with debouncing)
+  const generatePlan = useCallback(async (currentRequestId: number) => {
     if (!isValidParcel) {
       console.warn('Cannot generate site plan: Invalid parcel data');
       return;
@@ -72,33 +79,60 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
     setIsGenerating(true);
     
     try {
-      const worker = getPlannerWorker();
-      const result = await worker.generateSitePlan(parcel.geometry, config);
+      const result = await workerManager.generateSitePlan(normalizedGeometry, config);
       
-      setCurrentElements(result.elements);
-      setCurrentMetrics(result.metrics);
-      
-      if (onPlanGenerated) {
-        onPlanGenerated(result.elements, result.metrics);
+      // Only update if this is still the latest request
+      if (currentRequestId === requestId) {
+        setCurrentElements(result.elements);
+        setCurrentMetrics(result.metrics);
+        
+        if (onPlanGenerated) {
+          onPlanGenerated(result.elements, result.metrics);
+        }
+      } else {
+        console.log('Ignoring stale worker response');
       }
     } catch (error) {
       console.error('Error generating site plan:', error);
     } finally {
-      setIsGenerating(false);
+      if (currentRequestId === requestId) {
+        setIsGenerating(false);
+      }
     }
-  }, [config, parcel.geometry, onPlanGenerated]);
+  }, [normalizedGeometry, config, onPlanGenerated, requestId]);
+
+  // Debounced config change handler
+  const handleConfigChange = useCallback((updates: Partial<PlannerConfig>) => {
+    setConfig(prev => ({ ...prev, ...updates }));
+    
+    // Clear existing timer
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    
+    // Set new timer
+    const newTimer = setTimeout(() => {
+      const newRequestId = requestId + 1;
+      setRequestId(newRequestId);
+      generatePlan(newRequestId);
+    }, 200); // 200ms debounce
+    
+    setDebounceTimer(newTimer);
+  }, [debounceTimer, requestId, generatePlan]);
 
   // Auto-generate on config change
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      generatePlan();
-    }, 500); // Debounce
+      const newRequestId = requestId + 1;
+      setRequestId(newRequestId);
+      generatePlan(newRequestId);
+    }, 200); // Debounce config changes
 
     return () => clearTimeout(timeoutId);
-  }, [generatePlan]);
+  }, [generatePlan, requestId]);
 
   const updateConfig = (updates: Partial<PlannerConfig>) => {
-    setConfig(prev => ({ ...prev, ...updates }));
+    handleConfigChange(updates);
   };
 
   return (
