@@ -1,7 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Slider } from 'lucide-react';
 import type { Element, PlannerConfig, SiteMetrics } from '../engine/types';
 import { workerManager } from '../workers/workerManager';
+import { toPolygon } from '../engine/geometry/normalize';
+import { computeParcelMetrics } from '../engine/metrics/parcelMetrics';
 
 interface SitePlanDesignerProps {
   parcel: any; // SelectedParcel
@@ -83,6 +85,28 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const [requestId, setRequestId] = useState(0);
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
 
+  // New worker for reliable generation
+  const worker = useMemo(() => new Worker(new URL("../engine/workers/sitegenie", import.meta.url), { type: "module" }), []);
+
+  // Debounced generation with metrics
+  const requestGenerate = useMemo(() => {
+    let currentReqId: string | null = null;
+    let timer: any = null;
+
+    return (rawParcel: any, config: any) => {
+      if (!rawParcel?.geometry) return;
+
+      const poly = toPolygon(rawParcel.geometry);
+      const metrics = computeParcelMetrics(poly);
+
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        currentReqId = crypto.randomUUID();
+        worker.postMessage({ type: "generate", reqId: currentReqId, parcel: poly, config, metrics });
+      }, 150); // debounce UI sliders
+    };
+  }, [worker]);
+
   // Generate site plan when config changes (with debouncing)
   const generatePlan = useCallback(async (currentRequestId: number) => {
     if (!isValidParcel) {
@@ -100,27 +124,35 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
     setIsGenerating(true);
     
     try {
-      const result = await workerManager.generateSitePlan(normalizedGeometry, config);
+      // Use new worker with metrics
+      requestGenerate(parcel, config);
       
-      // Only update if this is still the latest request
-      if (currentRequestId === requestId) {
-        setCurrentElements(result.elements);
-        setCurrentMetrics(result.metrics);
-        
-        if (onPlanGenerated) {
-          onPlanGenerated(result.elements, result.metrics);
+      // Set up worker message handler
+      const handleMessage = (event: MessageEvent) => {
+        const { type, reqId, elements, metrics, error } = event.data;
+        if (type === 'generated' && reqId === currentRequestId) {
+          if (error) {
+            console.error('Worker error:', error);
+          } else {
+            setCurrentElements(elements || []);
+            setCurrentMetrics(metrics || null);
+            
+            if (onPlanGenerated) {
+              onPlanGenerated(elements || [], metrics || null);
+            }
+          }
+          setIsGenerating(false);
+          worker.removeEventListener('message', handleMessage);
         }
-      } else {
-        console.log('Ignoring stale worker response');
-      }
+      };
+      
+      worker.addEventListener('message', handleMessage);
+      
     } catch (error) {
       console.error('Error generating site plan:', error);
-    } finally {
-      if (currentRequestId === requestId) {
-        setIsGenerating(false);
-      }
+      setIsGenerating(false);
     }
-  }, [normalizedGeometry, config, onPlanGenerated, requestId]);
+  }, [parcel, config, onPlanGenerated, requestGenerate, worker]);
 
   // Debounced config change handler
   const handleConfigChange = useCallback((updates: Partial<PlannerConfig>) => {
@@ -369,20 +401,35 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
         ) : (
           <div className="flex items-center justify-center h-full bg-gray-50 border border-gray-200 rounded-lg">
             <div className="text-center p-8">
-              <div className="text-2xl mb-4">🏗️</div>
-              <div className="text-lg font-medium mb-2 text-gray-700">Site Plan Designer</div>
-              <div className="text-sm text-gray-500 mb-4">
-                Configure your design parameters using the controls on the left
-              </div>
-              {!isValidParcel && (
-                <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                  ⚠️ Please select a valid parcel to begin designing
-                </div>
-              )}
-              {isValidParcel && (
-                <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
-                  ✅ Ready to generate site plan for parcel {parcel.ogc_fid}
-                </div>
+              {parcel && parcel.ogc_fid ? (
+                <>
+                  <div className="text-2xl mb-4">🏗️</div>
+                  <div className="text-lg font-medium mb-2 text-gray-700">Generating site plan…</div>
+                  <div className="text-sm text-gray-500">Parcel {parcel.ogc_fid}</div>
+                  {isGenerating && (
+                    <div className="mt-4">
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl mb-4">🏗️</div>
+                  <div className="text-lg font-medium mb-2 text-gray-700">Site Plan Designer</div>
+                  <div className="text-sm text-gray-500 mb-4">
+                    Configure your design parameters using the controls on the left
+                  </div>
+                  {!isValidParcel && (
+                    <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                      ⚠️ Please select a valid parcel to begin designing
+                    </div>
+                  )}
+                  {isValidParcel && (
+                    <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
+                      ✅ Ready to generate site plan for parcel {parcel.ogc_fid}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
