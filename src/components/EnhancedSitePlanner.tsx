@@ -19,7 +19,7 @@ import {
 import { useSitePlanStore, SitePlanDesign, SitePlanElement } from '../store/sitePlan';
 import { useHBUAnalysis } from '../hooks/useHBUAnalysis';
 import { useActiveProject } from '../store/project';
-import EnterpriseSitePlanner from './EnterpriseSitePlanner';
+import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
 import { SelectedParcel } from '../types/parcel';
 
 interface EnhancedSitePlannerProps {

@@ -12,13 +12,15 @@ export interface BuildingConfig {
 }
 
 /**
- * Generate building footprints within envelope
+ * Generate building footprints within envelope (worker interface)
  */
 export function generateBuildingFootprints(
-  envelope: Polygon,
-  config: BuildingConfig,
-  parcelAreaSqFt: number
+  buildableArea: Element,
+  config: any
 ): Element[] {
+  const envelope = buildableArea.geometry;
+  const parcelAreaSqFt = buildableArea.properties.areaSqFt || areaSqft(envelope);
+  
   const targetBuiltSF = parcelAreaSqFt * config.targetFAR;
   const maxCoverageSF = parcelAreaSqFt * (config.targetCoveragePct / 100);
   

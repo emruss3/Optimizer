@@ -1,109 +1,124 @@
 import { describe, it, expect } from 'vitest';
-import { areaSqft, contains, bbox, simplify, rotate } from '../../src/engine/geometry';
+import { 
+  calculatePolygonArea, 
+  calculatePolygonBounds, 
+  calculatePolygonCentroid, 
+  isPointInPolygon, 
+  doPolygonsOverlap, 
+  analyzeGeometry 
+} from '../../src/engine/geometry';
 
-describe('Geometry Engine', () => {
-  const samplePolygon = {
-    type: 'Polygon' as const,
-    coordinates: [[
-      [0, 0],
-      [10, 0],
-      [10, 10],
-      [0, 10],
-      [0, 0]
-    ]]
-  };
+describe('geometry', () => {
+  const squareVertices = [
+    [0, 0], [10, 0], [10, 10], [0, 10]
+  ];
 
-  const samplePoint = {
-    type: 'Point' as const,
-    coordinates: [5, 5]
-  };
+  const triangleVertices = [
+    [0, 0], [5, 10], [10, 0]
+  ];
 
-  describe('areaSqft', () => {
+  describe('calculatePolygonArea', () => {
     it('should calculate area of a square', () => {
-      const area = areaSqft(samplePolygon);
+      const area = calculatePolygonArea(squareVertices);
       expect(area).toBe(100);
     });
 
-    it('should calculate area of a rectangle', () => {
-      const rectangle = {
-        type: 'Polygon' as const,
-        coordinates: [[
-          [0, 0],
-          [20, 0],
-          [20, 10],
-          [0, 10],
-          [0, 0]
-        ]]
-      };
-      const area = areaSqft(rectangle);
-      expect(area).toBe(200);
+    it('should calculate area of a triangle', () => {
+      const area = calculatePolygonArea(triangleVertices);
+      expect(area).toBe(50);
+    });
+
+    it('should return 0 for empty vertices', () => {
+      const area = calculatePolygonArea([]);
+      expect(area).toBe(0);
+    });
+
+    it('should return 0 for less than 3 vertices', () => {
+      const area = calculatePolygonArea([[0, 0], [1, 1]]);
+      expect(area).toBe(0);
     });
   });
 
-  describe('contains', () => {
-    it('should return true for point inside polygon', () => {
-      const result = contains(samplePolygon, samplePoint);
-      expect(result).toBe(true);
+  describe('calculatePolygonBounds', () => {
+    it('should calculate correct bounds for square', () => {
+      const bounds = calculatePolygonBounds(squareVertices);
+      expect(bounds).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
     });
 
-    it('should return false for point outside polygon', () => {
-      const outsidePoint = {
-        type: 'Point' as const,
-        coordinates: [15, 15]
-      };
-      const result = contains(samplePolygon, outsidePoint);
-      expect(result).toBe(false);
-    });
-
-    it('should return false for point on edge', () => {
-      const edgePoint = {
-        type: 'Point' as const,
-        coordinates: [0, 5]
-      };
-      const result = contains(samplePolygon, edgePoint);
-      expect(result).toBe(false);
+    it('should handle empty vertices', () => {
+      const bounds = calculatePolygonBounds([]);
+      expect(bounds).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0 });
     });
   });
 
-  describe('bbox', () => {
-    it('should calculate bounding box correctly', () => {
-      const bounds = bbox(samplePolygon);
-      expect(bounds).toEqual({
-        minX: 0,
-        minY: 0,
-        maxX: 10,
-        maxY: 10
-      });
+  describe('calculatePolygonCentroid', () => {
+    it('should calculate centroid of square', () => {
+      const centroid = calculatePolygonCentroid(squareVertices);
+      expect(centroid).toEqual([5, 5]);
+    });
+
+    it('should handle empty vertices', () => {
+      const centroid = calculatePolygonCentroid([]);
+      expect(centroid).toEqual([0, 0]);
     });
   });
 
-  describe('simplify', () => {
-    it('should simplify polygon by removing redundant vertices', () => {
-      const complexPolygon = {
-        type: 'Polygon' as const,
-        coordinates: [[
-          [0, 0],
-          [1, 0],
-          [2, 0],
-          [3, 0],
-          [4, 0],
-          [5, 0],
-          [10, 0],
-          [10, 10],
-          [0, 10],
-          [0, 0]
-        ]]
-      };
+  describe('isPointInPolygon', () => {
+    it('should identify points inside square', () => {
+      expect(isPointInPolygon([5, 5], squareVertices)).toBe(true);
+      expect(isPointInPolygon([1, 1], squareVertices)).toBe(true);
+      expect(isPointInPolygon([9, 9], squareVertices)).toBe(true);
+    });
+
+    it('should identify points outside square', () => {
+      expect(isPointInPolygon([15, 15], squareVertices)).toBe(false);
+      expect(isPointInPolygon([-1, -1], squareVertices)).toBe(false);
+      expect(isPointInPolygon([5, 15], squareVertices)).toBe(false);
+    });
+
+    it('should handle edge cases', () => {
+      expect(isPointInPolygon([0, 0], squareVertices)).toBe(true); // Corner
+      expect(isPointInPolygon([10, 10], squareVertices)).toBe(true); // Corner
+    });
+  });
+
+  describe('doPolygonsOverlap', () => {
+    const square1 = [[0, 0], [5, 0], [5, 5], [0, 5]];
+    const square2 = [[3, 3], [8, 3], [8, 8], [3, 8]];
+    const square3 = [[10, 10], [15, 10], [15, 15], [10, 15]];
+
+    it('should detect overlapping polygons', () => {
+      expect(doPolygonsOverlap(square1, square2)).toBe(true);
+    });
+
+    it('should detect non-overlapping polygons', () => {
+      expect(doPolygonsOverlap(square1, square3)).toBe(false);
+    });
+
+    it('should be symmetric', () => {
+      expect(doPolygonsOverlap(square1, square2)).toBe(doPolygonsOverlap(square2, square1));
+    });
+  });
+
+  describe('analyzeGeometry', () => {
+    it('should analyze square geometry', () => {
+      const analysis = analyzeGeometry(squareVertices);
       
-      const simplified = simplify(complexPolygon, 0.5);
-      expect(simplified.coordinates[0].length).toBeLessThan(complexPolygon.coordinates[0].length);
+      expect(analysis.area).toBe(100);
+      expect(analysis.bounds).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
+      expect(analysis.centroid).toEqual([5, 5]);
+      expect(analysis.aspectRatio).toBe(1);
+      expect(analysis.isConvex).toBe(true);
+      expect(analysis.perimeter).toBeCloseTo(40, 1);
     });
-  });
 
-  describe('rotate', () => {
-    it('should rotate polygon around centroid', () => {
-      const rotated = rotate(samplePolygon, 90);
-      expect(rotated.coordinates[0]).toHaveLength(5);
+    it('should analyze triangle geometry', () => {
+      const analysis = analyzeGeometry(triangleVertices);
+      
+      expect(analysis.area).toBe(50);
+      expect(analysis.bounds).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
+      expect(analysis.centroid).toEqual([5, 3.33]);
+      expect(analysis.isConvex).toBe(true);
     });
   });
 });

@@ -1,6 +1,5 @@
 import type { Polygon } from 'geojson';
 import type { PlannerConfig, PlannerOutput } from '../engine/types';
-import type { WorkerMessage, WorkerResponse } from './planner.worker';
 
 export class PlannerWorkerManager {
   private worker: Worker | null = null;
@@ -17,11 +16,11 @@ export class PlannerWorkerManager {
   private initializeWorker() {
     try {
       this.worker = new Worker(
-        new URL('./planner.worker.ts', import.meta.url),
+        new URL('./siteEngineWorker.ts', import.meta.url),
         { type: 'module' }
       );
       
-      this.worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      this.worker.onmessage = (event) => {
         this.handleWorkerMessage(event.data);
       };
       
@@ -29,24 +28,26 @@ export class PlannerWorkerManager {
         console.error('Worker error:', error);
         this.rejectAllPending(new Error('Worker error'));
       };
+      
+      console.log('✅ Worker initialized');
     } catch (error) {
       console.error('Failed to initialize worker:', error);
       // Fallback to synchronous execution
     }
   }
 
-  private handleWorkerMessage(response: WorkerResponse) {
-    const messageId = this.messageId;
-    const pending = this.pendingMessages.get(messageId);
+  private handleWorkerMessage(data: any) {
+    const { id, result, error } = data;
+    const pending = this.pendingMessages.get(id);
     
     if (!pending) return;
     
-    this.pendingMessages.delete(messageId);
+    this.pendingMessages.delete(id);
     
-    if (response.type === 'SITE_PLAN_GENERATED') {
-      pending.resolve(response.payload as PlannerOutput);
-    } else if (response.type === 'ERROR') {
-      pending.reject(new Error((response.payload as any).error));
+    if (result) {
+      pending.resolve(result);
+    } else if (error) {
+      pending.reject(new Error(error));
     }
   }
 
@@ -72,20 +73,19 @@ export class PlannerWorkerManager {
       
       this.pendingMessages.set(messageId, { resolve, reject });
       
-      const message: WorkerMessage = {
-        type: 'GENERATE_SITE_PLAN',
-        payload: { parcelGeoJSON, config }
-      };
+      this.worker!.postMessage({
+        id: messageId,
+        method: 'generateSitePlan',
+        args: [parcelGeoJSON, config]
+      });
       
-      this.worker!.postMessage(message);
-      
-      // Timeout after 5 seconds
+      // Timeout after 10 seconds
       setTimeout(() => {
         if (this.pendingMessages.has(messageId)) {
           this.pendingMessages.delete(messageId);
           reject(new Error('Worker timeout'));
         }
-      }, 5000);
+      }, 10000);
     });
   }
 
