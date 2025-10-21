@@ -105,7 +105,7 @@ const MapView = React.memo(function MapView({
         map.on("mouseenter", "parcels-fill", () => (map.getCanvas().style.cursor = "pointer"));
         map.on("mouseleave", "parcels-fill", () => (map.getCanvas().style.cursor = ""));
         
-        // Click handler with fast path via ogc_fid and fallback to point-in-polygon
+        // Click handler with robust validation - never sets 'unknown' parcels
         map.on("click", "parcels-fill", async (e) => {
           const hit = e.features?.[0] ?? map.queryRenderedFeatures(e.point, { layers: ["parcels-fill"] })[0];
           const { setDrawer, setSelectedParcel } = useUIStore.getState();
@@ -119,51 +119,50 @@ const MapView = React.memo(function MapView({
               import.meta.env.VITE_SUPABASE_ANON_KEY
             );
 
+            let row = null;
+
             // 1) fast path via ogc_fid from tile
             const fid = Number((hit?.id as string | number) ?? hit?.properties?.ogc_fid);
             if (Number.isFinite(fid)) {
               const { data, error } = await supabase.rpc("get_parcel_by_id", { p_ogc_fid: fid });
               if (error) throw error;
-              const row = Array.isArray(data) ? data[0] : data;
-              if (!row || !row.geometry) return; // Bail out if no valid parcel found
-              
-              // Validate parcel ID before proceeding
-              const validId = String(fid);
-              if (validId === 'unknown' || validId.trim() === '') {
-                console.warn('Invalid parcel ID from tile lookup:', fid);
-                return; // Bail out - do not set invalid parcel
-              }
-              
-              if (activeProjectId) { 
-                await addParcel(validId, row); 
-                setDrawer("PROJECT"); 
-              } else { 
-                // Use the existing ParcelDrawer system
-                onParcelClick(row);
-              }
+              row = Array.isArray(data) ? data[0] : data;
+            } else {
+              // 2) fallback: point-in-polygon
+              const { lng, lat } = e.lngLat;
+              const { data, error } = await supabase.rpc("get_parcel_at_point", { lon: lng, lat });
+              if (error) throw error;
+              row = Array.isArray(data) ? data[0] : data;
+            }
+
+            // Bail if RPC failed or geometry missing
+            if (!row?.geometry || !Array.isArray(row.geometry.coordinates) || !row.geometry.coordinates.length) {
+              console.warn('Click had no parcel geometry; ignoring.');
               return;
             }
 
-            // 2) fallback: point-in-polygon
-            const { lng, lat } = e.lngLat;
-            const { data, error } = await supabase.rpc("get_parcel_at_point", { lon: lng, lat });
-            if (error) throw error;
-            const row = Array.isArray(data) ? data[0] : data;
-            if (!row || !row.geometry) return; // Bail out if no valid parcel found
-            
-            // Validate parcel ID before proceeding
-            const validId = String(row.ogc_fid ?? row.id);
-            if (validId === 'unknown' || validId.trim() === '') {
-              console.warn('Invalid parcel ID from point lookup:', row.ogc_fid);
-              return; // Bail out - do not set invalid parcel
+            const ogc_fid = row.ogc_fid ?? row.id ?? null;
+            if (ogc_fid == null) {
+              console.warn('Click had no valid parcel ID; ignoring.');
+              return;
             }
-            
+
+            // Create validated parcel object
+            const parcel = {
+              ogc_fid: String(ogc_fid),
+              parcelnumb: row.parcelnumb ?? null,
+              address: row.address ?? null,
+              zoning: row.zoning ?? null,
+              sqft: row.sqft ?? null,
+              geometry: row.geometry // GeoJSON (Polygon or MultiPolygon)
+            };
+
             if (activeProjectId) { 
-              await addParcel(validId, row); 
+              await addParcel(String(ogc_fid), parcel); 
               setDrawer("PROJECT"); 
             } else { 
               // Use the existing ParcelDrawer system
-              onParcelClick(row);
+              onParcelClick(parcel);
             }
 
           } catch (err) { 

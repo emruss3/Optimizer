@@ -90,6 +90,13 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
       return;
     }
     
+    // Quick diagnostics to keep (helps catch this forever)
+    console.debug('Planner input:', { 
+      parcelId: validId, 
+      ringLen: normalizedGeometry?.coordinates[0]?.length, 
+      type: normalizedGeometry?.type 
+    });
+    
     setIsGenerating(true);
     
     try {
