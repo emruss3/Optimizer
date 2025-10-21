@@ -248,20 +248,95 @@ export function elementsToPolygons(elements: Element[]): Polygon[] {
 }
 
 /**
- * Handle MultiPolygon by selecting the largest ring
+ * Select largest ring from a polygon (handles multiple rings)
  */
-export function selectLargestRing(geometry: Polygon | MultiPolygon): Polygon {
-  if (geometry.type === 'Polygon') {
-    return geometry;
+export function selectLargestRingFromPolygon(poly: Polygon): Polygon {
+  const rings = poly.coordinates?.filter(Array.isArray) ?? [];
+  if (rings.length === 0) throw new Error('Polygon has no rings');
+  
+  // Choose ring with max absolute area
+  let best = rings[0];
+  let bestA = 0;
+  
+  for (const ring of rings) {
+    if (!Array.isArray(ring) || ring.length < 4) continue;
+    
+    let a = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      const [x1, y1] = ring[i];
+      const [x2, y2] = ring[i + 1];
+      a += (x1 * y2 - x2 * y1);
+    }
+    const abs = Math.abs(a / 2);
+    if (abs > bestA) {
+      bestA = abs;
+      best = ring as any;
+    }
   }
   
-  // Find the largest polygon in the MultiPolygon
-  const polygons = geometry.coordinates.map(ring => ({
-    type: 'Polygon' as const,
-    coordinates: ring
-  }));
+  return { type: 'Polygon', coordinates: [best] };
+}
+
+/**
+ * Normalize geometry to a single polygon (handles MultiPolygon)
+ */
+export function normalizeToPolygon(geom: Polygon | MultiPolygon): Polygon {
+  if (!geom) throw new Error('Missing geometry');
   
-  return sortByArea(polygons)[0];
+  if (geom.type === 'Polygon') {
+    return selectLargestRingFromPolygon(geom);
+  }
+  
+  // MultiPolygon -> pick largest polygon by area
+  let best: Polygon | null = null;
+  let bestA = -1;
+  
+  for (const coords of geom.coordinates) {
+    const poly: Polygon = { type: 'Polygon', coordinates: coords };
+    const p = selectLargestRingFromPolygon(poly);
+    
+    // Quick area calculation on main ring
+    const ring = p.coordinates[0];
+    let a = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      const [x1, y1] = ring[i];
+      const [x2, y2] = ring[i + 1];
+      a += (x1 * y2 - x2 * y1);
+    }
+    const abs = Math.abs(a / 2);
+    if (abs > bestA) {
+      bestA = abs;
+      best = p;
+    }
+  }
+  
+  if (!best) throw new Error('MultiPolygon has no valid polygons');
+  return best;
+}
+
+/**
+ * Safe bounding box calculation
+ */
+export function safeBbox(poly: Polygon): [number, number, number, number] {
+  const ring = poly.coordinates?.[0];
+  if (!ring || ring.length === 0) throw new Error('Cannot bbox empty polygon');
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  
+  return [minX, minY, maxX, maxY];
+}
+
+/**
+ * Handle MultiPolygon by selecting the largest ring (legacy)
+ */
+export function selectLargestRing(geometry: Polygon | MultiPolygon): Polygon {
+  return normalizeToPolygon(geometry);
 }
 
 /**

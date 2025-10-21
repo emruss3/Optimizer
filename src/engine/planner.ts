@@ -1,6 +1,6 @@
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { PlannerConfig, PlannerOutput, Element, Envelope } from './types';
-import { createEnvelope, areaSqft, union, difference, polygons, sortByArea } from './geometry';
+import { createEnvelope, areaSqft, union, difference, polygons, sortByArea, normalizeToPolygon, safeBbox } from './geometry';
 import { generateBuildingFootprints } from './building';
 import { generateParking } from './parking';
 import { calculateMetrics } from './analysis';
@@ -15,11 +15,12 @@ export function generateSitePlan(
   const startTime = performance.now();
   
   try {
-    // Handle MultiPolygon by selecting largest ring
-    const parcelPolygon = selectLargestRing(parcelGeoJSON);
+    // Normalize input geometry (fixes MultiPolygon & empty ring issues)
+    const input = parcelGeoJSON as Polygon | MultiPolygon;
+    const polygon = normalizeToPolygon(input);
     
-    // Create envelope from parcel geometry
-    const envelope = createEnvelope(parcelPolygon);
+    // Create envelope from normalized polygon
+    const envelope = createEnvelope(polygon);
     const parcelAreaSqFt = envelope.areaSqFt;
     
     // Generate building footprints
@@ -33,7 +34,7 @@ export function generateSitePlan(
     };
     
     const buildings = generateBuildingFootprints(
-      envelope.geometry,
+      polygon,
       buildingConfig,
       parcelAreaSqFt
     );
@@ -45,7 +46,7 @@ export function generateSitePlan(
     
     // Generate parking layout
     const parkingResult = generateParking(
-      envelope.geometry,
+      polygon,
       config.designParameters.parking,
       targetStalls
     );
@@ -61,7 +62,7 @@ export function generateSitePlan(
     
     // Generate true greenspace geometry
     const greenspaceElements = generateGreenspaceElements(
-      envelope.geometry,
+      polygon,
       allElements,
       config
     );

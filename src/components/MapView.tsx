@@ -125,9 +125,17 @@ const MapView = React.memo(function MapView({
               const { data, error } = await supabase.rpc("get_parcel_by_id", { p_ogc_fid: fid });
               if (error) throw error;
               const row = Array.isArray(data) ? data[0] : data;
-              if (!row) throw new Error("not found");
+              if (!row || !row.geometry) return; // Bail out if no valid parcel found
+              
+              // Validate parcel ID before proceeding
+              const validId = String(fid);
+              if (validId === 'unknown' || validId.trim() === '') {
+                console.warn('Invalid parcel ID from tile lookup:', fid);
+                return; // Bail out - do not set invalid parcel
+              }
+              
               if (activeProjectId) { 
-                await addParcel(String(fid), row); 
+                await addParcel(validId, row); 
                 setDrawer("PROJECT"); 
               } else { 
                 // Use the existing ParcelDrawer system
@@ -141,9 +149,17 @@ const MapView = React.memo(function MapView({
             const { data, error } = await supabase.rpc("get_parcel_at_point", { lon: lng, lat });
             if (error) throw error;
             const row = Array.isArray(data) ? data[0] : data;
-            if (!row) return;
+            if (!row || !row.geometry) return; // Bail out if no valid parcel found
+            
+            // Validate parcel ID before proceeding
+            const validId = String(row.ogc_fid ?? row.id);
+            if (validId === 'unknown' || validId.trim() === '') {
+              console.warn('Invalid parcel ID from point lookup:', row.ogc_fid);
+              return; // Bail out - do not set invalid parcel
+            }
+            
             if (activeProjectId) { 
-              await addParcel(String(row.ogc_fid), row); 
+              await addParcel(validId, row); 
               setDrawer("PROJECT"); 
             } else { 
               // Use the existing ParcelDrawer system
