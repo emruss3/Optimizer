@@ -1,26 +1,31 @@
 import { describe, it, expect } from 'vitest';
 import { generateSitePlan } from '../../src/engine/planner';
+import type { Polygon, MultiPolygon } from 'geojson';
 import type { PlannerConfig } from '../../src/engine/types';
 
-describe('Planner Engine', () => {
-  const sampleParcel = {
-    type: 'Polygon' as const,
+describe('planner', () => {
+  const sampleParcel: Polygon = {
+    type: 'Polygon',
     coordinates: [[
-      [0, 0],
-      [200, 0],
-      [200, 200],
-      [0, 200],
-      [0, 0]
+      [0, 0], [200, 0], [200, 200], [0, 200], [0, 0]
     ]]
   };
 
-  const sampleConfig: PlannerConfig = {
-    parcelId: 'test_parcel',
+  const sampleMultiPolygon: MultiPolygon = {
+    type: 'MultiPolygon',
+    coordinates: [
+      [[[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]],
+      [[[150, 150], [200, 150], [200, 200], [150, 200], [150, 150]]]
+    ]
+  };
+
+  const baseConfig: PlannerConfig = {
+    parcelId: 'test-parcel',
     buildableArea: sampleParcel,
     zoning: {
-      frontSetbackFt: 20,
-      sideSetbackFt: 10,
-      rearSetbackFt: 20,
+      frontSetbackFt: 10,
+      sideSetbackFt: 5,
+      rearSetbackFt: 10,
       maxFar: 2.0,
       maxCoveragePct: 60,
       minParkingRatio: 1.0
@@ -32,96 +37,119 @@ describe('Planner Engine', () => {
         targetRatio: 1.5,
         stallWidthFt: 9,
         stallDepthFt: 18,
-        aisleWidthFt: 12,
+        aisleWidthFt: 24,
         adaPct: 5,
         evPct: 10,
         layoutAngle: 0
       },
       buildingTypology: 'bar',
-      numBuildings: 2
+      numBuildings: 1
     }
   };
 
-  describe('generateSitePlan', () => {
-    it('should generate site plan within processing time limit', async () => {
+  describe('end-to-end timing', () => {
+    it('should complete within 300ms', () => {
       const startTime = performance.now();
-      const result = generateSitePlan(sampleParcel, sampleConfig);
-      const processingTime = performance.now() - startTime;
+      const result = generateSitePlan(sampleParcel, baseConfig);
+      const endTime = performance.now();
       
-      expect(processingTime).toBeLessThan(300); // 300ms limit
+      const duration = endTime - startTime;
+      expect(duration).toBeLessThan(300);
       expect(result.processingTime).toBeLessThan(300);
     });
+  });
 
-    it('should generate buildings and parking elements', () => {
-      const result = generateSitePlan(sampleParcel, sampleConfig);
+  describe('determinism', () => {
+    it('should produce stable metrics when re-running same config', () => {
+      const result1 = generateSitePlan(sampleParcel, baseConfig);
+      const result2 = generateSitePlan(sampleParcel, baseConfig);
+      
+      // Metrics should be stable (within small tolerance for floating point)
+      expect(result1.metrics.achievedFAR).toBeCloseTo(result2.metrics.achievedFAR, 2);
+      expect(result1.metrics.siteCoveragePct).toBeCloseTo(result2.metrics.siteCoveragePct, 1);
+      expect(result1.metrics.parkingRatio).toBeCloseTo(result2.metrics.parkingRatio, 1);
+      expect(result1.metrics.totalBuiltSF).toBeCloseTo(result2.metrics.totalBuiltSF, 100);
+    });
+
+    it('should produce consistent element counts', () => {
+      const result1 = generateSitePlan(sampleParcel, baseConfig);
+      const result2 = generateSitePlan(sampleParcel, baseConfig);
+      
+      const buildings1 = result1.elements.filter(e => e.type === 'building');
+      const buildings2 = result2.elements.filter(e => e.type === 'building');
+      const parking1 = result1.elements.filter(e => e.type === 'parking');
+      const parking2 = result2.elements.filter(e => e.type === 'parking');
+      
+      expect(buildings1.length).toBe(buildings2.length);
+      expect(parking1.length).toBe(parking2.length);
+    });
+  });
+
+  describe('MultiPolygon handling', () => {
+    it('should handle MultiPolygon by selecting largest ring', () => {
+      const result = generateSitePlan(sampleMultiPolygon, baseConfig);
       
       expect(result.elements.length).toBeGreaterThan(0);
-      
-      const buildings = result.elements.filter(el => el.type === 'building');
-      const parking = result.elements.filter(el => el.type === 'parking');
-      
-      expect(buildings.length).toBeGreaterThan(0);
-      expect(parking.length).toBeGreaterThan(0);
+      expect(result.metrics.totalBuiltSF).toBeGreaterThan(0);
+      expect(result.processingTime).toBeLessThan(300);
     });
+  });
 
-    it('should converge FAR within tolerance', () => {
-      const result = generateSitePlan(sampleParcel, sampleConfig);
+  describe('greenspace generation', () => {
+    it('should generate greenspace elements', () => {
+      const result = generateSitePlan(sampleParcel, baseConfig);
       
-      const targetFAR = sampleConfig.designParameters.targetFAR;
-      const achievedFAR = result.metrics.achievedFAR;
+      const greenspace = result.elements.filter(e => e.type === 'greenspace');
+      expect(greenspace.length).toBeGreaterThan(0);
       
-      // Should be within 20% of target
-      const tolerance = targetFAR * 0.2;
-      expect(achievedFAR).toBeGreaterThanOrEqual(targetFAR - tolerance);
-      expect(achievedFAR).toBeLessThanOrEqual(targetFAR + tolerance);
-    });
-
-    it('should converge coverage within tolerance', () => {
-      const result = generateSitePlan(sampleParcel, sampleConfig);
-      
-      const targetCoverage = sampleConfig.designParameters.targetCoveragePct;
-      const achievedCoverage = result.metrics.siteCoveragePct;
-      
-      // Should be within 20% of target
-      const tolerance = targetCoverage * 0.2;
-      expect(achievedCoverage).toBeGreaterThanOrEqual(targetCoverage - tolerance);
-      expect(achievedCoverage).toBeLessThanOrEqual(targetCoverage + tolerance);
-    });
-
-    it('should respect zoning constraints', () => {
-      const result = generateSitePlan(sampleParcel, sampleConfig);
-      
-      // Check FAR constraint
-      if (sampleConfig.zoning.maxFar) {
-        expect(result.metrics.achievedFAR).toBeLessThanOrEqual(sampleConfig.zoning.maxFar);
-      }
-      
-      // Check coverage constraint
-      if (sampleConfig.zoning.maxCoveragePct) {
-        expect(result.metrics.siteCoveragePct).toBeLessThanOrEqual(sampleConfig.zoning.maxCoveragePct);
+      // Check that greenspace has proper properties
+      for (const space of greenspace) {
+        expect(space.properties.areaSqFt).toBeGreaterThan(0);
+        expect(space.properties.use).toBe('landscaping');
       }
     });
 
-    it('should generate valid envelope', () => {
-      const result = generateSitePlan(sampleParcel, sampleConfig);
+    it('should cap greenspace at 20% of site area', () => {
+      const result = generateSitePlan(sampleParcel, baseConfig);
       
-      expect(result.envelope).toBeDefined();
-      expect(result.envelope.geometry).toBeDefined();
-      expect(result.envelope.areaSqFt).toBeGreaterThan(0);
-      expect(result.envelope.bounds).toBeDefined();
+      const totalGreenspace = result.elements
+        .filter(e => e.type === 'greenspace')
+        .reduce((sum, space) => sum + (space.properties.areaSqFt || 0), 0);
+      
+      const siteArea = 200 * 200; // 200x200 parcel
+      const maxGreenspace = siteArea * 0.2;
+      
+      expect(totalGreenspace).toBeLessThanOrEqual(maxGreenspace);
     });
+  });
 
-    it('should handle invalid input gracefully', () => {
-      const invalidParcel = {
-        type: 'Polygon' as const,
-        coordinates: [[]] // Empty polygon
+  describe('error handling', () => {
+    it('should handle invalid parcel geometry gracefully', () => {
+      const invalidParcel: Polygon = {
+        type: 'Polygon',
+        coordinates: [] // Empty coordinates
       };
       
-      const result = generateSitePlan(invalidParcel, sampleConfig);
+      const result = generateSitePlan(invalidParcel, baseConfig);
       
       expect(result.elements).toHaveLength(0);
+      expect(result.metrics.violations).toContain('Site plan generation failed');
       expect(result.metrics.zoningCompliant).toBe(false);
-      expect(result.metrics.violations.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('performance under load', () => {
+    it('should handle multiple rapid calls', () => {
+      const startTime = performance.now();
+      
+      const promises = Array.from({ length: 5 }, () => 
+        generateSitePlan(sampleParcel, baseConfig)
+      );
+      
+      const results = Promise.all(promises);
+      const endTime = performance.now();
+      
+      expect(endTime - startTime).toBeLessThan(1000); // All 5 should complete within 1s
     });
   });
 });

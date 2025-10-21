@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateBuildingFootprints, validateBuildingPlacement } from '../../src/engine/building';
+import { calculatePolygonBounds } from '../../src/engine/geometry';
 import type { Polygon } from 'geojson';
 import type { Element } from '../../src/engine/types';
 
@@ -194,6 +195,44 @@ describe('building', () => {
       
       expect(result.valid).toBe(false);
       expect(result.violations.some(v => v.includes('height'))).toBe(true);
+    });
+  });
+
+  describe('FAR accuracy across building counts', () => {
+    const testCases = [1, 3, 5];
+    
+    testCases.forEach(numBuildings => {
+      it(`should achieve FAR within ±10% for ${numBuildings} buildings`, () => {
+        const config = { ...buildingConfig, numBuildings };
+        const buildings = generateBuildingFootprints(buildableElement, config);
+        
+        const totalBuiltSF = buildings.reduce((sum, building) => 
+          sum + (building.properties.areaSqFt || 0), 0);
+        const achievedFAR = totalBuiltSF / 40000; // 40000 sqft parcel
+        
+        const targetFAR = config.targetFAR;
+        const tolerance = targetFAR * 0.1; // ±10%
+        
+        expect(achievedFAR).toBeGreaterThanOrEqual(targetFAR - tolerance);
+        expect(achievedFAR).toBeLessThanOrEqual(targetFAR + tolerance);
+      });
+    });
+  });
+
+  describe('footprint containment', () => {
+    it('should ensure all building footprints are contained within envelope', () => {
+      const buildings = generateBuildingFootprints(buildableElement, buildingConfig);
+      
+      for (const building of buildings) {
+        const buildingBounds = calculatePolygonBounds(building.geometry.coordinates[0]);
+        const envelopeBounds = calculatePolygonBounds(buildableElement.geometry.coordinates[0]);
+        
+        // Check if building is within envelope bounds
+        expect(buildingBounds.minX).toBeGreaterThanOrEqual(envelopeBounds.minX);
+        expect(buildingBounds.minY).toBeGreaterThanOrEqual(envelopeBounds.minY);
+        expect(buildingBounds.maxX).toBeLessThanOrEqual(envelopeBounds.maxX);
+        expect(buildingBounds.maxY).toBeLessThanOrEqual(envelopeBounds.maxY);
+      }
     });
   });
 

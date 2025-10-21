@@ -5,7 +5,8 @@ import {
   calculatePolygonCentroid, 
   isPointInPolygon, 
   doPolygonsOverlap, 
-  analyzeGeometry 
+  analyzeGeometry,
+  selectLargestRing
 } from '../../src/engine/geometry';
 
 describe('geometry', () => {
@@ -119,6 +120,56 @@ describe('geometry', () => {
       expect(analysis.bounds).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
       expect(analysis.centroid).toEqual([5, 3.33]);
       expect(analysis.isConvex).toBe(true);
+    });
+  });
+
+  describe('concave polygons', () => {
+    const concaveVertices = [
+      [0, 0], [10, 0], [10, 5], [5, 5], [5, 10], [0, 10]
+    ];
+
+    it('should calculate area of concave polygon', () => {
+      const area = calculatePolygonArea(concaveVertices);
+      expect(area).toBeGreaterThan(0);
+      expect(area).toBeLessThan(100); // Should be less than 10x10 square
+    });
+
+    it('should detect points inside concave polygon', () => {
+      expect(isPointInPolygon([2, 2], concaveVertices)).toBe(true);
+      expect(isPointInPolygon([7, 7], concaveVertices)).toBe(false);
+      expect(isPointInPolygon([8, 2], concaveVertices)).toBe(false);
+    });
+
+    it('should analyze concave geometry properties', () => {
+      const analysis = analyzeGeometry(concaveVertices);
+      expect(analysis.isConvex).toBe(false);
+      expect(analysis.area).toBeGreaterThan(0);
+      expect(analysis.perimeter).toBeGreaterThan(0);
+    });
+  });
+
+  describe('MultiPolygon fallback', () => {
+    const multiPolygon = {
+      type: 'MultiPolygon' as const,
+      coordinates: [
+        [[[0, 0], [5, 0], [5, 5], [0, 5], [0, 0]]], // 25 sqft
+        [[[10, 10], [15, 10], [15, 15], [10, 15], [10, 10]]] // 25 sqft
+      ]
+    };
+
+    it('should select largest ring from MultiPolygon', () => {
+      const largest = selectLargestRing(multiPolygon);
+      expect(largest.type).toBe('Polygon');
+      expect(largest.coordinates).toBeDefined();
+    });
+
+    it('should handle single polygon', () => {
+      const singlePolygon = {
+        type: 'Polygon' as const,
+        coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]]
+      };
+      const result = selectLargestRing(singlePolygon);
+      expect(result).toBe(singlePolygon);
     });
   });
 });

@@ -1,7 +1,7 @@
-import type { Polygon } from 'geojson';
-import type { PlannerConfig, PlannerOutput } from '../engine/types';
+import type { Polygon, MultiPolygon } from 'geojson';
+import type { PlannerConfig, PlannerOutput, WorkerAPI } from '../engine/types';
 
-export class PlannerWorkerManager {
+export class PlannerWorkerManager implements WorkerAPI {
   private worker: Worker | null = null;
   private messageId = 0;
   private pendingMessages = new Map<number, {
@@ -59,13 +59,13 @@ export class PlannerWorkerManager {
   }
 
   async generateSitePlan(
-    parcelGeoJSON: Polygon,
+    parcel: Polygon | MultiPolygon,
     config: PlannerConfig
   ): Promise<PlannerOutput> {
     if (!this.worker) {
       // Fallback to synchronous execution
       const { generateSitePlan } = await import('../engine/planner');
-      return generateSitePlan(parcelGeoJSON, config);
+      return generateSitePlan(parcel, config);
     }
 
     return new Promise((resolve, reject) => {
@@ -76,7 +76,7 @@ export class PlannerWorkerManager {
       this.worker!.postMessage({
         id: messageId,
         method: 'generateSitePlan',
-        args: [parcelGeoJSON, config]
+        args: [parcel, config]
       });
       
       // Timeout after 10 seconds
@@ -98,19 +98,9 @@ export class PlannerWorkerManager {
   }
 }
 
-// Singleton instance
-let workerManager: PlannerWorkerManager | null = null;
-
-export function getPlannerWorker(): PlannerWorkerManager {
-  if (!workerManager) {
-    workerManager = new PlannerWorkerManager();
-  }
-  return workerManager;
-}
+// Single instance satisfying WorkerAPI
+export const workerManager = new PlannerWorkerManager();
 
 export function terminatePlannerWorker() {
-  if (workerManager) {
-    workerManager.terminate();
-    workerManager = null;
-  }
+  workerManager.terminate();
 }

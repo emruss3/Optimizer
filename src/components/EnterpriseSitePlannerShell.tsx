@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
 import type { Element, PlannerConfig, PlannerOutput, SiteMetrics } from '../engine/types';
-import { getPlannerWorker } from '../workers/workerManager';
+import { workerManager } from '../workers/workerManager';
 
 interface EnterpriseSitePlannerProps {
   parcel: SelectedParcel;
@@ -220,7 +220,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     setGenerationProgress(0);
 
     try {
-      const worker = getPlannerWorker();
+      // Use workerManager directly
       
       // Create planner config
       const config: PlannerConfig = {
@@ -252,7 +252,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       };
 
       setGenerationProgress(25);
-      const result = await worker.generateSitePlan(parcel.geometry as any, config);
+      const result = await workerManager.generateSitePlan(parcel.geometry as any, config);
       setGenerationProgress(75);
 
       setElements(result.elements);

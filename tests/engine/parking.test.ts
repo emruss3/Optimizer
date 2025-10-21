@@ -149,6 +149,59 @@ describe('parking', () => {
     });
   });
 
+  describe('target stalls accuracy', () => {
+    it('should generate target stalls within ±5%', () => {
+      const targetStalls = 20;
+      const result = generateParking(buildableArea, parkingConfig, targetStalls);
+      
+      const tolerance = targetStalls * 0.05; // ±5%
+      expect(result.metrics.totalStalls).toBeGreaterThanOrEqual(targetStalls - tolerance);
+      expect(result.metrics.totalStalls).toBeLessThanOrEqual(targetStalls + tolerance);
+    });
+  });
+
+  describe('concave parcel handling', () => {
+    const concaveParcel: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [0, 0], [100, 0], [100, 50], [50, 50], [50, 100], [0, 100], [0, 0]
+      ]]
+    };
+
+    it('should generate parking with zero overlaps on concave parcel', () => {
+      const result = generateParking(concaveParcel, parkingConfig, 10);
+      
+      expect(result.metrics.overlapCount).toBe(0);
+      expect(result.stalls.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('ADA and EV quotas', () => {
+    it('should meet ADA quota requirements', () => {
+      const result = generateParking(buildableArea, parkingConfig, 20);
+      
+      const expectedAdaStalls = Math.round(20 * parkingConfig.adaPct / 100);
+      expect(result.metrics.adaStalls).toBeGreaterThanOrEqual(expectedAdaStalls);
+    });
+
+    it('should meet EV quota requirements', () => {
+      const result = generateParking(buildableArea, parkingConfig, 20);
+      
+      const expectedEvStalls = Math.round(20 * parkingConfig.evPct / 100);
+      expect(result.metrics.evStalls).toBeGreaterThanOrEqual(expectedEvStalls);
+    });
+
+    it('should maintain total stall count with quotas', () => {
+      const result = generateParking(buildableArea, parkingConfig, 20);
+      
+      const totalQuotaStalls = result.metrics.adaStalls + result.metrics.evStalls;
+      const standardStalls = result.metrics.totalStalls - totalQuotaStalls;
+      
+      expect(standardStalls).toBeGreaterThanOrEqual(0);
+      expect(result.metrics.totalStalls).toBe(result.stalls.length);
+    });
+  });
+
   describe('performance', () => {
     it('should generate parking within reasonable time', () => {
       const startTime = performance.now();

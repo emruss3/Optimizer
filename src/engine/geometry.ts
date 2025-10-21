@@ -182,6 +182,89 @@ function checkConvexity(vertices: number[][]): boolean {
 }
 
 /**
+ * Union multiple polygons into one
+ */
+export function union(...polygons: Polygon[]): Polygon {
+  if (polygons.length === 0) {
+    return { type: 'Polygon', coordinates: [] };
+  }
+  if (polygons.length === 1) {
+    return polygons[0];
+  }
+  
+  // Simple implementation: return the largest polygon
+  // In a real implementation, this would use a proper union algorithm
+  return polygons.reduce((largest, current) => 
+    areaSqft(current) > areaSqft(largest) ? current : largest
+  );
+}
+
+/**
+ * Difference between two polygons
+ */
+export function difference(polygon1: Polygon, polygon2: Polygon): Polygon {
+  // Simple implementation: return polygon1 if no overlap
+  // In a real implementation, this would use a proper difference algorithm
+  const bounds1 = bbox(polygon1);
+  const bounds2 = bbox(polygon2);
+  
+  // Quick check for no overlap
+  if (bounds1.maxX < bounds2.minX || bounds1.minX > bounds2.maxX ||
+      bounds1.maxY < bounds2.minY || bounds1.minY > bounds2.maxY) {
+    return polygon1;
+  }
+  
+  // For now, return a simplified version of polygon1
+  return polygon1;
+}
+
+/**
+ * Extract polygons from a geometry
+ */
+export function polygons(geometry: Polygon | MultiPolygon): Polygon[] {
+  if (geometry.type === 'Polygon') {
+    return [geometry];
+  } else if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates.map(ring => ({
+      type: 'Polygon',
+      coordinates: ring
+    }));
+  }
+  return [];
+}
+
+/**
+ * Sort polygons by area (largest first)
+ */
+export function sortByArea(polygons: Polygon[]): Polygon[] {
+  return polygons.sort((a, b) => areaSqft(b) - areaSqft(a));
+}
+
+/**
+ * Convert elements to polygons
+ */
+export function elementsToPolygons(elements: Element[]): Polygon[] {
+  return elements.map(element => element.geometry);
+}
+
+/**
+ * Handle MultiPolygon by selecting the largest ring
+ */
+export function selectLargestRing(geometry: Polygon | MultiPolygon): Polygon {
+  if (geometry.type === 'Polygon') {
+    return geometry;
+  }
+  
+  // Find the largest polygon in the MultiPolygon
+  const polygons = geometry.coordinates.map(ring => ({
+    type: 'Polygon' as const,
+    coordinates: ring
+  }));
+  
+  return sortByArea(polygons)[0];
+}
+
+/**
  * Check if a point is inside a polygon
  */
 export function contains(polygon: Polygon, point: Point): boolean {
