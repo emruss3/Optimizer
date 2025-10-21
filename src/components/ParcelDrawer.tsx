@@ -257,7 +257,11 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
 
       {/* Full Analysis Modal */}
       <FullAnalysisModal
-        parcel={parcel}
+        parcel={{
+          ...parcel,
+          ogc_fid: String(parcel.ogc_fid), // Ensure ogc_fid is string
+          geometry: parcel.geometry // Pass GeoJSON geometry
+        }}
         isOpen={showFullAnalysis}
         onClose={() => setShowFullAnalysis(false)}
       />

@@ -166,14 +166,9 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                   <SitePlanDesigner 
                     parcel={(() => {
                       // Normalize geometry: accept Polygon or MultiPolygon
-                      const normalizedGeometry = 
-                        parcel?.geometry?.type === "Polygon" || parcel?.geometry?.type === "MultiPolygon"
-                          ? toPolygon(parcel.geometry)
-                          : null;
-
-                      return normalizedGeometry
-                        ? { ...parcel, geometry: normalizedGeometry }
-                        : createFallbackParcel(parcel.id || 'unknown', parcel.sqft || 4356);
+                      const poly = parcel?.geometry ? toPolygon(parcel.geometry) : null;   // MultiPolygon → Polygon
+                      const parcelForPlanner = poly ? { ogc_fid: String(parcel.ogc_fid), geometry: poly } : null;
+                      return parcelForPlanner;
                     })()}
                     onUnderwritingUpdate={(financialData) => {
                       console.log('Site plan financial update:', financialData);
