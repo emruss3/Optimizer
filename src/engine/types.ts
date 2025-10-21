@@ -1,4 +1,5 @@
-// Core types for the site planning engine
+import type { Feature, Polygon, Point } from 'geojson';
+
 export interface Vertex {
   x: number;
   y: number;
@@ -7,152 +8,110 @@ export interface Vertex {
 
 export interface Element {
   id: string;
-  type: 'building' | 'parking' | 'greenspace' | 'road' | 'utility';
-  vertices: Vertex[];
-  rotation?: number; // Current rotation angle in degrees
-  properties: {
-    name?: string;
-    area?: number;
-    perimeter?: number;
-    color?: string;
-    strokeColor?: string;
-    fillOpacity?: number;
-    // Building-specific properties
-    stories?: number;
-    height?: number;
-    use?: string;
-    // Parking-specific properties
-    stallCount?: number;
-    stallType?: 'standard' | 'compact' | 'handicap' | 'ev';
-    // Greenspace properties
-    vegetationType?: string;
-    maintenanceLevel?: 'low' | 'medium' | 'high';
-  };
-}
-
-export interface DragState {
-  isDragging: boolean;
-  dragType: 'element' | 'vertex' | 'selection';
-  elementId?: string;
-  vertexId?: string;
-  offset: { x: number; y: number };
-  originalPosition: { x: number; y: number };
-  originalVertices?: Vertex[];
-}
-
-export interface Layer {
-  id: string;
+  type: 'building' | 'parking' | 'greenspace' | 'road' | 'utility' | 'other';
   name: string;
-  visible: boolean;
-  locked: boolean;
-  opacity: number;
+  geometry: Polygon;
+  properties: {
+    areaSqFt?: number;
+    units?: number;
+    parkingSpaces?: number;
+    heightFt?: number;
+    stories?: number;
+    use?: string; // e.g., 'residential', 'commercial', 'mixed-use'
+    color?: string;
+    rotation?: number; // in degrees
+    [key: string]: any;
+  };
+  metadata: {
+    createdAt: string;
+    updatedAt: string;
+    source: 'user-drawn' | 'ai-generated' | 'imported';
+    [key: string]: any;
+  };
+}
+
+export interface Envelope {
+  geometry: Polygon;
+  areaSqFt: number;
+  bounds: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  };
+}
+
+export interface PlannerConfig {
+  parcelId: string;
+  buildableArea: Polygon;
+  zoning: {
+    frontSetbackFt: number;
+    sideSetbackFt: number;
+    rearSetbackFt: number;
+    maxFar?: number;
+    maxCoveragePct?: number;
+    minParkingRatio?: number; // e.g., stalls per unit/sqft
+  };
+  designParameters: {
+    targetFAR: number;
+    targetCoveragePct?: number;
+    parking: {
+      targetRatio: number; // e.g., 1.5 stalls per unit
+      stallWidthFt: number;
+      stallDepthFt: number;
+      aisleWidthFt: number;
+      adaPct: number;
+      evPct: number;
+      layoutAngle?: number; // in degrees
+    };
+    buildingTypology: string; // e.g., 'bar', 'L-shape', 'podium'
+    numBuildings: number;
+  };
+}
+
+export interface PlannerOutput {
   elements: Element[];
-}
-
-export interface SitePlanConfig {
-  // Zoning constraints
-  maxFAR: number;
-  maxCoverage: number;
-  minSetbacks: {
-    front: number;
-    side: number;
-    rear: number;
+  metrics: {
+    totalBuiltSF: number;
+    siteCoveragePct: number;
+    achievedFAR: number;
+    parkingRatio: number; // stalls per unit or per 1000 sqft
+    openSpacePct: number;
+    zoningCompliant: boolean;
+    violations: string[];
+    warnings: string[];
   };
-  
-  // Building requirements
-  targetFAR: number;
-  buildingTypes: string[];
-  minUnitSize: number;
-  maxBuildingHeight: number;
-  
-  // Parking requirements
-  parkingRatio: number;
-  stallDimensions: {
-    standard: { width: number; depth: number };
-    compact: { width: number; depth: number };
-    handicap: { width: number; depth: number };
-  };
-  aisleWidth: number;
-  
-  // Site analysis
-  parcelArea: number;
-  buildableArea: number;
-  existingElements: Element[];
-}
-
-export interface SiteMetrics {
-  totalBuiltSF: number;
-  siteCoverage: number; // percentage
-  achievedFAR: number;
-  parkingRatio: number;
-  openSpacePercent: number;
-  buildingCount: number;
-  parkingStallCount: number;
-  utilization: number; // how well the space is used
-}
-
-export interface ParkingConfig {
-  targetStalls: number;
-  stallWidth: number;
-  stallDepth: number;
-  aisleWidth: number;
-  layoutAngle: number; // degrees from horizontal
-  adaRatio: number; // percentage of ADA stalls
-  evRatio: number; // percentage of EV stalls
+  envelope: Envelope;
+  processingTime: number; // in milliseconds
 }
 
 export interface BuildingTypology {
   id: string;
   name: string;
-  use: string;
-  aspectRatio: number; // width/height
-  minSize: number; // minimum area
-  maxSize: number; // maximum area
-  preferredOrientation: number; // degrees
-  template: Vertex[]; // normalized template (0-1 coordinates)
+  description: string;
+  shape: 'rectangle' | 'L-shape' | 'podium' | 'custom';
+  aspectRatio: number; // width / depth
+  minAreaSqFt?: number;
+  maxAreaSqFt?: number;
+  defaultStories: number;
+  defaultHeightFt: number;
 }
 
-export interface GeometryResult {
-  area: number;
-  perimeter: number;
-  centroid: { x: number; y: number };
-  bounds: { minX: number; minY: number; maxX: number; maxY: number };
-  isValid: boolean;
+export interface ParkingMetrics {
+  totalStalls: number;
+  adaStalls: number;
+  evStalls: number;
+  utilizationPct: number;
+  overlapCount: number;
 }
 
-export interface ParkingResult {
-  stalls: Element[];
-  metrics: {
-    totalStalls: number;
-    adaStalls: number;
-    evStalls: number;
-    utilization: number;
-    overlapCount: number;
-  };
+export interface SiteMetrics {
+  totalBuiltSF: number;
+  siteCoveragePct: number;
+  achievedFAR: number;
+  parkingRatio: number;
+  openSpacePct: number;
+  zoningCompliant: boolean;
+  violations: string[];
+  warnings: string[];
 }
-
-export interface BuildingResult {
-  buildings: Element[];
-  metrics: {
-    totalArea: number;
-    achievedFAR: number;
-    buildingCount: number;
-    averageSize: number;
-  };
-}
-
-// GeoJSON compatibility
-export interface GeoJSONPolygon {
-  type: 'Polygon';
-  coordinates: number[][][];
-}
-
-export interface GeoJSONPoint {
-  type: 'Point';
-  coordinates: number[];
-}
-
-// Utility types
-export type ElementType = Element['type'];
-export type PropertyKey = keyof Element['properties'];
-export type ConfigKey = keyof SitePlanConfig;

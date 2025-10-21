@@ -1,276 +1,73 @@
-import type { Element, Vertex, BuildingTypology, BuildingResult, SitePlanConfig } from './types';
-import { 
-  verticesToGeoJSON, 
-  geoJSONToVertices, 
-  calculatePolygonArea, 
-  createRectangle,
-  rotateVertices,
-  analyzeGeometry,
-  doPolygonsOverlap
-} from './geometry';
+import type { Polygon } from 'geojson';
+import type { Element, PlannerConfig, BuildingTypology } from './types';
+import { areaSqft, bbox, createEnvelope } from './geometry';
+
+export interface BuildingConfig {
+  targetFAR: number;
+  targetCoveragePct: number;
+  typology: string;
+  numBuildings: number;
+  maxHeightFt?: number;
+  minHeightFt?: number;
+}
 
 /**
- * Building typology library
- */
-export const BUILDING_TYPOLOGIES: BuildingTypology[] = [
-  // Residential typologies
-  {
-    id: 'residential_bar',
-    name: 'Residential Bar Building',
-    use: 'residential',
-    aspectRatio: 3.0,
-    minSize: 2000,
-    maxSize: 10000,
-    preferredOrientation: 0,
-    template: [
-      { x: 0, y: 0, id: 't0' },
-      { x: 1, y: 0, id: 't1' },
-      { x: 1, y: 0.33, id: 't2' },
-      { x: 0, y: 0.33, id: 't3' }
-    ]
-  },
-  {
-    id: 'residential_l',
-    name: 'Residential L-Shaped Building',
-    use: 'residential',
-    aspectRatio: 1.5,
-    minSize: 3000,
-    maxSize: 15000,
-    preferredOrientation: 0,
-    template: [
-      { x: 0, y: 0, id: 't0' },
-      { x: 0.6, y: 0, id: 't1' },
-      { x: 0.6, y: 0.4, id: 't2' },
-      { x: 1, y: 0.4, id: 't3' },
-      { x: 1, y: 0.6, id: 't4' },
-      { x: 0.4, y: 0.6, id: 't5' },
-      { x: 0.4, y: 1, id: 't6' },
-      { x: 0, y: 1, id: 't7' }
-    ]
-  },
-  {
-    id: 'residential_podium',
-    name: 'Residential Podium Building',
-    use: 'residential',
-    aspectRatio: 2.5,
-    minSize: 5000,
-    maxSize: 25000,
-    preferredOrientation: 0,
-    template: [
-      { x: 0, y: 0, id: 't0' },
-      { x: 1, y: 0, id: 't1' },
-      { x: 1, y: 0.4, id: 't2' },
-      { x: 0, y: 0.4, id: 't3' }
-    ]
-  },
-  
-  // Office typologies
-  {
-    id: 'office_bar',
-    name: 'Office Bar Building',
-    use: 'office',
-    aspectRatio: 2.0,
-    minSize: 5000,
-    maxSize: 50000,
-    preferredOrientation: 0,
-    template: [
-      { x: 0, y: 0, id: 't0' },
-      { x: 1, y: 0, id: 't1' },
-      { x: 1, y: 0.5, id: 't2' },
-      { x: 0, y: 0.5, id: 't3' }
-    ]
-  },
-  {
-    id: 'office_square',
-    name: 'Office Square Building',
-    use: 'office',
-    aspectRatio: 1.0,
-    minSize: 3000,
-    maxSize: 30000,
-    preferredOrientation: 0,
-    template: [
-      { x: 0, y: 0, id: 't0' },
-      { x: 1, y: 0, id: 't1' },
-      { x: 1, y: 1, id: 't2' },
-      { x: 0, y: 1, id: 't3' }
-    ]
-  },
-  
-  // Retail typologies
-  {
-    id: 'retail_strip',
-    name: 'Retail Strip Building',
-    use: 'retail',
-    aspectRatio: 4.0,
-    minSize: 2000,
-    maxSize: 20000,
-    preferredOrientation: 0,
-    template: [
-      { x: 0, y: 0, id: 't0' },
-      { x: 1, y: 0, id: 't1' },
-      { x: 1, y: 0.25, id: 't2' },
-      { x: 0, y: 0.25, id: 't3' }
-    ]
-  },
-  {
-    id: 'retail_anchor',
-    name: 'Retail Anchor Building',
-    use: 'retail',
-    aspectRatio: 1.2,
-    minSize: 10000,
-    maxSize: 100000,
-    preferredOrientation: 0,
-    template: [
-      { x: 0, y: 0, id: 't0' },
-      { x: 1, y: 0, id: 't1' },
-      { x: 1, y: 0.83, id: 't2' },
-      { x: 0, y: 0.83, id: 't3' }
-    ]
-  }
-];
-
-/**
- * Generate building footprints based on typology and constraints
+ * Generate building footprints within envelope
  */
 export function generateBuildingFootprints(
-  buildableArea: Element,
-  config: SitePlanConfig,
-  typologyId?: string
-): BuildingResult {
-  console.log(`🏢 Generating building footprints for target FAR: ${config.targetFAR}`);
-  
-  const buildings: Element[] = [];
-  const buildableVertices = buildableArea.vertices;
-  const buildableAreaSqft = calculatePolygonArea(buildableVertices);
-  const targetBuildingArea = buildableAreaSqft * config.targetFAR;
-  
-  // Select typology
-  const typology = selectOptimalTypology(config.buildingTypes, targetBuildingArea, typologyId);
-  if (!typology) {
-    console.warn('No suitable typology found');
-    return {
-      buildings: [],
-      metrics: {
-        totalArea: 0,
-        achievedFAR: 0,
-        buildingCount: 0,
-        averageSize: 0
-      }
-    };
-  }
-  
-  // Generate buildings using the selected typology
-  const generatedBuildings = generateBuildingsWithTypology(
-    buildableArea,
-    typology,
-    targetBuildingArea,
-    config
-  );
-  
-  // Calculate metrics
-  const totalArea = generatedBuildings.reduce((sum, building) => 
-    sum + (building.properties.area || 0), 0
-  );
-  const achievedFAR = buildableAreaSqft > 0 ? totalArea / buildableAreaSqft : 0;
-  
-  return {
-    buildings: generatedBuildings,
-    metrics: {
-      totalArea,
-      achievedFAR,
-      buildingCount: generatedBuildings.length,
-      averageSize: generatedBuildings.length > 0 ? totalArea / generatedBuildings.length : 0
-    }
-  };
-}
-
-/**
- * Select optimal typology based on requirements
- */
-function selectOptimalTypology(
-  buildingTypes: string[],
-  targetArea: number,
-  preferredTypologyId?: string
-): BuildingTypology | null {
-  if (preferredTypologyId) {
-    const typology = BUILDING_TYPOLOGIES.find(t => t.id === preferredTypologyId);
-    if (typology && buildingTypes.includes(typology.use)) {
-      return typology;
-    }
-  }
-  
-  // Filter by building types
-  const availableTypologies = BUILDING_TYPOLOGIES.filter(t => 
-    buildingTypes.includes(t.use)
-  );
-  
-  if (availableTypologies.length === 0) {
-    return null;
-  }
-  
-  // Select based on size constraints
-  const suitableTypologies = availableTypologies.filter(t => 
-    targetArea >= t.minSize && targetArea <= t.maxSize
-  );
-  
-  if (suitableTypologies.length === 0) {
-    // Use the largest available typology
-    return availableTypologies.reduce((prev, current) => 
-      current.maxSize > prev.maxSize ? current : prev
-    );
-  }
-  
-  // Select the typology with the best aspect ratio for the target area
-  return suitableTypologies.reduce((prev, current) => {
-    const prevScore = calculateTypologyScore(prev, targetArea);
-    const currentScore = calculateTypologyScore(current, targetArea);
-    return currentScore > prevScore ? current : prev;
-  });
-}
-
-/**
- * Calculate typology score based on how well it fits the target area
- */
-function calculateTypologyScore(typology: BuildingTypology, targetArea: number): number {
-  const sizeRatio = Math.min(targetArea / typology.maxSize, typology.maxSize / targetArea);
-  const aspectRatioScore = 1 / Math.abs(typology.aspectRatio - 1.5); // Prefer moderate aspect ratios
-  return sizeRatio * aspectRatioScore;
-}
-
-/**
- * Generate buildings using the selected typology
- */
-function generateBuildingsWithTypology(
-  buildableArea: Element,
-  typology: BuildingTypology,
-  targetArea: number,
-  config: SitePlanConfig
+  envelope: Polygon,
+  config: BuildingConfig,
+  parcelAreaSqFt: number
 ): Element[] {
+  const targetBuiltSF = parcelAreaSqFt * config.targetFAR;
+  const maxCoverageSF = parcelAreaSqFt * (config.targetCoveragePct / 100);
+  
+  // Get building typology
+  const typology = getBuildingTypology(config.typology);
+  
+  // Calculate building dimensions
   const buildings: Element[] = [];
-  const buildableVertices = buildableArea.vertices;
-  const buildableBounds = analyzeGeometry(buildableVertices).bounds;
+  const bounds = bbox(envelope);
+  const envelopeArea = areaSqft(envelope);
   
-  // Calculate building dimensions based on typology
-  const buildingArea = Math.min(targetArea, typology.maxSize);
-  const aspectRatio = typology.aspectRatio;
-  const width = Math.sqrt(buildingArea / aspectRatio);
-  const height = width * aspectRatio;
+  // Distribute buildings across the envelope
+  const buildingsPerRow = Math.ceil(Math.sqrt(config.numBuildings));
+  const buildingWidth = (bounds.maxX - bounds.minX) / buildingsPerRow;
+  const buildingDepth = (bounds.maxY - bounds.minY) / Math.ceil(config.numBuildings / buildingsPerRow);
   
-  // Generate multiple buildings if needed
-  const maxBuildings = Math.ceil(targetArea / buildingArea);
-  const spacing = Math.max(width, height) * 0.2; // 20% spacing between buildings
+  let totalBuiltSF = 0;
+  let buildingIndex = 0;
   
-  for (let i = 0; i < maxBuildings && buildings.length < 10; i++) {
-    const building = createBuildingFromTypology(
-      typology,
-      buildingArea,
-      buildableBounds,
-      spacing,
-      i
-    );
-    
-    if (building && isBuildingValid(building, buildableArea, buildings)) {
-      buildings.push(building);
+  for (let row = 0; row < Math.ceil(config.numBuildings / buildingsPerRow) && buildingIndex < config.numBuildings; row++) {
+    for (let col = 0; col < buildingsPerRow && buildingIndex < config.numBuildings; col++) {
+      // Calculate building position
+      const x = bounds.minX + col * buildingWidth + buildingWidth / 2;
+      const y = bounds.minY + row * buildingDepth + buildingDepth / 2;
+      
+      // Calculate building size based on remaining target
+      const remainingSF = targetBuiltSF - totalBuiltSF;
+      const remainingBuildings = config.numBuildings - buildingIndex;
+      const avgBuildingSF = remainingSF / remainingBuildings;
+      
+      // Ensure building fits within coverage limits
+      const maxBuildingSF = Math.min(avgBuildingSF, maxCoverageSF - totalBuiltSF);
+      
+      if (maxBuildingSF > 0) {
+        const building = createBuildingElement(
+          buildingIndex,
+          x,
+          y,
+          buildingWidth * 0.8, // 80% of allocated space
+          buildingDepth * 0.8,
+          maxBuildingSF,
+          typology,
+          config
+        );
+        
+        buildings.push(building);
+        totalBuiltSF += building.properties.areaSqFt || 0;
+        buildingIndex++;
+      }
     }
   }
   
@@ -278,146 +75,202 @@ function generateBuildingsWithTypology(
 }
 
 /**
- * Create a building from typology template
+ * Create a building element
  */
-function createBuildingFromTypology(
+function createBuildingElement(
+  index: number,
+  x: number,
+  y: number,
+  width: number,
+  depth: number,
+  targetArea: number,
   typology: BuildingTypology,
-  area: number,
-  bounds: { minX: number; minY: number; maxX: number; maxY: number },
-  spacing: number,
-  index: number
-): Element | null {
-  // Calculate dimensions
-  const aspectRatio = typology.aspectRatio;
-  const width = Math.sqrt(area / aspectRatio);
-  const height = width * aspectRatio;
+  config: BuildingConfig
+): Element {
+  // Adjust dimensions to meet target area
+  const currentArea = width * depth;
+  const scaleFactor = Math.sqrt(targetArea / currentArea);
+  const finalWidth = width * scaleFactor;
+  const finalDepth = depth * scaleFactor;
   
-  // Calculate position (avoid overlaps)
-  const x = bounds.minX + spacing + (index * (width + spacing));
-  const y = bounds.minY + spacing;
+  // Create building geometry
+  const geometry = createBuildingGeometry(x, y, finalWidth, finalDepth);
   
-  // Check if building fits in bounds
-  if (x + width > bounds.maxX || y + height > bounds.maxY) {
-    return null;
-  }
-  
-  // Create building from template
-  const template = typology.template;
-  const vertices: Vertex[] = template.map((vertex, i) => ({
-    x: x + vertex.x * width,
-    y: y + vertex.y * height,
-    id: `building_${index}_${i}`
-  }));
-  
-  // Apply rotation if needed
-  const rotatedVertices = typology.preferredOrientation !== 0 
-    ? rotateVertices(vertices, { x: x + width/2, y: y + height/2 }, typology.preferredOrientation)
-    : vertices;
+  // Calculate stories based on area and height constraints
+  const floorArea = finalWidth * finalDepth;
+  const stories = Math.max(1, Math.floor(targetArea / floorArea));
+  const heightFt = stories * 10; // Assume 10ft per story
   
   return {
-    id: `building_${typology.id}_${index}`,
+    id: `building_${index}`,
     type: 'building',
-    vertices: rotatedVertices,
+    name: `Building ${index + 1}`,
+    geometry,
     properties: {
-      name: `${typology.name} ${index + 1}`,
-      area: area,
-      use: typology.use,
-      stories: calculateStoriesFromArea(area, typology.use),
-      height: calculateHeightFromArea(area, typology.use)
-    }
-  };
-}
-
-/**
- * Check if building is valid (within bounds, no overlaps)
- */
-function isBuildingValid(
-  building: Element,
-  buildableArea: Element,
-  existingBuildings: Element[]
-): boolean {
-  // Check if building is within buildable area
-  const buildingCenter = analyzeGeometry(building.vertices).centroid;
-  if (!isPointInPolygon(buildingCenter, buildableArea.vertices)) {
-    return false;
-  }
-  
-  // Check for overlaps with existing buildings
-  for (const existing of existingBuildings) {
-    if (doPolygonsOverlap(building.vertices, existing.vertices)) {
-      return false;
-    }
-  }
-  
-  return true;
-}
-
-/**
- * Calculate number of stories based on area and use type
- */
-function calculateStoriesFromArea(area: number, use: string): number {
-  const storiesPerSqft: Record<string, number> = {
-    'residential': 1000, // 1000 sq ft per story
-    'office': 2000,       // 2000 sq ft per story
-    'retail': 5000,       // 5000 sq ft per story
-    'industrial': 10000   // 10000 sq ft per story
-  };
-  
-  const sqftPerStory = storiesPerSqft[use] || 2000;
-  return Math.max(1, Math.floor(area / sqftPerStory));
-}
-
-/**
- * Calculate building height based on area and use type
- */
-function calculateHeightFromArea(area: number, use: string): number {
-  const stories = calculateStoriesFromArea(area, use);
-  const storyHeight = 10; // 10 feet per story
-  return stories * storyHeight;
-}
-
-/**
- * Generate buildings for specific use types
- */
-export function generateBuildingsForUse(
-  use: string,
-  buildableArea: Element,
-  targetFAR: number
-): BuildingResult {
-  const config: SitePlanConfig = {
-    maxFAR: 5.0,
-    maxCoverage: 80,
-    minSetbacks: { front: 10, side: 5, rear: 10 },
-    targetFAR,
-    buildingTypes: [use],
-    minUnitSize: 500,
-    maxBuildingHeight: 100,
-    parkingRatio: 1.0,
-    stallDimensions: {
-      standard: { width: 9, depth: 18 },
-      compact: { width: 8, depth: 16 },
-      handicap: { width: 9, depth: 18 }
+      areaSqFt: targetArea,
+      units: Math.floor(targetArea / 800), // Assume 800 sqft per unit
+      heightFt: Math.min(heightFt, config.maxHeightFt || 100),
+      stories,
+      use: getUseFromTypology(typology),
+      color: getColorForTypology(typology),
+      rotation: 0
     },
-    aisleWidth: 24,
-    parcelArea: calculatePolygonArea(buildableArea.vertices),
-    buildableArea: calculatePolygonArea(buildableArea.vertices),
-    existingElements: []
+    metadata: {
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: 'ai-generated'
+    }
   };
-  
-  return generateBuildingFootprints(buildableArea, config);
 }
 
 /**
- * Helper function to check if point is in polygon
+ * Create building geometry as rectangle
  */
-function isPointInPolygon(point: { x: number; y: number }, vertices: Vertex[]): boolean {
-  // Simple point-in-polygon test
-  let inside = false;
-  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
-    if (((vertices[i].y > point.y) !== (vertices[j].y > point.y)) &&
-        (point.x < (vertices[j].x - vertices[i].x) * (point.y - vertices[i].y) / (vertices[j].y - vertices[i].y) + vertices[i].x)) {
-      inside = !inside;
+function createBuildingGeometry(x: number, y: number, width: number, depth: number): Polygon {
+  const halfWidth = width / 2;
+  const halfDepth = depth / 2;
+  
+  return {
+    type: 'Polygon',
+    coordinates: [[
+      [x - halfWidth, y - halfDepth],
+      [x + halfWidth, y - halfDepth],
+      [x + halfWidth, y + halfDepth],
+      [x - halfWidth, y + halfDepth],
+      [x - halfWidth, y - halfDepth]
+    ]]
+  };
+}
+
+/**
+ * Get building typology configuration
+ */
+function getBuildingTypology(typologyName: string): BuildingTypology {
+  const typologies: Record<string, BuildingTypology> = {
+    'bar': {
+      id: 'bar',
+      name: 'Bar Building',
+      description: 'Rectangular building with linear layout',
+      shape: 'rectangle',
+      aspectRatio: 3.0,
+      defaultStories: 3,
+      defaultHeightFt: 30
+    },
+    'L-shape': {
+      id: 'L-shape',
+      name: 'L-Shaped Building',
+      description: 'L-shaped building for corner lots',
+      shape: 'L-shape',
+      aspectRatio: 1.5,
+      defaultStories: 2,
+      defaultHeightFt: 20
+    },
+    'podium': {
+      id: 'podium',
+      name: 'Podium Building',
+      description: 'Mixed-use with podium and tower',
+      shape: 'podium',
+      aspectRatio: 1.0,
+      defaultStories: 8,
+      defaultHeightFt: 80
+    },
+    'custom': {
+      id: 'custom',
+      name: 'Custom Building',
+      description: 'Custom building design',
+      shape: 'custom',
+      aspectRatio: 1.0,
+      defaultStories: 2,
+      defaultHeightFt: 20
+    }
+  };
+  
+  return typologies[typologyName] || typologies['bar'];
+}
+
+/**
+ * Get use type from typology
+ */
+function getUseFromTypology(typology: BuildingTypology): string {
+  switch (typology.id) {
+    case 'podium':
+      return 'mixed-use';
+    case 'bar':
+      return 'residential';
+    case 'L-shape':
+      return 'commercial';
+    default:
+      return 'residential';
+  }
+}
+
+/**
+ * Get color for typology
+ */
+function getColorForTypology(typology: BuildingTypology): string {
+  switch (typology.id) {
+    case 'podium':
+      return '#8B5CF6'; // Purple
+    case 'bar':
+      return '#3B82F6'; // Blue
+    case 'L-shape':
+      return '#10B981'; // Green
+    default:
+      return '#6B7280'; // Gray
+  }
+}
+
+/**
+ * Calculate optimal building placement
+ */
+export function optimizeBuildingPlacement(
+  envelope: Polygon,
+  buildings: Element[],
+  config: BuildingConfig
+): Element[] {
+  // Simple optimization: sort by area and place largest first
+  return buildings.sort((a, b) => (b.properties.areaSqFt || 0) - (a.properties.areaSqFt || 0));
+}
+
+/**
+ * Validate building placement against zoning
+ */
+export function validateBuildingPlacement(
+  buildings: Element[],
+  envelope: Polygon,
+  config: BuildingConfig,
+  parcelAreaSqFt: number
+): { valid: boolean; violations: string[] } {
+  const violations: string[] = [];
+  
+  // Check total coverage
+  const totalBuildingArea = buildings.reduce((sum, building) => 
+    sum + (building.properties.areaSqFt || 0), 0);
+  const coveragePct = (totalBuildingArea / parcelAreaSqFt) * 100;
+  
+  if (coveragePct > config.targetCoveragePct) {
+    violations.push(`Building coverage ${coveragePct.toFixed(1)}% exceeds target ${config.targetCoveragePct}%`);
+  }
+  
+  // Check FAR
+  const far = totalBuildingArea / parcelAreaSqFt;
+  if (far > config.targetFAR) {
+    violations.push(`FAR ${far.toFixed(2)} exceeds target ${config.targetFAR}`);
+  }
+  
+  // Check building heights
+  for (const building of buildings) {
+    const height = building.properties.heightFt || 0;
+    if (config.maxHeightFt && height > config.maxHeightFt) {
+      violations.push(`Building ${building.name} height ${height}ft exceeds maximum ${config.maxHeightFt}ft`);
+    }
+    if (config.minHeightFt && height < config.minHeightFt) {
+      violations.push(`Building ${building.name} height ${height}ft below minimum ${config.minHeightFt}ft`);
     }
   }
-  return inside;
+  
+  return {
+    valid: violations.length === 0,
+    violations
+  };
 }
