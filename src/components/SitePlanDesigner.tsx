@@ -414,21 +414,9 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
                 </>
               ) : (
                 <>
-                  <div className="text-2xl mb-4">🏗️</div>
-                  <div className="text-lg font-medium mb-2 text-gray-700">Site Plan Designer</div>
-                  <div className="text-sm text-gray-500 mb-4">
-                    Configure your design parameters using the controls on the left
-                  </div>
-                  {!isValidParcel && (
-                    <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                      ⚠️ Please select a valid parcel to begin designing
-                    </div>
-                  )}
-                  {isValidParcel && (
-                    <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
-                      ✅ Ready to generate site plan for parcel {parcel.ogc_fid}
-                    </div>
-                  )}
+                  <div className="text-2xl mb-4">📍</div>
+                  <div className="text-lg font-medium mb-2 text-gray-700">No Parcel Selected</div>
+                  <div className="text-sm text-gray-500">Choose a parcel on the map</div>
                 </>
               )}
             </div>
