@@ -5,7 +5,7 @@ import { getPlannerWorker } from '../workers/workerManager';
 
 interface SitePlanDesignerProps {
   parcel: any; // SelectedParcel
-  children: React.ReactNode;
+  children?: React.ReactNode;
   onPlanGenerated?: (elements: Element[], metrics: SiteMetrics) => void;
 }
 
@@ -21,11 +21,14 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   useEffect(() => {
     console.log('SitePlanDesigner received parcel:', parcel);
     console.log('isValidParcel:', isValidParcel);
+    console.log('SitePlanDesigner received children:', children);
+    console.log('children type:', typeof children);
+    console.log('isValidElement:', React.isValidElement(children));
     if (parcel) {
       console.log('parcel.ogc_fid:', parcel.ogc_fid);
       console.log('parcel.geometry:', parcel.geometry);
     }
-  }, [parcel, isValidParcel]);
+  }, [parcel, isValidParcel, children]);
   
   const [config, setConfig] = useState<PlannerConfig>({
     parcelId: parcel?.ogc_fid || 'unknown',
@@ -277,10 +280,32 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
 
       {/* Main Content Area */}
       <div className="flex-1">
-        {React.cloneElement(children as React.ReactElement, {
-          planElements: currentElements,
-          metrics: currentMetrics
-        })}
+        {children && React.isValidElement(children) ? (
+          React.cloneElement(children, {
+            planElements: currentElements,
+            metrics: currentMetrics
+          })
+        ) : (
+          <div className="flex items-center justify-center h-full bg-gray-50 border border-gray-200 rounded-lg">
+            <div className="text-center p-8">
+              <div className="text-2xl mb-4">🏗️</div>
+              <div className="text-lg font-medium mb-2 text-gray-700">Site Plan Designer</div>
+              <div className="text-sm text-gray-500 mb-4">
+                Configure your design parameters using the controls on the left
+              </div>
+              {!isValidParcel && (
+                <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                  ⚠️ Please select a valid parcel to begin designing
+                </div>
+              )}
+              {isValidParcel && (
+                <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
+                  ✅ Ready to generate site plan for parcel {parcel.ogc_fid}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
