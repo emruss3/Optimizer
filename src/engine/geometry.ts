@@ -1,349 +1,200 @@
-import * as turf from '@turf/turf';
-import type { Vertex, Element, GeometryResult, GeoJSONPolygon, GeoJSONPoint } from './types';
+import type { Polygon, Point } from 'geojson';
+import type { Vertex, Envelope } from './types';
 
 /**
- * Convert Vertex array to GeoJSON Polygon
+ * Calculate area of a polygon in square feet
  */
-export function verticesToGeoJSON(vertices: Vertex[]): GeoJSONPolygon {
-  if (vertices.length < 3) {
-    throw new Error('At least 3 vertices required for polygon');
+export function areaSqft(polygon: Polygon): number {
+  // Simple shoelace formula for now - can be replaced with turf.area() later
+  const coords = polygon.coordinates[0];
+  let area = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    area += coords[i][0] * coords[i + 1][1];
+    area -= coords[i + 1][0] * coords[i][1];
+  }
+  return Math.abs(area) / 2;
+}
+
+/**
+ * Check if a point is inside a polygon
+ */
+export function contains(polygon: Polygon, point: Point): boolean {
+  const coords = polygon.coordinates[0];
+  const x = point.coordinates[0];
+  const y = point.coordinates[1];
+  
+  let inside = false;
+  for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+    if (((coords[i][1] > y) !== (coords[j][1] > y)) &&
+        (x < (coords[j][0] - coords[i][0]) * (y - coords[i][1]) / (coords[j][1] - coords[i][1]) + coords[i][0])) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Get bounding box of a polygon
+ */
+export function bbox(polygon: Polygon): { minX: number; minY: number; maxX: number; maxY: number } {
+  const coords = polygon.coordinates[0];
+  let minX = coords[0][0];
+  let minY = coords[0][1];
+  let maxX = coords[0][0];
+  let maxY = coords[0][1];
+  
+  for (const coord of coords) {
+    minX = Math.min(minX, coord[0]);
+    minY = Math.min(minY, coord[1]);
+    maxX = Math.max(maxX, coord[0]);
+    maxY = Math.max(maxY, coord[1]);
   }
   
-  const coordinates = [vertices.map(v => [v.x, v.y])];
-  return {
-    type: 'Polygon',
-    coordinates
-  };
+  return { minX, minY, maxX, maxY };
 }
 
 /**
- * Convert GeoJSON Polygon to Vertex array
+ * Simplify polygon by removing redundant vertices
  */
-export function geoJSONToVertices(geoJSON: GeoJSONPolygon, idPrefix = 'v'): Vertex[] {
-  const coords = geoJSON.coordinates[0];
-  return coords.map((coord, index) => ({
-    x: coord[0],
-    y: coord[1],
-    id: `${idPrefix}_${index}`
-  }));
-}
-
-/**
- * Calculate polygon area using Turf.js
- */
-export function calculatePolygonArea(vertices: Vertex[]): number {
-  try {
-    const geoJSON = verticesToGeoJSON(vertices);
-    const polygon = turf.polygon(geoJSON.coordinates);
-    return turf.area(polygon); // Returns area in square meters
-  } catch (error) {
-    console.error('Error calculating polygon area:', error);
-    return 0;
-  }
-}
-
-/**
- * Calculate polygon perimeter using Turf.js
- */
-export function calculatePolygonPerimeter(vertices: Vertex[]): number {
-  try {
-    const geoJSON = verticesToGeoJSON(vertices);
-    const polygon = turf.polygon(geoJSON.coordinates);
-    return turf.length(turf.polygonToLine(polygon), { units: 'meters' });
-  } catch (error) {
-    console.error('Error calculating polygon perimeter:', error);
-    return 0;
-  }
-}
-
-/**
- * Check if point is inside polygon using Turf.js
- */
-export function isPointInPolygon(point: { x: number; y: number }, vertices: Vertex[]): boolean {
-  try {
-    const geoJSON = verticesToGeoJSON(vertices);
-    const polygon = turf.polygon(geoJSON.coordinates);
-    const pointGeoJSON: GeoJSONPoint = {
-      type: 'Point',
-      coordinates: [point.x, point.y]
-    };
-    return turf.booleanPointInPolygon(pointGeoJSON, polygon);
-  } catch (error) {
-    console.error('Error checking point in polygon:', error);
-    return false;
-  }
-}
-
-/**
- * Calculate polygon bounds using Turf.js
- */
-export function calculatePolygonBounds(vertices: Vertex[]): { minX: number; minY: number; maxX: number; maxY: number } {
-  try {
-    const geoJSON = verticesToGeoJSON(vertices);
-    const polygon = turf.polygon(geoJSON.coordinates);
-    const bbox = turf.bbox(polygon);
-    return {
-      minX: bbox[0],
-      minY: bbox[1],
-      maxX: bbox[2],
-      maxY: bbox[3]
-    };
-  } catch (error) {
-    console.error('Error calculating polygon bounds:', error);
-    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  }
-}
-
-/**
- * Calculate polygon centroid using Turf.js
- */
-export function calculatePolygonCentroid(vertices: Vertex[]): { x: number; y: number } {
-  try {
-    const geoJSON = verticesToGeoJSON(vertices);
-    const polygon = turf.polygon(geoJSON.coordinates);
-    const centroid = turf.centroid(polygon);
-    return {
-      x: centroid.geometry.coordinates[0],
-      y: centroid.geometry.coordinates[1]
-    };
-  } catch (error) {
-    console.error('Error calculating polygon centroid:', error);
-    return { x: 0, y: 0 };
-  }
-}
-
-/**
- * Get comprehensive geometry analysis
- */
-export function analyzeGeometry(vertices: Vertex[]): GeometryResult {
-  const area = calculatePolygonArea(vertices);
-  const perimeter = calculatePolygonPerimeter(vertices);
-  const centroid = calculatePolygonCentroid(vertices);
-  const bounds = calculatePolygonBounds(vertices);
+export function simplify(polygon: Polygon, tolerance: number = 0.001): Polygon {
+  const coords = polygon.coordinates[0];
+  const simplified: number[][] = [];
   
-  return {
-    area,
-    perimeter,
-    centroid,
-    bounds,
-    isValid: area > 0 && vertices.length >= 3
-  };
-}
-
-/**
- * Rotate vertices around a center point
- */
-export function rotateVertices(
-  vertices: Vertex[], 
-  center: { x: number; y: number }, 
-  angleDegrees: number
-): Vertex[] {
-  const angleRadians = (angleDegrees * Math.PI) / 180;
-  const cos = Math.cos(angleRadians);
-  const sin = Math.sin(angleRadians);
-  
-  return vertices.map(vertex => {
-    const dx = vertex.x - center.x;
-    const dy = vertex.y - center.y;
+  for (let i = 0; i < coords.length; i++) {
+    const prev = coords[i === 0 ? coords.length - 1 : i - 1];
+    const curr = coords[i];
+    const next = coords[i === coords.length - 1 ? 0 : i + 1];
     
-    return {
-      ...vertex,
-      x: center.x + dx * cos - dy * sin,
-      y: center.y + dx * sin + dy * cos
-    };
-  });
-}
-
-/**
- * Scale vertices around a center point
- */
-export function scaleVertices(
-  vertices: Vertex[], 
-  center: { x: number; y: number }, 
-  scaleX: number, 
-  scaleY: number = scaleX
-): Vertex[] {
-  return vertices.map(vertex => ({
-    ...vertex,
-    x: center.x + (vertex.x - center.x) * scaleX,
-    y: center.y + (vertex.y - center.y) * scaleY
-  }));
-}
-
-/**
- * Translate vertices by offset
- */
-export function translateVertices(vertices: Vertex[], offset: { x: number; y: number }): Vertex[] {
-  return vertices.map(vertex => ({
-    ...vertex,
-    x: vertex.x + offset.x,
-    y: vertex.y + offset.y
-  }));
-}
-
-/**
- * Snap vertices to grid
- */
-export function snapToGrid(vertices: Vertex[], gridSize: number): Vertex[] {
-  return vertices.map(vertex => ({
-    ...vertex,
-    x: Math.round(vertex.x / gridSize) * gridSize,
-    y: Math.round(vertex.y / gridSize) * gridSize
-  }));
-}
-
-/**
- * Check if two polygons overlap using Turf.js
- */
-export function doPolygonsOverlap(vertices1: Vertex[], vertices2: Vertex[]): boolean {
-  try {
-    const geoJSON1 = verticesToGeoJSON(vertices1);
-    const geoJSON2 = verticesToGeoJSON(vertices2);
-    const polygon1 = turf.polygon(geoJSON1.coordinates);
-    const polygon2 = turf.polygon(geoJSON2.coordinates);
+    // Calculate distance from current point to line between prev and next
+    const dist = pointToLineDistance(curr, prev, next);
     
-    return turf.booleanOverlap(polygon1, polygon2);
-  } catch (error) {
-    console.error('Error checking polygon overlap:', error);
-    return false;
-  }
-}
-
-/**
- * Calculate distance between two points
- */
-export function calculateDistance(point1: { x: number; y: number }, point2: { x: number; y: number }): number {
-  const dx = point2.x - point1.x;
-  const dy = point2.y - point1.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-/**
- * Find closest point on polygon edge to a given point
- */
-export function findClosestPointOnPolygon(point: { x: number; y: number }, vertices: Vertex[]): { x: number; y: number } {
-  let closestPoint = vertices[0];
-  let minDistance = calculateDistance(point, vertices[0]);
-  
-  for (let i = 0; i < vertices.length; i++) {
-    const current = vertices[i];
-    const next = vertices[(i + 1) % vertices.length];
-    
-    // Find closest point on line segment
-    const lineDistance = distanceToLineSegment(point, current, next);
-    if (lineDistance < minDistance) {
-      minDistance = lineDistance;
-      // Calculate actual closest point on line
-      const t = Math.max(0, Math.min(1, 
-        ((point.x - current.x) * (next.x - current.x) + (point.y - current.y) * (next.y - current.y)) /
-        ((next.x - current.x) ** 2 + (next.y - current.y) ** 2)
-      ));
-      closestPoint = {
-        x: current.x + t * (next.x - current.x),
-        y: current.y + t * (next.y - current.y),
-        id: `closest_${i}`
-      };
+    if (dist > tolerance) {
+      simplified.push(curr);
     }
   }
   
-  return closestPoint;
+  // Ensure polygon is closed
+  if (simplified.length > 0 && 
+      (simplified[0][0] !== simplified[simplified.length - 1][0] || 
+       simplified[0][1] !== simplified[simplified.length - 1][1])) {
+    simplified.push([simplified[0][0], simplified[0][1]]);
+  }
+  
+  return {
+    type: 'Polygon',
+    coordinates: [simplified]
+  };
 }
 
 /**
- * Calculate distance from point to line segment
+ * Rotate polygon around its centroid
  */
-function distanceToLineSegment(
-  point: { x: number; y: number }, 
-  lineStart: { x: number; y: number }, 
-  lineEnd: { x: number; y: number }
-): number {
-  const A = point.x - lineStart.x;
-  const B = point.y - lineStart.y;
-  const C = lineEnd.x - lineStart.x;
-  const D = lineEnd.y - lineStart.y;
+export function rotate(polygon: Polygon, angleDegrees: number): Polygon {
+  const coords = polygon.coordinates[0];
+  const centroid = getCentroid(polygon);
+  const angleRad = (angleDegrees * Math.PI) / 180;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  
+  const rotated = coords.map(coord => {
+    const x = coord[0] - centroid[0];
+    const y = coord[1] - centroid[1];
+    return [
+      x * cos - y * sin + centroid[0],
+      x * sin + y * cos + centroid[1]
+    ];
+  });
+  
+  return {
+    type: 'Polygon',
+    coordinates: [rotated]
+  };
+}
+
+/**
+ * Create envelope from polygon
+ */
+export function createEnvelope(polygon: Polygon): Envelope {
+  const bounds = bbox(polygon);
+  const area = areaSqft(polygon);
+  
+  return {
+    geometry: polygon,
+    areaSqFt: area,
+    bounds
+  };
+}
+
+/**
+ * Convert vertices to polygon
+ */
+export function verticesToPolygon(vertices: Vertex[]): Polygon {
+  const coords = vertices.map(v => [v.x, v.y]);
+  // Ensure polygon is closed
+  if (coords.length > 0 && 
+      (coords[0][0] !== coords[coords.length - 1][0] || 
+       coords[0][1] !== coords[coords.length - 1][1])) {
+    coords.push([coords[0][0], coords[0][1]]);
+  }
+  
+  return {
+    type: 'Polygon',
+    coordinates: [coords]
+  };
+}
+
+/**
+ * Convert polygon to vertices
+ */
+export function polygonToVertices(polygon: Polygon): Vertex[] {
+  const coords = polygon.coordinates[0];
+  return coords.slice(0, -1).map((coord, index) => ({
+    x: coord[0],
+    y: coord[1],
+    id: `v${index}`
+  }));
+}
+
+// Helper functions
+function pointToLineDistance(point: number[], lineStart: number[], lineEnd: number[]): number {
+  const A = point[0] - lineStart[0];
+  const B = point[1] - lineStart[1];
+  const C = lineEnd[0] - lineStart[0];
+  const D = lineEnd[1] - lineStart[1];
   
   const dot = A * C + B * D;
   const lenSq = C * C + D * D;
   
-  if (lenSq === 0) return calculateDistance(point, lineStart);
+  if (lenSq === 0) return Math.sqrt(A * A + B * B);
   
-  const param = Math.max(0, Math.min(1, dot / lenSq));
+  const param = dot / lenSq;
   
-  const projX = lineStart.x + param * C;
-  const projY = lineStart.y + param * D;
+  let xx, yy;
+  if (param < 0) {
+    xx = lineStart[0];
+    yy = lineStart[1];
+  } else if (param > 1) {
+    xx = lineEnd[0];
+    yy = lineEnd[1];
+  } else {
+    xx = lineStart[0] + param * C;
+    yy = lineStart[1] + param * D;
+  }
   
-  return calculateDistance(point, { x: projX, y: projY });
+  const dx = point[0] - xx;
+  const dy = point[1] - yy;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
-/**
- * Create a rectangle from center point and dimensions
- */
-export function createRectangle(
-  center: { x: number; y: number }, 
-  width: number, 
-  height: number, 
-  idPrefix = 'rect'
-): Vertex[] {
-  const halfWidth = width / 2;
-  const halfHeight = height / 2;
+function getCentroid(polygon: Polygon): number[] {
+  const coords = polygon.coordinates[0];
+  let cx = 0;
+  let cy = 0;
   
-  return [
-    { x: center.x - halfWidth, y: center.y - halfHeight, id: `${idPrefix}_0` },
-    { x: center.x + halfWidth, y: center.y - halfHeight, id: `${idPrefix}_1` },
-    { x: center.x + halfWidth, y: center.y + halfHeight, id: `${idPrefix}_2` },
-    { x: center.x - halfWidth, y: center.y + halfHeight, id: `${idPrefix}_3` }
-  ];
-}
-
-/**
- * Create a circle approximation (polygon with many sides)
- */
-export function createCircle(
-  center: { x: number; y: number }, 
-  radius: number, 
-  sides = 16, 
-  idPrefix = 'circle'
-): Vertex[] {
-  const vertices: Vertex[] = [];
-  const angleStep = (2 * Math.PI) / sides;
-  
-  for (let i = 0; i < sides; i++) {
-    const angle = i * angleStep;
-    vertices.push({
-      x: center.x + radius * Math.cos(angle),
-      y: center.y + radius * Math.sin(angle),
-      id: `${idPrefix}_${i}`
-    });
+  for (const coord of coords) {
+    cx += coord[0];
+    cy += coord[1];
   }
   
-  return vertices;
-}
-
-/**
- * Validate polygon (check for self-intersections, etc.)
- */
-export function validatePolygon(vertices: Vertex[]): { isValid: boolean; errors: string[] } {
-  const errors: string[] = [];
-  
-  if (vertices.length < 3) {
-    errors.push('Polygon must have at least 3 vertices');
-  }
-  
-  if (vertices.length > 2) {
-    const area = calculatePolygonArea(vertices);
-    if (area <= 0) {
-      errors.push('Polygon has zero or negative area');
-    }
-  }
-  
-  // Check for duplicate vertices
-  const uniqueVertices = new Set(vertices.map(v => `${v.x},${v.y}`));
-  if (uniqueVertices.size !== vertices.length) {
-    errors.push('Polygon has duplicate vertices');
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
+  return [cx / coords.length, cy / coords.length];
 }
