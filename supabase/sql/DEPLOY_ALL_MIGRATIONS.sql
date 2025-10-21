@@ -51,8 +51,8 @@ begin
   )
   select
     p.ogc_fid::text as ogc_fid,
-    coalesce(p.parcelnumb, p.parcel_id, p.map_par_id)::text as parcelnumb,
-    regexp_replace(coalesce(p.parcelnumb, p.parcel_id, p.map_par_id)::text, '\D', '', 'g') as parcelnumb_no_formatting,
+    coalesce(p.parcelnumb, p.map_par_id)::text as parcelnumb,
+    regexp_replace(coalesce(p.parcelnumb, p.map_par_id)::text, '\D', '', 'g') as parcelnumb_no_formatting,
     coalesce(p.address, p.situsaddress, p.situs_full_address)::text as address,
     coalesce(p.zoning, p.zoning_code)::text as zoning,
     coalesce(p.zoning_description, p.zoningdesc)::text as zoning_description,

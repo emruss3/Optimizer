@@ -66,7 +66,11 @@ interface SitePlanStore {
   isEditing: boolean;
   hasUnsavedChanges: boolean;
   
+  // Selected parcel for planning
+  selectedParcel: SelectedParcel | null;
+  
   // Actions
+  setSelectedParcel: (parcel: SelectedParcel | null) => void;
   createSitePlan: (parcelId: string, projectId?: string, aiData?: any) => SitePlanDesign;
   updateSitePlan: (sitePlanId: string, updates: Partial<SitePlanDesign>) => void;
   saveSitePlan: (sitePlan: SitePlanDesign) => void;
@@ -115,6 +119,11 @@ export const useSitePlanStore = create<SitePlanStore>()(
       savedSitePlans: [],
       isEditing: false,
       hasUnsavedChanges: false,
+      selectedParcel: null,
+
+      setSelectedParcel: (parcel: SelectedParcel | null) => {
+        set({ selectedParcel: parcel });
+      },
 
       createSitePlan: (parcelId: string, projectId?: string, aiData?: any) => {
         const now = new Date().toISOString();
