@@ -16,7 +16,7 @@ import {
 import { SelectedParcel } from '../types/parcel';
 import { HBUAnalysis, HBUAlternative } from '../services/hbuAnalysis';
 import { useHBUAnalysis } from '../hooks/useHBUAnalysis';
-import EnterpriseSitePlanner from './EnterpriseSitePlanner';
+import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
 
 interface AIDrivenSitePlanGeneratorProps {
   isOpen: boolean;

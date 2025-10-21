@@ -3,7 +3,7 @@ import { X, Building, TrendingUp, Map, Users, DollarSign, Target, Car, Eye } fro
 import { useUIStore } from '../store/ui';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
 import SitePlanDesigner from './SitePlanDesigner';
-import EnterpriseSitePlanner from './EnterpriseSitePlanner';
+import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
 import { SitePlannerErrorBoundary } from './ErrorBoundary';
 import { SelectedParcel, isValidParcel, createFallbackParcel, InvestmentAnalysis } from '../types/parcel';
 

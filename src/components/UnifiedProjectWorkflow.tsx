@@ -28,7 +28,7 @@ import {
 import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
 import { SelectedParcel } from '../types/parcel';
-import EnterpriseSitePlanner from './EnterpriseSitePlanner';
+import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
 import { AIDrivenSitePlanGenerator } from './adapters/SitePlannerAdapters';
 
 interface UnifiedProjectWorkflowProps {
