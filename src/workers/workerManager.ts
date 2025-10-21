@@ -4,6 +4,7 @@ import type { PlannerConfig, PlannerOutput, WorkerAPI } from '../engine/types';
 export class PlannerWorkerManager implements WorkerAPI {
   private worker: Worker | null = null;
   private messageId = 0;
+  private lastHandled = 0;
   private pendingMessages = new Map<number, {
     resolve: (result: PlannerOutput) => void;
     reject: (error: Error) => void;
@@ -37,13 +38,32 @@ export class PlannerWorkerManager implements WorkerAPI {
   }
 
   private handleWorkerMessage(data: any) {
-    const { id, result, error } = data;
+    const { type, reqId, payload, error } = data;
+    
+    // Handle new message format
+    if (type === 'generated') {
+      const pending = this.pendingMessages.get(reqId);
+      if (!pending) return; // Ignore stale responses
+      
+      this.pendingMessages.delete(reqId);
+      this.lastHandled = reqId;
+      
+      if (error) {
+        pending.reject(new Error(error));
+      } else {
+        pending.resolve(payload);
+      }
+      return;
+    }
+    
+    // Handle legacy message format
+    const { id, result } = data;
     const pending = this.pendingMessages.get(id);
-    
     if (!pending) return;
-    
+
     this.pendingMessages.delete(id);
-    
+    this.lastHandled = id;
+
     if (result) {
       pending.resolve(result);
     } else if (error) {
@@ -74,9 +94,10 @@ export class PlannerWorkerManager implements WorkerAPI {
       this.pendingMessages.set(messageId, { resolve, reject });
       
       this.worker!.postMessage({
-        id: messageId,
-        method: 'generateSitePlan',
-        args: [parcel, config]
+        type: 'generate',
+        reqId: messageId,
+        parcel,
+        config
       });
       
       // Timeout after 10 seconds

@@ -101,6 +101,19 @@ function App() {
   }, []);
 
   const handleParcelClick = (parcel: Parcel) => {
+    // Validate parcel data before setting
+    if (!parcel || !parcel.ogc_fid || !parcel.geometry) {
+      console.warn('Invalid parcel data received:', parcel);
+      return; // Bail out - do not set invalid parcel
+    }
+    
+    // Ensure ogc_fid is a valid string
+    const validId = String(parcel.ogc_fid);
+    if (validId === 'unknown' || validId.trim() === '') {
+      console.warn('Invalid parcel ID:', parcel.ogc_fid);
+      return; // Bail out - do not set 'unknown' parcel
+    }
+    
     // Show parcel details (active projects are handled in Map component)
     setSelectedParcel(parcel);
     setIsDrawerOpen(true);

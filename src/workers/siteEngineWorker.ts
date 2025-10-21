@@ -32,22 +32,17 @@ const worker = new SiteEngineWorker();
 
 // Handle messages from main thread
 self.onmessage = async (event) => {
-  const { id, method, args } = event.data;
-
+  const { type, reqId, parcel, config } = event.data || {};
+  
+  if (type !== 'generate') return;
+  
   try {
-    let result;
-    
-    switch (method) {
-      case 'generateSitePlan':
-        result = await worker.generateSitePlan(args[0], args[1]);
-        break;
-      default:
-        throw new Error(`Unknown method: ${method}`);
-    }
-    
-    self.postMessage({ id, result });
-  } catch (error: any) {
-    self.postMessage({ id, error: error.message });
+    // Log once for debugging
+    // console.log('🏗️ Generating site plan in worker...');
+    const out = await generateSitePlan(parcel, config);
+    (self as any).postMessage({ type: 'generated', reqId, payload: out });
+  } catch (err: any) {
+    (self as any).postMessage({ type: 'generated', reqId, error: err?.message ?? String(err) });
   }
 };
 

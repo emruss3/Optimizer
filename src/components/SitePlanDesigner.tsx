@@ -14,13 +14,27 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   children,
   onPlanGenerated
 }) => {
-  // Validate parcel data and handle MultiPolygon
-  const isValidParcel = parcel && parcel.ogc_fid && parcel.geometry && 
-    (parcel.geometry.type === 'Polygon' || parcel.geometry.type === 'MultiPolygon');
+  // Robust validation functions
+  function isNonEmptyPolygon(g: any): g is GeoJSON.Polygon {
+    return g?.type === 'Polygon' && Array.isArray(g.coordinates) &&
+           g.coordinates.length > 0 && Array.isArray(g.coordinates[0]) &&
+           g.coordinates[0].length >= 4;
+  }
+
+  function coerceParcelId(ogc_fid: unknown): string | null {
+    if (typeof ogc_fid === 'number') return String(ogc_fid);
+    if (typeof ogc_fid === 'string' && ogc_fid !== 'unknown' && ogc_fid.trim() !== '') return ogc_fid;
+    return null;
+  }
+
+  // Validate parcel data with robust checks
+  const validId = coerceParcelId(parcel?.ogc_fid);
+  const validGeom = isNonEmptyPolygon(parcel?.geometry);
+  const isValidParcel = Boolean(validId && validGeom);
   
   // Normalize parcel ID and geometry
-  const normalizedParcelId = parcel ? String(parcel.ogc_fid) : 'unknown';
-  const normalizedGeometry = parcel?.geometry;
+  const normalizedParcelId = validId || 'unknown';
+  const normalizedGeometry = validGeom ? parcel.geometry : null;
   
   // Debug logging
   useEffect(() => {
@@ -134,6 +148,32 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const updateConfig = (updates: Partial<PlannerConfig>) => {
     handleConfigChange(updates);
   };
+
+  // Gate UI + worker call for invalid parcels
+  if (!isValidParcel) {
+    return (
+      <div className="flex h-full">
+        <div className="w-80 bg-white border-r p-4 overflow-y-auto">
+          <div className="text-center p-8">
+            <div className="text-2xl mb-4">🏗️</div>
+            <div className="text-lg font-medium mb-2 text-gray-700">Select a Parcel</div>
+            <div className="text-sm text-gray-500">
+              Click a parcel on the map to begin planning.
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <div className="text-center p-8">
+            <div className="text-4xl mb-4">📍</div>
+            <div className="text-xl font-medium mb-2 text-gray-700">No Parcel Selected</div>
+            <div className="text-sm text-gray-500">
+              Please select a valid parcel on the map to start designing your site plan.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full">
