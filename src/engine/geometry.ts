@@ -16,6 +16,172 @@ export function areaSqft(polygon: Polygon): number {
 }
 
 /**
+ * Calculate polygon area (alias for areaSqft)
+ */
+export function calculatePolygonArea(vertices: number[][]): number {
+  if (vertices.length < 3) return 0;
+  
+  let area = 0;
+  for (let i = 0; i < vertices.length - 1; i++) {
+    area += vertices[i][0] * vertices[i + 1][1];
+    area -= vertices[i + 1][0] * vertices[i][1];
+  }
+  return Math.abs(area) / 2;
+}
+
+/**
+ * Calculate polygon bounds
+ */
+export function calculatePolygonBounds(vertices: number[][]): { minX: number; minY: number; maxX: number; maxY: number } {
+  if (vertices.length === 0) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+  
+  let minX = vertices[0][0];
+  let minY = vertices[0][1];
+  let maxX = vertices[0][0];
+  let maxY = vertices[0][1];
+  
+  for (const vertex of vertices) {
+    minX = Math.min(minX, vertex[0]);
+    minY = Math.min(minY, vertex[1]);
+    maxX = Math.max(maxX, vertex[0]);
+    maxY = Math.max(maxY, vertex[1]);
+  }
+  
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Calculate polygon centroid
+ */
+export function calculatePolygonCentroid(vertices: number[][]): number[] {
+  if (vertices.length === 0) return [0, 0];
+  
+  let cx = 0;
+  let cy = 0;
+  
+  for (const vertex of vertices) {
+    cx += vertex[0];
+    cy += vertex[1];
+  }
+  
+  return [cx / vertices.length, cy / vertices.length];
+}
+
+/**
+ * Check if point is in polygon (alias for contains)
+ */
+export function isPointInPolygon(point: number[], vertices: number[][]): boolean {
+  const x = point[0];
+  const y = point[1];
+  
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+    if (((vertices[i][1] > y) !== (vertices[j][1] > y)) &&
+        (x < (vertices[j][0] - vertices[i][0]) * (y - vertices[i][1]) / (vertices[j][1] - vertices[i][1]) + vertices[i][0])) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Check if two polygons overlap
+ */
+export function doPolygonsOverlap(vertices1: number[][], vertices2: number[][]): boolean {
+  const bounds1 = calculatePolygonBounds(vertices1);
+  const bounds2 = calculatePolygonBounds(vertices2);
+  
+  // Quick bounding box check
+  if (bounds1.maxX < bounds2.minX || bounds1.minX > bounds2.maxX ||
+      bounds1.maxY < bounds2.minY || bounds1.minY > bounds2.maxY) {
+    return false;
+  }
+  
+  // Check if any vertex of polygon1 is inside polygon2
+  for (const vertex of vertices1) {
+    if (isPointInPolygon(vertex, vertices2)) {
+      return true;
+    }
+  }
+  
+  // Check if any vertex of polygon2 is inside polygon1
+  for (const vertex of vertices2) {
+    if (isPointInPolygon(vertex, vertices1)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Analyze geometry properties
+ */
+export function analyzeGeometry(vertices: number[][]): {
+  area: number;
+  perimeter: number;
+  centroid: number[];
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  isConvex: boolean;
+  aspectRatio: number;
+} {
+  const area = calculatePolygonArea(vertices);
+  const bounds = calculatePolygonBounds(vertices);
+  const centroid = calculatePolygonCentroid(vertices);
+  
+  // Calculate perimeter
+  let perimeter = 0;
+  for (let i = 0; i < vertices.length - 1; i++) {
+    const dx = vertices[i + 1][0] - vertices[i][0];
+    const dy = vertices[i + 1][1] - vertices[i][1];
+    perimeter += Math.sqrt(dx * dx + dy * dy);
+  }
+  
+  // Calculate aspect ratio
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  const aspectRatio = width > 0 ? height / width : 1;
+  
+  // Simple convexity check (not perfect but good enough for most cases)
+  const isConvex = checkConvexity(vertices);
+  
+  return {
+    area,
+    perimeter,
+    centroid,
+    bounds,
+    isConvex,
+    aspectRatio
+  };
+}
+
+/**
+ * Check if polygon is convex (simplified)
+ */
+function checkConvexity(vertices: number[][]): boolean {
+  if (vertices.length < 3) return true;
+  
+  let sign = 0;
+  for (let i = 0; i < vertices.length; i++) {
+    const p1 = vertices[i];
+    const p2 = vertices[(i + 1) % vertices.length];
+    const p3 = vertices[(i + 2) % vertices.length];
+    
+    const cross = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0]);
+    
+    if (sign === 0) {
+      sign = cross > 0 ? 1 : -1;
+    } else if ((cross > 0 && sign < 0) || (cross < 0 && sign > 0)) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
  * Check if a point is inside a polygon
  */
 export function contains(polygon: Polygon, point: Point): boolean {

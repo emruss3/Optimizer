@@ -2,6 +2,36 @@ import type { Element, SiteMetrics, PlannerConfig } from './types';
 import { areaSqft } from './geometry';
 
 /**
+ * Generate site analysis report (worker interface)
+ */
+export function generateSiteAnalysisReport(
+  elements: Element[],
+  config: any,
+  marketData?: any
+): {
+  metrics: SiteMetrics;
+  efficiency: any;
+  financial: any;
+  environmental: any;
+  compliance: any;
+} {
+  const parcelAreaSqFt = config.parcelAreaSqFt || 43560; // Default to 1 acre
+  const metrics = calculateMetrics(elements, parcelAreaSqFt, config);
+  const efficiency = calculateBuildingEfficiency(elements);
+  const financial = calculateFinancialMetrics(elements, parcelAreaSqFt, marketData);
+  const environmental = calculateEnvironmentalMetrics(elements);
+  const compliance = generateComplianceReport(metrics, config);
+  
+  return {
+    metrics,
+    efficiency,
+    financial,
+    environmental,
+    compliance
+  };
+}
+
+/**
  * Calculate comprehensive site metrics
  */
 export function calculateMetrics(

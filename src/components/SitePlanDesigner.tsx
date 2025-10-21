@@ -15,7 +15,7 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   onPlanGenerated
 }) => {
   // Validate parcel data
-  const isValidParcel = parcel && parcel.ogc_fid && parcel.geometry;
+  const isValidParcel = parcel && parcel.ogc_fid && parcel.geometry && parcel.geometry.type === 'Polygon';
   
   // Debug logging
   useEffect(() => {
@@ -31,7 +31,7 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   }, [parcel, isValidParcel, children]);
   
   const [config, setConfig] = useState<PlannerConfig>({
-    parcelId: parcel?.ogc_fid || 'unknown',
+    parcelId: String(parcel?.ogc_fid || 'unknown'),
     buildableArea: parcel?.geometry || { type: 'Polygon', coordinates: [] },
     zoning: {
       frontSetbackFt: 20,

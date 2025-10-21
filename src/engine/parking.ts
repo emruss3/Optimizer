@@ -202,6 +202,38 @@ export function detectOverlaps(stalls: ParkingStall[]): number {
 }
 
 /**
+ * Generate intelligent parking layout (worker interface)
+ */
+export function generateIntelligentParking(
+  buildableArea: Element,
+  config: any,
+  existingElements: Element[]
+): { stalls: ParkingStall[]; features: Element[]; metrics: ParkingMetrics } {
+  // Convert Element to Polygon for processing
+  const polygon = buildableArea.geometry;
+  
+  // Extract parking config from the config object
+  const parkingConfig: ParkingConfig = {
+    targetRatio: config.parking?.targetRatio || 1.5,
+    stallWidthFt: config.parking?.stallWidthFt || 9,
+    stallDepthFt: config.parking?.stallDepthFt || 18,
+    aisleWidthFt: config.parking?.aisleWidthFt || 24,
+    adaPct: config.parking?.adaPct || 5,
+    evPct: config.parking?.evPct || 10,
+    layoutAngle: config.parking?.layoutAngle || 0
+  };
+  
+  // Calculate target stalls based on units or area
+  const totalUnits = existingElements
+    .filter(el => el.type === 'building')
+    .reduce((sum, building) => sum + (building.properties.units || 0), 0);
+  
+  const targetStalls = Math.ceil(totalUnits * parkingConfig.targetRatio);
+  
+  return generateParking(polygon, parkingConfig, targetStalls);
+}
+
+/**
  * Check if two parking stalls overlap
  */
 function stallsOverlap(stall1: ParkingStall, stall2: ParkingStall): boolean {
