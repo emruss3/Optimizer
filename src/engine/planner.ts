@@ -1,6 +1,6 @@
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { PlannerConfig, PlannerOutput, Element, Envelope } from './types';
-import { createEnvelope, areaSqft, union, difference, polygons, sortByArea, normalizeToPolygon, safeBbox } from './geometry';
+import { createEnvelope, areaSqft, union, difference, polygons, sortByArea, normalizeToPolygon, safeBbox, selectLargestRingFromPolygon } from './geometry';
 import { generateBuildingFootprints } from './building';
 import { generateParking } from './parking';
 import { calculateMetrics } from './analysis';
@@ -13,11 +13,15 @@ export function generateSitePlan(
   config: PlannerConfig
 ): PlannerOutput {
   const startTime = performance.now();
-  
+
   try {
-    // Normalize input geometry (fixes MultiPolygon & empty ring issues)
-    const input = parcelGeoJSON as Polygon | MultiPolygon;
-    const polygon = normalizeToPolygon(input);
+    // Normalize to a non-empty single-ring polygon
+    const polygon: Polygon =
+      parcelGeoJSON.type === 'Polygon'
+        ? selectLargestRingFromPolygon(parcelGeoJSON)
+        : selectLargestRingFromPolygon({ type: 'Polygon', coordinates: (parcelGeoJSON.coordinates[0] || []) });
+
+    const [minX, minY, maxX, maxY] = safeBbox(polygon);
     
     // Create envelope from normalized polygon
     const envelope = createEnvelope(polygon);

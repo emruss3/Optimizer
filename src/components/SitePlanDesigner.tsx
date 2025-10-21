@@ -90,6 +90,13 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
       return;
     }
     
+    // Quick diagnostics to keep (helps catch this forever)
+    console.debug('Planner input:', { 
+      parcelId: validId, 
+      ringLen: normalizedGeometry?.coordinates[0]?.length, 
+      type: normalizedGeometry?.type 
+    });
+    
     setIsGenerating(true);
     
     try {
@@ -155,19 +162,19 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
       <div className="flex h-full">
         <div className="w-80 bg-white border-r p-4 overflow-y-auto">
           <div className="text-center p-8">
-            <div className="text-2xl mb-4">🏗️</div>
-            <div className="text-lg font-medium mb-2 text-gray-700">Select a Parcel</div>
+            <div className="text-2xl mb-4">⚠️</div>
+            <div className="text-lg font-medium mb-2 text-gray-700">Invalid Parcel Data</div>
             <div className="text-sm text-gray-500">
-              Click a parcel on the map to begin planning.
+              The selected parcel couldn't be read (missing/unsupported geometry). Go back and reselect, or reload.
             </div>
           </div>
         </div>
         <div className="flex-1 flex items-center justify-center bg-gray-50">
           <div className="text-center p-8">
             <div className="text-4xl mb-4">📍</div>
-            <div className="text-xl font-medium mb-2 text-gray-700">No Parcel Selected</div>
+            <div className="text-xl font-medium mb-2 text-gray-700">No Valid Geometry</div>
             <div className="text-sm text-gray-500">
-              Please select a valid parcel on the map to start designing your site plan.
+              If you just clicked from the map, this usually means the geometry was a MultiPolygon. It's safe to try again.
             </div>
           </div>
         </div>

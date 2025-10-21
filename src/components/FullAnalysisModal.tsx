@@ -6,6 +6,7 @@ import SitePlanDesigner from './SitePlanDesigner';
 import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
 import { SitePlannerErrorBoundary } from './ErrorBoundary';
 import { SelectedParcel, isValidParcel, createFallbackParcel, InvestmentAnalysis } from '../types/parcel';
+import { toPolygon } from '../engine/geometry/normalize';
 
 interface FullAnalysisModalProps {
   parcel: SelectedParcel;
@@ -163,7 +164,17 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <h2 className="text-xl font-semibold text-gray-900 mb-4">Site Plan Designer</h2>
                   <SitePlanDesigner 
-                    parcel={isValidParcel(parcel) ? parcel : createFallbackParcel(parcel.id || 'unknown', parcel.sqft || 4356)}
+                    parcel={(() => {
+                      // Normalize geometry: accept Polygon or MultiPolygon
+                      const normalizedGeometry = 
+                        parcel?.geometry?.type === "Polygon" || parcel?.geometry?.type === "MultiPolygon"
+                          ? toPolygon(parcel.geometry)
+                          : null;
+
+                      return normalizedGeometry
+                        ? { ...parcel, geometry: normalizedGeometry }
+                        : createFallbackParcel(parcel.id || 'unknown', parcel.sqft || 4356);
+                    })()}
                     onUnderwritingUpdate={(financialData) => {
                       console.log('Site plan financial update:', financialData);
                     }}

@@ -251,26 +251,24 @@ export function elementsToPolygons(elements: Element[]): Polygon[] {
  * Select largest ring from a polygon (handles multiple rings)
  */
 export function selectLargestRingFromPolygon(poly: Polygon): Polygon {
-  const rings = poly.coordinates?.filter(Array.isArray) ?? [];
-  if (rings.length === 0) throw new Error('Polygon has no rings');
+  const rings = poly.coordinates ?? [];
+  if (!rings.length) throw new Error('Polygon has no rings');
   
-  // Choose ring with max absolute area
   let best = rings[0];
-  let bestA = 0;
+  let bestA = -1;
   
   for (const ring of rings) {
-    if (!Array.isArray(ring) || ring.length < 4) continue;
-    
+    if (!ring || ring.length < 4) continue;
     let a = 0;
     for (let i = 0; i < ring.length - 1; i++) {
       const [x1, y1] = ring[i];
       const [x2, y2] = ring[i + 1];
-      a += (x1 * y2 - x2 * y1);
+      a += x1 * y2 - x2 * y1;
     }
     const abs = Math.abs(a / 2);
     if (abs > bestA) {
       bestA = abs;
-      best = ring as any;
+      best = ring;
     }
   }
   
@@ -319,7 +317,7 @@ export function normalizeToPolygon(geom: Polygon | MultiPolygon): Polygon {
  */
 export function safeBbox(poly: Polygon): [number, number, number, number] {
   const ring = poly.coordinates?.[0];
-  if (!ring || ring.length === 0) throw new Error('Cannot bbox empty polygon');
+  if (!ring || ring.length < 4) throw new Error('Cannot bbox empty polygon');
   
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const [x, y] of ring) {

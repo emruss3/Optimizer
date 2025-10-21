@@ -31,18 +31,14 @@ class SiteEngineWorker {
 const worker = new SiteEngineWorker();
 
 // Handle messages from main thread
-self.onmessage = async (event) => {
-  const { type, reqId, parcel, config } = event.data || {};
-  
+self.onmessage = async (e) => {
+  const { type, id, parcel, config } = e.data || {};
   if (type !== 'generate') return;
-  
   try {
-    // Log once for debugging
-    // console.log('🏗️ Generating site plan in worker...');
     const out = await generateSitePlan(parcel, config);
-    (self as any).postMessage({ type: 'generated', reqId, payload: out });
+    (self as any).postMessage({ type: 'generated', id, payload: out });
   } catch (err: any) {
-    (self as any).postMessage({ type: 'generated', reqId, error: err?.message ?? String(err) });
+    (self as any).postMessage({ type: 'generated', id, error: err?.message ?? String(err) });
   }
 };
 
