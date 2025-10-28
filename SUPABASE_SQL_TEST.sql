@@ -1,110 +1,54 @@
--- =====================================================
--- SQL VALIDATION TEST SCRIPT
--- =====================================================
--- Run this in Supabase Studio SQL Editor to test the functions
+-- SUPABASE_SQL_TEST.sql
+-- Quick smoke tests using sample IDs from the repo
 
--- Test 1: Check if the base tables exist and have data
-SELECT 'Testing base tables...' AS test_step;
+-- Test 1: get_parcel_detail with text parcel_id
+SELECT 'Test 1: get_parcel_detail' as test_name;
+SELECT * FROM get_parcel_detail('08102016600') LIMIT 1;
 
--- Check parcels table
+-- Test 2: get_buildable_envelope with text parcel_id  
+SELECT 'Test 2: get_buildable_envelope' as test_name;
+SELECT * FROM get_buildable_envelope('08102016600') LIMIT 1;
+
+-- Test 3: get_parcel_buildable_envelope with numeric ogc_fid
+SELECT 'Test 3: get_parcel_buildable_envelope' as test_name;
+SELECT * FROM get_parcel_buildable_envelope(691592) LIMIT 1;
+
+-- Test 4: planner_join view with text parcel_id
+SELECT 'Test 4: planner_join view' as test_name;
+SELECT parcel_id, ogc_fid, area_sqft, far_max 
+FROM planner_join 
+WHERE parcel_id = '08102016600' 
+LIMIT 1;
+
+-- Test 5: planner_join view with numeric ogc_fid
+SELECT 'Test 5: planner_join by ogc_fid' as test_name;
+SELECT parcel_id, ogc_fid, area_sqft, far_max 
+FROM planner_join 
+WHERE ogc_fid = 691592 
+LIMIT 1;
+
+-- Test 6: score_pad function (if available)
+SELECT 'Test 6: score_pad function' as test_name;
+-- Note: This requires actual geometry data, so we'll just check if it exists
+SELECT routine_name 
+FROM information_schema.routines 
+WHERE routine_name = 'score_pad' 
+  AND routine_schema = 'public';
+
+-- Test 7: Cross-reference test - same parcel via different methods
+SELECT 'Test 7: Cross-reference validation' as test_name;
+WITH parcel_detail AS (
+  SELECT * FROM get_parcel_detail('08102016600')
+),
+parcel_envelope AS (
+  SELECT * FROM get_buildable_envelope('08102016600')  
+),
+parcel_join AS (
+  SELECT * FROM planner_join WHERE parcel_id = '08102016600'
+)
 SELECT 
-  'parcels' AS table_name,
-  COUNT(*) AS row_count,
-  COUNT(wkb_geometry_4326) AS has_4326_geom,
-  COUNT(wkb_geometry) AS has_geom
-FROM public.parcels
-WHERE ogc_fid = 661807;
-
--- Check zoning table  
-SELECT 
-  'zoning' AS table_name,
-  COUNT(*) AS row_count
-FROM public.zoning
-WHERE geoid = '661807';
-
--- Test 2: Check if views can be created
-SELECT 'Testing view creation...' AS test_step;
-
--- Test planner_parcels view
-SELECT 
-  'planner_parcels' AS view_name,
-  COUNT(*) AS row_count,
-  COUNT(geom) AS has_geom
-FROM planner_parcels
-WHERE parcel_id = '661807';
-
--- Test planner_zoning view
-SELECT 
-  'planner_zoning' AS view_name,
-  COUNT(*) AS row_count,
-  far_max,
-  setbacks
-FROM planner_zoning
-WHERE parcel_id = '661807';
-
--- Test planner_join view
-SELECT 
-  'planner_join' AS view_name,
-  COUNT(*) AS row_count,
-  far_max,
-  setbacks
-FROM planner_join
-WHERE parcel_id = '661807';
-
--- Test 3: Test the RPC functions
-SELECT 'Testing RPC functions...' AS test_step;
-
--- Test get_buildable_envelope function
-SELECT 
-  'get_buildable_envelope' AS function_name,
-  ST_Area(public.get_buildable_envelope('661807')) AS envelope_area_m2,
-  ST_Area(public.get_buildable_envelope('661807')) * 10.7639 AS envelope_area_sqft
-WHERE EXISTS (SELECT 1 FROM planner_parcels WHERE parcel_id = '661807');
-
--- Test get_parcel_buildable_envelope function
-SELECT 
-  'get_parcel_buildable_envelope' AS function_name,
-  ogc_fid,
-  area_sqft,
-  edge_types,
-  setbacks_applied
-FROM public.get_parcel_buildable_envelope(661807);
-
--- Test get_parcel_detail function
-SELECT 
-  'get_parcel_detail' AS function_name,
-  parcel_id,
-  far_max,
-  height_max_ft,
-  setbacks,
-  ST_Area(envelope) * 10.7639 AS envelope_area_sqft,
-  metrics
-FROM public.get_parcel_detail('661807');
-
--- Test 4: Performance check
-SELECT 'Testing performance...' AS test_step;
-
--- Check if spatial indexes exist
-SELECT 
-  schemaname,
-  tablename,
-  indexname,
-  indexdef
-FROM pg_indexes 
-WHERE tablename IN ('parcels', 'zoning')
-  AND indexdef LIKE '%gist%';
-
--- Test 5: Error handling
-SELECT 'Testing error handling...' AS test_step;
-
--- Test with non-existent parcel
-SELECT 
-  'error_test' AS test_type,
-  CASE 
-    WHEN EXISTS (SELECT 1 FROM public.get_parcel_buildable_envelope(999999)) 
-    THEN 'ERROR: Should have failed'
-    ELSE 'OK: Correctly failed for non-existent parcel'
-  END AS result;
-
-SELECT 'All tests completed!' AS final_status;
-
+  'Detail vs Join' as comparison,
+  CASE WHEN pd.parcel_id = pj.parcel_id THEN 'MATCH' ELSE 'MISMATCH' END as result
+FROM parcel_detail pd
+CROSS JOIN parcel_join pj
+LIMIT 1;

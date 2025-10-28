@@ -1,111 +1,82 @@
--- =====================================================
--- SUPABASE STATUS CHECK - RUN THIS FIRST
--- =====================================================
--- This will tell us exactly what's deployed and what's missing
+-- SUPABASE_STATUS_CHECK.sql
+-- Database verification checklist for planner system
 
--- Check 1: Do the views exist?
-SELECT 
-  'Views Check' AS check_type,
-  schemaname,
-  viewname,
-  definition
-FROM pg_views 
-WHERE schemaname = 'public' 
-  AND viewname IN ('planner_parcels', 'planner_zoning', 'planner_join')
-ORDER BY viewname;
-
--- Check 2: Do the functions exist?
-SELECT 
-  'Functions Check' AS check_type,
-  n.nspname AS schema_name,
-  p.proname AS function_name,
-  pg_get_function_arguments(p.oid) AS arguments,
-  pg_get_function_result(p.oid) AS return_type
-FROM pg_proc p
-JOIN pg_namespace n ON p.pronamespace = n.oid
-WHERE n.nspname = 'public'
-  AND p.proname IN (
-    'get_parcel_buildable_envelope',
-    'get_buildable_envelope', 
-    'score_pad',
-    'get_parcel_detail'
-  )
-ORDER BY p.proname;
-
--- Check 3: Test if planner_parcels has data for our test parcel
-SELECT 
-  'Data Check' AS check_type,
-  'planner_parcels' AS table_name,
-  COUNT(*) AS total_records,
-  COUNT(CASE WHEN parcel_id = '661807' THEN 1 END) AS has_661807,
-  COUNT(CASE WHEN parcel_id = '47037' THEN 1 END) AS has_47037
-FROM planner_parcels;
-
--- Check 4: Test if planner_zoning has data
-SELECT 
-  'Data Check' AS check_type,
-  'planner_zoning' AS table_name,
-  COUNT(*) AS total_records,
-  COUNT(CASE WHEN parcel_id = '661807' THEN 1 END) AS has_661807,
-  COUNT(CASE WHEN parcel_id = '47037' THEN 1 END) AS has_47037
-FROM planner_zoning;
-
--- Check 5: Test if planner_join has data
-SELECT 
-  'Data Check' AS check_type,
-  'planner_join' AS table_name,
-  COUNT(*) AS total_records,
-  COUNT(CASE WHEN parcel_id = '661807' THEN 1 END) AS has_661807,
-  COUNT(CASE WHEN parcel_id = '47037' THEN 1 END) AS has_47037
+-- 1. Check if views exist and have rows
+SELECT 'planner_parcels' as view_name, count(*) as row_count 
+FROM planner_parcels 
+UNION ALL
+SELECT 'planner_zoning' as view_name, count(*) as row_count 
+FROM planner_zoning 
+UNION ALL
+SELECT 'planner_join' as view_name, count(*) as row_count 
 FROM planner_join;
 
--- Check 6: Test the RPC function (if it exists)
+-- 2. Check if functions exist
 SELECT 
-  'RPC Test' AS check_type,
-  CASE 
-    WHEN EXISTS (
-      SELECT 1 FROM pg_proc p 
-      JOIN pg_namespace n ON p.pronamespace = n.oid 
-      WHERE n.nspname = 'public' AND p.proname = 'get_parcel_buildable_envelope'
-    ) THEN 'Function exists - testing...'
-    ELSE 'Function does not exist'
-  END AS status;
+  routine_name,
+  routine_type,
+  data_type as return_type
+FROM information_schema.routines 
+WHERE routine_schema = 'public' 
+  AND routine_name IN (
+    'get_buildable_envelope',
+    'get_parcel_buildable_envelope', 
+    'get_parcel_detail',
+    'score_pad'
+  )
+ORDER BY routine_name;
 
--- If the function exists, test it
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_proc p 
-    JOIN pg_namespace n ON p.pronamespace = n.oid 
-    WHERE n.nspname = 'public' AND p.proname = 'get_parcel_buildable_envelope'
-  ) THEN
-    -- Test with parcel 661807
-    IF EXISTS (SELECT 1 FROM planner_parcels WHERE parcel_id = '661807') THEN
-      PERFORM * FROM public.get_parcel_buildable_envelope(661807);
-      RAISE NOTICE 'SUCCESS: get_parcel_buildable_envelope(661807) works!';
-    ELSE
-      RAISE NOTICE 'WARNING: Parcel 661807 not found in planner_parcels';
-    END IF;
-    
-    -- Test with parcel 47037
-    IF EXISTS (SELECT 1 FROM planner_parcels WHERE parcel_id = '47037') THEN
-      PERFORM * FROM public.get_parcel_buildable_envelope(47037);
-      RAISE NOTICE 'SUCCESS: get_parcel_buildable_envelope(47037) works!';
-    ELSE
-      RAISE NOTICE 'WARNING: Parcel 47037 not found in planner_parcels';
-    END IF;
-  END IF;
-END $$;
-
--- Check 7: Show any available parcel IDs for testing
+-- 3. Test function signatures
 SELECT 
-  'Available Parcels' AS check_type,
+  routine_name,
+  parameter_name,
+  data_type,
+  parameter_mode
+FROM information_schema.parameters 
+WHERE routine_schema = 'public' 
+  AND routine_name IN (
+    'get_buildable_envelope',
+    'get_parcel_buildable_envelope', 
+    'get_parcel_detail',
+    'score_pad'
+  )
+ORDER BY routine_name, ordinal_position;
+
+-- 4. Sample data check
+SELECT 
+  'Sample parcel_id from planner_join' as check_type,
   parcel_id,
-  ST_GeometryType(geom) AS geom_type,
-  ST_Area(geom) * 10.7639 AS area_sqft
-FROM planner_parcels 
-ORDER BY ST_Area(geom) DESC
+  ogc_fid,
+  area_sqft
+FROM planner_join 
 LIMIT 5;
 
-SELECT 'Status check completed!' AS final_status;
-
+-- 5. Function availability test
+DO $$
+DECLARE
+  test_result text;
+BEGIN
+  -- Test get_parcel_detail
+  BEGIN
+    PERFORM get_parcel_detail('08102016600');
+    RAISE NOTICE 'get_parcel_detail: OK';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'get_parcel_detail: FAILED - %', SQLERRM;
+  END;
+  
+  -- Test get_buildable_envelope  
+  BEGIN
+    PERFORM get_buildable_envelope('08102016600');
+    RAISE NOTICE 'get_buildable_envelope: OK';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'get_buildable_envelope: FAILED - %', SQLERRM;
+  END;
+  
+  -- Test get_parcel_buildable_envelope
+  BEGIN
+    PERFORM get_parcel_buildable_envelope(691592);
+    RAISE NOTICE 'get_parcel_buildable_envelope: OK';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'get_parcel_buildable_envelope: FAILED - %', SQLERRM;
+  END;
+END $$;

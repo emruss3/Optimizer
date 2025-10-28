@@ -4,7 +4,7 @@ import type { Element, PlannerConfig, SiteMetrics } from '../engine/types';
 import { workerManager } from '../workers/workerManager';
 import { toPolygon } from '../engine/geometry/normalize';
 import { computeParcelMetrics } from '../engine/metrics/parcelMetrics';
-import { fetchEnvelopeSafe } from '@/lib/fetchEnvelope';
+import { fetchEnvelopeAny } from '@/lib/fetchEnvelope';
 import { CoordinateTransform } from '@/utils/coordinateTransform';
 
 interface SitePlanDesignerProps {
@@ -186,7 +186,7 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
 
     const fetchEnvelope = async () => {
       try {
-        const env = await fetchEnvelopeSafe(parcel.ogc_fid);
+        const env = await fetchEnvelopeAny(parcel.ogc_fid);
         if (!env) {
           console.warn("No buildable envelope; drawing raw parcel geometry");
           // optionally fall back to parcel.geometry from Regrid
