@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "./supabase";
 import { normalizeEnvelope, NormalizedEnvelope } from "./normalizeEnvelope";
 
 export async function getEnvelopeAny(parcelId: string | number): Promise<NormalizedEnvelope | null> {
