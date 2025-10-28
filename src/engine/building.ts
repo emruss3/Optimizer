@@ -17,18 +17,22 @@ export interface BuildingConfig {
 export function generateBuildingFootprints(
   buildableArea: Element | Polygon,
   config: any,
-  parcelAreaSqFt?: number
+  parcelAreaSqFt?: number | { areaSqft: number }
 ): Element[] {
   // Handle both Element and Polygon inputs
   const envelope = typeof buildableArea === 'object' && 'geometry' in buildableArea 
     ? buildableArea.geometry 
     : buildableArea as Polygon;
   
-  const areaSqFt = parcelAreaSqFt || 
-    (typeof buildableArea === 'object' && 'properties' in buildableArea 
-      ? buildableArea.properties?.areaSqFt 
-      : undefined) || 
-    areaSqft(envelope);
+  const areaFromArg =
+    (typeof parcelAreaSqFt === 'number' ? parcelAreaSqFt :
+     (parcelAreaSqFt && typeof parcelAreaSqFt === 'object' && 'areaSqft' in parcelAreaSqFt ? parcelAreaSqFt.areaSqft : undefined));
+
+  const areaSqFt = areaFromArg ??
+                   (typeof buildableArea === 'object' && 'properties' in buildableArea
+                     ? buildableArea.properties?.areaSqFt
+                     : undefined) ??
+                   areaSqft(envelope);
   
   // Safety checks
   if (!areaSqFt || areaSqFt <= 0) {

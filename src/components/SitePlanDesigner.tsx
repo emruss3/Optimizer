@@ -4,7 +4,8 @@ import type { Element, PlannerConfig, SiteMetrics } from '../engine/types';
 import { workerManager } from '../workers/workerManager';
 import { toPolygon } from '../engine/geometry/normalize';
 import { computeParcelMetrics } from '../engine/metrics/parcelMetrics';
-import { getEnvelope } from '../api/fetchEnvelope';
+import { getEnvelopeAny } from '@/lib/rpcEnvelope';
+import { CoordinateTransform } from '@/utils/coordinateTransform';
 
 interface SitePlanDesignerProps {
   parcel: any; // SelectedParcel
@@ -55,6 +56,7 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const [config, setConfig] = useState<PlannerConfig>({
     parcelId: normalizedParcelId,
     buildableArea: normalizedGeometry || { type: 'Polygon', coordinates: [] },
+    // Safety: handle missing zoning gracefully with sensible defaults
     zoning: {
       frontSetbackFt: 20,
       sideSetbackFt: 10,
@@ -182,29 +184,45 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
     if (!parcel) return;
     setStatus("loading");
 
-    console.log('fetching get_parcel_buildable_envelope(', Number(parcel.ogc_fid), ')');
-    getEnvelope(Number(parcel.ogc_fid))
-      .then(env => {
-        if (!env?.buildable_geom) {
-          setStatus("invalid"); // show "Invalid parcel data" message
+    const fetchEnvelope = async () => {
+      try {
+        const env = await getEnvelopeAny(parcel.ogc_fid);
+        if (!env) {
+          setStatus("no-envelope");
           return;
         }
-        // Prefer RPC area; still compute local metrics for geometry ops
-        const polyForGen = parcel.geometry;            // normalized Polygon in 4326
-        const metrics = computeParcelMetrics(polyForGen); // your worker helper
 
-        setEnvelope(env.buildable_geom);               // keep as 3857 for generation, or convert if your renderer needs 4326
+        console.log('Normalized envelope:', env);
+
+        // Build the same transform path the Enterprise planner used
+        const localPolygon = env.srid === 3857 
+          ? CoordinateTransform.toFeet(env.geometry)
+          : env.geometry;
+
+        // Continue exactly as before:
+        setEnvelope(localPolygon);
+        // Safety: handle missing zoning gracefully (no SQL change needed)
+        const hasZoning = Boolean(env.setbacks_applied || env.far_max || env.max_height);
         setRpcMetrics({ 
           areaSqft: env.area_sqft, 
           setbacks: env.setbacks_applied, 
           edges: env.edge_types,
-          hasZoning: env.far_max !== null && env.far_max > 0
+          hasZoning: hasZoning
         });
+
+        // Prefer RPC area; still compute local metrics for geometry ops
+        const polyForGen = parcel.geometry;            // normalized Polygon in 4326
+        const metrics = computeParcelMetrics(polyForGen); // your worker helper
 
         requestGenerate({ parcel: polyForGen, metrics, config: config }); // your worker call
         setStatus("ready");
-      })
-      .catch(() => setStatus("invalid"));
+      } catch (error) {
+        console.error('Error fetching envelope:', error);
+        setStatus("invalid");
+      }
+    };
+
+    fetchEnvelope();
   }, [parcel, config, requestGenerate]);
 
   // Auto-generate on config change

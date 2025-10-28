@@ -11,7 +11,8 @@ type PlannerInput = {
 };
 
 export async function generateSitePlan({ parcel, config, metrics }: PlannerInput) {
-  const buildings = generateBuildingFootprints(parcel, config, metrics);
+  // ✅ pass a NUMBER, not the whole metrics object
+  const buildings = generateBuildingFootprints(parcel, config, metrics.areaSqft);
   const parking = generateParking(parcel, config, metrics);
   return { 
     pads: buildings, 
