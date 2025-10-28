@@ -1,7 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Slider } from 'lucide-react';
 import type { Element, PlannerConfig, SiteMetrics } from '../engine/types';
 import { workerManager } from '../workers/workerManager';
+import { toPolygon } from '../engine/geometry/normalize';
+import { computeParcelMetrics } from '../engine/metrics/parcelMetrics';
+import { getEnvelope } from '../api/fetchEnvelope';
 
 interface SitePlanDesignerProps {
   parcel: any; // SelectedParcel
@@ -82,6 +85,31 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const [currentMetrics, setCurrentMetrics] = useState<SiteMetrics | null>(null);
   const [requestId, setRequestId] = useState(0);
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [envelope, setEnvelope] = useState<any>(null);
+  const [rpcMetrics, setRpcMetrics] = useState<any>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'invalid'>('loading');
+
+  // New worker for reliable generation
+  const worker = useMemo(() => new Worker(new URL("../engine/workers/sitegenie", import.meta.url), { type: "module" }), []);
+
+  // Debounced generation with metrics
+  const requestGenerate = useMemo(() => {
+    let currentReqId: string | null = null;
+    let timer: any = null;
+
+    return (rawParcel: any, config: any) => {
+      if (!rawParcel?.geometry) return;
+
+      const poly = toPolygon(rawParcel.geometry);
+      const metrics = computeParcelMetrics(poly);
+
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        currentReqId = crypto.randomUUID();
+        worker.postMessage({ type: "generate", reqId: currentReqId, parcel: poly, config, metrics });
+      }, 150); // debounce UI sliders
+    };
+  }, [worker]);
 
   // Generate site plan when config changes (with debouncing)
   const generatePlan = useCallback(async (currentRequestId: number) => {
@@ -100,27 +128,35 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
     setIsGenerating(true);
     
     try {
-      const result = await workerManager.generateSitePlan(normalizedGeometry, config);
+      // Use new worker with metrics
+      requestGenerate(parcel, config);
       
-      // Only update if this is still the latest request
-      if (currentRequestId === requestId) {
-        setCurrentElements(result.elements);
-        setCurrentMetrics(result.metrics);
-        
-        if (onPlanGenerated) {
-          onPlanGenerated(result.elements, result.metrics);
+      // Set up worker message handler
+      const handleMessage = (event: MessageEvent) => {
+        const { type, reqId, elements, metrics, error } = event.data;
+        if (type === 'generated' && reqId === currentRequestId) {
+          if (error) {
+            console.error('Worker error:', error);
+          } else {
+            setCurrentElements(elements || []);
+            setCurrentMetrics(metrics || null);
+            
+            if (onPlanGenerated) {
+              onPlanGenerated(elements || [], metrics || null);
+            }
+          }
+          setIsGenerating(false);
+          worker.removeEventListener('message', handleMessage);
         }
-      } else {
-        console.log('Ignoring stale worker response');
-      }
+      };
+      
+      worker.addEventListener('message', handleMessage);
+      
     } catch (error) {
       console.error('Error generating site plan:', error);
-    } finally {
-      if (currentRequestId === requestId) {
-        setIsGenerating(false);
-      }
+      setIsGenerating(false);
     }
-  }, [normalizedGeometry, config, onPlanGenerated, requestId]);
+  }, [parcel, config, onPlanGenerated, requestGenerate, worker]);
 
   // Debounced config change handler
   const handleConfigChange = useCallback((updates: Partial<PlannerConfig>) => {
@@ -141,8 +177,40 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
     setDebounceTimer(newTimer);
   }, [debounceTimer, requestId, generatePlan]);
 
+  // Fetch buildable envelope when parcel changes
+  useEffect(() => {
+    if (!parcel) return;
+    setStatus("loading");
+
+    console.log('fetching get_parcel_buildable_envelope(', Number(parcel.ogc_fid), ')');
+    getEnvelope(Number(parcel.ogc_fid))
+      .then(env => {
+        if (!env?.buildable_geom) {
+          setStatus("invalid"); // show "Invalid parcel data" message
+          return;
+        }
+        // Prefer RPC area; still compute local metrics for geometry ops
+        const polyForGen = parcel.geometry;            // normalized Polygon in 4326
+        const metrics = computeParcelMetrics(polyForGen); // your worker helper
+
+        setEnvelope(env.buildable_geom);               // keep as 3857 for generation, or convert if your renderer needs 4326
+        setRpcMetrics({ 
+          areaSqft: env.area_sqft, 
+          setbacks: env.setbacks_applied, 
+          edges: env.edge_types,
+          hasZoning: env.far_max !== null && env.far_max > 0
+        });
+
+        requestGenerate({ parcel: polyForGen, metrics, config: config }); // your worker call
+        setStatus("ready");
+      })
+      .catch(() => setStatus("invalid"));
+  }, [parcel, config, requestGenerate]);
+
   // Auto-generate on config change
   useEffect(() => {
+    if (status !== 'ready') return;
+    
     const timeoutId = setTimeout(() => {
       const newRequestId = requestId + 1;
       setRequestId(newRequestId);
@@ -150,7 +218,7 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
     }, 200); // Debounce config changes
 
     return () => clearTimeout(timeoutId);
-  }, [generatePlan, requestId]);
+  }, [generatePlan, requestId, status]);
 
   const updateConfig = (updates: Partial<PlannerConfig>) => {
     handleConfigChange(updates);
@@ -191,12 +259,12 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
         {/* Parcel Validation Warning */}
         {!isValidParcel && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2">
               <div className="w-4 h-4 text-yellow-600">⚠️</div>
               <span className="text-sm text-yellow-800">
                 Invalid parcel data. Please select a valid parcel to continue.
-              </span>
-            </div>
+            </span>
+      </div>
           </div>
         )}
         
@@ -255,10 +323,10 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
 
         {/* Parking Ratio Control */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
             Parking Ratio: {config.designParameters.parking.targetRatio}
-          </label>
-          <input
+                </label>
+                <input
             type="range"
             min="0.5"
             max="3.0"
@@ -278,15 +346,15 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
           <div className="flex justify-between text-xs text-gray-500 mt-1">
             <span>0.5</span>
             <span>3.0</span>
-          </div>
-        </div>
+              </div>
+              </div>
 
         {/* Building Typology */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
             Building Typology
-          </label>
-          <select
+                </label>
+                <select
             value={config.designParameters.buildingTypology}
             onChange={(e) => updateConfig({
               designParameters: {
@@ -300,16 +368,16 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
             <option value="L-shape">L-Shaped</option>
             <option value="podium">Podium</option>
             <option value="custom">Custom</option>
-          </select>
-        </div>
+                </select>
+              </div>
 
         {/* Number of Buildings */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
             Number of Buildings: {config.designParameters.numBuildings}
-          </label>
-          <input
-            type="range"
+                </label>
+                    <input
+                      type="range"
             min="1"
             max="5"
             step="1"
@@ -326,7 +394,27 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
             <span>1</span>
             <span>5</span>
           </div>
-        </div>
+            </div>
+            
+        {/* Zoning Information */}
+        {rpcMetrics && (
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+            <div className="text-sm font-medium text-gray-700 mb-2">Zoning Information</div>
+            <div className="space-y-1 text-xs text-gray-600">
+              <div>Area: {rpcMetrics.areaSqft?.toLocaleString()} sq ft</div>
+              {rpcMetrics.setbacks && (
+                <div>
+                  Setbacks: Front {rpcMetrics.setbacks.front || 20}', Side {rpcMetrics.setbacks.side || 5}', Rear {rpcMetrics.setbacks.rear || 20}'
+                </div>
+              )}
+              {!rpcMetrics.hasZoning && (
+                <div className="text-yellow-600 bg-yellow-50 px-2 py-1 rounded text-xs">
+                  Source: Default (no zoning record)
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Generation Status */}
         {isGenerating && (
@@ -339,7 +427,7 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
         )}
 
         {/* Quick Actions */}
-        <div className="space-y-2">
+            <div className="space-y-2">
           <button
             onClick={generatePlan}
             disabled={isGenerating}
@@ -356,9 +444,9 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
           >
             Save Plan
           </button>
-        </div>
-      </div>
-
+                </div>
+              </div>
+              
       {/* Main Content Area */}
       <div className="flex-1">
         {children && React.isValidElement(children) ? (
@@ -369,25 +457,28 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
         ) : (
           <div className="flex items-center justify-center h-full bg-gray-50 border border-gray-200 rounded-lg">
             <div className="text-center p-8">
-              <div className="text-2xl mb-4">🏗️</div>
-              <div className="text-lg font-medium mb-2 text-gray-700">Site Plan Designer</div>
-              <div className="text-sm text-gray-500 mb-4">
-                Configure your design parameters using the controls on the left
+              {parcel && parcel.ogc_fid ? (
+                <>
+                  <div className="text-2xl mb-4">🏗️</div>
+                  <div className="text-lg font-medium mb-2 text-gray-700">Generating site plan…</div>
+                  <div className="text-sm text-gray-500">Parcel {parcel.ogc_fid}</div>
+                  {isGenerating && (
+                    <div className="mt-4">
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                </div>
+              )}
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl mb-4">📍</div>
+                  <div className="text-lg font-medium mb-2 text-gray-700">No Parcel Selected</div>
+                  <div className="text-sm text-gray-500">Choose a parcel on the map</div>
+                </>
+              )}
               </div>
-              {!isValidParcel && (
-                <div className="text-sm text-yellow-600 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                  ⚠️ Please select a valid parcel to begin designing
-                </div>
-              )}
-              {isValidParcel && (
-                <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
-                  ✅ Ready to generate site plan for parcel {parcel.ogc_fid}
-                </div>
-              )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
     </div>
   );
 };

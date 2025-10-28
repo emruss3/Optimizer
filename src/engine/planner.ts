@@ -25,15 +25,21 @@ export function generateSitePlan(
     
     // Create envelope from normalized polygon
     const envelope = createEnvelope(polygon);
-    const parcelAreaSqFt = envelope.areaSqFt;
+    const parcelAreaSqFt = envelope?.areaSqFt || areaSqft(polygon);
+    
+    // Safety check
+    if (!parcelAreaSqFt || parcelAreaSqFt <= 0) {
+      console.warn('Invalid parcel area:', parcelAreaSqFt);
+      throw new Error('Invalid parcel area');
+    }
     
     // Generate building footprints
     const buildingConfig = {
-      targetFAR: config.designParameters.targetFAR,
-      targetCoveragePct: config.designParameters.targetCoveragePct || 50,
-      typology: config.designParameters.buildingTypology,
-      numBuildings: config.designParameters.numBuildings,
-      maxHeightFt: config.zoning.maxFar ? Math.floor(config.zoning.maxFar * 10) : undefined,
+      targetFAR: config?.designParameters?.targetFAR || 1.0,
+      targetCoveragePct: config?.designParameters?.targetCoveragePct || 50,
+      typology: config?.designParameters?.buildingTypology || 'bar',
+      numBuildings: config?.designParameters?.numBuildings || 1,
+      maxHeightFt: config?.zoning?.maxFar ? Math.floor(config.zoning.maxFar * 10) : undefined,
       minHeightFt: 20
     };
     
