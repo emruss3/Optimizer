@@ -15,17 +15,43 @@ export interface BuildingConfig {
  * Generate building footprints within envelope (worker interface)
  */
 export function generateBuildingFootprints(
-  buildableArea: Element,
-  config: any
+  buildableArea: Element | Polygon,
+  config: any,
+  parcelAreaSqFt?: number
 ): Element[] {
-  const envelope = buildableArea.geometry;
-  const parcelAreaSqFt = buildableArea.properties.areaSqFt || areaSqft(envelope);
+  // Handle both Element and Polygon inputs
+  const envelope = typeof buildableArea === 'object' && 'geometry' in buildableArea 
+    ? buildableArea.geometry 
+    : buildableArea as Polygon;
   
-  const targetBuiltSF = parcelAreaSqFt * config.targetFAR;
-  const maxCoverageSF = parcelAreaSqFt * (config.targetCoveragePct / 100);
+  const areaSqFt = parcelAreaSqFt || 
+    (typeof buildableArea === 'object' && 'properties' in buildableArea 
+      ? buildableArea.properties?.areaSqFt 
+      : undefined) || 
+    areaSqft(envelope);
+  
+  // Safety checks
+  if (!areaSqFt || areaSqFt <= 0) {
+    console.warn('Invalid areaSqFt:', areaSqFt);
+    return [];
+  }
+  
+  // Handle different config structures
+  const targetFAR = config?.targetFAR || config?.designParameters?.targetFAR || 1.0;
+  const targetCoveragePct = config?.targetCoveragePct || config?.designParameters?.targetCoveragePct || 50;
+  const typology = config?.typology || config?.designParameters?.buildingTypology || 'bar';
+  const numBuildings = config?.numBuildings || config?.designParameters?.numBuildings || 1;
+  
+  if (!targetFAR || !targetCoveragePct) {
+    console.warn('Invalid config - missing required parameters:', { targetFAR, targetCoveragePct, config });
+    return [];
+  }
+  
+  const targetBuiltSF = areaSqFt * targetFAR;
+  const maxCoverageSF = areaSqFt * (targetCoveragePct / 100);
   
   // Get building typology
-  const typology = getBuildingTypology(config.typology);
+  const buildingTypology = getBuildingTypology(typology);
   
   // Calculate building dimensions
   const buildings: Element[] = [];
@@ -33,22 +59,22 @@ export function generateBuildingFootprints(
   const envelopeArea = areaSqft(envelope);
   
   // Distribute buildings across the envelope
-  const buildingsPerRow = Math.ceil(Math.sqrt(config.numBuildings));
+  const buildingsPerRow = Math.ceil(Math.sqrt(numBuildings));
   const buildingWidth = (bounds.maxX - bounds.minX) / buildingsPerRow;
-  const buildingDepth = (bounds.maxY - bounds.minY) / Math.ceil(config.numBuildings / buildingsPerRow);
+  const buildingDepth = (bounds.maxY - bounds.minY) / Math.ceil(numBuildings / buildingsPerRow);
   
   let totalBuiltSF = 0;
   let buildingIndex = 0;
   
-  for (let row = 0; row < Math.ceil(config.numBuildings / buildingsPerRow) && buildingIndex < config.numBuildings; row++) {
-    for (let col = 0; col < buildingsPerRow && buildingIndex < config.numBuildings; col++) {
+  for (let row = 0; row < Math.ceil(numBuildings / buildingsPerRow) && buildingIndex < numBuildings; row++) {
+    for (let col = 0; col < buildingsPerRow && buildingIndex < numBuildings; col++) {
       // Calculate building position
       const x = bounds.minX + col * buildingWidth + buildingWidth / 2;
       const y = bounds.minY + row * buildingDepth + buildingDepth / 2;
       
       // Calculate building size based on remaining target
       const remainingSF = targetBuiltSF - totalBuiltSF;
-      const remainingBuildings = config.numBuildings - buildingIndex;
+      const remainingBuildings = numBuildings - buildingIndex;
       const avgBuildingSF = remainingSF / remainingBuildings;
       
       // Ensure building fits within coverage limits
@@ -62,8 +88,8 @@ export function generateBuildingFootprints(
           buildingWidth * 0.8, // 80% of allocated space
           buildingDepth * 0.8,
           maxBuildingSF,
-          typology,
-          config
+          buildingTypology,
+          { targetFAR, targetCoveragePct, typology, numBuildings, maxHeightFt: config?.maxHeightFt, minHeightFt: config?.minHeightFt }
         );
         
         buildings.push(building);

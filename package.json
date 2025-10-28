@@ -24,10 +24,11 @@
     "test:report": "playwright show-report"
   },
   "dependencies": {
-    "@deck.gl/aggregation-layers": "^9.1.14",
-    "@deck.gl/core": "^9.1.14",
-    "@deck.gl/layers": "^9.1.14",
-    "@deck.gl/react": "^9.1.14",
+    "@deck.gl/aggregation-layers": "^9.2.0",
+    "@deck.gl/core": "^9.2.0",
+    "@deck.gl/layers": "^9.2.0",
+    "@deck.gl/react": "^9.2.0",
+    "@deck.gl/widgets": "^9.2.2",
     "@headlessui/react": "^2.2.7",
     "@supabase/supabase-js": "^2.39.0",
     "@turf/turf": "^7.1.0",
