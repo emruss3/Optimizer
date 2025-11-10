@@ -10,6 +10,7 @@ import {
 import { SelectedParcel, MarketData, InvestmentAnalysis } from '../types/parcel';
 import type { Element, PlannerConfig, PlannerOutput, SiteMetrics } from '../engine/types';
 import { workerManager } from '../workers/workerManager';
+import { feature3857To4326 } from '../utils/reproject';
 
 interface EnterpriseSitePlannerProps {
   parcel: SelectedParcel;
@@ -73,7 +74,102 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     return (Math.abs(sample[0]) > 1000 || Math.abs(sample[1]) > 1000) ? '3857' : '4326';
   }, []);
 
-  // Calculate bounds from geometry
+  // Reproject and normalize parcel geometry
+  const processedGeometry = useMemo(() => {
+    if (!parcel?.geometry) {
+      console.log('⚠️ [EnterpriseSitePlanner] No parcel geometry to process');
+      return null;
+    }
+
+    // Step 1: Reproject from 3857 to 4326 if needed
+    let reprojectedGeometry = parcel.geometry;
+    let coords: number[][];
+    
+    if (parcel.geometry.type === 'Polygon') {
+      coords = parcel.geometry.coordinates[0] as number[][];
+    } else if (parcel.geometry.type === 'MultiPolygon') {
+      coords = (parcel.geometry.coordinates as number[][][])[0][0];
+    } else {
+      console.warn('⚠️ [EnterpriseSitePlanner] Unsupported geometry type:', parcel.geometry.type);
+      return null;
+    }
+
+    if (!coords || coords.length === 0) {
+      console.warn('⚠️ [EnterpriseSitePlanner] No coordinates in geometry');
+      return null;
+    }
+
+    const coordSystem = detectCoordinateSystem(coords);
+    console.log('🌐 [EnterpriseSitePlanner] Processing geometry:', {
+      originalType: parcel.geometry.type,
+      coordinateSystem: coordSystem,
+      sampleCoord: coords[0]
+    });
+
+    if (coordSystem === '3857') {
+      console.log('🔄 [EnterpriseSitePlanner] Reprojecting from 3857 to 4326');
+      reprojectedGeometry = feature3857To4326(parcel.geometry);
+      // Update coords after reprojection
+      if (reprojectedGeometry.type === 'Polygon') {
+        coords = reprojectedGeometry.coordinates[0] as number[][];
+      } else if (reprojectedGeometry.type === 'MultiPolygon') {
+        coords = (reprojectedGeometry.coordinates as number[][][])[0][0];
+      }
+      console.log('✅ [EnterpriseSitePlanner] Reprojected, new sample coord:', coords[0]);
+    }
+
+    // Step 2: Calculate bounds from reprojected geometry
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    coords.forEach(([x, y]) => {
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    });
+
+    const bounds = { minX, minY, maxX, maxY };
+    const geometryWidth = maxX - minX;
+    const geometryHeight = maxY - minY;
+
+    console.log('📐 [EnterpriseSitePlanner] Calculated bounds:', {
+      bounds,
+      geometrySize: { width: geometryWidth, height: geometryHeight }
+    });
+
+    // Step 3: Normalize coordinates (subtract minX/minY to start at origin)
+    const normalizeCoords = (coords: number[][]): number[][] => {
+      return coords.map(([x, y]) => [x - bounds.minX, y - bounds.minY]);
+    };
+
+    let normalizedGeometry: any;
+    if (reprojectedGeometry.type === 'Polygon') {
+      normalizedGeometry = {
+        ...reprojectedGeometry,
+        coordinates: [normalizeCoords(reprojectedGeometry.coordinates[0] as number[][])]
+      };
+    } else if (reprojectedGeometry.type === 'MultiPolygon') {
+      normalizedGeometry = {
+        ...reprojectedGeometry,
+        coordinates: [[normalizeCoords((reprojectedGeometry.coordinates as number[][][])[0][0])]]
+      };
+    } else {
+      return null;
+    }
+
+    console.log('✅ [EnterpriseSitePlanner] Geometry processed:', {
+      normalized: true,
+      normalizedBounds: { minX: 0, minY: 0, maxX: geometryWidth, maxY: geometryHeight },
+      sampleNormalizedCoord: normalizedGeometry.coordinates[0]?.[0]?.[0]
+    });
+
+    return {
+      geometry: normalizedGeometry,
+      bounds: { minX: 0, minY: 0, maxX: geometryWidth, maxY: geometryHeight },
+      originalBounds: bounds
+    };
+  }, [parcel?.geometry, detectCoordinateSystem]);
+
+  // Calculate bounds from geometry (legacy function, kept for compatibility)
   const calculateBounds = useCallback((geometry: any): { minX: number; minY: number; maxX: number; maxY: number } | null => {
     if (!geometry || !geometry.coordinates) return null;
 
@@ -99,14 +195,20 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     return { minX, minY, maxX, maxY };
   }, []);
 
-  // Fit viewport to parcel geometry
+  // Fit viewport to parcel geometry (using processed/normalized geometry)
   const fitViewToParcel = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !parcel?.geometry) return;
+    if (!canvas || !processedGeometry) {
+      console.log('⚠️ [EnterpriseSitePlanner] Cannot fit view: missing canvas or processed geometry');
+      return;
+    }
 
-    const bounds = calculateBounds(parcel.geometry);
-    if (!bounds) {
-      console.warn('⚠️ [EnterpriseSitePlanner] Could not calculate bounds for parcel');
+    const { bounds } = processedGeometry;
+    const geometryWidth = bounds.maxX - bounds.minX; // Already normalized, so minX=0, minY=0
+    const geometryHeight = bounds.maxY - bounds.minY;
+
+    if (geometryWidth === 0 || geometryHeight === 0) {
+      console.warn('⚠️ [EnterpriseSitePlanner] Invalid geometry dimensions:', { geometryWidth, geometryHeight });
       return;
     }
 
@@ -114,31 +216,36 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const canvasWidth = rect.width;
     const canvasHeight = rect.height;
 
-    const geometryWidth = bounds.maxX - bounds.minX;
-    const geometryHeight = bounds.maxY - bounds.minY;
-
-    if (geometryWidth === 0 || geometryHeight === 0) {
-      console.warn('⚠️ [EnterpriseSitePlanner] Invalid geometry dimensions');
-      return;
-    }
-
     // Calculate zoom to fit with padding
     const padding = 40;
     const scaleX = (canvasWidth - padding * 2) / geometryWidth;
     const scaleY = (canvasHeight - padding * 2) / geometryHeight;
     const zoom = Math.min(scaleX, scaleY, 1); // Don't zoom in beyond 1x
 
-    // Since we normalize coordinates to start at (0,0), we just need to center the geometry
-    // The normalized geometry will have its top-left at (0,0), so we center it
-    const normalizedCenterX = geometryWidth / 2;
-    const normalizedCenterY = geometryHeight / 2;
-
-    // Calculate pan to center normalized geometry on canvas
-    const panX = canvasWidth / 2 - normalizedCenterX * zoom;
-    const panY = canvasHeight / 2 - normalizedCenterY * zoom;
+    // Since geometry is normalized (starts at 0,0), center it on canvas
+    // Transform order: translate(panX, panY) then scale(zoom)
+    // After transform: point (x,y) becomes (panX*zoom + x*zoom, panY*zoom + y*zoom)
+    // To center geometry: center (width/2, height/2) should map to (canvasWidth/2, canvasHeight/2)
+    // So: panX*zoom + (width/2)*zoom = canvasWidth/2
+    // Therefore: panX = (canvasWidth/2)/zoom - width/2
+    const centerX = geometryWidth / 2;
+    const centerY = geometryHeight / 2;
+    const panX = (canvasWidth / 2) / zoom - centerX;
+    const panY = (canvasHeight / 2) / zoom - centerY;
+    
+    console.log('🔧 [EnterpriseSitePlanner] Viewport calculation details:', {
+      geometryCenter: { x: centerX, y: centerY },
+      canvasCenter: { x: canvasWidth / 2, y: canvasHeight / 2 },
+      zoom,
+      calculatedPan: { x: panX, y: panY },
+      expectedCenterAfterTransform: {
+        x: panX * zoom + centerX * zoom,
+        y: panY * zoom + centerY * zoom
+      }
+    });
 
     console.log('🎯 [EnterpriseSitePlanner] Fitting view to parcel:', {
-      bounds,
+      normalizedBounds: bounds,
       canvasSize: { width: canvasWidth, height: canvasHeight },
       geometrySize: { width: geometryWidth, height: geometryHeight },
       calculatedZoom: zoom,
@@ -147,7 +254,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     setViewState({ zoom, panX, panY });
     setHasInitializedView(true);
-  }, [parcel?.geometry, calculateBounds]);
+  }, [processedGeometry]);
 
   // Initialize canvas
   useEffect(() => {
@@ -160,12 +267,24 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     // Set canvas size
     const resizeCanvas = () => {
       const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * window.devicePixelRatio;
-      canvas.height = rect.height * window.devicePixelRatio;
+      const width = rect.width || 800; // Fallback width
+      const height = rect.height || 600; // Fallback height
+      
+      console.log('📏 [EnterpriseSitePlanner] Resizing canvas:', {
+        rectWidth: rect.width,
+        rectHeight: rect.height,
+        calculatedWidth: width,
+        calculatedHeight: height,
+        devicePixelRatio: window.devicePixelRatio
+      });
+      
+      canvas.width = width * window.devicePixelRatio;
+      canvas.height = height * window.devicePixelRatio;
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       
+      // Force a render after resize (will be handled by render effect)
       // Re-fit view if parcel is loaded
-      if (parcel?.geometry && hasInitializedView) {
+      if (processedGeometry && hasInitializedView) {
         setTimeout(fitViewToParcel, 0);
       }
     };
@@ -173,15 +292,37 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     return () => window.removeEventListener('resize', resizeCanvas);
-  }, [parcel?.geometry, hasInitializedView, fitViewToParcel]);
+  }, [processedGeometry, hasInitializedView, fitViewToParcel, renderElements]);
 
-  // Fit view to parcel when parcel geometry is first loaded
+  // Fit view to parcel when processed geometry is first loaded
   useEffect(() => {
-    if (parcel?.geometry && !hasInitializedView) {
+    if (processedGeometry && !hasInitializedView) {
       console.log('🎯 [EnterpriseSitePlanner] Initializing view to fit parcel');
-      setTimeout(fitViewToParcel, 100); // Small delay to ensure canvas is ready
+      // Use requestAnimationFrame to ensure canvas is fully ready
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          fitViewToParcel();
+          // Force a render after viewport is set
+          // The render effect should also trigger, but this ensures it happens
+          setTimeout(() => {
+            console.log('🔄 [EnterpriseSitePlanner] Forcing render after viewport init');
+            renderElements();
+          }, 100);
+        }, 100);
+      });
     }
-  }, [parcel?.geometry, hasInitializedView, fitViewToParcel]);
+  }, [processedGeometry, hasInitializedView, fitViewToParcel, renderElements]);
+  
+  // Also render immediately when processedGeometry becomes available (even before viewport init)
+  useEffect(() => {
+    if (processedGeometry) {
+      console.log('🔄 [EnterpriseSitePlanner] processedGeometry available, triggering render');
+      // Small delay to ensure canvas is initialized
+      requestAnimationFrame(() => {
+        renderElements();
+      });
+    }
+  }, [processedGeometry, renderElements]);
 
   // Render parcel boundary and elements on canvas
   const renderElements = useCallback(() => {
@@ -197,47 +338,70 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       return;
     }
 
+    const displayWidth = canvas.width / window.devicePixelRatio;
+    const displayHeight = canvas.height / window.devicePixelRatio;
+
     console.log('🎨 [EnterpriseSitePlanner] Rendering canvas:', {
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
+      displayWidth,
+      displayHeight,
+      devicePixelRatio: window.devicePixelRatio,
       elementsCount: elements.length,
       hasParcel: !!parcel,
-      hasParcelGeometry: !!parcel?.geometry
+      hasProcessedGeometry: !!processedGeometry,
+      viewState
     });
 
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Clear canvas with a light background to verify canvas is working
+    ctx.fillStyle = '#F9FAFB';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw a test rectangle to verify canvas rendering works
+    ctx.fillStyle = '#E5E7EB';
+    ctx.fillRect(10, 10, 100, 100);
+    console.log('✅ [EnterpriseSitePlanner] Test rectangle drawn at (10, 10)');
 
     // Apply view transformations
+    // Transform order: translate then scale
+    // This centers the geometry, then scales it
     ctx.save();
-    ctx.scale(viewState.zoom, viewState.zoom);
     ctx.translate(viewState.panX, viewState.panY);
+    ctx.scale(viewState.zoom, viewState.zoom);
+
+    console.log('🔧 [EnterpriseSitePlanner] Applied view transform:', {
+      panX: viewState.panX,
+      panY: viewState.panY,
+      zoom: viewState.zoom,
+      transformOrder: 'translate then scale'
+    });
 
     // Render parcel boundary first (as background)
-    if (parcel?.geometry) {
-      let coords: number[][];
-      if (parcel.geometry.type === 'Polygon') {
-        coords = parcel.geometry.coordinates[0] as number[][];
-      } else if (parcel.geometry.type === 'MultiPolygon') {
-        coords = (parcel.geometry.coordinates as number[][][])[0][0];
-      } else {
-        coords = [];
-      }
-
-      const coordSystem = coords.length > 0 ? detectCoordinateSystem(coords) : null;
-      const bounds = calculateBounds(parcel.geometry);
+    // Use processed geometry (already reprojected and normalized)
+    if (processedGeometry) {
+      const coords = processedGeometry.geometry.type === 'Polygon'
+        ? processedGeometry.geometry.coordinates[0]
+        : processedGeometry.geometry.coordinates[0][0];
       
       console.log('🎨 [EnterpriseSitePlanner] Rendering parcel boundary:', {
-        geometryType: parcel.geometry.type,
-        coordinateSystem: coordSystem,
-        coordinateCount: coords.length,
-        sampleCoord: coords[0],
-        bounds: bounds,
-        needsReprojection: coordSystem === '3857'
+        geometryType: processedGeometry.geometry.type,
+        coordinateCount: coords?.length,
+        firstCoord: coords?.[0],
+        lastCoord: coords?.[coords?.length - 1],
+        bounds: processedGeometry.bounds,
+        viewState
       });
-      renderParcelBoundary(ctx, parcel.geometry);
+      
+      renderParcelBoundary(ctx, processedGeometry.geometry);
+      
+      // Draw a test point at the first coordinate to verify it's visible
+      ctx.fillStyle = 'red';
+      ctx.beginPath();
+      ctx.arc(coords[0][0], coords[0][1], 5, 0, Math.PI * 2);
+      ctx.fill();
+      console.log('🔴 [EnterpriseSitePlanner] Test point drawn at first coordinate:', coords[0]);
     } else {
-      console.warn('⚠️ [EnterpriseSitePlanner] No parcel geometry to render');
+      console.warn('⚠️ [EnterpriseSitePlanner] No processed geometry to render');
     }
 
     // Render generated elements on top
@@ -252,8 +416,19 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     });
 
     ctx.restore();
+    
+    // Draw viewport info for debugging
+    ctx.fillStyle = 'black';
+    ctx.font = '12px monospace';
+    ctx.fillText(`Zoom: ${viewState.zoom.toFixed(4)}`, 10, 20);
+    ctx.fillText(`Pan: (${viewState.panX.toFixed(1)}, ${viewState.panY.toFixed(1)})`, 10, 35);
+    ctx.fillText(`Canvas: ${canvas.width}x${canvas.height}`, 10, 50);
+    if (processedGeometry) {
+      ctx.fillText(`Bounds: ${processedGeometry.bounds.maxX.toFixed(1)}x${processedGeometry.bounds.maxY.toFixed(1)}`, 10, 65);
+    }
+    
     console.log('✅ [EnterpriseSitePlanner] Canvas render complete');
-  }, [elements, selectedElement, viewState, parcel, detectCoordinateSystem, calculateBounds]);
+  }, [elements, selectedElement, viewState, processedGeometry]);
 
   // Render individual element
   const renderElement = (ctx: CanvasRenderingContext2D, element: Element, isSelected: boolean) => {
@@ -320,27 +495,16 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     ctx.stroke();
   };
 
-  // Normalize coordinates to canvas space (subtract min to start at origin)
-  const normalizeCoordinates = useCallback((coords: number[][], bounds: { minX: number; minY: number }): number[][] => {
-    return coords.map(([x, y]) => [x - bounds.minX, y - bounds.minY]);
-  }, []);
-
-  // Render parcel boundary
+  // Render parcel boundary (geometry is already normalized)
   const renderParcelBoundary = useCallback((ctx: CanvasRenderingContext2D, geometry: any) => {
     try {
-      const bounds = calculateBounds(geometry);
-      if (!bounds) {
-        console.warn('⚠️ [EnterpriseSitePlanner] Could not calculate bounds for boundary rendering');
-        return;
-      }
-
       ctx.save();
       
       // Draw parcel boundary with light fill and outline
       ctx.strokeStyle = '#374151'; // Dark gray outline
-      ctx.lineWidth = 2;
-      ctx.fillStyle = '#F3F4F6'; // Light gray fill
-      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 2 / viewState.zoom; // Adjust line width for zoom
+      ctx.fillStyle = '#3B82F6'; // Blue fill (more visible)
+      ctx.globalAlpha = 0.6;
       
       let coords: number[][];
       
@@ -353,30 +517,39 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         ctx.restore();
         return;
       }
-
-      const coordSystem = detectCoordinateSystem(coords);
-      console.log('🎨 [EnterpriseSitePlanner] Rendering parcel boundary:', {
-        coordinateCount: coords.length,
-        coordinateSystem: coordSystem,
-        sampleCoord: coords[0],
-        bounds: bounds,
-        needsReprojection: coordSystem === '3857'
-      });
       
       if (coords && coords.length > 0) {
-        // Normalize coordinates relative to bounds (so they start near origin)
-        const normalizedCoords = normalizeCoordinates(coords, bounds);
+        console.log('📐 [EnterpriseSitePlanner] Rendering coordinates:', {
+          count: coords.length,
+          firstCoord: coords[0],
+          lastCoord: coords[coords.length - 1],
+          minX: Math.min(...coords.map(c => c[0])),
+          maxX: Math.max(...coords.map(c => c[0])),
+          minY: Math.min(...coords.map(c => c[1])),
+          maxY: Math.max(...coords.map(c => c[1]))
+        });
         
+        // Geometry is already normalized (starts at 0,0), render directly
         ctx.beginPath();
-        ctx.moveTo(normalizedCoords[0][0], normalizedCoords[0][1]);
-        for (let i = 1; i < normalizedCoords.length; i++) {
-          ctx.lineTo(normalizedCoords[i][0], normalizedCoords[i][1]);
+        ctx.moveTo(coords[0][0], coords[0][1]);
+        for (let i = 1; i < coords.length; i++) {
+          ctx.lineTo(coords[i][0], coords[i][1]);
         }
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
         
-        console.log('✅ [EnterpriseSitePlanner] Parcel boundary rendered with normalized coordinates');
+        // Draw coordinate points for debugging
+        ctx.fillStyle = 'red';
+        ctx.strokeStyle = 'red';
+        coords.slice(0, 5).forEach((coord, idx) => {
+          ctx.beginPath();
+          ctx.arc(coord[0], coord[1], 3, 0, Math.PI * 2);
+          ctx.fill();
+          console.log(`  📍 Point ${idx}: (${coord[0].toFixed(2)}, ${coord[1].toFixed(2)})`);
+        });
+        
+        console.log('✅ [EnterpriseSitePlanner] Parcel boundary rendered (already normalized)');
       } else {
         console.warn('⚠️ [EnterpriseSitePlanner] No coordinates in parcel geometry');
       }
@@ -384,8 +557,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       ctx.restore();
     } catch (error) {
       console.error('❌ [EnterpriseSitePlanner] Error rendering parcel boundary:', error);
+      console.error('❌ [EnterpriseSitePlanner] Error stack:', error instanceof Error ? error.stack : 'No stack');
     }
-  }, [calculateBounds, normalizeCoordinates, detectCoordinateSystem]);
+  }, [viewState.zoom]);
 
   // Get element color
   const getElementColor = (element: Element): string => {
@@ -446,6 +620,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         ogc_fid: parcel.ogc_fid,
         address: parcel.address,
         hasGeometry: !!parcel.geometry,
+        hasProcessedGeometry: !!processedGeometry,
         geometryType: parcel.geometry?.type
       });
 
@@ -458,6 +633,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       // Create planner config
       const config: PlannerConfig = {
         parcelId: parcel.ogc_fid,
+        // Use original geometry for worker (before normalization)
+        // Worker expects coordinates in their original system
         buildableArea: parcel.geometry as any,
         zoning: {
           frontSetbackFt: 20,
@@ -583,18 +760,28 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     }
   }, [planElements, elements.length]);
 
-  // Render when elements or parcel changes
+  // Render when elements, processedGeometry, or viewState changes
   useEffect(() => {
     console.log('🔍 [EnterpriseSitePlanner] Render effect triggered:', {
       elementsCount: elements.length,
       hasParcel: !!parcel,
-      hasParcelGeometry: !!parcel?.geometry
+      hasParcelGeometry: !!parcel?.geometry,
+      hasProcessedGeometry: !!processedGeometry,
+      viewState,
+      hasInitializedView
     });
-    renderElements();
-  }, [renderElements, parcel?.geometry]);
+    
+    // Only render if we have processed geometry or elements
+    if (processedGeometry || elements.length > 0) {
+      // Use requestAnimationFrame to ensure canvas is ready
+      requestAnimationFrame(() => {
+        renderElements();
+      });
+    }
+  }, [renderElements, processedGeometry, elements.length, viewState, hasInitializedView]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50 min-h-[400px]">
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-white border-b">
         <div className="flex items-center space-x-4">
@@ -651,11 +838,12 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         </div>
 
         {/* Main Canvas Area */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-[400px] bg-gray-100">
           <canvas
             ref={canvasRef}
-            className="w-full h-full cursor-crosshair"
+            className="w-full h-full cursor-crosshair absolute inset-0"
             onClick={handleCanvasClick}
+            style={{ display: 'block' }}
           />
           
           {/* Generation Progress */}

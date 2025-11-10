@@ -72,15 +72,23 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// Get or create root element
 const rootElement = document.getElementById('root');
-if (rootElement) {
-  createRoot(rootElement).render(
+if (!rootElement) {
+  console.error('Root element not found');
+} else {
+  // Check if root already exists (HMR in dev mode)
+  let root = (rootElement as any)._reactRootContainer;
+  if (!root) {
+    root = createRoot(rootElement);
+    (rootElement as any)._reactRootContainer = root;
+  }
+  
+  root.render(
     <StrictMode>
       <ErrorBoundary>
         <App />
       </ErrorBoundary>
     </StrictMode>
   );
-} else {
-  console.error('Root element not found');
 }

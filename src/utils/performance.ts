@@ -84,6 +84,12 @@ export const initWebVitalsMonitoring = () => {
 
 // Preload critical resources
 export const preloadCriticalResources = () => {
+  // Only preload if not already loaded (prevents duplicate preload warnings)
+  const existingLink = document.querySelector('link[href*="mapbox-gl.css"]');
+  if (existingLink) {
+    return; // Already loaded
+  }
+  
   const link = document.createElement('link');
   link.rel = 'preload';
   link.href = 'https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css';
