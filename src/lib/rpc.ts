@@ -1,9 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
 import type { ParcelBBoxRow, ParcelId, ScorePadResult } from '@/types/parcel';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL!;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY!;
-export const sb = createClient(supabaseUrl, supabaseAnonKey);
+import { supabase as sb } from './supabase';
 
 export async function getParcelsInBbox(
   minLng: number, minLat: number, maxLng: number, maxLat: number,

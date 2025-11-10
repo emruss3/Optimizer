@@ -123,8 +123,13 @@ export class ParcelGeometryService {
     }
   }
 
+  // Cache to prevent duplicate calls (React 18 StrictMode guard)
+  private envelopeCache = new Map<number, { data: ParcelBuildableEnvelope | null; timestamp: number }>();
+  private envelopeFetching = new Set<number>(); // Track in-flight requests
+
   /**
    * Fetch buildable envelope for a parcel
+   * Includes deduplication to prevent React 18 StrictMode double-calls
    */
   async fetchParcelBuildableEnvelope(ogcFid: number): Promise<ParcelBuildableEnvelope | null> {
     if (!supabase) {
@@ -132,29 +137,69 @@ export class ParcelGeometryService {
       return null;
     }
 
+    // Check cache first (5 minute TTL)
+    const cached = this.envelopeCache.get(ogcFid);
+    if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+      console.log('📦 [ParcelGeometry] Using cached envelope for OGC_FID:', ogcFid);
+      return cached.data;
+    }
+
+    // Prevent duplicate concurrent requests
+    if (this.envelopeFetching.has(ogcFid)) {
+      console.log('⏳ [ParcelGeometry] Envelope fetch already in progress for OGC_FID:', ogcFid);
+      // Wait for existing request
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          const cached = this.envelopeCache.get(ogcFid);
+          if (cached) {
+            clearInterval(checkInterval);
+            resolve(cached.data);
+          }
+        }, 100);
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve(null);
+        }, 10000); // 10s timeout
+      });
+    }
+
+    this.envelopeFetching.add(ogcFid);
+
     try {
-      console.log('🏗️ Fetching buildable envelope for OGC_FID:', ogcFid);
+      console.log('🏗️ [ParcelGeometry] Fetching buildable envelope for OGC_FID:', ogcFid);
       
       const { data, error } = await supabase.rpc('get_parcel_buildable_envelope', {
         p_ogc_fid: ogcFid
       });
 
       if (error) {
-        console.error('❌ Error fetching buildable envelope:', error);
+        console.error('❌ [ParcelGeometry] Error fetching buildable envelope:', error);
+        this.envelopeCache.set(ogcFid, { data: null, timestamp: Date.now() });
         return null;
       }
 
       if (!data || data.length === 0) {
-        console.warn('⚠️ No buildable envelope data found for OGC_FID:', ogcFid);
+        console.warn('⚠️ [ParcelGeometry] No buildable envelope data found for OGC_FID:', ogcFid);
+        this.envelopeCache.set(ogcFid, { data: null, timestamp: Date.now() });
         return null;
       }
 
       const envelopeData = data[0] as ParcelBuildableEnvelope;
-      console.log('✅ Buildable envelope fetched successfully:', envelopeData);
+      console.log('✅ [ParcelGeometry] Buildable envelope fetched successfully:', {
+        ogc_fid: envelopeData.ogc_fid,
+        hasGeom: !!envelopeData.buildable_geom,
+        area: envelopeData.area_sqft,
+        setbacks: envelopeData.setbacks_applied
+      });
+      
+      this.envelopeCache.set(ogcFid, { data: envelopeData, timestamp: Date.now() });
       return envelopeData;
     } catch (error) {
-      console.error('❌ Exception fetching buildable envelope:', error);
+      console.error('❌ [ParcelGeometry] Exception fetching buildable envelope:', error);
+      this.envelopeCache.set(ogcFid, { data: null, timestamp: Date.now() });
       return null;
+    } finally {
+      this.envelopeFetching.delete(ogcFid);
     }
   }
 

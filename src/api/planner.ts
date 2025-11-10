@@ -1,9 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from '../lib/supabase';
 
 export async function fetchBuildableEnvelope(ogc_fid: number) {
   const { data, error } = await supabase

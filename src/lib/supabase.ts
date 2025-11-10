@@ -4,22 +4,29 @@
 import { createClient } from '@supabase/supabase-js';
 import { GeoJSONGeometry } from '../types/parcel';
 
-console.log('VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
-console.log('VITE_SUPABASE_ANON_KEY present:', Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY));
+const url = import.meta.env.VITE_SUPABASE_URL;
+const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!url || !anon) {
   console.warn('⚠️ Missing Supabase environment variables');
   console.warn('   Please add to your .env file:');
   console.warn('   VITE_SUPABASE_URL=https://okxrvetbzpoazrybhcqj.supabase.co');
   console.warn('   VITE_SUPABASE_ANON_KEY=your_anon_key');
 }
 
-export const supabase = supabaseUrl && supabaseAnonKey 
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+// Singleton pattern: reuse the same client instance to avoid multiple GoTrueClient instances
+// @ts-expect-error attach to window to ensure singleton in HMR/dev
+if (!(window as any).__supabase) {
+  if (url && anon) {
+    (window as any).__supabase = createClient(url, anon, {
+      auth: { persistSession: true, storageKey: 'kissy-auth' }, // make storageKey explicit
+    });
+  } else {
+    (window as any).__supabase = null;
+  }
+}
+
+export const supabase = (window as any).__supabase;
 
 import { RegridZoningData } from '../types/zoning';
 

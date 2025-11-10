@@ -113,11 +113,11 @@ const MapView = React.memo(function MapView({
 
           try {
             // Import supabase for the RPC call
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabase = createClient(
-              import.meta.env.VITE_SUPABASE_URL,
-              import.meta.env.VITE_SUPABASE_ANON_KEY
-            );
+            const { supabase } = await import('../lib/supabase');
+            if (!supabase) {
+              console.error('Supabase client not available');
+              return;
+            }
 
             let row = null;
 

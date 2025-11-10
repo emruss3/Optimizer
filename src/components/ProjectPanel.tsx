@@ -14,6 +14,8 @@ import { useActiveProject } from '../store/project';
 import { supabase } from '../lib/supabase';
 import RealtimeComments from './RealtimeComments';
 import Guard from './Guard';
+import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
+import { SelectedParcel as ParcelType } from '../types/parcel';
 
 export default function ProjectPanel() {
   const { 
@@ -27,6 +29,7 @@ export default function ProjectPanel() {
   
   const [parcelDetails, setParcelDetails] = React.useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = React.useState(false);
+  const [selectedParcelForPlanner, setSelectedParcelForPlanner] = React.useState<ParcelType | null>(null);
   
   const { 
     project, 
@@ -41,6 +44,11 @@ export default function ProjectPanel() {
   const [projectName, setProjectName] = React.useState('');
   const [showAdvanced, setShowAdvanced] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'summary' | 'siteplan' | 'financial'>('summary');
+  
+  // Debug: Log tab changes
+  React.useEffect(() => {
+    console.log('🔍 [ProjectPanel] Tab changed:', { activeTab, hasParcel: !!selectedParcelForPlanner });
+  }, [activeTab, selectedParcelForPlanner]);
 
   const massing = calculateMassing;
 
@@ -61,8 +69,16 @@ export default function ProjectPanel() {
 
   // Load parcel details when selectedParcelIds change
   React.useEffect(() => {
+    console.log('🔍 [ProjectPanel] useEffect triggered:', {
+      activeProjectId,
+      parcelIdsCount: selectedParcelIds.length,
+      parcelIds: selectedParcelIds
+    });
+    
     if (!activeProjectId || selectedParcelIds.length === 0) {
+      console.log('ℹ️ [ProjectPanel] No active project or parcels, clearing data');
       setParcelDetails([]);
+      setSelectedParcelForPlanner(null);
       return;
     }
 
@@ -79,11 +95,72 @@ export default function ProjectPanel() {
 
         if (error) throw error;
         setParcelDetails(data || []);
+        console.log('🔍 [ProjectPanel] Loaded parcel details:', { count: data?.length, parcelIds: data?.map(p => p.ogc_fid) });
+        
+        // Load full parcel data for site planner (first parcel)
+        if (data && data.length > 0) {
+          const firstParcelId = data[0].ogc_fid;
+          console.log('🔍 [ProjectPanel] Loading full parcel data for site planner:', { parcelId: firstParcelId });
+          
+          const { data: fullParcelData, error: fullParcelError } = await supabase
+            .from('parcels')
+            .select('*')
+            .eq('ogc_fid', firstParcelId)
+            .single();
+            
+          if (fullParcelError) {
+            console.error('❌ [ProjectPanel] Error loading full parcel data:', fullParcelError);
+          }
+          
+          if (!fullParcelError && fullParcelData) {
+            // Convert to SelectedParcel format
+            const selectedParcel: ParcelType = {
+              ogc_fid: String(fullParcelData.ogc_fid),
+              parcelnumb: fullParcelData.parcelnumb,
+              parcelnumb_no_formatting: fullParcelData.parcelnumb_no_formatting,
+              address: fullParcelData.address,
+              zoning: fullParcelData.zoning,
+              zoning_description: fullParcelData.zoning_description,
+              zoning_type: fullParcelData.zoning_type,
+              owner: fullParcelData.owner,
+              deeded_acres: fullParcelData.deededacreage,
+              gisacre: fullParcelData.gisacre,
+              sqft: fullParcelData.sqft,
+              landval: fullParcelData.landval,
+              parval: fullParcelData.parval,
+              yearbuilt: fullParcelData.yearbuilt,
+              numstories: fullParcelData.numstories,
+              numunits: fullParcelData.numunits,
+              lat: fullParcelData.lat,
+              lon: fullParcelData.lon,
+              geometry: fullParcelData.geometry as any
+            };
+            console.log('✅ [ProjectPanel] Parcel data prepared for site planner:', {
+              ogc_fid: selectedParcel.ogc_fid,
+              address: selectedParcel.address,
+              zoning: selectedParcel.zoning,
+              sqft: selectedParcel.sqft,
+              hasGeometry: !!selectedParcel.geometry,
+              geometryType: selectedParcel.geometry?.type,
+              coordinateCount: selectedParcel.geometry?.coordinates?.[0]?.length,
+              sampleCoord: selectedParcel.geometry?.coordinates?.[0]?.[0]
+            });
+            setSelectedParcelForPlanner(selectedParcel);
+          } else {
+            console.warn('⚠️ [ProjectPanel] No full parcel data available for site planner');
+            setSelectedParcelForPlanner(null);
+          }
+        } else {
+          console.log('ℹ️ [ProjectPanel] No parcels to load for site planner');
+          setSelectedParcelForPlanner(null);
+        }
       } catch (error) {
-        console.error('Error loading parcel details:', error);
+        console.error('❌ [ProjectPanel] Error loading parcel details:', error);
         setParcelDetails([]);
+        setSelectedParcelForPlanner(null);
       } finally {
         setLoadingDetails(false);
+        console.log('✅ [ProjectPanel] Parcel loading complete');
       }
     };
 
@@ -291,14 +368,56 @@ export default function ProjectPanel() {
           </>
         )}
 
-        {/* Other tabs would go here but simplified for now */}
+        {/* Site Plan Tab */}
         {activeTab === 'siteplan' && (
-          <div className="p-4">
-            <div className="text-center py-8">
-              <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">Site plan configuration</p>
-              <p className="text-sm text-gray-500 mt-1">Add parcels to configure site planning options</p>
-            </div>
+          <div className="h-full flex flex-col">
+            {(() => {
+              console.log('🔍 [ProjectPanel] Site Plan tab rendered:', {
+                loadingDetails,
+                hasParcel: !!selectedParcelForPlanner,
+                activeTab,
+                parcelId: selectedParcelForPlanner?.ogc_fid
+              });
+              
+              if (loadingDetails) {
+                return (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                      <p className="text-gray-600">Loading site planner...</p>
+                    </div>
+                  </div>
+                );
+              }
+              
+              if (!selectedParcelForPlanner) {
+                return (
+                  <div className="flex-1 flex items-center justify-center p-4">
+                    <div className="text-center">
+                      <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600">No parcel selected</p>
+                      <p className="text-sm text-gray-500 mt-1">Add parcels to this project to use the site planner</p>
+                    </div>
+                  </div>
+                );
+              }
+              
+              console.log('✅ [ProjectPanel] Rendering EnterpriseSitePlanner with parcel:', {
+                ogc_fid: selectedParcelForPlanner.ogc_fid,
+                address: selectedParcelForPlanner.address
+              });
+              
+              return (
+                <div className="flex-1 overflow-hidden">
+                  <EnterpriseSitePlanner
+                    parcel={selectedParcelForPlanner}
+                    onInvestmentAnalysis={(analysis) => {
+                      console.log('💰 [ProjectPanel] Investment analysis received:', analysis);
+                    }}
+                  />
+                </div>
+              );
+            })()}
           </div>
         )}
 
