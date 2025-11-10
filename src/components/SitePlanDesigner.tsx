@@ -360,9 +360,11 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
           area: env?.area_sqft,
           setbacks: env?.setbacks_applied,
           edges: env?.edge_types,
-          farMax: env?.far_max
+          farMax: env?.far_max,
+          cancelled
         });
 
+        // Check cancellation AFTER the promise resolves, but before state updates
         if (cancelled) {
           console.log('⏭️ [SitePlanDesigner] Envelope fetch cancelled (component unmounted)');
           return;

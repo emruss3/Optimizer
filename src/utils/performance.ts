@@ -33,32 +33,52 @@ export const logBundleSize = () => {
 export const initWebVitalsMonitoring = () => {
   if (typeof performance !== 'undefined' && 'PerformanceObserver' in window) {
     // Monitor FCP
-    new PerformanceObserver((list) => {
-      const entries = list.getEntries();
-      entries.forEach((entry) => {
-        if (entry.name === 'first-contentful-paint') {
-          const fcp = entry.startTime;
-          console.log(`🎯 First Contentful Paint: ${fcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.firstContentfulPaint}ms)`);
-          
-          if (fcp > PERFORMANCE_BUDGET.firstContentfulPaint) {
-            console.warn('⚠️ FCP exceeds performance budget!');
+    try {
+      new PerformanceObserver((list) => {
+        const entries = list.getEntries();
+        entries.forEach((entry) => {
+          if (entry.name === 'first-contentful-paint') {
+            // Use renderTime or startTime, whichever is available
+            const fcp = (entry as any).renderTime || entry.startTime;
+            // Only log if it's a reasonable value (less than 60 seconds)
+            if (fcp < 60000) {
+              console.log(`🎯 First Contentful Paint: ${fcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.firstContentfulPaint}ms)`);
+              
+              if (fcp > PERFORMANCE_BUDGET.firstContentfulPaint) {
+                console.warn('⚠️ FCP exceeds performance budget!');
+              }
+            }
           }
-        }
-      });
-    }).observe({ entryTypes: ['paint'] });
+        });
+      }).observe({ entryTypes: ['paint'] });
+    } catch (e) {
+      console.warn('FCP monitoring not supported:', e);
+    }
 
     // Monitor LCP
-    new PerformanceObserver((list) => {
-      const entries = list.getEntries();
-      const lastEntry = entries[entries.length - 1];
-      const lcp = lastEntry.startTime;
-      
-      console.log(`🎯 Largest Contentful Paint: ${lcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.largestContentfulPaint}ms)`);
-      
-      if (lcp > PERFORMANCE_BUDGET.largestContentfulPaint) {
-        console.warn('⚠️ LCP exceeds performance budget!');
-      }
-    }).observe({ entryTypes: ['largest-contentful-paint'] });
+    try {
+      new PerformanceObserver((list) => {
+        const entries = list.getEntries();
+        if (entries.length === 0) return;
+        
+        const lastEntry = entries[entries.length - 1] as any;
+        // Use renderTime or loadTime, fallback to startTime
+        const lcp = lastEntry.renderTime || lastEntry.loadTime || lastEntry.startTime;
+        
+        // Only log if it's a reasonable value (less than 60 seconds)
+        if (lcp < 60000) {
+          console.log(`🎯 Largest Contentful Paint: ${lcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.largestContentfulPaint}ms)`);
+          
+          if (lcp > PERFORMANCE_BUDGET.largestContentfulPaint) {
+            console.warn('⚠️ LCP exceeds performance budget!');
+          }
+        } else {
+          console.warn('⚠️ LCP value seems incorrect:', lcp, 'ms. Ignoring.');
+        }
+      }).observe({ entryTypes: ['largest-contentful-paint'] });
+    } catch (e) {
+      console.warn('LCP monitoring not supported:', e);
+    }
   }
 };
 

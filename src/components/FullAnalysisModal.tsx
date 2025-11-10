@@ -167,7 +167,12 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                     parcel={(() => {
                       // Normalize geometry: accept Polygon or MultiPolygon
                       const poly = parcel?.geometry ? toPolygon(parcel.geometry) : null;   // MultiPolygon → Polygon
-                      const parcelForPlanner = poly ? { ogc_fid: String(parcel.ogc_fid), geometry: poly } : null;
+                      // Pass all parcel properties, not just ogc_fid and geometry
+                      const parcelForPlanner = poly ? { 
+                        ...parcel,
+                        ogc_fid: String(parcel.ogc_fid),
+                        geometry: poly 
+                      } : null;
                       return parcelForPlanner;
                     })()}
                     onUnderwritingUpdate={(financialData) => {
