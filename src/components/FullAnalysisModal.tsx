@@ -163,22 +163,39 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
               <div className="space-y-6">
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <h2 className="text-xl font-semibold text-gray-900 mb-4">Site Plan Designer</h2>
-                  <SitePlanDesigner 
-                    parcel={(() => {
-                      // Normalize geometry: accept Polygon or MultiPolygon
-                      const poly = parcel?.geometry ? toPolygon(parcel.geometry) : null;   // MultiPolygon → Polygon
-                      // Pass all parcel properties, not just ogc_fid and geometry
-                      const parcelForPlanner = poly ? { 
-                        ...parcel,
-                        ogc_fid: String(parcel.ogc_fid),
-                        geometry: poly 
-                      } : null;
-                      return parcelForPlanner;
-                    })()}
-                    onUnderwritingUpdate={(financialData) => {
-                      console.log('Site plan financial update:', financialData);
-                    }}
-                  />
+                  <div className="h-[800px]">
+                    <SitePlanDesigner 
+                      parcel={(() => {
+                        // Normalize geometry: accept Polygon or MultiPolygon
+                        const poly = parcel?.geometry ? toPolygon(parcel.geometry) : null;   // MultiPolygon → Polygon
+                        // Pass all parcel properties, not just ogc_fid and geometry
+                        const parcelForPlanner = poly ? { 
+                          ...parcel,
+                          ogc_fid: String(parcel.ogc_fid),
+                          geometry: poly 
+                        } : null;
+                        return parcelForPlanner;
+                      })()}
+                      onUnderwritingUpdate={(financialData) => {
+                        console.log('Site plan financial update:', financialData);
+                      }}
+                    >
+                      <SitePlannerErrorBoundary>
+                        <EnterpriseSitePlanner
+                          parcel={isValidParcel(parcel) ? parcel : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356)}
+                          marketData={{
+                            avgPricePerSqFt: 300,
+                            avgRentPerSqFt: 2.50,
+                            capRate: 0.06,
+                            constructionCostPerSqFt: 200
+                          }}
+                          onInvestmentAnalysis={(analysis: InvestmentAnalysis) => {
+                            console.log('Investment analysis:', analysis);
+                          }}
+                        />
+                      </SitePlannerErrorBoundary>
+                    </SitePlanDesigner>
+                  </div>
                 </div>
               </div>
             )}
