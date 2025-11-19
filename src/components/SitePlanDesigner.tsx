@@ -5,7 +5,7 @@ import { workerManager } from '../workers/workerManager';
 import { toPolygon } from '../engine/geometry/normalize';
 import { computeParcelMetrics } from '../engine/metrics/parcelMetrics';
 import { getEnvelope } from '../api/fetchEnvelope';
-import { generateConfigVariations } from '../engine/variations';
+import { generateAlternatives, validateSitePlan } from '../engine/planner';
 import { SolveTable } from './site-planner/SolveTable';
 
 interface SitePlanDesignerProps {
@@ -108,10 +108,9 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const [status, setStatus] = useState<'loading' | 'ready' | 'invalid'>('loading');
   
   // Alternatives state
-  const [showAlternatives, setShowAlternatives] = useState(false);
-  const [alternatives, setAlternatives] = useState<Array<{ plan: PlannerOutput; config: PlannerConfig; id: string }>>([]);
-  const [isGeneratingAlternatives, setIsGeneratingAlternatives] = useState(false);
-  const [activeSolveId, setActiveSolveId] = useState<string | undefined>(undefined);
+  const [alternatives, setAlternatives] = useState<PlannerOutput[]>([]);
+  const [selectedSolveIndex, setSelectedSolveIndex] = useState<number | null>(null);
+  const [solveScores, setSolveScores] = useState<number[]>([]);
 
   // New worker for reliable generation
   const worker = useMemo(() => new Worker(new URL("../engine/workers/sitegenie", import.meta.url), { type: "module" }), []);
@@ -660,94 +659,103 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
           </div>
         )}
 
-        {/* Generate Alternatives Toggle */}
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="flex items-center justify-between mb-2">
-            <label className="flex items-center space-x-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showAlternatives}
-                onChange={(e) => setShowAlternatives(e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm font-medium text-gray-700">Generate Alternatives</span>
-            </label>
-            {showAlternatives && (
-              <button
-                onClick={async () => {
-                  if (!parcel?.geometry || !config || isGeneratingAlternatives) return;
-                  
-                  setIsGeneratingAlternatives(true);
-                  try {
-                    const variations = generateConfigVariations(config, { count: 10 });
-                    const poly = toPolygon(parcel.geometry);
-                    
-                    const solves: Array<{ plan: PlannerOutput; config: PlannerConfig; id: string }> = [];
-                    
-                    // Generate each alternative
-                    for (let i = 0; i < variations.length; i++) {
-                      const variation = variations[i];
-                      const fullConfig = { ...config, ...variation };
-                      
-                      try {
-                        const plan = await workerManager.generateSitePlan(poly, fullConfig);
-                        solves.push({
-                          plan,
-                          config: fullConfig,
-                          id: `solve_${Date.now()}_${i}`
-                        });
-                      } catch (error) {
-                        console.error(`Error generating solve ${i}:`, error);
+        {/* Generate Alternatives Button */}
+        <div className="mb-4">
+          <button
+            onClick={() => {
+              if (!parcel?.geometry || !config || !normalizedGeometry) return;
+              
+              const poly = toPolygon(normalizedGeometry);
+              
+              // Build simple variations array (6-10 configs)
+              const variations: Partial<PlannerConfig>[] = [];
+              const baseFAR = config.designParameters.targetFAR;
+              const baseCoverage = config.designParameters.targetCoveragePct || 50;
+              const baseParking = config.designParameters.parking.targetRatio;
+              
+              // Generate variations: FAR ±20%, Coverage ±10%, Parking ±0.25
+              const farVariations = [
+                baseFAR * 0.8,
+                baseFAR * 0.9,
+                baseFAR,
+                baseFAR * 1.1,
+                baseFAR * 1.2
+              ];
+              
+              const coverageVariations = [
+                baseCoverage * 0.9,
+                baseCoverage,
+                baseCoverage * 1.1
+              ];
+              
+              const parkingVariations = [
+                baseParking - 0.25,
+                baseParking,
+                baseParking + 0.25
+              ];
+              
+              // Generate combinations (up to 9 solves)
+              for (const far of farVariations.slice(0, 3)) {
+                for (const coverage of coverageVariations) {
+                  for (const parking of parkingVariations.slice(0, 1)) {
+                    if (variations.length >= 9) break;
+                    variations.push({
+                      designParameters: {
+                        ...config.designParameters,
+                        targetFAR: far,
+                        targetCoveragePct: coverage,
+                        parking: {
+                          ...config.designParameters.parking,
+                          targetRatio: parking
+                        }
                       }
-                    }
-                    
-                    setAlternatives(solves);
-                    if (solves.length > 0) {
-                      setActiveSolveId(solves[0].id);
-                    }
-                  } catch (error) {
-                    console.error('Error generating alternatives:', error);
-                  } finally {
-                    setIsGeneratingAlternatives(false);
+                    });
                   }
-                }}
-                disabled={isGeneratingAlternatives || !parcel?.geometry}
-                className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-              >
-                {isGeneratingAlternatives ? (
-                  <>
-                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Generating...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-3 h-3" />
-                    <span>Generate</span>
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-          {showAlternatives && alternatives.length > 0 && (
-            <div className="mt-3">
-              <SolveTable
-                solves={alternatives}
-                activeSolveId={activeSolveId}
-                onSelectSolve={(plan) => {
-                  setCurrentElements(plan.elements);
-                  setCurrentMetrics(plan.metrics);
-                  const selectedSolve = alternatives.find(s => s.plan === plan);
-                  if (selectedSolve) {
-                    setActiveSolveId(selectedSolve.id);
-                  }
-                  if (onPlanGenerated) {
-                    onPlanGenerated(plan.elements, plan.metrics);
-                  }
-                }}
-              />
-            </div>
-          )}
+                  if (variations.length >= 9) break;
+                }
+                if (variations.length >= 9) break;
+              }
+              
+              // Generate alternatives synchronously
+              const altPlans = generateAlternatives(poly, config, variations);
+              
+              // Compute scores
+              const scores = altPlans.map(plan => 
+                validateSitePlan(plan, config).score
+              );
+              
+              setSolveScores(scores);
+              setAlternatives(altPlans);
+              setSelectedSolveIndex(0);
+            }}
+            disabled={!parcel?.geometry || !config || !normalizedGeometry}
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Generate Alternatives</span>
+          </button>
         </div>
+
+        {/* Solves Table */}
+        {alternatives.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold mb-2">Solves</h3>
+            <SolveTable
+              solves={alternatives}
+              baseConfig={config}
+              selectedIndex={selectedSolveIndex}
+              onSelect={(index, solve) => {
+                setSelectedSolveIndex(index);
+                // Update the main planner view to this solve
+                setCurrentElements(solve.elements);
+                setCurrentMetrics(solve.metrics);
+                if (onPlanGenerated) {
+                  onPlanGenerated(solve.elements, solve.metrics);
+                }
+              }}
+            />
+          </div>
+        )}
 
         {/* Quick Actions */}
             <div className="space-y-2">
