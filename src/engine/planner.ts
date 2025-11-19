@@ -1,6 +1,6 @@
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { PlannerConfig, PlannerOutput, Element, Envelope } from './types';
-import { createEnvelope, areaSqft, union, difference, polygons, sortByArea, normalizeToPolygon, safeBbox, selectLargestRingFromPolygon } from './geometry';
+import { createEnvelope, areaSqft, union, difference, polygons, sortByArea, normalizeToPolygon, safeBbox, selectLargestRingFromPolygon, elementsToPolygons } from './geometry';
 import { generateBuildingFootprints } from './building';
 import { generateParking } from './parking';
 import { calculateMetrics } from './analysis';
