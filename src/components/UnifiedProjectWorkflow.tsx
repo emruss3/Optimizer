@@ -29,7 +29,6 @@ import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
 import { SelectedParcel } from '../types/parcel';
 import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
-import { AIDrivenSitePlanGenerator } from './adapters/SitePlannerAdapters';
 
 interface UnifiedProjectWorkflowProps {
   isOpen: boolean;
@@ -374,22 +373,25 @@ export function UnifiedProjectWorkflow({
                 </p>
               </div>
               
-              {/* AI-Driven Site Plan Generator - Direct Integration */}
+              {/* Site Planner - Production Component */}
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <AIDrivenSitePlanGenerator
-                  isOpen={true}
-                  onClose={() => setCurrentStep('model')}
-                  selectedParcel={selectedParcel}
-                  hbuAnalysis={analysisResults}
-                  onAnalysisComplete={(analysis) => {
-                    console.log('HBU analysis completed:', analysis);
-                    setAnalysisResults(analysis);
-                  }}
-                  onSitePlanGenerated={(sitePlan) => {
-                    console.log('AI site plan generated:', sitePlan);
-                    setCurrentStep('model');
-                  }}
-                />
+                {selectedParcel ? (
+                  <EnterpriseSitePlanner
+                    parcel={selectedParcel}
+                    onInvestmentAnalysis={(analysis) => {
+                      if (import.meta.env.DEV) {
+                        console.log('Investment analysis:', analysis);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-64 text-gray-500">
+                    <div className="text-center">
+                      <Building2 className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                      <p>Select a parcel to view the site planner</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

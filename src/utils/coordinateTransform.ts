@@ -280,6 +280,80 @@ export class CoordinateTransform {
   static svgUnitsToFeet(svgUnits: number): number {
     return svgUnits * FEET_PER_SVG;
   }
+
+  /**
+   * Detect coordinate system from coordinate array
+   * @param coords Array of [x, y] coordinate pairs
+   * @returns '3857' if Web Mercator (large values), '4326' if WGS84 (degrees)
+   */
+  static detectCoordinateSystem(coords: number[][]): '3857' | '4326' {
+    if (!coords || coords.length === 0) return '4326';
+    const sample = coords[0];
+    // Web Mercator coordinates are typically > 1000, WGS84 are typically < 180
+    return (Math.abs(sample[0]) > 1000 || Math.abs(sample[1]) > 1000) ? '3857' : '4326';
+  }
+
+  /**
+   * Process parcel geometry: detect system, convert to feet, normalize
+   * @param geometry GeoJSON geometry (Polygon or MultiPolygon)
+   * @param reproject4326To3857 Function to reproject 4326 to 3857
+   * @returns Object with normalized geometry, bounds, and original bounds
+   */
+  static processParcelGeometry(
+    geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+    reproject4326To3857: (geom: GeoJSON.Geometry) => GeoJSON.Geometry
+  ): {
+    geometry: GeoJSON.Polygon;
+    bounds: { minX: number; minY: number; maxX: number; maxY: number };
+    originalBounds: { minX: number; minY: number; maxX: number; maxY: number };
+  } | null {
+    if (!geometry) return null;
+
+    let coords: number[][];
+    if (geometry.type === 'Polygon') {
+      coords = geometry.coordinates[0] as number[][];
+    } else if (geometry.type === 'MultiPolygon') {
+      coords = (geometry.coordinates as number[][][])[0][0];
+    } else {
+      return null;
+    }
+
+    if (!coords || coords.length === 0) return null;
+
+    const coordSystem = this.detectCoordinateSystem(coords);
+    let coordsInFeet: number[][];
+
+    if (coordSystem === '3857') {
+      // Already in Web Mercator (meters), convert to feet
+      coordsInFeet = this.webMercatorToFeet(coords);
+    } else {
+      // WGS84 (degrees), reproject to 3857 then convert to feet
+      const geometry3857 = reproject4326To3857(geometry);
+      let coords3857: number[][];
+      if (geometry3857.type === 'Polygon') {
+        coords3857 = geometry3857.coordinates[0] as number[][];
+      } else if (geometry3857.type === 'MultiPolygon') {
+        coords3857 = (geometry3857.coordinates as number[][][])[0][0];
+      } else {
+        return null;
+      }
+      coordsInFeet = this.webMercatorToFeet(coords3857);
+    }
+
+    const bounds = this.calculateBounds(coordsInFeet);
+    const { coords: normalizedCoords, bounds: normalizedBounds } = this.normalizeCoordinates(coordsInFeet, bounds);
+
+    const normalizedGeometry: GeoJSON.Polygon = {
+      type: 'Polygon',
+      coordinates: [normalizedCoords]
+    };
+
+    return {
+      geometry: normalizedGeometry,
+      bounds: normalizedBounds,
+      originalBounds: bounds
+    };
+  }
 }
 
 // Export convenience functions for backward compatibility

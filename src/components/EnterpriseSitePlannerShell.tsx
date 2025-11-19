@@ -114,63 +114,15 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Detect coordinate system
-  const detectCoordinateSystem = useCallback((coords: number[][]): '3857' | '4326' => {
-    if (!coords || coords.length === 0) return '4326';
-    const sample = coords[0];
-    return (Math.abs(sample[0]) > 1000 || Math.abs(sample[1]) > 1000) ? '3857' : '4326';
-  }, []);
-
-  // Process parcel geometry (reproject and normalize)
+  // Process parcel geometry (reproject and normalize) using centralized utility
   const processedGeometry = useMemo(() => {
     if (!parcel?.geometry) return null;
 
-    let coords: number[][];
-    if (parcel.geometry.type === 'Polygon') {
-      coords = parcel.geometry.coordinates[0] as number[][];
-    } else if (parcel.geometry.type === 'MultiPolygon') {
-      coords = (parcel.geometry.coordinates as number[][][])[0][0];
-    } else {
-      return null;
-    }
-
-    if (!coords || coords.length === 0) return null;
-
-    const coordSystem = detectCoordinateSystem(coords);
-    let coordsInFeet: number[][];
-
-    if (coordSystem === '3857') {
-      const FEET_PER_METER = 3.28084;
-      coordsInFeet = coords.map(([x, y]) => [x * FEET_PER_METER, y * FEET_PER_METER]);
-    } else {
-      const geometry4326 = parcel.geometry;
-      const geometry3857 = feature4326To3857(geometry4326);
-      let coords3857: number[][];
-      if (geometry3857.type === 'Polygon') {
-        coords3857 = geometry3857.coordinates[0] as number[][];
-      } else if (geometry3857.type === 'MultiPolygon') {
-        coords3857 = (geometry3857.coordinates as number[][][])[0][0];
-      } else {
-        return null;
-      }
-      const FEET_PER_METER = 3.28084;
-      coordsInFeet = coords3857.map(([x, y]) => [x * FEET_PER_METER, y * FEET_PER_METER]);
-    }
-
-    const bounds = CoordinateTransform.calculateBounds(coordsInFeet);
-    const { coords: normalizedCoords, bounds: normalizedBounds } = CoordinateTransform.normalizeCoordinates(coordsInFeet, bounds);
-
-    const normalizedGeometry = {
-      type: 'Polygon',
-      coordinates: [normalizedCoords]
-    };
-
-    return {
-      geometry: normalizedGeometry,
-      bounds: normalizedBounds,
-      originalBounds: bounds
-    };
-  }, [parcel?.geometry, detectCoordinateSystem]);
+    return CoordinateTransform.processParcelGeometry(
+      parcel.geometry,
+      feature4326To3857
+    );
+  }, [parcel?.geometry]);
 
   // Fit viewport to parcel
   const fitViewToParcel = useCallback(() => {

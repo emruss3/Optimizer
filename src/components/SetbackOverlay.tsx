@@ -1,3 +1,5 @@
+// LEGACY / DEV-ONLY: Do not import into production flows. See docs/site_planner_live_vs_legacy.md.
+
 // © 2025 ER Technologies. All rights reserved.
 // Proprietary and confidential. Not for distribution.
 

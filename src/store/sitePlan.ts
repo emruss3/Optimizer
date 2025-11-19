@@ -1,3 +1,5 @@
+// LEGACY / DEV-ONLY: Do not import into production flows. See docs/site_planner_live_vs_legacy.md.
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { SelectedParcel } from '../types/parcel';

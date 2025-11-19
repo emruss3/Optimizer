@@ -1,3 +1,5 @@
+// LEGACY / DEV-ONLY: Do not import into production flows. See docs/site_planner_live_vs_legacy.md.
+
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { 
   Building, Car, TreePine, Settings, Play, RotateCcw, RotateCw, TrendingUp,
