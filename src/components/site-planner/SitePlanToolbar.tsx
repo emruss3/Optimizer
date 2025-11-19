@@ -5,7 +5,7 @@ import React from 'react';
 import {
   Building, Car, TreePine, MousePointer, Copy, Square, Trash2,
   Maximize, ZoomIn, ZoomOut, AlignLeft, AlignCenter, AlignRight,
-  AlignVerticalCenter, AlignTop, AlignBottom, Edit, Ruler,
+  ArrowUp, Minus, ArrowDown, Edit, Ruler,
   Grid3x3, Magnet
 } from 'lucide-react';
 import type { DrawingTool } from '../../hooks/useDrawingTools';
@@ -169,21 +169,21 @@ export const SitePlanToolbar: React.FC<SitePlanToolbarProps> = ({
             className="p-2 rounded text-gray-600 hover:text-gray-900"
             title="Align Top"
           >
-            <AlignTop className="w-5 h-5" />
+            <ArrowUp className="w-5 h-5" />
           </button>
           <button
             onClick={() => onAlign('middle')}
             className="p-2 rounded text-gray-600 hover:text-gray-900"
             title="Align Middle"
           >
-            <AlignVerticalCenter className="w-5 h-5" />
+            <Minus className="w-5 h-5" />
           </button>
           <button
             onClick={() => onAlign('bottom')}
             className="p-2 rounded text-gray-600 hover:text-gray-900"
             title="Align Bottom"
           >
-            <AlignBottom className="w-5 h-5" />
+            <ArrowDown className="w-5 h-5" />
           </button>
           <div className="border-t my-2 w-full" />
         </>

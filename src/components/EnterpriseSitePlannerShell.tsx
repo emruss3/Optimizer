@@ -58,8 +58,23 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     parcelId: parcel?.ogc_fid,
     address: parcel?.address,
     hasPlanElements: planElements.length > 0,
-    hasMetrics: !!metrics
+    hasMetrics: !!metrics,
+    hasParcel: !!parcel,
+    hasGeometry: !!parcel?.geometry
   });
+
+  // Early return if no parcel
+  if (!parcel) {
+    console.warn('⚠️ [EnterpriseSitePlannerShell] No parcel provided');
+    return (
+      <div className="flex flex-col h-full bg-gray-50 min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">No Parcel Selected</h2>
+          <p className="text-gray-600">Please select a parcel to use the site planner</p>
+        </div>
+      </div>
+    );
+  }
 
   // State
   const [elements, setElements] = useState<Element[]>(planElements);
@@ -250,7 +265,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           const distToHandle = Math.sqrt(Math.pow(worldX - handleX, 2) + Math.pow(worldY - handleY, 2));
           if (distToHandle < 15 / viewport.viewport.zoom) {
             const startAngle = ElementService.calculateAngle(center, { x: worldX, y: worldY });
-            rotation.startRotation(selectedId, center.x, center.y, startAngle);
+            const originalCoords = selectedElement.geometry.coordinates[0];
+            rotation.startRotation(selectedId, center.x, center.y, startAngle, originalCoords);
             return;
           }
 
