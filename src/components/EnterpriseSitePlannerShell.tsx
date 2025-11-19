@@ -58,20 +58,24 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   activePlanId,
   selectedSolve
 }) => {
-  console.log('🔍 [EnterpriseSitePlannerShell] Component rendered:', {
-    parcelId: parcel?.ogc_fid,
-    address: parcel?.address,
-    hasPlanElements: planElements.length > 0,
-    hasMetrics: !!metrics,
-    hasParcel: !!parcel,
-    hasGeometry: !!parcel?.geometry,
-    hasSelectedSolve: !!selectedSolve,
-    activePlanId
-  });
+  if (import.meta.env.DEV) {
+    console.log('🔍 [EnterpriseSitePlannerShell] Component rendered:', {
+      parcelId: parcel?.ogc_fid,
+      address: parcel?.address,
+      hasPlanElements: planElements.length > 0,
+      hasMetrics: !!metrics,
+      hasParcel: !!parcel,
+      hasGeometry: !!parcel?.geometry,
+      hasSelectedSolve: !!selectedSolve,
+      activePlanId
+    });
+  }
 
   // Early return if no parcel
   if (!parcel) {
-    console.warn('⚠️ [EnterpriseSitePlannerShell] No parcel provided');
+    if (import.meta.env.DEV) {
+      console.warn('⚠️ [EnterpriseSitePlannerShell] No parcel provided');
+    }
     return (
       <div className="flex flex-col h-full bg-gray-50 min-h-[400px] items-center justify-center">
         <div className="text-center">
@@ -121,12 +125,13 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const measurement = useMeasurement();
   const grid = useGrid(10); // 10 foot grid
 
-  console.log('🔍 [EnterpriseSitePlannerShell] Hooks initialized:', {
-    viewport: !!viewport,
-    selection: !!selection,
-    drag: !!drag,
-    drawingTools: !!drawingTools,
-    rotation: !!rotation,
+  if (import.meta.env.DEV) {
+    console.log('🔍 [EnterpriseSitePlannerShell] Hooks initialized:', {
+      viewport: !!viewport,
+      selection: !!selection,
+      drag: !!drag,
+      drawingTools: !!drawingTools,
+      rotation: !!rotation,
     vertexEditing: !!vertexEditing,
     measurement: !!measurement,
     grid: !!grid,
@@ -178,12 +183,14 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Handle mouse down
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    console.log('🖱️ [EnterpriseSitePlannerShell] Mouse down:', {
-      button: event.button,
-      ctrlKey: event.ctrlKey,
-      activeTool: drawingTools.activeTool,
-      selectedCount: selection.selectedCount
-    });
+    if (import.meta.env.DEV) {
+      console.log('🖱️ [EnterpriseSitePlannerShell] Mouse down:', {
+        button: event.button,
+        ctrlKey: event.ctrlKey,
+        activeTool: drawingTools.activeTool,
+        selectedCount: selection.selectedCount
+      });
+    }
 
     const canvas = canvasRef.current;
     if (!canvas) return;

@@ -43,30 +43,32 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   
   // Comprehensive debug logging
   useEffect(() => {
-    console.log('🔍 [SitePlanDesigner] Component rendered/updated:', {
-      hasParcel: !!parcel,
-      parcelId: parcel?.ogc_fid,
-      isValidParcel,
-      validId,
-      validGeom,
-      normalizedParcelId,
-      hasNormalizedGeometry: !!normalizedGeometry,
-      geometryType: normalizedGeometry?.type,
-      coordinatesLength: normalizedGeometry?.coordinates?.[0]?.length,
-      hasChildren: !!children,
-      childrenType: typeof children,
-      isValidElement: React.isValidElement(children)
-    });
-    
-    if (parcel) {
-      console.log('🔍 [SitePlanDesigner] Parcel details:', {
-        ogc_fid: parcel.ogc_fid,
-        address: parcel.address,
-        zoning: parcel.zoning,
-        sqft: parcel.sqft,
-        geometry: parcel.geometry,
-        geometryType: parcel.geometry?.type
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] Component rendered/updated:', {
+        hasParcel: !!parcel,
+        parcelId: parcel?.ogc_fid,
+        isValidParcel,
+        validId,
+        validGeom,
+        normalizedParcelId,
+        hasNormalizedGeometry: !!normalizedGeometry,
+        geometryType: normalizedGeometry?.type,
+        coordinatesLength: normalizedGeometry?.coordinates?.[0]?.length,
+        hasChildren: !!children,
+        childrenType: typeof children,
+        isValidElement: React.isValidElement(children)
       });
+      
+      if (parcel) {
+        console.log('🔍 [SitePlanDesigner] Parcel details:', {
+          ogc_fid: parcel.ogc_fid,
+          address: parcel.address,
+          zoning: parcel.zoning,
+          sqft: parcel.sqft,
+          geometry: parcel.geometry,
+          geometryType: parcel.geometry?.type
+        });
+      }
     }
   }, [parcel, isValidParcel, validId, validGeom, normalizedParcelId, normalizedGeometry, children]);
   
@@ -116,44 +118,57 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const worker = useMemo(() => new Worker(new URL("../engine/workers/sitegenie", import.meta.url), { type: "module" }), []);
 
   // Debounced generation with metrics
+  // Returns the reqId immediately so generatePlan can track it
   const requestGenerate = useMemo(() => {
     let currentReqId: string | null = null;
     let timer: any = null;
 
-    return (rawParcel: any, config: any) => {
-      console.log('🔍 [SitePlanDesigner] requestGenerate called:', {
-        hasRawParcel: !!rawParcel,
-        hasGeometry: !!rawParcel?.geometry,
-        geometryType: rawParcel?.geometry?.type,
-        hasConfig: !!config
-      });
+    return (rawParcel: any, config: any): string | null => {
+      if (import.meta.env.DEV) {
+        console.log('🔍 [SitePlanDesigner] requestGenerate called:', {
+          hasRawParcel: !!rawParcel,
+          hasGeometry: !!rawParcel?.geometry,
+          geometryType: rawParcel?.geometry?.type,
+          hasConfig: !!config
+        });
+      }
 
       if (!rawParcel?.geometry) {
-        console.warn('❌ [SitePlanDesigner] requestGenerate: No geometry in parcel');
-        return;
+        if (import.meta.env.DEV) {
+          console.warn('❌ [SitePlanDesigner] requestGenerate: No geometry in parcel');
+        }
+        return null;
       }
 
       const poly = toPolygon(rawParcel.geometry);
-      console.log('🔍 [SitePlanDesigner] Normalized polygon:', {
-        type: poly.type,
-        coordinatesLength: poly.coordinates?.[0]?.length,
-        firstCoord: poly.coordinates?.[0]?.[0]
-      });
+      if (import.meta.env.DEV) {
+        console.log('🔍 [SitePlanDesigner] Normalized polygon:', {
+          type: poly.type,
+          coordinatesLength: poly.coordinates?.[0]?.length,
+          firstCoord: poly.coordinates?.[0]?.[0]
+        });
+      }
 
       const metrics = computeParcelMetrics(poly);
-      console.log('🔍 [SitePlanDesigner] Computed metrics for worker:', {
-        areaSqft: metrics.areaSqft,
-        perimeterFt: metrics.perimeterFt,
-        centroid: metrics.centroid
-      });
+      if (import.meta.env.DEV) {
+        console.log('🔍 [SitePlanDesigner] Computed metrics for worker:', {
+          areaSqft: metrics.areaSqft,
+          perimeterFt: metrics.perimeterFt,
+          centroid: metrics.centroid
+        });
+      }
 
       if (timer) {
-        console.log('🧹 [SitePlanDesigner] Clearing previous debounce timer');
+        if (import.meta.env.DEV) {
+          console.log('🧹 [SitePlanDesigner] Clearing previous debounce timer');
+        }
         clearTimeout(timer);
       }
       
+      // Generate UUID immediately so we can return it
+      currentReqId = crypto.randomUUID();
+      
       timer = setTimeout(() => {
-        currentReqId = crypto.randomUUID();
         const message = { 
           type: "generate", 
           reqId: currentReqId, 
@@ -162,106 +177,144 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
           metrics 
         };
         
-        console.log('📤 [SitePlanDesigner] Posting message to worker:', {
-          reqId: currentReqId,
-          type: message.type,
-          hasParcel: !!message.parcel,
-          parcelType: message.parcel?.type,
-          hasConfig: !!message.config,
-          hasMetrics: !!message.metrics,
-          metricsArea: message.metrics?.areaSqft
-        });
+        if (import.meta.env.DEV) {
+          console.log('📤 [SitePlanDesigner] Posting message to worker:', {
+            reqId: currentReqId,
+            type: message.type,
+            hasParcel: !!message.parcel,
+            parcelType: message.parcel?.type,
+            hasConfig: !!message.config,
+            hasMetrics: !!message.metrics,
+            metricsArea: message.metrics?.areaSqft
+          });
+        }
         
         worker.postMessage(message);
-        console.log('✅ [SitePlanDesigner] Message posted to worker');
+        if (import.meta.env.DEV) {
+          console.log('✅ [SitePlanDesigner] Message posted to worker');
+        }
       }, 150); // debounce UI sliders
       
-      console.log('⏰ [SitePlanDesigner] Debounce timer set (150ms)');
+      if (import.meta.env.DEV) {
+        console.log('⏰ [SitePlanDesigner] Debounce timer set (150ms), reqId:', currentReqId);
+      }
+      
+      return currentReqId; // Return the reqId that will be used
     };
   }, [worker]);
 
   // Generate site plan when config changes (with debouncing)
   const generatePlan = useCallback(async (currentRequestId: number) => {
-    console.log('🔍 [SitePlanDesigner] generatePlan called:', {
-      currentRequestId,
-      isValidParcel,
-      validId,
-      hasConfig: !!config
-    });
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] generatePlan called:', {
+        currentRequestId,
+        isValidParcel,
+        validId,
+        hasConfig: !!config
+      });
+    }
 
     if (!isValidParcel) {
-      console.warn('❌ [SitePlanDesigner] Cannot generate site plan: Invalid parcel data');
+      if (import.meta.env.DEV) {
+        console.warn('❌ [SitePlanDesigner] Cannot generate site plan: Invalid parcel data');
+      }
       return;
     }
     
-    // Quick diagnostics to keep (helps catch this forever)
-    console.log('🔍 [SitePlanDesigner] Planner input:', { 
-      parcelId: validId, 
-      ringLen: normalizedGeometry?.coordinates[0]?.length, 
-      type: normalizedGeometry?.type,
-      config: {
-        parcelId: config.parcelId,
-        hasBuildableArea: !!config.buildableArea,
-        zoning: config.zoning,
-        designParams: config.designParameters
-      }
-    });
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] Planner input:', { 
+        parcelId: validId, 
+        ringLen: normalizedGeometry?.coordinates[0]?.length, 
+        type: normalizedGeometry?.type,
+        config: {
+          parcelId: config.parcelId,
+          hasBuildableArea: !!config.buildableArea,
+          zoning: config.zoning,
+          designParams: config.designParameters
+        }
+      });
+    }
     
     setIsGenerating(true);
-    console.log('⏳ [SitePlanDesigner] Generation started, isGenerating = true');
+    if (import.meta.env.DEV) {
+      console.log('⏳ [SitePlanDesigner] Generation started, isGenerating = true');
+    }
     
     try {
-      // Use new worker with metrics
-      console.log('📤 [SitePlanDesigner] Calling requestGenerate...');
-      requestGenerate(parcel, config);
+      // Use new worker with metrics - get the reqId that will be used
+      if (import.meta.env.DEV) {
+        console.log('📤 [SitePlanDesigner] Calling requestGenerate...');
+      }
+      const expectedReqId = requestGenerate(parcel, config);
+      
+      if (!expectedReqId) {
+        if (import.meta.env.DEV) {
+          console.warn('❌ [SitePlanDesigner] requestGenerate returned no reqId');
+        }
+        setIsGenerating(false);
+        return;
+      }
       
       // Set up worker message handler
+      // Wait for the debounced message to be posted, then track the actual reqId
       const handleMessage = (event: MessageEvent) => {
-        console.log('📥 [SitePlanDesigner] Worker message received:', {
-          type: event.data?.type,
-          reqId: event.data?.reqId,
-          currentRequestId,
-          matches: event.data?.reqId === currentRequestId,
-          hasElements: !!event.data?.elements,
-          elementsCount: event.data?.elements?.length,
-          hasMetrics: !!event.data?.metrics,
-          hasError: !!event.data?.error
-        });
-
         const { type, reqId, elements, metrics, error } = event.data;
-        if (type === 'generated' && reqId === currentRequestId) {
+        
+        if (import.meta.env.DEV) {
+          console.log('📥 [SitePlanDesigner] Worker message received:', {
+            type,
+            reqId,
+            expectedReqId,
+            matches: reqId === expectedReqId,
+            hasElements: !!elements,
+            elementsCount: elements?.length,
+            hasMetrics: !!metrics,
+            hasError: !!error
+          });
+        }
+
+        if (type === 'generated' && reqId === expectedReqId) {
           if (error) {
             console.error('❌ [SitePlanDesigner] Worker error:', error);
             setIsGenerating(false);
           } else {
-            console.log('✅ [SitePlanDesigner] Worker generation complete:', {
-              elementsCount: elements?.length,
-              hasMetrics: !!metrics,
-              metrics: metrics ? {
-                achievedFAR: metrics.achievedFAR,
-                siteCoveragePct: metrics.siteCoveragePct,
-                parkingRatio: metrics.parkingRatio,
-                totalBuiltSF: metrics.totalBuiltSF
-              } : null
-            });
+            if (import.meta.env.DEV) {
+              console.log('✅ [SitePlanDesigner] Worker generation complete:', {
+                elementsCount: elements?.length,
+                hasMetrics: !!metrics,
+                metrics: metrics ? {
+                  achievedFAR: metrics.achievedFAR,
+                  siteCoveragePct: metrics.siteCoveragePct,
+                  parkingRatio: metrics.parkingRatio,
+                  totalBuiltSF: metrics.totalBuiltSF
+                } : null
+              });
+            }
 
             setCurrentElements(elements || []);
             setCurrentMetrics(metrics || null);
             
             if (onPlanGenerated) {
-              console.log('📤 [SitePlanDesigner] Calling onPlanGenerated callback');
+              if (import.meta.env.DEV) {
+                console.log('📤 [SitePlanDesigner] Calling onPlanGenerated callback');
+              }
               onPlanGenerated(elements || [], metrics || null);
             }
             setIsGenerating(false);
-            console.log('✅ [SitePlanDesigner] Generation complete, isGenerating = false');
+            if (import.meta.env.DEV) {
+              console.log('✅ [SitePlanDesigner] Generation complete, isGenerating = false');
+            }
           }
           worker.removeEventListener('message', handleMessage);
-        } else {
+          clearTimeout(timeout);
+        } else if (import.meta.env.DEV) {
           console.log('⏭️ [SitePlanDesigner] Ignoring message (reqId mismatch or wrong type)');
         }
       };
       
-      console.log('👂 [SitePlanDesigner] Adding worker message listener');
+      if (import.meta.env.DEV) {
+        console.log('👂 [SitePlanDesigner] Adding worker message listener');
+      }
       worker.addEventListener('message', handleMessage);
       
       // Set timeout to detect if worker hangs
@@ -271,16 +324,6 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
         setIsGenerating(false);
       }, 30000);
       
-      // Clear timeout when message is received
-      const originalHandleMessage = handleMessage;
-      const wrappedHandleMessage = (event: MessageEvent) => {
-        clearTimeout(timeout);
-        originalHandleMessage(event);
-      };
-      
-      worker.removeEventListener('message', handleMessage);
-      worker.addEventListener('message', wrappedHandleMessage);
-      
     } catch (error) {
       console.error('❌ [SitePlanDesigner] Error generating site plan:', error);
       setIsGenerating(false);
@@ -289,34 +332,44 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
 
   // Debounced config change handler
   const handleConfigChange = useCallback((updates: Partial<PlannerConfig>) => {
-    console.log('🔍 [SitePlanDesigner] Config change requested:', updates);
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] Config change requested:', updates);
+    }
     setConfig(prev => {
       const newConfig = { ...prev, ...updates };
-      console.log('🔍 [SitePlanDesigner] Config updated:', {
-        parcelId: newConfig.parcelId,
-        hasBuildableArea: !!newConfig.buildableArea,
-        zoning: newConfig.zoning,
-        designParams: newConfig.designParameters
-      });
+      if (import.meta.env.DEV) {
+        console.log('🔍 [SitePlanDesigner] Config updated:', {
+          parcelId: newConfig.parcelId,
+          hasBuildableArea: !!newConfig.buildableArea,
+          zoning: newConfig.zoning,
+          designParams: newConfig.designParameters
+        });
+      }
       return newConfig;
     });
     
     // Clear existing timer
     if (debounceTimer) {
       clearTimeout(debounceTimer);
-      console.log('🧹 [SitePlanDesigner] Cleared previous debounce timer');
+      if (import.meta.env.DEV) {
+        console.log('🧹 [SitePlanDesigner] Cleared previous debounce timer');
+      }
     }
     
     // Set new timer
     const newTimer = setTimeout(() => {
       const newRequestId = requestId + 1;
-      console.log('⏰ [SitePlanDesigner] Debounce timer fired, generating plan with reqId:', newRequestId);
+      if (import.meta.env.DEV) {
+        console.log('⏰ [SitePlanDesigner] Debounce timer fired, generating plan with reqId:', newRequestId);
+      }
       setRequestId(newRequestId);
       generatePlan(newRequestId);
     }, 200); // 200ms debounce
     
     setDebounceTimer(newTimer);
-    console.log('⏰ [SitePlanDesigner] New debounce timer set (200ms)');
+    if (import.meta.env.DEV) {
+      console.log('⏰ [SitePlanDesigner] New debounce timer set (200ms)');
+    }
   }, [debounceTimer, requestId, generatePlan]);
 
   // Fetch buildable envelope when parcel changes (with React 18 StrictMode guard)
@@ -325,16 +378,20 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
 
   useEffect(() => {
     if (!parcel) {
-      console.log('🔍 [SitePlanDesigner] No parcel, skipping envelope fetch');
+      if (import.meta.env.DEV) {
+        console.log('🔍 [SitePlanDesigner] No parcel, skipping envelope fetch');
+      }
       return;
     }
 
     const parcelId = Number(parcel.ogc_fid);
-    console.log('🔍 [SitePlanDesigner] Envelope fetch effect triggered:', {
-      parcelId,
-      previousId: ogc_fidRef.current,
-      didRun: didRunRef.current
-    });
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] Envelope fetch effect triggered:', {
+        parcelId,
+        previousId: ogc_fidRef.current,
+        didRun: didRunRef.current
+      });
+    }
 
     // Prevent duplicate calls in React 18 dev (StrictMode)
     if (import.meta.env.DEV) {
@@ -347,7 +404,9 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
 
     // Dedupe by id
     if (ogc_fidRef.current === parcelId) {
-      console.log('⏭️ [SitePlanDesigner] Already fetched envelope for this parcel');
+      if (import.meta.env.DEV) {
+        console.log('⏭️ [SitePlanDesigner] Already fetched envelope for this parcel');
+      }
       return;
     }
     ogc_fidRef.current = parcelId;
@@ -355,25 +414,31 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
     let cancelled = false;
     setStatus("loading");
 
-    console.log('🏗️ [SitePlanDesigner] Fetching get_parcel_buildable_envelope(', parcelId, ')');
+    if (import.meta.env.DEV) {
+      console.log('🏗️ [SitePlanDesigner] Fetching get_parcel_buildable_envelope(', parcelId, ')');
+    }
     const startTime = Date.now();
     
     getEnvelope(parcelId)
       .then(env => {
         const duration = Date.now() - startTime;
-        console.log(`✅ [SitePlanDesigner] Envelope RPC completed in ${duration}ms:`, {
-          hasEnv: !!env,
-          hasBuildableGeom: !!env?.buildable_geom,
-          area: env?.area_sqft,
-          setbacks: env?.setbacks_applied,
-          edges: env?.edge_types,
-          farMax: env?.far_max,
-          cancelled
-        });
+        if (import.meta.env.DEV) {
+          console.log(`✅ [SitePlanDesigner] Envelope RPC completed in ${duration}ms:`, {
+            hasEnv: !!env,
+            hasBuildableGeom: !!env?.buildable_geom,
+            area: env?.area_sqft,
+            setbacks: env?.setbacks_applied,
+            edges: env?.edge_types,
+            farMax: env?.far_max,
+            cancelled
+          });
+        }
 
         // Check cancellation AFTER the promise resolves, but before state updates
         if (cancelled) {
-          console.log('⏭️ [SitePlanDesigner] Envelope fetch cancelled (component unmounted)');
+          if (import.meta.env.DEV) {
+            console.log('⏭️ [SitePlanDesigner] Envelope fetch cancelled (component unmounted)');
+          }
           return;
         }
 
@@ -387,11 +452,13 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
         const polyForGen = parcel.geometry;            // normalized Polygon in 4326
         const metrics = computeParcelMetrics(polyForGen); // your worker helper
 
-        console.log('🔍 [SitePlanDesigner] Computed metrics:', {
-          areaSqft: metrics.areaSqft,
-          perimeterFt: metrics.perimeterFt,
-          centroid: metrics.centroid
-        });
+        if (import.meta.env.DEV) {
+          console.log('🔍 [SitePlanDesigner] Computed metrics:', {
+            areaSqft: metrics.areaSqft,
+            perimeterFt: metrics.perimeterFt,
+            centroid: metrics.centroid
+          });
+        }
 
         setEnvelope(env.buildable_geom);               // keep as 3857 for generation, or convert if your renderer needs 4326
         setRpcMetrics({ 
@@ -401,18 +468,22 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
           hasZoning: env.far_max !== null && env.far_max > 0
         });
 
-        console.log('🚀 [SitePlanDesigner] Calling requestGenerate with:', {
-          hasParcel: !!polyForGen,
-          hasMetrics: !!metrics,
-          metricsArea: metrics.areaSqft,
-          rpcArea: env.area_sqft,
-          hasConfig: !!config
-        });
+        if (import.meta.env.DEV) {
+          console.log('🚀 [SitePlanDesigner] Calling requestGenerate with:', {
+            hasParcel: !!polyForGen,
+            hasMetrics: !!metrics,
+            metricsArea: metrics.areaSqft,
+            rpcArea: env.area_sqft,
+            hasConfig: !!config
+          });
+        }
 
         // Call requestGenerate with parcel object (not wrapped)
         requestGenerate(parcel, config); // your worker call
         setStatus("ready");
-        console.log('✅ [SitePlanDesigner] Status set to ready');
+        if (import.meta.env.DEV) {
+          console.log('✅ [SitePlanDesigner] Status set to ready');
+        }
       })
       .catch((error) => {
         console.error('❌ [SitePlanDesigner] Envelope fetch error:', error);
@@ -423,38 +494,59 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
 
     return () => { 
       cancelled = true;
-      console.log('🧹 [SitePlanDesigner] Cleaning up envelope fetch effect');
+      if (import.meta.env.DEV) {
+        console.log('🧹 [SitePlanDesigner] Cleaning up envelope fetch effect');
+      }
     };
   }, [parcel?.ogc_fid]); // Only depend on the id
 
   // Auto-generate on config change
   useEffect(() => {
-    console.log('🔍 [SitePlanDesigner] Auto-generate effect triggered:', {
-      status,
-      requestId,
-      isGenerating
-    });
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] Auto-generate effect triggered:', {
+        status,
+        requestId,
+        isGenerating
+      });
+    }
 
     if (status !== 'ready') {
-      console.log('⏭️ [SitePlanDesigner] Status not ready, skipping auto-generate');
+      if (import.meta.env.DEV) {
+        console.log('⏭️ [SitePlanDesigner] Status not ready, skipping auto-generate');
+      }
       return;
     }
     
     const timeoutId = setTimeout(() => {
       const newRequestId = requestId + 1;
-      console.log('⏰ [SitePlanDesigner] Auto-generate timeout fired, generating plan with reqId:', newRequestId);
+      if (import.meta.env.DEV) {
+        console.log('⏰ [SitePlanDesigner] Auto-generate timeout fired, generating plan with reqId:', newRequestId);
+      }
       setRequestId(newRequestId);
       generatePlan(newRequestId);
     }, 200); // Debounce config changes
 
     return () => {
-      console.log('🧹 [SitePlanDesigner] Cleaning up auto-generate timeout');
+      if (import.meta.env.DEV) {
+        console.log('🧹 [SitePlanDesigner] Cleaning up auto-generate timeout');
+      }
       clearTimeout(timeoutId);
     };
   }, [generatePlan, requestId, status, isGenerating]);
 
   const updateConfig = (updates: Partial<PlannerConfig>) => {
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] Config change requested:', { designParameters: updates.designParameters });
+    }
     handleConfigChange(updates);
+    if (import.meta.env.DEV) {
+      console.log('🔍 [SitePlanDesigner] Config updated:', {
+        parcelId: config.parcelId,
+        hasBuildableArea: !!config.buildableArea,
+        zoning: config.zoning,
+        designParams: config.designParameters
+      });
+    }
   };
 
   // Gate UI + worker call for invalid parcels

@@ -52,3 +52,4 @@ export function feature4326To3857<T extends GeoJSON.Geometry>(geom: T): T {
   return { ...geom, coordinates: convCoords((geom as any).coordinates) };
 }
 
+
