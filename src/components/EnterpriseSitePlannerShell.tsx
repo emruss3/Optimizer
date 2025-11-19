@@ -16,7 +16,7 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Play, BarChart3, Grid, AlertTriangle, CheckCircle } from 'lucide-react';
 import { SelectedParcel, InvestmentAnalysis } from '../types/parcel';
-import type { Element, PlannerConfig, SiteMetrics } from '../engine/types';
+import type { Element, PlannerConfig, SiteMetrics, PlannerOutput } from '../engine/types';
 import { workerManager } from '../workers/workerManager';
 import { feature4326To3857 } from '../utils/reproject';
 import { CoordinateTransform } from '../utils/coordinateTransform';
@@ -46,13 +46,17 @@ interface EnterpriseSitePlannerProps {
   planElements?: Element[];
   metrics?: SiteMetrics;
   onInvestmentAnalysis?: (analysis: InvestmentAnalysis) => void;
+  activePlanId?: string;
+  selectedSolve?: PlannerOutput;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   parcel,
   planElements = [],
   metrics,
-  onInvestmentAnalysis
+  onInvestmentAnalysis,
+  activePlanId,
+  selectedSolve
 }) => {
   console.log('🔍 [EnterpriseSitePlannerShell] Component rendered:', {
     parcelId: parcel?.ogc_fid,
@@ -60,7 +64,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     hasPlanElements: planElements.length > 0,
     hasMetrics: !!metrics,
     hasParcel: !!parcel,
-    hasGeometry: !!parcel?.geometry
+    hasGeometry: !!parcel?.geometry,
+    hasSelectedSolve: !!selectedSolve,
+    activePlanId
   });
 
   // Early return if no parcel
@@ -76,8 +82,12 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     );
   }
 
+  // Use selectedSolve if provided, otherwise use planElements/metrics
+  const initialElements = selectedSolve?.elements || planElements;
+  const initialMetrics = selectedSolve?.metrics || metrics;
+
   // State
-  const [elements, setElements] = useState<Element[]>(planElements);
+  const [elements, setElements] = useState<Element[]>(initialElements);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [showMetrics, setShowMetrics] = useState(true);
@@ -88,6 +98,18 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const [hasInitializedView, setHasInitializedView] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [hoveredElement, setHoveredElement] = useState<string | null>(null);
+  const [displayMetrics, setDisplayMetrics] = useState<SiteMetrics | null>(initialMetrics || null);
+  
+  // Update elements and metrics when selectedSolve changes
+  useEffect(() => {
+    if (selectedSolve) {
+      setElements(selectedSolve.elements);
+      setDisplayMetrics(selectedSolve.metrics);
+    } else if (planElements.length > 0 || metrics) {
+      setElements(planElements);
+      setDisplayMetrics(metrics || null);
+    }
+  }, [selectedSolve, planElements, metrics]);
 
   // Modular hooks
   const viewport = useViewport();
@@ -683,33 +705,33 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         </div>
 
         {/* Metrics Panel */}
-        {showMetrics && metrics && (
+        {showMetrics && displayMetrics && (
           <div className="w-80 bg-white border-l p-4">
             <h3 className="text-lg font-semibold mb-4">Site Metrics</h3>
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">FAR:</span>
-                <span className="font-medium">{metrics.achievedFAR.toFixed(2)}</span>
+                <span className="font-medium">{displayMetrics.achievedFAR.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">Coverage:</span>
-                <span className="font-medium">{metrics.siteCoveragePct.toFixed(1)}%</span>
+                <span className="font-medium">{displayMetrics.siteCoveragePct.toFixed(1)}%</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">Parking Ratio:</span>
-                <span className="font-medium">{metrics.parkingRatio.toFixed(2)}</span>
+                <span className="font-medium">{displayMetrics.parkingRatio.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">Built SF:</span>
-                <span className="font-medium">{metrics.totalBuiltSF.toLocaleString()}</span>
+                <span className="font-medium">{displayMetrics.totalBuiltSF.toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-gray-600">Open Space:</span>
-                <span className="font-medium">{metrics.openSpacePct.toFixed(1)}%</span>
+                <span className="font-medium">{displayMetrics.openSpacePct.toFixed(1)}%</span>
               </div>
               <div className="flex items-center space-x-2">
                 <span className="text-sm text-gray-600">Compliance:</span>
-                {metrics.zoningCompliant ? (
+                {displayMetrics.zoningCompliant ? (
                   <CheckCircle className="w-4 h-4 text-green-600" />
                 ) : (
                   <AlertTriangle className="w-4 h-4 text-red-600" />

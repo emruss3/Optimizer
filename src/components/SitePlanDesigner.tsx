@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Slider } from 'lucide-react';
-import type { Element, PlannerConfig, SiteMetrics } from '../engine/types';
+import { Slider, Sparkles } from 'lucide-react';
+import type { Element, PlannerConfig, SiteMetrics, PlannerOutput } from '../engine/types';
 import { workerManager } from '../workers/workerManager';
 import { toPolygon } from '../engine/geometry/normalize';
 import { computeParcelMetrics } from '../engine/metrics/parcelMetrics';
 import { getEnvelope } from '../api/fetchEnvelope';
+import { generateConfigVariations } from '../engine/variations';
+import { SolveTable } from './site-planner/SolveTable';
 
 interface SitePlanDesignerProps {
   parcel: any; // SelectedParcel
@@ -104,6 +106,12 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const [envelope, setEnvelope] = useState<any>(null);
   const [rpcMetrics, setRpcMetrics] = useState<any>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'invalid'>('loading');
+  
+  // Alternatives state
+  const [showAlternatives, setShowAlternatives] = useState(false);
+  const [alternatives, setAlternatives] = useState<Array<{ plan: PlannerOutput; config: PlannerConfig; id: string }>>([]);
+  const [isGeneratingAlternatives, setIsGeneratingAlternatives] = useState(false);
+  const [activeSolveId, setActiveSolveId] = useState<string | undefined>(undefined);
 
   // New worker for reliable generation
   const worker = useMemo(() => new Worker(new URL("../engine/workers/sitegenie", import.meta.url), { type: "module" }), []);
@@ -651,6 +659,95 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
             </div>
           </div>
         )}
+
+        {/* Generate Alternatives Toggle */}
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="flex items-center justify-between mb-2">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showAlternatives}
+                onChange={(e) => setShowAlternatives(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Generate Alternatives</span>
+            </label>
+            {showAlternatives && (
+              <button
+                onClick={async () => {
+                  if (!parcel?.geometry || !config || isGeneratingAlternatives) return;
+                  
+                  setIsGeneratingAlternatives(true);
+                  try {
+                    const variations = generateConfigVariations(config, { count: 10 });
+                    const poly = toPolygon(parcel.geometry);
+                    
+                    const solves: Array<{ plan: PlannerOutput; config: PlannerConfig; id: string }> = [];
+                    
+                    // Generate each alternative
+                    for (let i = 0; i < variations.length; i++) {
+                      const variation = variations[i];
+                      const fullConfig = { ...config, ...variation };
+                      
+                      try {
+                        const plan = await workerManager.generateSitePlan(poly, fullConfig);
+                        solves.push({
+                          plan,
+                          config: fullConfig,
+                          id: `solve_${Date.now()}_${i}`
+                        });
+                      } catch (error) {
+                        console.error(`Error generating solve ${i}:`, error);
+                      }
+                    }
+                    
+                    setAlternatives(solves);
+                    if (solves.length > 0) {
+                      setActiveSolveId(solves[0].id);
+                    }
+                  } catch (error) {
+                    console.error('Error generating alternatives:', error);
+                  } finally {
+                    setIsGeneratingAlternatives(false);
+                  }
+                }}
+                disabled={isGeneratingAlternatives || !parcel?.geometry}
+                className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+              >
+                {isGeneratingAlternatives ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3 h-3" />
+                    <span>Generate</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+          {showAlternatives && alternatives.length > 0 && (
+            <div className="mt-3">
+              <SolveTable
+                solves={alternatives}
+                activeSolveId={activeSolveId}
+                onSelectSolve={(plan) => {
+                  setCurrentElements(plan.elements);
+                  setCurrentMetrics(plan.metrics);
+                  const selectedSolve = alternatives.find(s => s.plan === plan);
+                  if (selectedSolve) {
+                    setActiveSolveId(selectedSolve.id);
+                  }
+                  if (onPlanGenerated) {
+                    onPlanGenerated(plan.elements, plan.metrics);
+                  }
+                }}
+              />
+            </div>
+          )}
+        </div>
 
         {/* Quick Actions */}
             <div className="space-y-2">
