@@ -132,12 +132,13 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       drag: !!drag,
       drawingTools: !!drawingTools,
       rotation: !!rotation,
-    vertexEditing: !!vertexEditing,
-    measurement: !!measurement,
-    grid: !!grid,
-    activeTool: drawingTools.activeTool,
-    selectedCount: selection.selectedCount
-  });
+      vertexEditing: !!vertexEditing,
+      measurement: !!measurement,
+      grid: !!grid,
+      activeTool: drawingTools.activeTool,
+      selectedCount: selection.selectedCount
+    });
+  }
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -751,6 +752,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
       {/* Status Bar */}
       <StatusBar
+        metrics={displayMetrics}
         activeTool={drawingTools.activeTool}
         selectedCount={selection.selectedCount}
         elementCount={elements.length}

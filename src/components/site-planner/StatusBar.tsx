@@ -4,6 +4,7 @@
 import React from 'react';
 import { MousePointer, Ruler, Grid3x3, Magnet, Building, Car, TreePine } from 'lucide-react';
 import type { DrawingTool } from '../../hooks/useDrawingTools';
+import type { SiteMetrics } from '../../engine/types';
 
 interface StatusBarProps {
   activeTool: DrawingTool;
@@ -13,6 +14,7 @@ interface StatusBarProps {
   gridEnabled: boolean;
   snapToGridEnabled: boolean;
   measurementDistance?: number | null;
+  metrics?: SiteMetrics | null;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
@@ -22,7 +24,8 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   zoomLevel,
   gridEnabled,
   snapToGridEnabled,
-  measurementDistance
+  measurementDistance,
+  metrics
 }) => {
   const getToolName = (tool: DrawingTool): string => {
     switch (tool) {
@@ -111,6 +114,16 @@ export const StatusBar: React.FC<StatusBarProps> = ({
             <Ruler className="w-4 h-4 text-red-400" />
             <span className="text-red-400 font-medium">
               {measurementDistance.toFixed(1)} ft
+            </span>
+          </div>
+        )}
+
+        {/* Earthwork Summary */}
+        {metrics && metrics.earthworkCutCY !== undefined && metrics.earthworkFillCY !== undefined && metrics.earthworkCost !== undefined && (
+          <div className="flex items-center space-x-2 bg-gray-700 px-2 py-1 rounded">
+            <span className="text-gray-400">Earthwork:</span>
+            <span className="font-medium">
+              Cut {Math.round(metrics.earthworkCutCY / 1000)}k CY / Fill {Math.round(metrics.earthworkFillCY / 1000)}k CY / ${Math.round(metrics.earthworkCost / 1000)}k
             </span>
           </div>
         )}

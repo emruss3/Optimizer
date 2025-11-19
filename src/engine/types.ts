@@ -55,6 +55,7 @@ export interface PlannerConfig {
   designParameters: {
     targetFAR: number;
     targetCoveragePct?: number;
+    padElevationFt?: number; // Pad elevation in feet for earthwork calculation
     parking: {
       targetRatio: number; // e.g., 1.5 stalls per unit
       stallWidthFt: number;
@@ -114,6 +115,10 @@ export interface SiteMetrics {
   zoningCompliant: boolean;
   violations: string[];
   warnings: string[];
+  earthworkCutCY?: number;
+  earthworkFillCY?: number;
+  earthworkNetCY?: number;
+  earthworkCost?: number;
 }
 
 export interface WorkerAPI {

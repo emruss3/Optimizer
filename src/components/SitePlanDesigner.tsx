@@ -113,6 +113,12 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
   const [alternatives, setAlternatives] = useState<PlannerOutput[]>([]);
   const [selectedSolveIndex, setSelectedSolveIndex] = useState<number | null>(null);
   const [solveScores, setSolveScores] = useState<number[]>([]);
+  
+  // Compute selected solve from index
+  const selectedSolve = useMemo(
+    () => (selectedSolveIndex != null ? alternatives[selectedSolveIndex] : null),
+    [selectedSolveIndex, alternatives]
+  );
 
   // New worker for reliable generation
   const worker = useMemo(() => new Worker(new URL("../engine/workers/sitegenie", import.meta.url), { type: "module" }), []);
@@ -873,9 +879,10 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({
       {/* Main Content Area */}
       <div className="flex-1">
         {children && React.isValidElement(children) ? (
-          React.cloneElement(children, {
+          React.cloneElement(children as any, {
             planElements: currentElements,
-            metrics: currentMetrics
+            metrics: currentMetrics,
+            selectedSolve: selectedSolve || undefined
           })
         ) : (
           <div className="flex items-center justify-center h-full bg-gray-50 border border-gray-200 rounded-lg">

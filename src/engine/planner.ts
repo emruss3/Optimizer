@@ -3,7 +3,7 @@ import type { PlannerConfig, PlannerOutput, Element, Envelope } from './types';
 import { createEnvelope, areaSqft, union, difference, polygons, sortByArea, normalizeToPolygon, safeBbox, selectLargestRingFromPolygon, elementsToPolygons } from './geometry';
 import { generateBuildingFootprints } from './building';
 import { generateParking } from './parking';
-import { calculateMetrics } from './analysis';
+import { calculateMetrics, estimateEarthwork } from './analysis';
 
 /**
  * Main site planning orchestrator
@@ -70,6 +70,16 @@ export function generateSitePlan(
     // Calculate metrics
     const metrics = calculateMetrics(allElements, parcelAreaSqFt, config);
     
+    // Estimate earthwork (cut/fill)
+    const earth = estimateEarthwork(envelope.geometry, config);
+    const enrichedMetrics = {
+      ...metrics,
+      earthworkCutCY: earth.cutCY,
+      earthworkFillCY: earth.fillCY,
+      earthworkNetCY: earth.netCY,
+      earthworkCost: earth.totalCost
+    };
+    
     // Generate true greenspace geometry
     const greenspaceElements = generateGreenspaceElements(
       polygon,
@@ -83,7 +93,7 @@ export function generateSitePlan(
     
     return {
       elements: allElements,
-      metrics,
+      metrics: enrichedMetrics,
       envelope,
       processingTime
     };

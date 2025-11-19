@@ -52,6 +52,12 @@ export function SolveTable({ solves, baseConfig, selectedIndex, onSelect }: Solv
                 Built SF
               </th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Earthwork $
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Net CY
+              </th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Compliance
               </th>
             </tr>
@@ -86,6 +92,12 @@ export function SolveTable({ solves, baseConfig, selectedIndex, onSelect }: Solv
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-700">
                     {metrics.totalBuiltSF.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-700">
+                    {metrics.earthworkCost ? `$${metrics.earthworkCost.toLocaleString()}` : '—'}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-700">
+                    {metrics.earthworkNetCY !== undefined ? `${metrics.earthworkNetCY > 0 ? '+' : ''}${metrics.earthworkNetCY.toLocaleString()}` : '—'}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {metrics.zoningCompliant ? (

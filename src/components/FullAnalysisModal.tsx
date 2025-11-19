@@ -7,6 +7,7 @@ import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
 import { SitePlannerErrorBoundary } from './ErrorBoundary';
 import { SelectedParcel, isValidParcel, createFallbackParcel, InvestmentAnalysis } from '../types/parcel';
 import { toPolygon } from '../engine/geometry/normalize';
+import type { Element, SiteMetrics } from '../engine/types';
 
 interface FullAnalysisModalProps {
   parcel: SelectedParcel;
@@ -16,6 +17,10 @@ interface FullAnalysisModalProps {
 
 const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen, onClose }: FullAnalysisModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'hbu' | 'siteplan' | 'visual' | 'financial'>('overview');
+  
+  // Site plan state
+  const [sitePlanElements, setSitePlanElements] = useState<Element[]>([]);
+  const [sitePlanMetrics, setSitePlanMetrics] = useState<SiteMetrics | null>(null);
 
   // Debug logging for parcel data
   useEffect(() => {
@@ -176,13 +181,16 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                         } : null;
                         return parcelForPlanner;
                       })()}
-                      onUnderwritingUpdate={(financialData) => {
-                        console.log('Site plan financial update:', financialData);
+                      onPlanGenerated={(elements, metrics) => {
+                        setSitePlanElements(elements);
+                        setSitePlanMetrics(metrics);
                       }}
                     >
                       <SitePlannerErrorBoundary>
                         <EnterpriseSitePlanner
                           parcel={isValidParcel(parcel) ? parcel : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356)}
+                          planElements={sitePlanElements}
+                          metrics={sitePlanMetrics || undefined}
                           marketData={{
                             avgPricePerSqFt: 300,
                             avgRentPerSqFt: 2.50,

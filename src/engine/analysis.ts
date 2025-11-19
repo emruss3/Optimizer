@@ -1,5 +1,7 @@
 import type { Element, SiteMetrics, PlannerConfig } from './types';
+import type { Polygon } from 'geojson';
 import { areaSqft } from './geometry';
+import { gradeCost, createTestDEMSampler, type DEMSampler } from '../grading/gradePad';
 
 /**
  * Generate site analysis report (worker interface)
@@ -256,5 +258,24 @@ export function generateComplianceReport(
     overallScore: Math.max(0, score),
     complianceStatus,
     recommendations
+  };
+}
+
+/**
+ * Estimate earthwork (cut/fill) for a site plan
+ */
+export function estimateEarthwork(
+  envelope: Polygon,
+  config: PlannerConfig
+): { cutCY: number; fillCY: number; netCY: number; totalCost: number } {
+  // For now, use createTestDEMSampler or a stub DEM sampler.
+  const dem = createTestDEMSampler(100, 0.01);
+  const padElevationFt = config.designParameters.padElevationFt ?? 100;
+  const result = gradeCost(envelope, dem, { padElevationFt });
+  return {
+    cutCY: result.cutCY,
+    fillCY: result.fillCY,
+    netCY: result.netCY,
+    totalCost: result.totalCost
   };
 }
