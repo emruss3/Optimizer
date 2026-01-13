@@ -1,11 +1,56 @@
-import type { Polygon, Point } from 'geojson';
+import type { Polygon, Point, MultiPolygon } from 'geojson';
 import type { Vertex, Envelope } from './types';
+import polyclip from 'polygon-clipping';
 
 /**
- * Calculate area of a polygon in square feet
+ * polygon-clipping type definitions
  */
-export function areaSqft(polygon: Polygon): number {
-  // Simple shoelace formula for now - can be replaced with turf.area() later
+type PcRing = [number, number][];
+type PcPolygon = PcRing[];           // number[][][]
+type PcMultiPolygon = PcPolygon[];   // number[][][][]
+type PcGeom = PcPolygon | PcMultiPolygon;
+
+/**
+ * Convert GeoJSON to polygon-clipping format
+ * GeoJSON Polygon.coordinates already match PcPolygon
+ * GeoJSON MultiPolygon.coordinates already match PcMultiPolygon
+ */
+function toPc(geom: Polygon | MultiPolygon): PcGeom {
+  return geom.type === 'Polygon'
+    ? (geom.coordinates as unknown as PcPolygon)
+    : (geom.coordinates as unknown as PcMultiPolygon);
+}
+
+/**
+ * Convert polygon-clipping result to GeoJSON
+ * polygon-clipping always returns MultiPolygon (array of polygons)
+ */
+function fromPc(result: PcMultiPolygon): Polygon | MultiPolygon {
+  // polyclip returns MultiPolygon always (array of polygons)
+  if (!result || result.length === 0) {
+    return { type: 'MultiPolygon', coordinates: [] };
+  }
+  if (result.length === 1) {
+    return { type: 'Polygon', coordinates: result[0] as unknown as number[][][] };
+  }
+  return { type: 'MultiPolygon', coordinates: result as unknown as number[][][][] };
+}
+
+/**
+ * Convert square meters to square feet
+ */
+function toSqFt(m2: number): number {
+  return m2 * 10.7639; // 1 m┬▓ = 10.7639 ft┬▓
+}
+
+/**
+ * Calculate area in square meters (planar shoelace formula)
+ * Works with any planar coordinate system (EPSG:3857 expected)
+ */
+export function areaM2(polygon: Polygon): number {
+  if (!polygon.coordinates || !polygon.coordinates[0] || polygon.coordinates[0].length < 4) {
+    return 0;
+  }
   const coords = polygon.coordinates[0];
   let area = 0;
   for (let i = 0; i < coords.length - 1; i++) {
@@ -13,6 +58,14 @@ export function areaSqft(polygon: Polygon): number {
     area -= coords[i + 1][0] * coords[i][1];
   }
   return Math.abs(area) / 2;
+}
+
+/**
+ * Calculate area of a polygon in square feet
+ * Converts from m┬▓ to ft┬▓ (coordinates are in meters for EPSG:3857)
+ */
+export function areaSqft(polygon: Polygon): number {
+  return toSqFt(areaM2(polygon));
 }
 
 /**
@@ -183,39 +236,41 @@ function checkConvexity(vertices: number[][]): boolean {
 
 /**
  * Union multiple polygons into one
+ * Uses polygon-clipping library for robust boolean operations
  */
-export function union(...polygons: Polygon[]): Polygon {
-  if (polygons.length === 0) {
-    return { type: 'Polygon', coordinates: [] };
-  }
-  if (polygons.length === 1) {
-    return polygons[0];
-  }
-  
-  // Simple implementation: return the largest polygon
-  // In a real implementation, this would use a proper union algorithm
-  return polygons.reduce((largest, current) => 
-    areaSqft(current) > areaSqft(largest) ? current : largest
-  );
+export function union(...polygons: Polygon[]): Polygon | MultiPolygon {
+  const valid = polygons.filter(p => p?.coordinates?.[0]?.length);
+  if (valid.length === 0) return { type: 'Polygon', coordinates: [] };
+  if (valid.length === 1) return valid[0];
+
+  const pcInputs = valid.map(p => toPc(p));
+  // union accepts (geom, ...moreGeoms)
+  const res = polyclip.union(pcInputs[0], ...pcInputs.slice(1)) as PcMultiPolygon;
+  return fromPc(res);
 }
 
 /**
- * Difference between two polygons
+ * Difference between two polygons (polygon1 - polygon2)
+ * Uses polygon-clipping library for robust boolean operations
  */
-export function difference(polygon1: Polygon, polygon2: Polygon): Polygon {
-  // Simple implementation: return polygon1 if no overlap
-  // In a real implementation, this would use a proper difference algorithm
-  const bounds1 = bbox(polygon1);
-  const bounds2 = bbox(polygon2);
-  
-  // Quick check for no overlap
-  if (bounds1.maxX < bounds2.minX || bounds1.minX > bounds2.maxX ||
-      bounds1.maxY < bounds2.minY || bounds1.minY > bounds2.maxY) {
-    return polygon1;
+export function difference(a: Polygon, b: Polygon): Polygon | MultiPolygon {
+  if (!a?.coordinates?.[0]?.length) return { type: 'Polygon', coordinates: [] };
+  if (!b?.coordinates?.[0]?.length) return a;
+
+  const res = polyclip.difference(toPc(a), toPc(b)) as PcMultiPolygon;
+  return fromPc(res);
+}
+
+/**
+ * Intersection of two polygons
+ */
+export function intersection(a: Polygon, b: Polygon): Polygon | MultiPolygon {
+  if (!a?.coordinates?.[0]?.length || !b?.coordinates?.[0]?.length) {
+    return { type: 'Polygon', coordinates: [] };
   }
-  
-  // For now, return a simplified version of polygon1
-  return polygon1;
+
+  const res = polyclip.intersection(toPc(a), toPc(b)) as PcMultiPolygon;
+  return fromPc(res);
 }
 
 /**
@@ -359,6 +414,10 @@ export function contains(polygon: Polygon, point: Point): boolean {
  * Get bounding box of a polygon
  */
 export function bbox(polygon: Polygon): { minX: number; minY: number; maxX: number; maxY: number } {
+  if (!polygon.coordinates || !polygon.coordinates[0] || polygon.coordinates[0].length === 0) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+
   const coords = polygon.coordinates[0];
   let minX = coords[0][0];
   let minY = coords[0][1];
@@ -373,6 +432,94 @@ export function bbox(polygon: Polygon): { minX: number; minY: number; maxX: numb
   }
   
   return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Buffer/offset a polygon by a given distance (in same units as coordinates)
+ * Positive distance = expand outward, negative = shrink inward
+ *
+ * v1: ONLY supports axis-aligned rectangles (for MF_BAR_V1 building footprints)
+ * Throws error for non-rectangular polygons
+ */
+export function buffer(polygon: Polygon, distance: number): Polygon {
+  if (!polygon.coordinates || !polygon.coordinates[0] || polygon.coordinates[0].length < 4) {
+    return polygon;
+  }
+
+  if (distance === 0) {
+    return polygon;
+  }
+
+  // v1: Only support axis-aligned rectangles (4 vertices)
+  const coords = polygon.coordinates[0];
+  const workingCoords = coords.length > 0 &&
+    coords[0][0] === coords[coords.length - 1][0] &&
+    coords[0][1] === coords[coords.length - 1][1]
+    ? coords.slice(0, -1)
+    : coords;
+
+  if (workingCoords.length !== 4) {
+    throw new Error('offset: only rectangles supported in v1');
+  }
+
+  // Check if it's axis-aligned (all x values same for two edges, all y values same for two edges)
+  const xs = workingCoords.map(c => c[0]);
+  const ys = workingCoords.map(c => c[1]);
+  const uniqueXs = new Set(xs);
+  const uniqueYs = new Set(ys);
+
+  if (uniqueXs.size !== 2 || uniqueYs.size !== 2) {
+    throw new Error('offset: only rectangles supported in v1');
+  }
+
+  // For rectangle offset: d > 0 expands outward, d < 0 shrinks inward
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  // Offset rectangle
+  const offsetCoords = [
+    [minX - distance, minY - distance],
+    [maxX + distance, minY - distance],
+    [maxX + distance, maxY + distance],
+    [minX - distance, maxY + distance],
+    [minX - distance, minY - distance] // Close ring
+  ];
+
+  return { type: 'Polygon', coordinates: [offsetCoords] };
+}
+
+/**
+ * Alias for buffer (offset is more common term in some contexts)
+ */
+export function offset(polygon: Polygon, distance: number): Polygon {
+  return buffer(polygon, distance);
+}
+
+/**
+ * Calculate polygon area (in square units of coordinate system)
+ * Works with planar coordinates (EPSG:3857 meters expected)
+ */
+export function area(polygon: Polygon): number {
+  return areaSqft(polygon); // areaSqft uses shoelace, works for any units
+}
+
+/**
+ * Calculate polygon centroid
+ */
+export function centroid(polygon: Polygon): number[] {
+  return getCentroid(polygon);
+}
+
+/**
+ * Check if point is in polygon
+ */
+export function pointInPoly(point: Point | number[], poly: Polygon): boolean {
+  if (Array.isArray(point)) {
+    return contains(poly, { type: 'Point', coordinates: point });
+  }
+  return contains(poly, point);
 }
 
 /**

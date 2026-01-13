@@ -1,8 +1,14 @@
 import type { Polygon, MultiPolygon } from 'geojson';
-import type { PlannerConfig, PlannerOutput, WorkerAPI } from '../engine/types';
+import type { PlannerConfig, PlannerOutput, WorkerAPI, Element } from '../engine/types';
 
 let nextId = 0;
 let latest = 0;
+
+export interface PlanUpdateResult {
+  elements: Element[];
+  metrics: PlannerOutput['metrics'];
+  violations: Array<{ type: string; message: string; delta?: number }>;
+}
 
 export class PlannerWorkerManager implements WorkerAPI {
   private worker: Worker | null = null;
@@ -122,6 +128,124 @@ export class PlannerWorkerManager implements WorkerAPI {
         console.error(`❌ [WorkerManager] Worker error during generation (id: ${id}):`, error);
         reject(error);
       };
+    });
+  }
+
+  /**
+   * Initialize site with envelope and initial building spec
+   */
+  async initSite(
+    envelope3857: Polygon,
+    zoning: PlannerConfig['zoning'],
+    initialBuildingSpec?: {
+      id: string;
+      anchor: { x: number; y: number };
+      rotationRad: number;
+      widthM: number;
+      depthM: number;
+      floors: number;
+      locked?: boolean;
+    }
+  ): Promise<PlanUpdateResult> {
+    if (!this.worker) {
+      throw new Error('Worker not available');
+    }
+
+    const id = ++nextId;
+    this.worker.postMessage({
+      type: 'INIT_SITE',
+      id,
+      envelope3857,
+      zoning,
+      initialBuildingSpec,
+    });
+
+    return this.waitForPlanUpdate(id);
+  }
+
+  /**
+   * Update a building's position/rotation/size
+   */
+  async updateBuilding(
+    buildingId: string,
+    updates: {
+      anchorX?: number;
+      anchorY?: number;
+      rotationRad?: number;
+      widthM?: number;
+      depthM?: number;
+      floors?: number;
+    }
+  ): Promise<PlanUpdateResult> {
+    if (!this.worker) {
+      throw new Error('Worker not available');
+    }
+
+    const id = ++nextId;
+    this.worker.postMessage({
+      type: 'UPDATE_BUILDING',
+      id,
+      buildingId,
+      ...updates,
+    });
+
+    return this.waitForPlanUpdate(id);
+  }
+
+  /**
+   * Wait for PLAN_UPDATED response from worker
+   */
+  private waitForPlanUpdate(id: number): Promise<PlanUpdateResult> {
+    if (!this.worker) {
+      throw new Error('Worker not available');
+    }
+
+    return new Promise((resolve, reject) => {
+      const onmessage = (e: MessageEvent) => {
+        const { id: rid, reqId, type, elements, metrics, violations, error } = e.data || {};
+        const receivedId = rid || reqId;
+
+        if (type !== 'PLAN_UPDATED' || receivedId !== id) {
+          return; // Ignore other messages
+        }
+
+        clearTimeout(timeout);
+        this.worker!.removeEventListener('message', onmessage);
+
+        if (id < latest) {
+          console.log(`ΓÅ¡∩╕Å [WorkerManager] Ignoring stale PLAN_UPDATED (id: ${id}, latest: ${latest})`);
+          return;
+        }
+
+        latest = id;
+
+        if (error) {
+          console.error(`Γ¥î [WorkerManager] Worker returned error (id: ${id}):`, error);
+          return reject(new Error(error));
+        }
+
+        resolve({
+          elements: elements || [],
+          metrics: metrics || {
+            totalBuiltSF: 0,
+            siteCoveragePct: 0,
+            achievedFAR: 0,
+            parkingRatio: 0,
+            openSpacePct: 0,
+            zoningCompliant: true,
+            violations: [],
+            warnings: [],
+          },
+          violations: violations || [],
+        });
+      };
+
+      const timeout = setTimeout(() => {
+        this.worker!.removeEventListener('message', onmessage);
+        reject(new Error(`Timeout waiting for PLAN_UPDATED (id: ${id})`));
+      }, 30000);
+
+      this.worker.addEventListener('message', onmessage);
     });
   }
 
