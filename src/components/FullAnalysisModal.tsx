@@ -1,13 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Building, TrendingUp, Map, Users, DollarSign, Target, Car, Eye } from 'lucide-react';
-import { useUIStore } from '../store/ui';
+import { X, Building, TrendingUp, Map, DollarSign } from 'lucide-react';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
-import SitePlanDesigner from './SitePlanDesigner';
-import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
-import { SitePlannerErrorBoundary } from './ErrorBoundary';
-import { SelectedParcel, isValidParcel, createFallbackParcel, InvestmentAnalysis } from '../types/parcel';
-import { toPolygon } from '../engine/geometry/normalize';
-import type { Element, SiteMetrics } from '../engine/types';
+import { SelectedParcel, isValidParcel } from '../types/parcel';
+import { SiteWorkspace } from '../features/site-plan';
 
 interface FullAnalysisModalProps {
   parcel: SelectedParcel;
@@ -16,11 +11,7 @@ interface FullAnalysisModalProps {
 }
 
 const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen, onClose }: FullAnalysisModalProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'hbu' | 'siteplan' | 'visual' | 'financial'>('overview');
-  
-  // Site plan state
-  const [sitePlanElements, setSitePlanElements] = useState<Element[]>([]);
-  const [sitePlanMetrics, setSitePlanMetrics] = useState<SiteMetrics | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'hbu' | 'site' | 'financial'>('overview');
 
   // Debug logging for parcel data
   useEffect(() => {
@@ -42,8 +33,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Map },
     { id: 'hbu', label: 'HBU Analysis', icon: TrendingUp },
-    { id: 'siteplan', label: 'Site Plan', icon: Building },
-    { id: 'visual', label: 'Site Design', icon: Eye },
+    { id: 'site', label: 'Site Plan', icon: Building },
     { id: 'financial', label: 'Financial', icon: DollarSign }
   ];
 
@@ -76,7 +66,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as 'overview' | 'hbu' | 'siteplan' | 'visual' | 'financial')}
+                onClick={() => setActiveTab(tab.id as 'overview' | 'hbu' | 'site' | 'financial')}
                 className={`flex items-center space-x-2 px-6 py-4 text-sm font-medium transition-colors ${
                   activeTab === tab.id
                     ? 'text-blue-600 border-b-2 border-blue-600 bg-white'
@@ -164,71 +154,9 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
               </div>
             )}
 
-            {activeTab === 'siteplan' && (
+            {activeTab === 'site' && (
               <div className="space-y-6">
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Site Plan Designer</h2>
-                  <div className="h-[800px]">
-                    <SitePlanDesigner 
-                      parcel={(() => {
-                        // Normalize geometry: accept Polygon or MultiPolygon
-                        const poly = parcel?.geometry ? toPolygon(parcel.geometry) : null;   // MultiPolygon → Polygon
-                        // Pass all parcel properties, not just ogc_fid and geometry
-                        const parcelForPlanner = poly ? { 
-                          ...parcel,
-                          ogc_fid: String(parcel.ogc_fid),
-                          geometry: poly 
-                        } : null;
-                        return parcelForPlanner;
-                      })()}
-                      onPlanGenerated={(elements, metrics) => {
-                        setSitePlanElements(elements);
-                        setSitePlanMetrics(metrics);
-                      }}
-                    >
-                      <SitePlannerErrorBoundary>
-                        <EnterpriseSitePlanner
-                          parcel={isValidParcel(parcel) ? parcel : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356)}
-                          planElements={sitePlanElements}
-                          metrics={sitePlanMetrics || undefined}
-                          marketData={{
-                            avgPricePerSqFt: 300,
-                            avgRentPerSqFt: 2.50,
-                            capRate: 0.06,
-                            constructionCostPerSqFt: 200
-                          }}
-                          onInvestmentAnalysis={(analysis: InvestmentAnalysis) => {
-                            console.log('Investment analysis:', analysis);
-                          }}
-                        />
-                      </SitePlannerErrorBoundary>
-                    </SitePlanDesigner>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'visual' && (
-              <div className="space-y-6">
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Visual Site Plan</h2>
-                  <div className="h-[800px]">
-                    <SitePlannerErrorBoundary>
-                      <EnterpriseSitePlanner
-                        parcel={isValidParcel(parcel) ? parcel : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356)}
-                        marketData={{
-                          avgPricePerSqFt: 300,
-                          avgRentPerSqFt: 2.50,
-                          capRate: 0.06,
-                          constructionCostPerSqFt: 200
-                        }}
-                        onInvestmentAnalysis={(analysis: InvestmentAnalysis) => {
-                          console.log('Investment analysis:', analysis);
-                        }}
-                      />
-                    </SitePlannerErrorBoundary>
-                  </div>
-                </div>
+                <SiteWorkspace parcel={parcel} />
               </div>
             )}
 

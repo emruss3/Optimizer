@@ -361,10 +361,6 @@ export function EnhancedSitePlanner({
                   capRate: 0.06,
                   constructionCostPerSqFt: 200
                 }}
-                onInvestmentAnalysis={(analysis) => {
-                  console.log('Investment analysis:', analysis);
-                  markAsUnsaved();
-                }}
               />
             </div>
           </div>

@@ -14,10 +14,9 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Play, BarChart3, Grid, AlertTriangle, CheckCircle } from 'lucide-react';
-import { SelectedParcel, InvestmentAnalysis } from '../types/parcel';
-import type { Element, PlannerConfig, SiteMetrics, PlannerOutput } from '../engine/types';
-import { workerManager } from '../workers/workerManager';
+import { BarChart3, Grid, AlertTriangle, CheckCircle } from 'lucide-react';
+import { SelectedParcel } from '../types/parcel';
+import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
 import { CoordinateTransform } from '../utils/coordinateTransform';
 
@@ -45,7 +44,6 @@ interface EnterpriseSitePlannerProps {
   parcel: SelectedParcel;
   planElements?: Element[];
   metrics?: SiteMetrics;
-  onInvestmentAnalysis?: (analysis: InvestmentAnalysis) => void;
   activePlanId?: string;
   selectedSolve?: PlannerOutput;
 }
@@ -54,7 +52,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   parcel,
   planElements = [],
   metrics,
-  onInvestmentAnalysis,
   activePlanId,
   selectedSolve
 }) => {
@@ -92,8 +89,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // State
   const [elements, setElements] = useState<Element[]>(initialElements);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationProgress, setGenerationProgress] = useState(0);
   const [showMetrics, setShowMetrics] = useState(true);
   const [showLayers, setShowLayers] = useState(true);
   const [copiedElements, setCopiedElements] = useState<Element[]>([]);
@@ -484,77 +479,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     selection.selectAll(newElements.map(el => el.id));
   }, [copiedElements, elements, selection.selectAll]);
 
-  // Generate site plan
-  const generateSitePlan = useCallback(async () => {
-    setIsGenerating(true);
-    setGenerationProgress(0);
-
-    try {
-      const config: PlannerConfig = {
-        parcelId: parcel.ogc_fid,
-        buildableArea: parcel.geometry as any,
-        zoning: {
-          frontSetbackFt: 20,
-          sideSetbackFt: 10,
-          rearSetbackFt: 20,
-          maxFar: 2.0,
-          maxCoveragePct: 60,
-          minParkingRatio: 1.0
-        },
-        designParameters: {
-          targetFAR: 1.5,
-          targetCoveragePct: 50,
-          parking: {
-            targetRatio: 1.5,
-            stallWidthFt: 9,
-            stallDepthFt: 18,
-            aisleWidthFt: 12,
-            adaPct: 5,
-            evPct: 10,
-            layoutAngle: 0
-          },
-          buildingTypology: 'bar',
-          numBuildings: 2
-        }
-      };
-
-      setGenerationProgress(25);
-      const result = await workerManager.generateSitePlan(parcel.geometry as any, config);
-      setGenerationProgress(75);
-
-      if (result?.elements) {
-        setElements(result.elements);
-        setGenerationProgress(100);
-      }
-
-      if (onInvestmentAnalysis && result?.metrics) {
-        const analysis: InvestmentAnalysis = {
-          totalInvestment: result.metrics.totalBuiltSF * 150,
-          projectedRevenue: result.metrics.totalBuiltSF * 2.5 * 12,
-          operatingExpenses: result.metrics.totalBuiltSF * 1.0 * 12,
-          netOperatingIncome: result.metrics.totalBuiltSF * 1.5 * 12,
-          capRate: 0.06,
-          irr: 0.12,
-          paybackPeriod: 8.3,
-          riskAssessment: 'medium'
-        };
-        onInvestmentAnalysis(analysis);
-      }
-    } catch (error) {
-      console.error('Error generating site plan:', error);
-    } finally {
-      setIsGenerating(false);
-      setGenerationProgress(0);
-    }
-  }, [parcel, onInvestmentAnalysis]);
-
-  // Auto-generate on mount
-  useEffect(() => {
-    if (parcel && planElements.length === 0 && elements.length === 0 && !isGenerating) {
-      generateSitePlan();
-    }
-  }, [parcel?.ogc_fid]); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Update elements from props
   useEffect(() => {
     if (planElements.length > 0) {
@@ -608,14 +532,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       <div className="flex items-center justify-between p-4 bg-white border-b">
         <div className="flex items-center space-x-4">
           <h2 className="text-xl font-semibold">Site Planner</h2>
-          <button
-            onClick={generateSitePlan}
-            disabled={isGenerating}
-            className="flex items-center space-x-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Play className="w-4 h-4" />
-            <span>{isGenerating ? 'Generating...' : 'Generate Plan'}</span>
-          </button>
         </div>
         
         <div className="flex items-center space-x-2">
@@ -696,20 +612,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             onWheel={handleWheel}
           />
           
-          {isGenerating && (
-            <div className="absolute top-4 left-4 bg-white p-4 rounded-lg shadow-lg">
-              <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm font-medium">Generating site plan...</span>
-              </div>
-              <div className="w-48 h-2 bg-gray-200 rounded-full mt-2">
-                <div 
-                  className="h-2 bg-blue-600 rounded-full transition-all duration-300"
-                  style={{ width: `${generationProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Metrics Panel */}

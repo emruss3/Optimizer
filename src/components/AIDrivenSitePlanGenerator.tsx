@@ -672,9 +672,6 @@ export function AIDrivenSitePlanGenerator({
                   capRate: 0.06,
                   constructionCostPerSqFt: 200
                 }}
-                onInvestmentAnalysis={(analysis) => {
-                  console.log('Investment analysis:', analysis);
-                }}
               />
             </div>
           </div>

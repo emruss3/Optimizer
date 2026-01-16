@@ -411,9 +411,6 @@ export default function ProjectPanel() {
                 <div className="flex-1 overflow-hidden">
                   <EnterpriseSitePlanner
                     parcel={selectedParcelForPlanner}
-                    onInvestmentAnalysis={(analysis) => {
-                      console.log('💰 [ProjectPanel] Investment analysis received:', analysis);
-                    }}
                   />
                 </div>
               );

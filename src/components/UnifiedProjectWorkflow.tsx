@@ -378,11 +378,6 @@ export function UnifiedProjectWorkflow({
                 {selectedParcel ? (
                   <EnterpriseSitePlanner
                     parcel={selectedParcel}
-                    onInvestmentAnalysis={(analysis) => {
-                      if (import.meta.env.DEV) {
-                        console.log('Investment analysis:', analysis);
-                      }
-                    }}
                   />
                 ) : (
                   <div className="flex items-center justify-center h-64 text-gray-500">
@@ -531,9 +526,6 @@ export function UnifiedProjectWorkflow({
                     avgRentPerSqFt: 2.50,
                     capRate: 0.06,
                     constructionCostPerSqFt: 200
-                  }}
-                  onInvestmentAnalysis={(analysis) => {
-                    console.log('Investment analysis:', analysis);
                   }}
                 />
               ) : (
