@@ -2,6 +2,7 @@
 // Proprietary and confidential. Not for distribution.
 
 import { useState, useCallback } from 'react';
+import { feetToMeters, metersToFeet } from '../engine/units';
 
 export interface GridState {
   enabled: boolean;
@@ -38,10 +39,13 @@ export function useGrid(initialSize = 10): UseGridReturn {
 
   const snapPoint = useCallback((x: number, y: number): { x: number; y: number } => {
     if (!gridState.snapToGrid) return { x, y };
-    
+    const sizeMeters = feetToMeters(gridState.size);
+    const xMeters = feetToMeters(x);
+    const yMeters = feetToMeters(y);
+
     return {
-      x: Math.round(x / gridState.size) * gridState.size,
-      y: Math.round(y / gridState.size) * gridState.size
+      x: metersToFeet(Math.round(xMeters / sizeMeters) * sizeMeters),
+      y: metersToFeet(Math.round(yMeters / sizeMeters) * sizeMeters)
     };
   }, [gridState.snapToGrid, gridState.size]);
 

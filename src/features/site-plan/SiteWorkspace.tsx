@@ -9,7 +9,7 @@ import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
 import { normalizeToPolygon } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
-import { FEET_PER_METER } from '../../utils/coordinateTransform';
+import { feetToMeters, metersToFeet } from '../../engine/units';
 import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
@@ -56,7 +56,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       geometry: {
         ...element.geometry,
         coordinates: [
-          element.geometry.coordinates[0].map(([x, y]) => [x * FEET_PER_METER, y * FEET_PER_METER])
+          element.geometry.coordinates[0].map(([x, y]) => [metersToFeet(x), metersToFeet(y)])
         ]
       }
     }));
@@ -67,9 +67,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setIsGenerating(true);
     try {
       const result = await workerManager.initSite(envelopeMeters, config.zoning, undefined, {
-        stallW: config.designParameters.parking.stallWidthFt / FEET_PER_METER,
-        stallD: config.designParameters.parking.stallDepthFt / FEET_PER_METER,
-        aisleW: config.designParameters.parking.aisleWidthFt / FEET_PER_METER,
+        stallW: feetToMeters(config.designParameters.parking.stallWidthFt),
+        stallD: feetToMeters(config.designParameters.parking.stallDepthFt),
+        aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
         anglesDeg: [0, 60, 90]
       });
       setPlanOutput(convertElementsToFeet(result.elements || []), result.metrics || null);
@@ -91,11 +91,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (!envelopeMeters) return;
       const runUpdate = async () => {
         const result = await workerManager.updateBuilding(update.id, {
-          anchorX: update.anchor.x / FEET_PER_METER,
-          anchorY: update.anchor.y / FEET_PER_METER,
+          anchorX: feetToMeters(update.anchor.x),
+          anchorY: feetToMeters(update.anchor.y),
           rotationRad: update.rotationRad,
-          widthM: update.widthM / FEET_PER_METER,
-          depthM: update.depthM / FEET_PER_METER,
+          widthM: feetToMeters(update.widthM),
+          depthM: feetToMeters(update.depthM),
           floors: update.floors
         });
         setPlanOutput(convertElementsToFeet(result.elements || []), result.metrics || null);
