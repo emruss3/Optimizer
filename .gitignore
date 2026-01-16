@@ -5,3 +5,5 @@ dist/
 terminals/
 .env
 .env.local
+playwright-report/
+test-results/
