@@ -46,6 +46,17 @@ interface EnterpriseSitePlannerProps {
   metrics?: SiteMetrics;
   activePlanId?: string;
   selectedSolve?: PlannerOutput;
+  onBuildingUpdate?: (
+    update: {
+      id: string;
+      anchor: { x: number; y: number };
+      rotationRad: number;
+      widthM: number;
+      depthM: number;
+      floors?: number;
+    },
+    options?: { final?: boolean }
+  ) => void;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -53,7 +64,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   planElements = [],
   metrics,
   activePlanId,
-  selectedSolve
+  selectedSolve,
+  onBuildingUpdate
 }) => {
   if (import.meta.env.DEV) {
     console.log('🔍 [EnterpriseSitePlannerShell] Component rendered:', {
@@ -98,6 +110,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const [showTemplates, setShowTemplates] = useState(false);
   const [hoveredElement, setHoveredElement] = useState<string | null>(null);
   const [displayMetrics, setDisplayMetrics] = useState<SiteMetrics | null>(initialMetrics || null);
+  const updateTimerRef = useRef<number | null>(null);
   
   // Update elements and metrics when selectedSolve changes
   useEffect(() => {
@@ -136,6 +149,49 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   }
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const queueBuildingUpdate = useCallback((update: {
+    id: string;
+    anchor: { x: number; y: number };
+    rotationRad: number;
+    widthM: number;
+    depthM: number;
+    floors?: number;
+  }, options?: { final?: boolean }) => {
+    if (!onBuildingUpdate) return;
+    if (options?.final) {
+      onBuildingUpdate(update, { final: true });
+      return;
+    }
+    if (updateTimerRef.current) {
+      window.clearTimeout(updateTimerRef.current);
+    }
+    updateTimerRef.current = window.setTimeout(() => {
+      onBuildingUpdate(update);
+    }, 80);
+  }, [onBuildingUpdate]);
+
+  const getElementDimensions = useCallback((element: Element) => {
+    const coords = element.geometry.coordinates[0];
+    if (coords.length < 3) return { widthM: 0, depthM: 0 };
+    const [x1, y1] = coords[0];
+    const [x2, y2] = coords[1];
+    const [x3, y3] = coords[2];
+    const edge1 = Math.hypot(x2 - x1, y2 - y1);
+    const edge2 = Math.hypot(x3 - x2, y3 - y2);
+    return { widthM: edge1, depthM: edge2 };
+  }, []);
+
+  const getElementRotationRad = useCallback((element: Element) => {
+    if (typeof element.properties?.rotation === 'number') {
+      return (element.properties.rotation * Math.PI) / 180;
+    }
+    const coords = element.geometry.coordinates[0];
+    if (coords.length < 2) return 0;
+    const [x1, y1] = coords[0];
+    const [x2, y2] = coords[1];
+    return Math.atan2(y2 - y1, x2 - x1);
+  }, []);
 
   // Process parcel geometry (reproject and normalize) using centralized utility
   const processedGeometry = useMemo(() => {
@@ -361,6 +417,18 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             }
             return el;
           }));
+
+          if (element.type === 'building' && rotation.rotationState.rotationCenter) {
+            const { widthM, depthM } = getElementDimensions(element);
+            queueBuildingUpdate({
+              id: element.id,
+              anchor: rotation.rotationState.rotationCenter,
+              rotationRad: (newRotation * Math.PI) / 180,
+              widthM,
+              depthM,
+              floors: element.properties?.stories || element.properties?.floors
+            });
+          }
         }
       }
       return;
@@ -407,6 +475,21 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       drag.updateDrag(snapped.x, snapped.y);
       const delta = drag.getDragDelta();
       if (delta) {
+        const draggedElement = elements.find(el => el.id === drag.dragState.elementId);
+        if (draggedElement?.type === 'building' && onBuildingUpdate) {
+          const center = ElementService.calculateElementCenter(draggedElement);
+          const { widthM, depthM } = getElementDimensions(draggedElement);
+          queueBuildingUpdate({
+            id: draggedElement.id,
+            anchor: { x: center.x + delta.deltaX, y: center.y + delta.deltaY },
+            rotationRad: getElementRotationRad(draggedElement),
+            widthM,
+            depthM,
+            floors: draggedElement.properties?.stories || draggedElement.properties?.floors
+          });
+          return;
+        }
+
         setElements(prev => ElementService.moveElements(
           prev,
           selection.selectedElements,
@@ -416,14 +499,31 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         ));
       }
     }
-  }, [isPanning, lastPanPoint, viewport.viewport.zoom, viewport.viewport.panX, viewport.viewport.panY, viewport.pan, drag.dragState, drag.updateDrag, drag.getDragDelta, selection.selectedElements, elements, measurement.measurementState, measurement.updateMeasurement, grid.snapPoint, drawingTools.activeTool, vertexEditing.isVertexEditing, vertexEditing.selectedVertex]);
+  }, [isPanning, lastPanPoint, viewport.viewport.zoom, viewport.viewport.panX, viewport.viewport.panY, viewport.pan, drag.dragState, drag.updateDrag, drag.getDragDelta, selection.selectedElements, elements, measurement.measurementState, measurement.updateMeasurement, grid.snapPoint, drawingTools.activeTool, vertexEditing.isVertexEditing, vertexEditing.selectedVertex, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate]);
 
   // Handle mouse up
   const handleMouseUp = useCallback(() => {
+    if (drag.dragState.isDragging && drag.dragState.elementId) {
+      const delta = drag.getDragDelta();
+      const draggedElement = elements.find(el => el.id === drag.dragState.elementId);
+      if (delta && draggedElement?.type === 'building' && onBuildingUpdate) {
+        const center = ElementService.calculateElementCenter(draggedElement);
+        const { widthM, depthM } = getElementDimensions(draggedElement);
+        queueBuildingUpdate({
+          id: draggedElement.id,
+          anchor: { x: center.x + delta.deltaX, y: center.y + delta.deltaY },
+          rotationRad: getElementRotationRad(draggedElement),
+          widthM,
+          depthM,
+          floors: draggedElement.properties?.stories || draggedElement.properties?.floors
+        }, { final: true });
+      }
+    }
+
     setIsPanning(false);
     drag.endDrag();
     rotation.endRotation();
-  }, [drag, rotation]);
+  }, [drag, elements, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate, rotation]);
 
   // Handle wheel zoom
   const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {

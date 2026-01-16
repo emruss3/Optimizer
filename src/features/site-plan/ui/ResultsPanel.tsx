@@ -1,14 +1,15 @@
 import React from 'react';
-import type { SiteMetrics } from '../../../engine/types';
+import type { FeasibilityViolation, SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
 
 type ResultsPanelProps = {
   metrics: SiteMetrics | null;
   investmentAnalysis: InvestmentAnalysis | null;
   isGenerating: boolean;
+  violations: FeasibilityViolation[];
 };
 
-const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis, isGenerating }) => {
+const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis, isGenerating, violations }) => {
   return (
     <div className="w-full xl:w-80 bg-white border border-gray-200 rounded-lg p-4">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Results</h3>
@@ -36,6 +37,14 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis
             <span className="text-gray-600">Coverage</span>
             <span className="font-medium">{metrics.siteCoveragePct.toFixed(1)}%</span>
           </div>
+          {metrics.stallsProvided !== undefined && metrics.stallsRequired !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Stalls</span>
+              <span className="font-medium">
+                {metrics.stallsProvided} / {metrics.stallsRequired}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-gray-600">Parking Ratio</span>
             <span className="font-medium">{metrics.parkingRatio.toFixed(2)}</span>
@@ -73,6 +82,22 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis
             <span className="text-gray-600">IRR</span>
             <span className="font-medium">{(investmentAnalysis.irr * 100).toFixed(1)}%</span>
           </div>
+        </div>
+      )}
+
+      {violations.length > 0 && (
+        <div className="mt-6">
+          <h4 className="text-sm font-semibold text-gray-900 mb-2">Violations</h4>
+          <ul className="space-y-2 text-xs text-red-600">
+            {violations.map((violation, index) => (
+              <li key={`${violation.code}-${index}`} className="flex justify-between">
+                <span>{violation.message}</span>
+                {violation.delta !== undefined && (
+                  <span className="text-red-500">{violation.delta.toFixed(2)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

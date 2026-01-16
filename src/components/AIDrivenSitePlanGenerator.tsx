@@ -18,7 +18,7 @@ import {
 import { SelectedParcel } from '../types/parcel';
 import { HBUAnalysis, HBUAlternative } from '../services/hbuAnalysis';
 import { useHBUAnalysis } from '../hooks/useHBUAnalysis';
-import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
+import SitePlanDesigner from './SitePlanDesigner';
 
 interface AIDrivenSitePlanGeneratorProps {
   isOpen: boolean;
@@ -664,15 +664,7 @@ export function AIDrivenSitePlanGenerator({
               </button>
             </div>
             <div className="h-[80vh]">
-              <EnterpriseSitePlanner
-                parcel={selectedParcel}
-                marketData={{
-                  avgPricePerSqFt: 300,
-                  avgRentPerSqFt: 2.50,
-                  capRate: 0.06,
-                  constructionCostPerSqFt: 200
-                }}
-              />
+              <SitePlanDesigner parcel={selectedParcel} />
             </div>
           </div>
         </div>

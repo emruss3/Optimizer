@@ -8,7 +8,7 @@ export interface Vertex {
 
 export interface Element {
   id: string;
-  type: 'building' | 'parking' | 'greenspace' | 'road' | 'utility' | 'other';
+  type: 'building' | 'parking' | 'parking-bay' | 'parking-aisle' | 'greenspace' | 'road' | 'utility' | 'other';
   name: string;
   geometry: Polygon;
   properties: {
@@ -78,6 +78,8 @@ export interface PlannerOutput {
     achievedFAR: number;
     parkingRatio: number; // stalls per unit or per 1000 sqft
     openSpacePct: number;
+    stallsProvided?: number;
+    stallsRequired?: number;
     zoningCompliant: boolean;
     violations: string[];
     warnings: string[];
@@ -112,6 +114,8 @@ export interface SiteMetrics {
   achievedFAR: number;
   parkingRatio: number;
   openSpacePct: number;
+  stallsProvided?: number;
+  stallsRequired?: number;
   zoningCompliant: boolean;
   violations: string[];
   warnings: string[];
@@ -119,6 +123,13 @@ export interface SiteMetrics {
   earthworkFillCY?: number;
   earthworkNetCY?: number;
   earthworkCost?: number;
+}
+
+export interface FeasibilityViolation {
+  code: string;
+  message: string;
+  delta?: number;
+  severity: 'error' | 'warning';
 }
 
 export interface WorkerAPI {

@@ -21,7 +21,7 @@ import {
 import { useSitePlanStore, SitePlanDesign, SitePlanElement } from '../store/sitePlan';
 import { useHBUAnalysis } from '../hooks/useHBUAnalysis';
 import { useActiveProject } from '../store/project';
-import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
+import SitePlanDesigner from './SitePlanDesigner';
 import { SelectedParcel } from '../types/parcel';
 
 interface EnhancedSitePlannerProps {
@@ -353,15 +353,7 @@ export function EnhancedSitePlanner({
                 </button>
               </div>
               
-              <EnterpriseSitePlanner
-                parcel={selectedParcel}
-                marketData={{
-                  avgPricePerSqFt: 300,
-                  avgRentPerSqFt: 2.50,
-                  capRate: 0.06,
-                  constructionCostPerSqFt: 200
-                }}
-              />
+              <SitePlanDesigner parcel={selectedParcel} />
             </div>
           </div>
         </div>

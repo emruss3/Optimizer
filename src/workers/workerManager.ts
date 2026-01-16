@@ -1,5 +1,6 @@
 import type { Polygon, MultiPolygon } from 'geojson';
-import type { PlannerConfig, PlannerOutput, WorkerAPI, Element } from '../engine/types';
+import type { PlannerConfig, PlannerOutput, WorkerAPI, Element, FeasibilityViolation } from '../engine/types';
+import type { BuildingSpec } from '../engine/model';
 
 let nextId = 0;
 let latest = 0;
@@ -7,7 +8,7 @@ let latest = 0;
 export interface PlanUpdateResult {
   elements: Element[];
   metrics: PlannerOutput['metrics'];
-  violations: Array<{ type: string; message: string; delta?: number }>;
+  violations: FeasibilityViolation[];
 }
 
 export class PlannerWorkerManager implements WorkerAPI {
@@ -137,14 +138,12 @@ export class PlannerWorkerManager implements WorkerAPI {
   async initSite(
     envelope3857: Polygon,
     zoning: PlannerConfig['zoning'],
-    initialBuildingSpec?: {
-      id: string;
-      anchor: { x: number; y: number };
-      rotationRad: number;
-      widthM: number;
-      depthM: number;
-      floors: number;
-      locked?: boolean;
+    initialBuildingSpec?: BuildingSpec,
+    parkingSpec?: {
+      stallW: number;
+      stallD: number;
+      aisleW: number;
+      anglesDeg: number[];
     }
   ): Promise<PlanUpdateResult> {
     if (!this.worker) {
@@ -158,6 +157,7 @@ export class PlannerWorkerManager implements WorkerAPI {
       envelope3857,
       zoning,
       initialBuildingSpec,
+      parkingSpec,
     });
 
     return this.waitForPlanUpdate(id);

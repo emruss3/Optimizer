@@ -54,7 +54,7 @@ export function calculateMetrics(
     sum + (stall.properties.areaSqFt || 0), 0);
   
   const totalGreenspaceArea = greenspace.reduce((sum, space) => 
-    sum + (stall.properties.areaSqFt || 0), 0);
+    sum + (space.properties.areaSqFt || 0), 0);
   
   // Calculate metrics
   const siteCoveragePct = (totalBuiltSF / parcelAreaSqFt) * 100;

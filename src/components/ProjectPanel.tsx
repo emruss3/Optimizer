@@ -14,7 +14,7 @@ import { useActiveProject } from '../store/project';
 import { supabase } from '../lib/supabase';
 import RealtimeComments from './RealtimeComments';
 import Guard from './Guard';
-import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
+import SitePlanDesigner from './SitePlanDesigner';
 import { SelectedParcel as ParcelType } from '../types/parcel';
 
 export default function ProjectPanel() {
@@ -409,9 +409,7 @@ export default function ProjectPanel() {
               
               return (
                 <div className="flex-1 overflow-hidden">
-                  <EnterpriseSitePlanner
-                    parcel={selectedParcelForPlanner}
-                  />
+                  <SitePlanDesigner parcel={selectedParcelForPlanner} />
                 </div>
               );
             })()}

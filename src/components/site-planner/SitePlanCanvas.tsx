@@ -49,7 +49,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       case 'building':
         return '#3B82F6';
       case 'parking':
+      case 'parking-bay':
         return '#10B981';
+      case 'parking-aisle':
+        return '#6EE7B7';
       case 'greenspace':
         return '#059669';
       default:
@@ -219,7 +222,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
   // Render parking stripes
   const renderParkingStripes = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
-    if (element.type !== 'parking') return;
+    if (element.type !== 'parking' && element.type !== 'parking-bay') return;
 
     ctx.save();
     const coords = element.geometry.coordinates[0];
@@ -382,7 +385,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       renderElement(ctx, element, isSelected, isHovered, viewport.zoom);
       
       // Render parking stripes for parking elements
-      if (element.type === 'parking') {
+      if (element.type === 'parking' || element.type === 'parking-bay') {
         renderParkingStripes(ctx, element, viewport.zoom);
       }
       

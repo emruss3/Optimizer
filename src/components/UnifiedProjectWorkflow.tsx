@@ -28,7 +28,7 @@ import {
 import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
 import { SelectedParcel } from '../types/parcel';
-import EnterpriseSitePlanner from './EnterpriseSitePlannerShell';
+import SitePlanDesigner from './SitePlanDesigner';
 
 interface UnifiedProjectWorkflowProps {
   isOpen: boolean;
@@ -376,9 +376,7 @@ export function UnifiedProjectWorkflow({
               {/* Site Planner - Production Component */}
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 {selectedParcel ? (
-                  <EnterpriseSitePlanner
-                    parcel={selectedParcel}
-                  />
+                  <SitePlanDesigner parcel={selectedParcel} />
                 ) : (
                   <div className="flex items-center justify-center h-64 text-gray-500">
                     <div className="text-center">
@@ -519,15 +517,7 @@ export function UnifiedProjectWorkflow({
             </div>
             <div className="h-[80vh]">
               {selectedParcel ? (
-                <EnterpriseSitePlanner
-                  parcel={selectedParcel}
-                  marketData={{
-                    avgPricePerSqFt: 300,
-                    avgRentPerSqFt: 2.50,
-                    capRate: 0.06,
-                    constructionCostPerSqFt: 200
-                  }}
-                />
+                <SitePlanDesigner parcel={selectedParcel} />
               ) : (
                 <div className="flex items-center justify-center h-full bg-gray-50">
                   <div className="text-center">
