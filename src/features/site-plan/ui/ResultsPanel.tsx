@@ -49,6 +49,12 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis
             <span className="text-gray-600">Parking Ratio</span>
             <span className="font-medium">{metrics.parkingRatio.toFixed(2)}</span>
           </div>
+          {metrics.parkingAngleDeg !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Parking Angle</span>
+              <span className="font-medium">{metrics.parkingAngleDeg}°</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-gray-600">Built SF</span>
             <span className="font-medium">{metrics.totalBuiltSF.toLocaleString()}</span>

@@ -52,7 +52,7 @@ export function computeFeasibility({
   const far = siteAreaM2 > 0 ? gfaM2 / siteAreaM2 : 0;
   const coverage = siteAreaM2 > 0 ? footprintAreaM2 / siteAreaM2 : 0;
 
-  const units = Math.floor(gfaSqft / 800);
+  const units = Math.max(1, Math.floor(gfaSqft / 800));
   const parkingRatio = zoningLimits.parkingRatio ?? 1.5;
   const stallsRequired = Math.ceil(units * parkingRatio);
   const stallsProvided = parkingSolution?.stallsAchieved ?? 0;

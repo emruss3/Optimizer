@@ -80,6 +80,7 @@ export interface PlannerOutput {
     openSpacePct: number;
     stallsProvided?: number;
     stallsRequired?: number;
+    parkingAngleDeg?: number;
     zoningCompliant: boolean;
     violations: string[];
     warnings: string[];
@@ -116,6 +117,7 @@ export interface SiteMetrics {
   openSpacePct: number;
   stallsProvided?: number;
   stallsRequired?: number;
+  parkingAngleDeg?: number;
   zoningCompliant: boolean;
   violations: string[];
   warnings: string[];

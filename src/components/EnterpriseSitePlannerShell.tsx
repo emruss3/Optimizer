@@ -479,6 +479,13 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         if (draggedElement?.type === 'building' && onBuildingUpdate) {
           const center = ElementService.calculateElementCenter(draggedElement);
           const { widthM, depthM } = getElementDimensions(draggedElement);
+          setElements(prev => ElementService.moveElements(
+            prev,
+            selection.selectedElements,
+            delta.deltaX,
+            delta.deltaY,
+            drag.dragState.originalVertices
+          ));
           queueBuildingUpdate({
             id: draggedElement.id,
             anchor: { x: center.x + delta.deltaX, y: center.y + delta.deltaY },

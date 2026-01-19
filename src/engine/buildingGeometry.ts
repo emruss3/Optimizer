@@ -3,7 +3,7 @@
 
 import type { Polygon } from 'geojson';
 import type { BuildingSpec, SiteState } from './model';
-import { intersection, pointInPoly, bbox, area } from './geometry';
+import { intersection, pointInPoly, bbox, areaM2, polygons } from './geometry';
 
 /**
  * Build building footprint polygon from BuildingSpec
@@ -153,38 +153,42 @@ export function clampBuildingToEnvelope(
     }
   }
 
-  // Strategy 3: If still no valid position, try small random offsets
+  // Strategy 3: If still no valid position, try deterministic grid nudges
   if (newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
-    const maxAttempts = 10;
     const offsetRange = Math.min(spec.widthM, spec.depthM);
+    const step = Math.max(0.5, offsetRange * 0.1);
+    const steps = Math.max(1, Math.floor(offsetRange / step));
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const angle = (attempt / maxAttempts) * Math.PI * 2;
-      const offset = offsetRange * (0.5 + attempt * 0.1);
-      const candidateAnchor = {
-        x: spec.anchor.x + Math.cos(angle) * offset,
-        y: spec.anchor.y + Math.sin(angle) * offset
-      };
+    outer: for (let ring = 1; ring <= steps; ring++) {
+      const offset = ring * step;
+      for (let dx = -offset; dx <= offset; dx += step) {
+        for (let dy = -offset; dy <= offset; dy += step) {
+          const candidateAnchor = {
+            x: spec.anchor.x + dx,
+            y: spec.anchor.y + dy
+          };
 
-      const candidateSpec: BuildingSpec = {
-        ...spec,
-        anchor: candidateAnchor
-      };
-      const candidateFootprint = buildBuildingFootprint(candidateSpec);
-      const candidateAllInside = candidateFootprint.coordinates[0].slice(0, -1).every(coord =>
-        pointInPoly(coord, envelope)
-      );
+          const candidateSpec: BuildingSpec = {
+            ...spec,
+            anchor: candidateAnchor
+          };
+          const candidateFootprint = buildBuildingFootprint(candidateSpec);
+          const candidateAllInside = candidateFootprint.coordinates[0].slice(0, -1).every(coord =>
+            pointInPoly(coord, envelope)
+          );
 
-      if (candidateAllInside) {
-        const candidateHasOverlap = otherBuildings.some(other => {
-          if (other.id === spec.id) return false;
-          const otherFootprint = buildBuildingFootprint(other);
-          return polygonsOverlap(candidateFootprint, otherFootprint);
-        });
+          if (candidateAllInside) {
+            const candidateHasOverlap = otherBuildings.some(other => {
+              if (other.id === spec.id) return false;
+              const otherFootprint = buildBuildingFootprint(other);
+              return polygonsOverlap(candidateFootprint, otherFootprint);
+            });
 
-        if (!candidateHasOverlap) {
-          newAnchor = candidateAnchor;
-          break;
+            if (!candidateHasOverlap) {
+              newAnchor = candidateAnchor;
+              break outer;
+            }
+          }
         }
       }
     }
@@ -199,35 +203,11 @@ export function clampBuildingToEnvelope(
 }
 
 /**
- * Check if two polygons overlap (simplified - uses bbox + point checks)
+ * Check if two polygons overlap (intersection area > 0)
  */
 function polygonsOverlap(poly1: Polygon, poly2: Polygon): boolean {
-  const bbox1 = bbox(poly1);
-  const bbox2 = bbox(poly2);
-
-  // Quick bbox check
-  if (bbox1.maxX < bbox2.minX || bbox1.minX > bbox2.maxX ||
-      bbox1.maxY < bbox2.minY || bbox1.minY > bbox2.maxY) {
-    return false;
-  }
-
-  // Check if any corner of poly1 is inside poly2
-  const corners1 = poly1.coordinates[0].slice(0, -1);
-  for (const corner of corners1) {
-    if (pointInPoly(corner, poly2)) {
-      return true;
-    }
-  }
-
-  // Check if any corner of poly2 is inside poly1
-  const corners2 = poly2.coordinates[0].slice(0, -1);
-  for (const corner of corners2) {
-    if (pointInPoly(corner, poly1)) {
-      return true;
-    }
-  }
-
-  // For rectangles, if bboxes overlap and no corner is inside, they might still overlap
-  // This is a simplified check - for production, use proper intersection
-  return false;
+  const clipped = intersection(poly1, poly2);
+  const clippedPolys = polygons(clipped);
+  const overlapArea = clippedPolys.reduce((sum, poly) => sum + areaM2(poly), 0);
+  return overlapArea > 0.5;
 }

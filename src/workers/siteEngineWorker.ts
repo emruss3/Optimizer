@@ -268,6 +268,7 @@ class SiteEngineWorker {
         openSpacePct: 0,
         stallsProvided: feasibility.stallsProvided,
         stallsRequired: feasibility.stallsRequired,
+        parkingAngleDeg: parkingSolution.chosenAngleDeg,
         zoningCompliant: feasibility.violations.filter(v => v.severity === 'error').length === 0,
         violations: feasibility.violations.map(v => v.message),
         warnings: feasibility.violations.filter(v => v.severity === 'warning').map(v => v.message)
