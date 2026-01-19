@@ -16,11 +16,14 @@ export interface SelectedParcel {
   zoning_description: string | null;
   zoning_type: string | null;
   owner: string | null;
+  primary_owner?: string | null; // Preferred over owner in UI
+  usedesc?: string | null;
   deeded_acres: number | null;
   gisacre: number | null;
   sqft: number | null;
   landval: number | null;
   parval: number | null;
+  improvval?: number | null;
   yearbuilt: number | null;
   numstories: number | null;
   numunits: number | null;
@@ -106,7 +109,7 @@ export interface MarketData {
            parcel.ogc_fid.length > 0;
   }
 
-  export function createFallbackParcel(parcelId: string): SelectedParcel {
+  export function createFallbackParcel(parcelId: string, sqft?: number): SelectedParcel {
     return {
       ogc_fid: parcelId,
       parcelnumb: null,
@@ -116,11 +119,14 @@ export interface MarketData {
       zoning_description: null,
       zoning_type: null,
       owner: null,
+      primary_owner: null,
+      usedesc: null,
       deeded_acres: null,
       gisacre: null,
-      sqft: null,
+      sqft: sqft ?? null,
       landval: null,
       parval: null,
+      improvval: null,
       yearbuilt: null,
       numstories: null,
       numunits: null,

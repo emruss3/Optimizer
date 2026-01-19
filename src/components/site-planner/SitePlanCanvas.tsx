@@ -228,6 +228,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (!parkingViz) return;
 
     ctx.save();
+    
+    // Get element bounds and center for rotation
     const bounds = ElementService.getElementBounds(element);
     const centerX = (bounds.minX + bounds.maxX) / 2;
     const centerY = (bounds.minY + bounds.maxY) / 2;
@@ -237,25 +239,36 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.rotate((parkingViz.angleDeg * Math.PI) / 180);
     ctx.translate(-centerX, -centerY);
     
-    const width = bounds.maxX - bounds.minX;
-    const height = bounds.maxY - bounds.minY;
+    // Clip to the polygon shape
+    const coords = element.geometry.coordinates[0];
+    ctx.beginPath();
+    ctx.moveTo(coords[0][0], coords[0][1]);
+    for (let i = 1; i < coords.length; i++) {
+      ctx.lineTo(coords[i][0], coords[i][1]);
+    }
+    ctx.closePath();
+    ctx.clip();
     
+    // Calculate bounds in rotated space (after rotation, bounds may have changed)
+    // We'll use the original bounds but draw dividers across the full clipped area
     const stallWidth = parkingViz.stallWidthFt;
-    const stallDepth = parkingViz.stallDepthFt;
-    
-    const spacesPerRow = Math.max(1, Math.floor(width / stallWidth));
-    const rows = Math.max(1, Math.floor(height / stallDepth));
     
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 1 / zoom;
     ctx.globalAlpha = 0.8;
     
-    // Draw stall divider lines
-    for (let col = 1; col < spacesPerRow; col++) {
-      const x = bounds.minX + col * stallWidth;
+    // Draw vertical divider lines (in rotated space) spaced by stallWidthFt
+    // Start from the leftmost edge and draw dividers every stallWidthFt
+    const startX = bounds.minX;
+    const endX = bounds.maxX;
+    const minY = bounds.minY;
+    const maxY = bounds.maxY;
+    
+    // Draw dividers from left to right, spaced by stallWidthFt
+    for (let x = startX + stallWidth; x < endX; x += stallWidth) {
       ctx.beginPath();
-      ctx.moveTo(x, bounds.minY);
-      ctx.lineTo(x, bounds.maxY);
+      ctx.moveTo(x, minY);
+      ctx.lineTo(x, maxY);
       ctx.stroke();
     }
     

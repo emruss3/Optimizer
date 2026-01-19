@@ -9,11 +9,17 @@ type ParkingBaySpec = {
   clearanceM?: number;
 };
 
+type ParkingBayWithStalls = {
+  polygon: Polygon;
+  stalls: number;
+};
+
 type ParkingBaySolution = {
   bays: Polygon[];
   aisles: Polygon[];
   stallsAchieved: number;
   chosenAngleDeg: number;
+  baysWithStalls?: ParkingBayWithStalls[]; // Optional: stalls per bay for UI tooltips
 };
 
 const MIN_POLY_AREA_M2 = 2;
@@ -74,12 +80,18 @@ export function solveParkingBayPacking(
   });
 
   // Iterative subtraction to preserve MultiPolygon components
-  let candidate: Polygon | MultiPolygon = envelope;
+  // Process each polygon part separately to avoid losing MultiPolygon components
+  let candidateParts: Polygon[] = polygons(envelope);
   for (const rect of clearanceRects) {
-    const normalizedCandidate = normalizeToPolygon(candidate);
-    candidate = difference(normalizedCandidate, rect);
+    const newParts: Polygon[] = [];
+    for (const part of candidateParts) {
+      const diff = difference(part, rect);
+      const diffPolys = polygons(diff);
+      newParts.push(...diffPolys);
+    }
+    candidateParts = newParts.filter(poly => areaM2(poly) > MIN_POLY_AREA_M2);
   }
-  const candidatePolys = asPolygonList(candidate);
+  const candidatePolys = candidateParts;
 
   if (candidatePolys.length === 0) {
     return { bays: [], aisles: [], stallsAchieved: 0, chosenAngleDeg: spec.anglesDeg[0] ?? 0 };
@@ -96,6 +108,7 @@ export function solveParkingBayPacking(
   let bestBays: Polygon[] = [];
   let bestAisles: Polygon[] = [];
   let bestStalls = 0;
+  let bestBaysWithStalls: ParkingBayWithStalls[] = [];
 
   for (const angleDeg of spec.anglesDeg) {
     const rotatedCandidates = candidatePolys.map(poly => rotatePolygonAround(poly, origin, -angleDeg));
@@ -116,6 +129,7 @@ export function solveParkingBayPacking(
     let islandCount = 0;
     let bays: Polygon[] = [];
     let aisles: Polygon[] = [];
+    let baysWithStalls: ParkingBayWithStalls[] = [];
 
     for (let y = candidateBounds.minY; y < candidateBounds.maxY; y += bayDepth) {
       const strip = createRect(candidateBounds.minX, y, candidateBounds.maxX, y + bayDepth);
@@ -143,9 +157,20 @@ export function solveParkingBayPacking(
             y + bayDepth
           );
 
-          bays = bays.concat(asPolygonList(intersection(clip, bay1)));
+          const bay1Polys = asPolygonList(intersection(clip, bay1));
+          const bay2Polys = asPolygonList(intersection(clip, bay2));
+          
+          // Track stalls per bay: each bay gets stallsPerSide stalls
+          bay1Polys.forEach(poly => {
+            baysWithStalls.push({ polygon: poly, stalls: stallsPerSide });
+          });
+          bay2Polys.forEach(poly => {
+            baysWithStalls.push({ polygon: poly, stalls: stallsPerSide });
+          });
+
+          bays = bays.concat(bay1Polys);
           aisles = aisles.concat(asPolygonList(intersection(clip, aisle)));
-          bays = bays.concat(asPolygonList(intersection(clip, bay2)));
+          bays = bays.concat(bay2Polys);
         }
       }
     }
@@ -163,13 +188,25 @@ export function solveParkingBayPacking(
       bestStalls = stalls;
       bestBays = bays.map(poly => rotatePolygonAround(poly, origin, angleDeg));
       bestAisles = aisles.map(poly => rotatePolygonAround(poly, origin, angleDeg));
+      // Rotate bays with stalls back to original space
+      bestBaysWithStalls = baysWithStalls.map(({ polygon, stalls }) => ({
+        polygon: rotatePolygonAround(polygon, origin, angleDeg),
+        stalls
+      }));
     }
   }
 
+  // Merge bays for rendering, but keep individual bay stall counts for tooltips
+  const mergedBays = mergePolygons(bestBays);
+  
+  // After merging, try to match merged bays to original bays and sum stalls
+  // For now, we'll return the pre-merge stall counts and let the worker handle matching
+  // or estimate stalls per merged bay
   return {
-    bays: mergePolygons(bestBays),
+    bays: mergedBays,
     aisles: mergePolygons(bestAisles),
     stallsAchieved: bestStalls,
-    chosenAngleDeg: bestAngle
+    chosenAngleDeg: bestAngle,
+    baysWithStalls: bestBaysWithStalls.length > 0 ? bestBaysWithStalls : undefined
   };
 }

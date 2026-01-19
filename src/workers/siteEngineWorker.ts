@@ -1,6 +1,6 @@
 import type { Element, PlannerConfig, PlannerOutput } from '../engine/types';
 import type { Polygon, MultiPolygon } from 'geojson';
-import { normalizeToPolygon, areaM2 } from '../engine/geometry';
+import { normalizeToPolygon, areaM2, intersection } from '../engine/geometry';
 import { generateSitePlan } from '../engine/planner';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
 import type { BuildingSpec } from '../engine/model';
@@ -219,15 +219,48 @@ class SiteEngineWorker {
       });
     }
 
+    // Calculate stalls per merged bay by matching to original bays with stalls
+    const totalBayArea = parkingSolution.bays.reduce((sum, bay) => sum + areaM2(bay), 0);
+    
     parkingSolution.bays.forEach((bay, index) => {
       const footprint = normalizeToPolygon(bay);
+      const bayArea = areaM2(footprint);
+      
+      // Estimate stalls for this merged bay
+      let estimatedStalls = 0;
+      if (parkingSolution.baysWithStalls && parkingSolution.baysWithStalls.length > 0) {
+        // Match merged bay to original bays by intersection area
+        let matchedStalls = 0;
+        let matchedArea = 0;
+        for (const { polygon, stalls } of parkingSolution.baysWithStalls) {
+          const intersected = intersection(footprint, polygon);
+          if (intersected) {
+            const intersectArea = areaM2(intersected);
+            if (intersectArea > 0) {
+              matchedStalls += stalls * (intersectArea / areaM2(polygon));
+              matchedArea += intersectArea;
+            }
+          }
+        }
+        // If we matched, use matched stalls; otherwise estimate by area ratio
+        estimatedStalls = matchedArea > 0 
+          ? Math.round(matchedStalls)
+          : Math.round((bayArea / totalBayArea) * parkingSolution.stallsAchieved);
+      } else {
+        // Fallback: estimate by area ratio
+        estimatedStalls = totalBayArea > 0 
+          ? Math.round((bayArea / totalBayArea) * parkingSolution.stallsAchieved)
+          : 0;
+      }
+      
       elements.push({
         id: `parking-bay-${index + 1}`,
         type: 'parking-bay',
         name: `Parking Bay ${index + 1}`,
         geometry: footprint,
         properties: {
-          areaSqFt: areaM2(footprint) * 10.7639
+          areaSqFt: bayArea * 10.7639,
+          parkingSpaces: estimatedStalls
         },
         metadata: {
           createdAt: now,

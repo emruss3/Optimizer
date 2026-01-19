@@ -3,6 +3,7 @@ import { X, Building, TrendingUp, Map, DollarSign } from 'lucide-react';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
 import { SelectedParcel, isValidParcel } from '../types/parcel';
 import { SiteWorkspace } from '../features/site-plan';
+import { supabase } from '../lib/supabase';
 
 interface FullAnalysisModalProps {
   parcel: SelectedParcel;
@@ -12,21 +13,62 @@ interface FullAnalysisModalProps {
 
 const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen, onClose }: FullAnalysisModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'hbu' | 'site' | 'financial'>('overview');
+  const [parcelDetail, setParcelDetail] = useState<SelectedParcel | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
-  // Debug logging for parcel data
+  // Fetch full parcel details when modal opens
   useEffect(() => {
-    if (parcel) {
-      console.log('🔍 FullAnalysisModal parcel object:', parcel);
-      console.log('🔍 isValidParcel check:', isValidParcel(parcel));
-      console.log('🔍 Parcel properties:', {
-        id: parcel.id,
-        ogc_fid: parcel.ogc_fid,
-        address: parcel.address,
-        sqft: parcel.sqft,
-        deeded_acres: parcel.deeded_acres
-      });
+    if (!isOpen || !parcel?.ogc_fid) {
+      setParcelDetail(null);
+      return;
     }
-  }, [parcel]);
+
+    let cancelled = false;
+    setIsLoadingDetail(true);
+
+    const fetchParcelDetail = async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_parcel_by_id', { 
+          p_ogc_fid: Number(parcel.ogc_fid) 
+        });
+        
+        if (cancelled) return;
+        
+        if (error) {
+          console.error('Error fetching parcel detail:', error);
+          setIsLoadingDetail(false);
+          return;
+        }
+
+        const row = Array.isArray(data) ? data[0] : data;
+        if (row) {
+          setParcelDetail({
+            ...parcel,
+            ...row,
+            ogc_fid: String(row.ogc_fid ?? parcel.ogc_fid),
+            geometry: row.geometry ?? parcel.geometry
+          } as SelectedParcel);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error fetching parcel detail:', err);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingDetail(false);
+        }
+      }
+    };
+
+    fetchParcelDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, parcel?.ogc_fid]);
+
+  // Use hydrated parcel detail if available, otherwise fall back to passed parcel
+  const p = parcelDetail ?? parcel;
 
   if (!isOpen || !parcel) return null;
 
@@ -48,7 +90,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
               <h1 className="text-2xl font-bold text-gray-900">Full Parcel Analysis</h1>
             </div>
             <div className="text-sm text-gray-600">
-              {parcel.address} • {parcel.parcelnumb}
+              {p.address} • {p.parcelnumb}
             </div>
           </div>
           <button
@@ -85,62 +127,74 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
           <div className="h-full overflow-y-auto p-6">
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Parcel Summary */}
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Parcel Summary</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-600 mb-2">Property Details</h3>
-                      <div className="space-y-2 text-sm">
-                        <div><span className="font-medium">Address:</span> {parcel.address}</div>
-                        <div><span className="font-medium">Parcel #:</span> {parcel.parcelnumb}</div>
-                        <div><span className="font-medium">Lot Size:</span> {(parcel.deeded_acres || 0).toFixed(2)} acres</div>
-                        <div><span className="font-medium">Zoning:</span> {parcel.zoning}</div>
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-600 mb-2">Ownership</h3>
-                      <div className="space-y-2 text-sm">
-                        <div><span className="font-medium">Owner:</span> {parcel.primary_owner || 'N/A'}</div>
-                        <div><span className="font-medium">Use:</span> {parcel.usedesc || 'N/A'}</div>
-                        <div><span className="font-medium">Year Built:</span> {parcel.yearbuilt || 'N/A'}</div>
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-600 mb-2">Valuation</h3>
-                      <div className="space-y-2 text-sm">
-                        <div><span className="font-medium">Total Value:</span> ${(parcel.parval || 0).toLocaleString()}</div>
-                        <div><span className="font-medium">Land Value:</span> ${(parcel.landval || 0).toLocaleString()}</div>
-                        <div><span className="font-medium">Improvement Value:</span> ${(parcel.improvval || 0).toLocaleString()}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Zoning Regulations */}
-                {parcel.zoning_data && (
+                {isLoadingDetail && (
                   <div className="bg-white border border-gray-200 rounded-lg p-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Zoning Regulations</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-600 mb-2">Development Constraints</h3>
-                        <div className="space-y-2 text-sm">
-                          <div><span className="font-medium">Max FAR:</span> {parcel.zoning_data.max_far || 'N/A'}</div>
-                          <div><span className="font-medium">Max Height:</span> {parcel.zoning_data.max_building_height_ft || 'N/A'} ft</div>
-                          <div><span className="font-medium">Max Coverage:</span> {parcel.zoning_data.max_coverage_pct || 'N/A'}%</div>
-                          <div><span className="font-medium">Max Density:</span> {parcel.zoning_data.max_density_du_per_acre || 'N/A'} DU/acre</div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-sm text-gray-600">Loading parcel details...</span>
+                    </div>
+                  </div>
+                )}
+                {!isLoadingDetail && (
+                  <>
+                    {/* Parcel Summary */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                      <h2 className="text-xl font-semibold text-gray-900 mb-4">Parcel Summary</h2>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-600 mb-2">Property Details</h3>
+                          <div className="space-y-2 text-sm">
+                            <div><span className="font-medium">Address:</span> {p.address || 'N/A'}</div>
+                            <div><span className="font-medium">Parcel #:</span> {p.parcelnumb || 'N/A'}</div>
+                            <div><span className="font-medium">Lot Size:</span> {p.deeded_acres ? `${p.deeded_acres.toFixed(2)} acres` : 'N/A'}</div>
+                            <div><span className="font-medium">Zoning:</span> {p.zoning || 'N/A'}</div>
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-medium text-gray-600 mb-2">Setback Requirements</h3>
-                        <div className="space-y-2 text-sm">
-                          <div><span className="font-medium">Front:</span> {parcel.zoning_data.min_front_setback_ft || 'N/A'} ft</div>
-                          <div><span className="font-medium">Rear:</span> {parcel.zoning_data.min_rear_setback_ft || 'N/A'} ft</div>
-                          <div><span className="font-medium">Side:</span> {parcel.zoning_data.min_side_setback_ft || 'N/A'} ft</div>
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-600 mb-2">Ownership</h3>
+                          <div className="space-y-2 text-sm">
+                            <div><span className="font-medium">Owner:</span> {p.primary_owner || p.owner || 'N/A'}</div>
+                            <div><span className="font-medium">Use:</span> {p.usedesc || 'N/A'}</div>
+                            <div><span className="font-medium">Year Built:</span> {p.yearbuilt || 'N/A'}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-600 mb-2">Valuation</h3>
+                          <div className="space-y-2 text-sm">
+                            <div><span className="font-medium">Total Value:</span> {p.parval ? `$${p.parval.toLocaleString()}` : 'N/A'}</div>
+                            <div><span className="font-medium">Land Value:</span> {p.landval ? `$${p.landval.toLocaleString()}` : 'N/A'}</div>
+                            <div><span className="font-medium">Improvement Value:</span> {p.improvval ? `$${p.improvval.toLocaleString()}` : 'N/A'}</div>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+
+                    {/* Zoning Regulations */}
+                    {p.zoning_data && (
+                      <div className="bg-white border border-gray-200 rounded-lg p-6">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Zoning Regulations</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div>
+                            <h3 className="text-sm font-medium text-gray-600 mb-2">Development Constraints</h3>
+                            <div className="space-y-2 text-sm">
+                              <div><span className="font-medium">Max FAR:</span> {p.zoning_data.max_far || 'N/A'}</div>
+                              <div><span className="font-medium">Max Height:</span> {p.zoning_data.max_building_height_ft || 'N/A'} ft</div>
+                              <div><span className="font-medium">Max Coverage:</span> {p.zoning_data.max_coverage_pct || 'N/A'}%</div>
+                              <div><span className="font-medium">Max Density:</span> {p.zoning_data.max_density_du_per_acre || 'N/A'} DU/acre</div>
+                            </div>
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-medium text-gray-600 mb-2">Setback Requirements</h3>
+                            <div className="space-y-2 text-sm">
+                              <div><span className="font-medium">Front:</span> {p.zoning_data.min_front_setback_ft || 'N/A'} ft</div>
+                              <div><span className="font-medium">Rear:</span> {p.zoning_data.min_rear_setback_ft || 'N/A'} ft</div>
+                              <div><span className="font-medium">Side:</span> {p.zoning_data.min_side_setback_ft || 'N/A'} ft</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -149,14 +203,14 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
               <div className="space-y-6">
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <h2 className="text-xl font-semibold text-gray-900 mb-4">Highest & Best Use Analysis</h2>
-                  <HBUAnalysisPanel parcel={parcel} />
+                  <HBUAnalysisPanel parcel={p} />
                 </div>
               </div>
             )}
 
             {activeTab === 'site' && (
               <div className="space-y-6">
-                <SiteWorkspace parcel={parcel} />
+                <SiteWorkspace parcel={p} />
               </div>
             )}
 

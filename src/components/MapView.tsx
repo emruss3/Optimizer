@@ -196,14 +196,23 @@ const MapView = React.memo(function MapView({
               return;
             }
 
-            // Create validated parcel object
+            // Create validated parcel object with all available fields
             const parcel = {
               ogc_fid: String(ogc_fid),
               parcelnumb: row.parcelnumb ?? null,
               address: row.address ?? null,
               zoning: row.zoning ?? null,
               sqft: row.sqft ?? null,
-              geometry: row.geometry // GeoJSON (Polygon or MultiPolygon)
+              geometry: row.geometry, // GeoJSON (Polygon or MultiPolygon)
+              // Include all additional fields from RPC response
+              primary_owner: row.primary_owner ?? row.owner ?? null,
+              owner: row.owner ?? row.primary_owner ?? null,
+              usedesc: row.usedesc ?? null,
+              yearbuilt: row.yearbuilt ?? null,
+              deeded_acres: row.deeded_acres ?? null,
+              parval: row.parval ?? null,
+              landval: row.landval ?? null,
+              improvval: row.improvval ?? null
             };
 
             if (activeProjectId) { 
