@@ -37,6 +37,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
   const [investmentAnalysis, setInvestmentAnalysis] = useState<InvestmentAnalysis | null>(null);
+  const [solverReady, setSolverReady] = useState(false);
   const generateTimerRef = useRef<number | null>(null);
 
   const envelopeMeters = useMemo(() => {
@@ -83,6 +84,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       });
       setPlanOutput(convertElementsToFeet(result.elements || []), result.metrics || null);
       setViolations(result.violations || []);
+      setSolverReady(true);
+    } catch (error) {
+      console.error('Failed to initialize solver:', error);
+      setSolverReady(false);
+      setViolations([{
+        code: 'worker',
+        message: `Failed to initialize solver: ${String(error)}`,
+        severity: 'error'
+      }]);
     } finally {
       setIsGenerating(false);
     }
@@ -112,13 +122,62 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       };
 
       // No debounce here - Shell already debounces
-      runUpdate().catch(() => undefined);
+      // Don't swallow errors - surface them to user
+      runUpdate().catch(err => {
+        console.error('Building update failed:', err);
+        setViolations([{
+          code: 'worker',
+          message: String(err),
+          severity: 'error'
+        }]);
+      });
     },
     [convertElementsToFeet, envelopeMeters, setPlanOutput]
   );
 
-  const handleAddBuilding = useCallback(() => {
-    if (!envelopeFeet || !envelopeMeters) return;
+  const handleAddBuilding = useCallback(async () => {
+    if (!envelopeMeters) {
+      setViolations([{
+        code: 'envelope',
+        message: 'Buildable envelope not available. Please wait for envelope to load.',
+        severity: 'error'
+      }]);
+      return;
+    }
+
+    if (!envelopeFeet) {
+      setViolations([{
+        code: 'envelope',
+        message: 'Failed to convert envelope to feet. Please try again.',
+        severity: 'error'
+      }]);
+      return;
+    }
+
+    // If solver not ready, initialize it first
+    if (!solverReady) {
+      try {
+        const parkingSpec = {
+          stallW: feetToMeters(config.designParameters.parking.stallWidthFt),
+          stallD: feetToMeters(config.designParameters.parking.stallDepthFt),
+          aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
+          anglesDeg: [0, 60, 90] as number[]
+        };
+        const init = await workerManager.initSite(envelopeMeters, config.zoning, undefined, parkingSpec);
+        setPlanOutput(convertElementsToFeet(init.elements || []), init.metrics || null);
+        setViolations(init.violations || []);
+        setSolverReady(true);
+      } catch (error) {
+        console.error('Failed to initialize solver:', error);
+        setViolations([{
+          code: 'worker',
+          message: `Failed to initialize solver: ${String(error)}`,
+          severity: 'error'
+        }]);
+        setSolverReady(false);
+        return;
+      }
+    }
     
     // Calculate envelope centroid (not just bounds center)
     const coords = envelopeFeet.coordinates[0];
@@ -149,7 +208,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       depthFt: defaultDepthFt,
       floors: defaultFloors
     }, { final: true });
-  }, [envelopeFeet, envelopeMeters, elements, handleBuildingUpdate]);
+  }, [envelopeFeet, envelopeMeters, elements, handleBuildingUpdate, solverReady, config, convertElementsToFeet, setPlanOutput]);
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
@@ -222,7 +281,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                   }}
                   buildableEnvelope={envelopeFeet || undefined}
                   onBuildingUpdate={handleBuildingUpdate}
-                  onAddBuilding={handleAddBuilding}
+                  onAddBuilding={status === 'ready' && envelopeMeters ? handleAddBuilding : undefined}
                 />
               </SitePlannerErrorBoundary>
             </div>
