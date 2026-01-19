@@ -48,6 +48,10 @@ interface EnterpriseSitePlannerProps {
   selectedSolve?: PlannerOutput;
   parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number };
   buildableEnvelope?: import('geojson').Polygon;
+  envelopeStatus?: 'loading' | 'ready' | 'invalid';
+  envelopeError?: string | null;
+  usingFallbackEnvelope?: boolean;
+  onRetryEnvelope?: () => void;
   onBuildingUpdate?: (
     update: {
       id: string;
@@ -70,6 +74,10 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   selectedSolve,
   parkingViz,
   buildableEnvelope,
+  envelopeStatus,
+  envelopeError,
+  usingFallbackEnvelope,
+  onRetryEnvelope,
   onBuildingUpdate,
   onAddBuilding
 }) => {
@@ -646,6 +654,52 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-gray-50 min-h-[400px]">
+      {/* Envelope Status Banner */}
+      {envelopeStatus && (
+        <div className={`px-4 py-2 border-b ${
+          envelopeStatus === 'ready' && !usingFallbackEnvelope
+            ? 'bg-green-50 border-green-200'
+            : envelopeStatus === 'loading'
+            ? 'bg-blue-50 border-blue-200'
+            : 'bg-yellow-50 border-yellow-200'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-medium">
+                Envelope status: <span className={
+                  envelopeStatus === 'ready' ? 'text-green-700' :
+                  envelopeStatus === 'loading' ? 'text-blue-700' :
+                  'text-yellow-700'
+                }>{envelopeStatus}</span>
+              </span>
+              {usingFallbackEnvelope && (
+                <span className="text-sm text-yellow-700">
+                  (Using fallback envelope with default setbacks: 20ft front, 5ft side, 20ft rear)
+                </span>
+              )}
+              {envelopeStatus === 'invalid' && envelopeError && (
+                <span className="text-sm text-red-700">
+                  {envelopeError}
+                  {envelopeError.includes('returned null') && (
+                    <span className="ml-2 text-xs">
+                      Check: supabase/sql/get_parcel_buildable_envelope.sql and AUDIT_BACKEND_STATUS.sql
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+            {envelopeStatus === 'invalid' && onRetryEnvelope && (
+              <button
+                onClick={onRetryEnvelope}
+                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-white border-b">
         <div className="flex items-center space-x-4">

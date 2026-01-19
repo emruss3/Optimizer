@@ -19,6 +19,7 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
   const [status, setStatus] = useState<EnvelopeStatus>('loading');
   const [envelope, setEnvelope] = useState<any>(null);
   const [rpcMetrics, setRpcMetrics] = useState<RpcMetrics | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const ogcFidRef = useRef<number | null>(null);
   const didRunRef = useRef(false);
 
@@ -54,6 +55,8 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
         if (cancelled) return;
         if (!env?.buildable_geom) {
           setStatus('invalid');
+          setError('Supabase RPC get_parcel_buildable_envelope returned null. Run SQL audit.');
+          console.warn('⚠️ [useBuildableEnvelope] RPC returned null buildable_geom. Check: supabase/sql/get_parcel_buildable_envelope.sql and AUDIT_BACKEND_STATUS.sql');
           return;
         }
 
@@ -65,10 +68,14 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
           hasZoning: env.far_max !== null && env.far_max > 0
         });
         setStatus('ready');
+        setError(null);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
           setStatus('invalid');
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          setError(errorMsg);
+          console.error('❌ [useBuildableEnvelope] Failed to fetch envelope:', err);
         }
       });
 
@@ -80,6 +87,7 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
   return {
     status,
     envelope,
-    rpcMetrics
+    rpcMetrics,
+    error
   };
 };
