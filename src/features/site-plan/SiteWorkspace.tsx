@@ -7,7 +7,7 @@ import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
-import { normalizeToPolygon } from '../../engine/geometry';
+import { normalizeToPolygon, calculatePolygonCentroid } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
 import { feetToMeters, metersToFeet } from '../../engine/units';
 import type { Polygon, MultiPolygon } from 'geojson';
@@ -120,20 +120,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const handleAddBuilding = useCallback(() => {
     if (!envelopeFeet || !envelopeMeters) return;
     
-    // Calculate envelope center
+    // Calculate envelope centroid (not just bounds center)
     const coords = envelopeFeet.coordinates[0];
-    const bounds = coords.reduce(
-      (acc, [x, y]) => ({
-        minX: Math.min(acc.minX, x),
-        minY: Math.min(acc.minY, y),
-        maxX: Math.max(acc.maxX, x),
-        maxY: Math.max(acc.maxY, y)
-      }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
-    );
-    
-    const centerX = (bounds.minX + bounds.maxX) / 2;
-    const centerY = (bounds.minY + bounds.maxY) / 2;
+    const centroid = calculatePolygonCentroid(coords);
+    const anchorX = centroid[0];
+    const anchorY = centroid[1];
     
     // Find next available building ID
     const existingIds = elements.filter(e => e.type === 'building').map(e => e.id);
@@ -143,7 +134,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     const newId = `building-${buildingNum}`;
     
-    // Default dimensions: 100ft x 50ft, 3 floors
+    // Default dimensions from config or sensible defaults
+    // TODO: Add building defaults to config.designParameters
     const defaultWidthFt = 100;
     const defaultDepthFt = 50;
     const defaultFloors = 3;
@@ -151,7 +143,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // Create new building via updateBuilding (worker will create if id not found)
     handleBuildingUpdate({
       id: newId,
-      anchor: { x: centerX, y: centerY },
+      anchor: { x: anchorX, y: anchorY },
       rotationRad: 0,
       widthFt: defaultWidthFt,
       depthFt: defaultDepthFt,

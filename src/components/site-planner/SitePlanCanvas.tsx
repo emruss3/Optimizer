@@ -47,6 +47,37 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Add non-passive wheel event listener to allow preventDefault
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onWheel) return;
+
+    const wheelHandler = (event: WheelEvent) => {
+      event.preventDefault();
+      // Create synthetic React event for compatibility
+      const syntheticEvent = {
+        ...event,
+        preventDefault: () => event.preventDefault(),
+        stopPropagation: () => event.stopPropagation(),
+        nativeEvent: event,
+        currentTarget: canvas,
+        target: canvas,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        deltaY: event.deltaY,
+        deltaX: event.deltaX,
+        deltaZ: event.deltaZ,
+        deltaMode: event.deltaMode
+      } as React.WheelEvent<HTMLCanvasElement>;
+      onWheel(syntheticEvent);
+    };
+
+    canvas.addEventListener('wheel', wheelHandler, { passive: false });
+    return () => {
+      canvas.removeEventListener('wheel', wheelHandler);
+    };
+  }, [onWheel]);
+
   // Get element color
   const getElementColor = useCallback((element: Element): string => {
     switch (element.type) {
@@ -526,7 +557,6 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseUp}
-      onWheel={onWheel}
       onClick={handleClick}
       style={{ display: 'block' }}
     />

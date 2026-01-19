@@ -739,7 +739,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onWheel={handleWheel}
           />
           
         </div>

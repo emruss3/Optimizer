@@ -64,7 +64,7 @@ export const SitePlanToolbar: React.FC<SitePlanToolbarProps> = ({
         <MousePointer className="w-5 h-5" />
       </button>
 
-      {/* Drawing Tools - draw-building disabled (use Add Building button instead) */}
+      {/* Drawing Tools - all disabled (use solver-backed actions instead) */}
       {/* <button
         onClick={() => onToolChange('draw-building')}
         className={`p-2 rounded ${activeTool === 'draw-building' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
@@ -72,20 +72,21 @@ export const SitePlanToolbar: React.FC<SitePlanToolbarProps> = ({
       >
         <Building className="w-5 h-5" />
       </button> */}
-      <button
+      {/* Parking and greenspace disabled - they create local-only elements, not solver-backed */}
+      {/* <button
         onClick={() => onToolChange('draw-parking')}
         className={`p-2 rounded ${activeTool === 'draw-parking' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
         title="Add Parking"
       >
         <Car className="w-5 h-5" />
-      </button>
-      <button
+      </button> */}
+      {/* <button
         onClick={() => onToolChange('draw-greenspace')}
         className={`p-2 rounded ${activeTool === 'draw-greenspace' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
         title="Add Greenspace"
       >
         <TreePine className="w-5 h-5" />
-      </button>
+      </button> */}
       <button
         onClick={() => onToolChange('measure')}
         className={`p-2 rounded ${activeTool === 'measure' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
