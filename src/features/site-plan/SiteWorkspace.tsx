@@ -38,7 +38,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
   const [investmentAnalysis, setInvestmentAnalysis] = useState<InvestmentAnalysis | null>(null);
   const generateTimerRef = useRef<number | null>(null);
-  const updateTimerRef = useRef<number | null>(null);
 
   const envelopeMeters = useMemo(() => {
     if (!envelope) return null;
@@ -84,8 +83,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       id: string;
       anchor: { x: number; y: number };
       rotationRad: number;
-      widthM: number;
-      depthM: number;
+      widthFt: number;
+      depthFt: number;
       floors?: number;
     }, options?: { final?: boolean }) => {
       if (!envelopeMeters) return;
@@ -94,25 +93,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           anchorX: feetToMeters(update.anchor.x),
           anchorY: feetToMeters(update.anchor.y),
           rotationRad: update.rotationRad,
-          widthM: feetToMeters(update.widthM),
-          depthM: feetToMeters(update.depthM),
+          widthM: feetToMeters(update.widthFt),
+          depthM: feetToMeters(update.depthFt),
           floors: update.floors
         });
         setPlanOutput(convertElementsToFeet(result.elements || []), result.metrics || null);
         setViolations(result.violations || []);
       };
 
-      if (options?.final) {
-        runUpdate().catch(() => undefined);
-        return;
-      }
-
-      if (updateTimerRef.current) {
-        window.clearTimeout(updateTimerRef.current);
-      }
-      updateTimerRef.current = window.setTimeout(() => {
-        runUpdate().catch(() => undefined);
-      }, 80);
+      // No debounce here - Shell already debounces
+      runUpdate().catch(() => undefined);
     },
     [convertElementsToFeet, envelopeMeters, setPlanOutput]
   );
@@ -181,11 +171,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                   planElements={elements}
                   metrics={metrics || undefined}
                   selectedSolve={selectedSolve || undefined}
-                  marketData={{
-                    avgPricePerSqFt: 300,
-                    avgRentPerSqFt: 2.5,
-                    capRate: 0.06,
-                    constructionCostPerSqFt: 200
+                  parkingViz={{
+                    angleDeg: metrics?.parkingAngleDeg ?? 0,
+                    stallWidthFt: config.designParameters.parking.stallWidthFt,
+                    stallDepthFt: config.designParameters.parking.stallDepthFt
                   }}
                   onBuildingUpdate={handleBuildingUpdate}
                 />

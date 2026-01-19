@@ -73,8 +73,12 @@ export function solveParkingBayPacking(
     );
   });
 
-  const used = clearanceRects.length > 0 ? normalizeToPolygon(union(...clearanceRects)) : null;
-  const candidate = used ? difference(envelope, used) : envelope;
+  // Iterative subtraction to preserve MultiPolygon components
+  let candidate: Polygon | MultiPolygon = envelope;
+  for (const rect of clearanceRects) {
+    const normalizedCandidate = normalizeToPolygon(candidate);
+    candidate = difference(normalizedCandidate, rect);
+  }
   const candidatePolys = asPolygonList(candidate);
 
   if (candidatePolys.length === 0) {

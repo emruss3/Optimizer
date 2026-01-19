@@ -17,6 +17,7 @@ interface SitePlanCanvasProps {
   gridState?: { enabled: boolean; snapToGrid: boolean; size: number };
   hoveredElement?: string | null;
   showLabels?: boolean;
+  parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number };
   onElementClick?: (element: Element | null, event: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseDown?: (event: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -35,6 +36,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   gridState,
   hoveredElement = null,
   showLabels = true,
+  parkingViz,
   onElementClick,
   onMouseDown,
   onMouseMove,
@@ -223,41 +225,42 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   // Render parking stripes
   const renderParkingStripes = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     if (element.type !== 'parking' && element.type !== 'parking-bay') return;
+    if (!parkingViz) return;
 
     ctx.save();
-    const coords = element.geometry.coordinates[0];
     const bounds = ElementService.getElementBounds(element);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    
+    // Rotate context around element center
+    ctx.translate(centerX, centerY);
+    ctx.rotate((parkingViz.angleDeg * Math.PI) / 180);
+    ctx.translate(-centerX, -centerY);
     
     const width = bounds.maxX - bounds.minX;
     const height = bounds.maxY - bounds.minY;
     
-    // Standard parking space: 9' x 18'
-    const spaceWidth = 9; // feet
-    const spaceLength = 18; // feet
+    const stallWidth = parkingViz.stallWidthFt;
+    const stallDepth = parkingViz.stallDepthFt;
     
-    const spacesPerRow = Math.max(1, Math.floor(width / spaceWidth));
-    const rows = Math.max(1, Math.floor(height / spaceLength));
+    const spacesPerRow = Math.max(1, Math.floor(width / stallWidth));
+    const rows = Math.max(1, Math.floor(height / stallDepth));
     
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 1 / zoom;
     ctx.globalAlpha = 0.8;
     
-    // Draw parking stripes
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < spacesPerRow; col++) {
-        const x = bounds.minX + col * spaceWidth;
-        const y = bounds.minY + row * spaceLength;
-        
-        // Draw diagonal stripe
-        ctx.beginPath();
-        ctx.moveTo(x, y + spaceLength);
-        ctx.lineTo(x + spaceWidth, y);
-        ctx.stroke();
-      }
+    // Draw stall divider lines
+    for (let col = 1; col < spacesPerRow; col++) {
+      const x = bounds.minX + col * stallWidth;
+      ctx.beginPath();
+      ctx.moveTo(x, bounds.minY);
+      ctx.lineTo(x, bounds.maxY);
+      ctx.stroke();
     }
     
     ctx.restore();
-  }, []);
+  }, [parkingViz]);
 
   // Render element labels
   const renderElementLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
@@ -344,15 +347,6 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       console.warn('⚠️ [SitePlanCanvas] Could not get 2D context');
       return;
     }
-
-    console.log('🎨 [SitePlanCanvas] Rendering:', {
-      elementsCount: elements.length,
-      selectedCount: selectedElements.size,
-      viewport: { zoom: viewport.zoom, panX: viewport.panX, panY: viewport.panY },
-      hasProcessedGeometry: !!processedGeometry,
-      gridEnabled: gridState?.enabled,
-      isMeasuring: measurementState?.isMeasuring
-    });
 
     // Clear canvas
     ctx.fillStyle = '#F9FAFB';
@@ -467,7 +461,6 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
   // Render when dependencies change
   useEffect(() => {
-    console.log('🔄 [SitePlanCanvas] Render effect triggered');
     render();
   }, [render]);
 
@@ -477,7 +470,6 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (!canvas) return;
     
     const observer = new ResizeObserver(() => {
-      console.log('📐 [SitePlanCanvas] Canvas resized, re-rendering');
       render();
     });
     
