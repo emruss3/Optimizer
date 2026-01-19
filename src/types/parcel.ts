@@ -41,6 +41,25 @@ export interface SelectedParcel {
   min_front_setback_ft?: number;
   min_rear_setback_ft?: number;
   min_side_setback_ft?: number;
+  max_density_du_per_acre?: number;
+  permitted_land_uses?: Record<string, string[]> | null;
+  
+  // Optional enhanced zoning fields (from Regrid schema)
+  zoning_id?: string | null;
+  zoning_subtype?: string | null;
+  zoning_objective?: string | null;
+  zoning_code_link?: string | null;
+  permitted_land_uses_as_of_right?: Record<string, string[]> | null;
+  permitted_land_uses_conditional?: Record<string, string[]> | null;
+  min_lot_area_sq_ft?: number | null;
+  min_lot_width_ft?: number | null;
+  max_impervious_coverage_pct?: number | null;
+  min_landscaped_space_pct?: number | null;
+  min_open_space_pct?: number | null;
+  zoning_data_date?: string | null;
+  municipality_id?: string | null;
+  municipality_name?: string | null;
+  geoid?: string | null;
 }
 
 export interface ParcelBBoxRow {

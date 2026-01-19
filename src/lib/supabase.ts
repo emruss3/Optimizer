@@ -34,7 +34,7 @@ import { RegridZoningData } from '../types/zoning';
 export interface Parcel {
   id: string;
   address: string;
-  deededacreage: number;
+  deeded_acres: number; // Aligned with RPC response (was deededacreage)
   sqft: number;
   zoning: string;
   geometry?: GeoJSONGeometry;

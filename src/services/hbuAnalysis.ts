@@ -88,33 +88,35 @@ export class HBUAnalyzer {
     console.log('Raw parcel data received:', parcel);
     
     // Create zoning data from the parcel's enhanced fields with proper type conversion
+    // Use flat fields first, then fallback to zoning_data if present
+    const zoningDataObj = parcel.zoning_data || {};
     const zoningData: RegridZoningData = {
-      zoning_id: parcel.zoning_id,
-      zoning: parcel.zoning,
-      zoning_description: parcel.zoning_description,
-      zoning_type: parcel.zoning_type,
-      zoning_subtype: parcel.zoning_subtype,
-      zoning_objective: parcel.zoning_objective,
-      zoning_code_link: parcel.zoning_code_link,
-      permitted_land_uses: parcel.permitted_land_uses,
-      permitted_land_uses_as_of_right: parcel.permitted_land_uses_as_of_right,
-      permitted_land_uses_conditional: parcel.permitted_land_uses_conditional,
-      min_lot_area_sq_ft: this.safeParseNumber(parcel.min_lot_area_sq_ft),
-      min_lot_width_ft: this.safeParseNumber(parcel.min_lot_width_ft),
-      max_building_height_ft: this.safeParseNumber(parcel.max_building_height_ft),
-      max_far: this.safeParseNumber(parcel.max_far),
-      min_front_setback_ft: this.safeParseNumber(parcel.min_front_setback_ft),
-      min_rear_setback_ft: this.safeParseNumber(parcel.min_rear_setback_ft),
-      min_side_setback_ft: this.safeParseNumber(parcel.min_side_setback_ft),
-      max_coverage_pct: this.safeParseNumber(parcel.max_coverage_pct),
-      max_impervious_coverage_pct: this.safeParseNumber(parcel.max_impervious_coverage_pct),
-      min_landscaped_space_pct: this.safeParseNumber(parcel.min_landscaped_space_pct),
-      min_open_space_pct: this.safeParseNumber(parcel.min_open_space_pct),
-      max_density_du_per_acre: this.safeParseNumber(parcel.max_density_du_per_acre),
-      zoning_data_date: parcel.zoning_data_date,
-      municipality_id: parcel.municipality_id,
-      municipality_name: parcel.municipality_name,
-      geoid: parcel.geoid
+      zoning_id: parcel.zoning_id ?? zoningDataObj.zoning_id,
+      zoning: parcel.zoning ?? zoningDataObj.zoning,
+      zoning_description: parcel.zoning_description ?? zoningDataObj.zoning_description,
+      zoning_type: parcel.zoning_type ?? zoningDataObj.zoning_type,
+      zoning_subtype: parcel.zoning_subtype ?? zoningDataObj.zoning_subtype,
+      zoning_objective: parcel.zoning_objective ?? zoningDataObj.zoning_objective,
+      zoning_code_link: parcel.zoning_code_link ?? zoningDataObj.zoning_code_link,
+      permitted_land_uses: parcel.permitted_land_uses ?? zoningDataObj.permitted_land_uses,
+      permitted_land_uses_as_of_right: parcel.permitted_land_uses_as_of_right ?? zoningDataObj.permitted_land_uses_as_of_right,
+      permitted_land_uses_conditional: parcel.permitted_land_uses_conditional ?? zoningDataObj.permitted_land_uses_conditional,
+      min_lot_area_sq_ft: this.safeParseNumber(parcel.min_lot_area_sq_ft ?? zoningDataObj.min_lot_area_sq_ft),
+      min_lot_width_ft: this.safeParseNumber(parcel.min_lot_width_ft ?? zoningDataObj.min_lot_width_ft),
+      max_building_height_ft: this.safeParseNumber(parcel.max_height_ft ?? parcel.max_building_height_ft ?? zoningDataObj.max_building_height_ft),
+      max_far: this.safeParseNumber(parcel.max_far ?? zoningDataObj.max_far),
+      min_front_setback_ft: this.safeParseNumber(parcel.min_front_setback_ft ?? zoningDataObj.min_front_setback_ft),
+      min_rear_setback_ft: this.safeParseNumber(parcel.min_rear_setback_ft ?? zoningDataObj.min_rear_setback_ft),
+      min_side_setback_ft: this.safeParseNumber(parcel.min_side_setback_ft ?? zoningDataObj.min_side_setback_ft),
+      max_coverage_pct: this.safeParseNumber(parcel.max_coverage_pct ?? zoningDataObj.max_coverage_pct),
+      max_impervious_coverage_pct: this.safeParseNumber(parcel.max_impervious_coverage_pct ?? zoningDataObj.max_impervious_coverage_pct),
+      min_landscaped_space_pct: this.safeParseNumber(parcel.min_landscaped_space_pct ?? zoningDataObj.min_landscaped_space_pct),
+      min_open_space_pct: this.safeParseNumber(parcel.min_open_space_pct ?? zoningDataObj.min_open_space_pct),
+      max_density_du_per_acre: this.safeParseNumber(parcel.max_density_du_per_acre ?? zoningDataObj.max_density_du_per_acre),
+      zoning_data_date: parcel.zoning_data_date ?? zoningDataObj.zoning_data_date,
+      municipality_id: parcel.municipality_id ?? zoningDataObj.municipality_id,
+      municipality_name: parcel.municipality_name ?? zoningDataObj.municipality_name,
+      geoid: parcel.geoid ?? zoningDataObj.geoid
     };
 
     console.log('Processed zoning data:', zoningData);
@@ -141,7 +143,7 @@ export class HBUAnalyzer {
     console.log('Market factors analyzed:', marketFactors);
     
     // 3. Calculate financial projections for each use
-    const alternatives = await this.calculateAlternatives(parcel, feasibleUses);
+    const alternatives = await this.calculateAlternatives(parcel, feasibleUses, zoningData);
     console.log('Alternatives calculated:', alternatives);
     
     // 4. Identify constraints
@@ -384,7 +386,7 @@ export class HBUAnalyzer {
     });
 
     // Zoning flexibility
-    if (parcel.zoning_data?.zoning_type === 'Mixed-Use') {
+    if (zoningData.zoning_type === 'Mixed-Use') {
       factors.push({
         factor: 'Zoning Flexibility',
         impact: 'positive',
@@ -415,11 +417,11 @@ export class HBUAnalyzer {
   /**
    * Calculate financial alternatives for each feasible use
    */
-  private async calculateAlternatives(parcel: SelectedParcel, uses: string[]): Promise<HBUAlternative[]> {
+  private async calculateAlternatives(parcel: SelectedParcel, uses: string[], zoningData: RegridZoningData): Promise<HBUAlternative[]> {
     const alternatives: HBUAlternative[] = [];
 
     for (const use of uses) {
-      const alternative = await this.calculateAlternative(parcel, use);
+      const alternative = await this.calculateAlternative(parcel, use, zoningData);
       alternatives.push(alternative);
     }
 
@@ -430,7 +432,7 @@ export class HBUAnalyzer {
   /**
    * Calculate financial metrics for a specific use
    */
-  private async calculateAlternative(parcel: SelectedParcel, use: string): Promise<HBUAlternative> {
+  private async calculateAlternative(parcel: SelectedParcel, use: string, zoningData: RegridZoningData): Promise<HBUAlternative> {
     const density = this.getRequiredDensity(use);
     const far = this.getRequiredFAR(use);
     const height = this.getRequiredHeight(use);
@@ -464,8 +466,8 @@ export class HBUAnalyzer {
       netPresentValue,
       internalRateOfReturn,
       paybackPeriod,
-      confidence: this.calculateUseConfidence(use, parcel),
-      constraints: this.identifyUseConstraints(use, parcel.zoning_data!),
+      confidence: this.calculateUseConfidence(use, parcel, zoningData),
+      constraints: this.identifyUseConstraints(use, zoningData),
       marketFactors: this.identifyUseMarketFactors(use, parcel)
     };
   }
@@ -551,12 +553,12 @@ export class HBUAnalyzer {
   /**
    * Calculate confidence score for a use
    */
-  private calculateUseConfidence(use: string, parcel: SelectedParcel): number {
+  private calculateUseConfidence(use: string, parcel: SelectedParcel, zoningData: RegridZoningData): number {
     let confidence = 50; // Base confidence
 
     // Zoning match
-    if (parcel.zoning_data?.zoning_type) {
-      const typeMatch = this.getZoningTypeMatch(use, parcel.zoning_data.zoning_type);
+    if (zoningData.zoning_type) {
+      const typeMatch = this.getZoningTypeMatch(use, zoningData.zoning_type);
       confidence += typeMatch * 20;
     }
 

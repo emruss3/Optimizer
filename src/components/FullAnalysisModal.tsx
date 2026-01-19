@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, Building, TrendingUp, Map, DollarSign } from 'lucide-react';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
 import { SelectedParcel, isValidParcel } from '../types/parcel';
 import { SiteWorkspace } from '../features/site-plan';
-import { supabase } from '../lib/supabase';
+import { useParcelDetail } from '../hooks/useParcelDetail';
 
 interface FullAnalysisModalProps {
   parcel: SelectedParcel;
@@ -13,59 +13,11 @@ interface FullAnalysisModalProps {
 
 const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen, onClose }: FullAnalysisModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'hbu' | 'site' | 'financial'>('overview');
-  const [parcelDetail, setParcelDetail] = useState<SelectedParcel | null>(null);
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-
-  // Fetch full parcel details when modal opens
-  useEffect(() => {
-    if (!isOpen || !parcel?.ogc_fid) {
-      setParcelDetail(null);
-      return;
-    }
-
-    let cancelled = false;
-    setIsLoadingDetail(true);
-
-    const fetchParcelDetail = async () => {
-      try {
-        const { data, error } = await supabase.rpc('get_parcel_by_id', { 
-          p_ogc_fid: Number(parcel.ogc_fid) 
-        });
-        
-        if (cancelled) return;
-        
-        if (error) {
-          console.error('Error fetching parcel detail:', error);
-          setIsLoadingDetail(false);
-          return;
-        }
-
-        const row = Array.isArray(data) ? data[0] : data;
-        if (row) {
-          setParcelDetail({
-            ...parcel,
-            ...row,
-            ogc_fid: String(row.ogc_fid ?? parcel.ogc_fid),
-            geometry: row.geometry ?? parcel.geometry
-          } as SelectedParcel);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error('Error fetching parcel detail:', err);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingDetail(false);
-        }
-      }
-    };
-
-    fetchParcelDetail();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, parcel?.ogc_fid]);
+  
+  // Use useParcelDetail hook to fetch and normalize full parcel data
+  const { parcelDetail, loading: isLoadingDetail, error: parcelError } = useParcelDetail(
+    isOpen ? parcel?.ogc_fid : null
+  );
 
   // Use hydrated parcel detail if available, otherwise fall back to passed parcel
   const p = parcelDetail ?? parcel;
@@ -135,7 +87,14 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                     </div>
                   </div>
                 )}
-                {!isLoadingDetail && (
+                {parcelError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-red-700">Error loading parcel details: {parcelError}</span>
+                    </div>
+                  </div>
+                )}
+                {!isLoadingDetail && !parcelError && (
                   <>
                     {/* Parcel Summary */}
                     <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -170,25 +129,27 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                     </div>
 
                     {/* Zoning Regulations */}
-                    {p.zoning_data && (
+                    {(p.max_far || p.max_height_ft || p.max_coverage_pct || p.max_density_du_per_acre || 
+                      p.min_front_setback_ft || p.min_rear_setback_ft || p.min_side_setback_ft || 
+                      (p.zoning_data && (p.zoning_data.max_far || p.zoning_data.max_building_height_ft))) && (
                       <div className="bg-white border border-gray-200 rounded-lg p-6">
                         <h2 className="text-xl font-semibold text-gray-900 mb-4">Zoning Regulations</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           <div>
                             <h3 className="text-sm font-medium text-gray-600 mb-2">Development Constraints</h3>
                             <div className="space-y-2 text-sm">
-                              <div><span className="font-medium">Max FAR:</span> {p.zoning_data.max_far || 'N/A'}</div>
-                              <div><span className="font-medium">Max Height:</span> {p.zoning_data.max_building_height_ft || 'N/A'} ft</div>
-                              <div><span className="font-medium">Max Coverage:</span> {p.zoning_data.max_coverage_pct || 'N/A'}%</div>
-                              <div><span className="font-medium">Max Density:</span> {p.zoning_data.max_density_du_per_acre || 'N/A'} DU/acre</div>
+                              <div><span className="font-medium">Max FAR:</span> {p.max_far ?? p.zoning_data?.max_far ?? 'N/A'}</div>
+                              <div><span className="font-medium">Max Height:</span> {p.max_height_ft ?? p.zoning_data?.max_building_height_ft ?? 'N/A'} ft</div>
+                              <div><span className="font-medium">Max Coverage:</span> {p.max_coverage_pct ?? p.zoning_data?.max_coverage_pct ?? 'N/A'}%</div>
+                              <div><span className="font-medium">Max Density:</span> {p.max_density_du_per_acre ?? p.zoning_data?.max_density_du_per_acre ?? 'N/A'} DU/acre</div>
                             </div>
                           </div>
                           <div>
                             <h3 className="text-sm font-medium text-gray-600 mb-2">Setback Requirements</h3>
                             <div className="space-y-2 text-sm">
-                              <div><span className="font-medium">Front:</span> {p.zoning_data.min_front_setback_ft || 'N/A'} ft</div>
-                              <div><span className="font-medium">Rear:</span> {p.zoning_data.min_rear_setback_ft || 'N/A'} ft</div>
-                              <div><span className="font-medium">Side:</span> {p.zoning_data.min_side_setback_ft || 'N/A'} ft</div>
+                              <div><span className="font-medium">Front:</span> {p.min_front_setback_ft ?? p.zoning_data?.min_front_setback_ft ?? 'N/A'} ft</div>
+                              <div><span className="font-medium">Rear:</span> {p.min_rear_setback_ft ?? p.zoning_data?.min_rear_setback_ft ?? 'N/A'} ft</div>
+                              <div><span className="font-medium">Side:</span> {p.min_side_setback_ft ?? p.zoning_data?.min_side_setback_ft ?? 'N/A'} ft</div>
                             </div>
                           </div>
                         </div>
