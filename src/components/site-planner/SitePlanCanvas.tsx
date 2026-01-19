@@ -11,6 +11,7 @@ interface SitePlanCanvasProps {
   selectedElements: Set<string>;
   viewport: ViewportState;
   processedGeometry: { geometry: any; bounds: { minX: number; minY: number; maxX: number; maxY: number } } | null;
+  buildableEnvelope?: import('geojson').Polygon;
   isVertexEditing?: boolean;
   selectedVertex?: { elementId: string; vertexIndex: number } | null;
   measurementState?: { isMeasuring: boolean; startPoint: { x: number; y: number } | null; endPoint: { x: number; y: number } | null };
@@ -30,6 +31,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   selectedElements,
   viewport,
   processedGeometry,
+  buildableEnvelope,
   isVertexEditing = false,
   selectedVertex = null,
   measurementState,
@@ -62,13 +64,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
   }, []);
 
-  // Render parcel boundary
+  // Render parcel boundary (stroke only, no fill)
   const renderParcelBoundary = useCallback((ctx: CanvasRenderingContext2D, geometry: any, zoom: number) => {
     ctx.save();
-    ctx.strokeStyle = '#374151';
+    ctx.strokeStyle = '#6B7280';
     ctx.lineWidth = 2 / zoom;
-    ctx.fillStyle = '#3B82F6';
-    ctx.globalAlpha = 0.6;
+    ctx.globalAlpha = 0.8;
     
     let coords: number[][];
     if (geometry.type === 'Polygon') {
@@ -80,6 +81,28 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       return;
     }
     
+    if (coords && coords.length > 0) {
+      ctx.beginPath();
+      ctx.moveTo(coords[0][0], coords[0][1]);
+      for (let i = 1; i < coords.length; i++) {
+        ctx.lineTo(coords[i][0], coords[i][1]);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+    
+    ctx.restore();
+  }, []);
+
+  // Render buildable envelope (filled region, primary)
+  const renderBuildableEnvelope = useCallback((ctx: CanvasRenderingContext2D, envelope: import('geojson').Polygon, zoom: number) => {
+    ctx.save();
+    ctx.fillStyle = '#DBEAFE';
+    ctx.strokeStyle = '#3B82F6';
+    ctx.lineWidth = 2 / zoom;
+    ctx.globalAlpha = 0.4;
+    
+    const coords = envelope.coordinates[0];
     if (coords && coords.length > 0) {
       ctx.beginPath();
       ctx.moveTo(coords[0][0], coords[0][1]);
@@ -375,7 +398,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       renderGrid(ctx, processedGeometry.bounds, gridState.size, viewport.zoom);
     }
 
-    // Render parcel boundary
+    // Render buildable envelope (filled, primary)
+    if (buildableEnvelope) {
+      renderBuildableEnvelope(ctx, buildableEnvelope, viewport.zoom);
+    }
+
+    // Render parcel boundary (stroke only)
     if (processedGeometry) {
       renderParcelBoundary(ctx, processedGeometry.geometry, viewport.zoom);
     }
@@ -418,7 +446,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     });
 
     ctx.restore();
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderElement, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderParkingStripes, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderParkingStripes, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

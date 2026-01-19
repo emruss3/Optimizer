@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { BarChart3, Grid, AlertTriangle, CheckCircle } from 'lucide-react';
+import { BarChart3, Grid, AlertTriangle, CheckCircle, Building } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -47,6 +47,7 @@ interface EnterpriseSitePlannerProps {
   activePlanId?: string;
   selectedSolve?: PlannerOutput;
   parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number };
+  buildableEnvelope?: import('geojson').Polygon;
   onBuildingUpdate?: (
     update: {
       id: string;
@@ -58,6 +59,7 @@ interface EnterpriseSitePlannerProps {
     },
     options?: { final?: boolean }
   ) => void;
+  onAddBuilding?: () => void;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -67,7 +69,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   activePlanId,
   selectedSolve,
   parkingViz,
-  onBuildingUpdate
+  buildableEnvelope,
+  onBuildingUpdate,
+  onAddBuilding
 }) => {
   if (import.meta.env.DEV) {
     console.log('🔍 [EnterpriseSitePlannerShell] Component rendered:', {
@@ -275,6 +279,11 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     // Drawing tools
     if (drawingTools.activeTool.startsWith('draw-')) {
+      // Disable draw-building tool (use Add Building button instead)
+      if (drawingTools.activeTool === 'draw-building') {
+        drawingTools.setActiveTool('select');
+        return;
+      }
       const elementType = drawingTools.activeTool.replace('draw-', '') as 'building' | 'parking' | 'greenspace';
       const newElement = drawingTools.createElement(snapped.x, snapped.y, elementType);
       setElements(prev => [...prev, newElement]);
@@ -644,12 +653,22 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         </div>
         
         <div className="flex items-center space-x-2">
-          <button
+          {onAddBuilding && (
+            <button
+              onClick={onAddBuilding}
+              className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            >
+              <Building className="w-4 h-4" />
+              <span>Add Building</span>
+            </button>
+          )}
+          {/* Templates disabled until solver-backed */}
+          {/* <button
             onClick={() => setShowTemplates(!showTemplates)}
             className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
           >
             Templates
-          </button>
+          </button> */}
           <button
             onClick={() => setShowMetrics(!showMetrics)}
             className="p-2 text-gray-600 hover:text-gray-900"
@@ -709,6 +728,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             selectedElements={selection.selectedElements}
             viewport={viewport.viewport}
             processedGeometry={processedGeometry}
+            buildableEnvelope={buildableEnvelope}
             isVertexEditing={vertexEditing.isVertexEditing}
             selectedVertex={vertexEditing.selectedVertex}
             measurementState={measurement.measurementState}

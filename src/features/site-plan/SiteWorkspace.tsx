@@ -49,6 +49,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return normalizeToPolygon(reprojected);
   }, [envelope]);
 
+  const envelopeFeet = useMemo(() => {
+    if (!envelopeMeters) return null;
+    return {
+      ...envelopeMeters,
+      coordinates: [
+        envelopeMeters.coordinates[0].map(([x, y]) => [metersToFeet(x), metersToFeet(y)])
+      ]
+    };
+  }, [envelopeMeters]);
+
   const convertElementsToFeet = useCallback((elements: Element[]) => {
     return elements.map(element => ({
       ...element,
@@ -106,6 +116,48 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     },
     [convertElementsToFeet, envelopeMeters, setPlanOutput]
   );
+
+  const handleAddBuilding = useCallback(() => {
+    if (!envelopeFeet || !envelopeMeters) return;
+    
+    // Calculate envelope center
+    const coords = envelopeFeet.coordinates[0];
+    const bounds = coords.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y)
+      }),
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+    );
+    
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    
+    // Find next available building ID
+    const existingIds = elements.filter(e => e.type === 'building').map(e => e.id);
+    let buildingNum = 1;
+    while (existingIds.includes(`building-${buildingNum}`)) {
+      buildingNum++;
+    }
+    const newId = `building-${buildingNum}`;
+    
+    // Default dimensions: 100ft x 50ft, 3 floors
+    const defaultWidthFt = 100;
+    const defaultDepthFt = 50;
+    const defaultFloors = 3;
+    
+    // Create new building via updateBuilding (worker will create if id not found)
+    handleBuildingUpdate({
+      id: newId,
+      anchor: { x: centerX, y: centerY },
+      rotationRad: 0,
+      widthFt: defaultWidthFt,
+      depthFt: defaultDepthFt,
+      floors: defaultFloors
+    }, { final: true });
+  }, [envelopeFeet, envelopeMeters, elements, handleBuildingUpdate]);
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
@@ -176,7 +228,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                     stallWidthFt: config.designParameters.parking.stallWidthFt,
                     stallDepthFt: config.designParameters.parking.stallDepthFt
                   }}
+                  buildableEnvelope={envelopeFeet || undefined}
                   onBuildingUpdate={handleBuildingUpdate}
+                  onAddBuilding={handleAddBuilding}
                 />
               </SitePlannerErrorBoundary>
             </div>

@@ -64,14 +64,14 @@ export const SitePlanToolbar: React.FC<SitePlanToolbarProps> = ({
         <MousePointer className="w-5 h-5" />
       </button>
 
-      {/* Drawing Tools */}
-      <button
+      {/* Drawing Tools - draw-building disabled (use Add Building button instead) */}
+      {/* <button
         onClick={() => onToolChange('draw-building')}
         className={`p-2 rounded ${activeTool === 'draw-building' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
         title="Add Building"
       >
         <Building className="w-5 h-5" />
-      </button>
+      </button> */}
       <button
         onClick={() => onToolChange('draw-parking')}
         className={`p-2 rounded ${activeTool === 'draw-parking' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
