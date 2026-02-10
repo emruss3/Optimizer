@@ -11,9 +11,9 @@ import {
   areaSqft,
   bbox,
   centroid,
-  pointInPoly,
+  isPointInPolygon,
   simplify
-} from '../geometry';
+} from '../../src/engine/geometry';
 
 describe('Geometry Operations', () => {
   // Helper to create a simple rectangle polygon
@@ -182,6 +182,123 @@ describe('Geometry Operations', () => {
 
       expect(area(buffered)).toBe(area(offsetPoly));
     });
+
+    it('should buffer an irregular pentagon (5+ vertices)', () => {
+      // Irregular pentagon (convex)
+      const pentagon: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [0, 0],
+          [40, 0],
+          [50, 30],
+          [25, 50],
+          [0, 30],
+          [0, 0]
+        ]]
+      };
+      const originalArea = areaM2(pentagon);
+
+      // Outward buffer
+      const outward = buffer(pentagon, 3);
+      expect(areaM2(outward)).toBeGreaterThan(originalArea);
+
+      // Inward buffer (setback)
+      const inward = buffer(pentagon, -3);
+      expect(areaM2(inward)).toBeLessThan(originalArea);
+      expect(areaM2(inward)).toBeGreaterThan(0);
+    });
+
+    it('should buffer a concave polygon', () => {
+      // L-shaped (concave) polygon
+      const lShape: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [0, 0],
+          [40, 0],
+          [40, 20],
+          [20, 20],
+          [20, 40],
+          [0, 40],
+          [0, 0]
+        ]]
+      };
+      const originalArea = areaM2(lShape);
+
+      // Outward buffer
+      const outward = buffer(lShape, 2);
+      expect(areaM2(outward)).toBeGreaterThan(originalArea);
+
+      // Inward buffer (setback)
+      const inward = buffer(lShape, -2);
+      expect(areaM2(inward)).toBeLessThan(originalArea);
+      expect(areaM2(inward)).toBeGreaterThan(0);
+    });
+
+    it('should return empty polygon when inward buffer collapses a small parcel', () => {
+      // Tiny triangle (3m sides) with a large inward buffer should collapse
+      const tiny: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [0, 0],
+          [3, 0],
+          [1.5, 2.6],
+          [0, 0]
+        ]]
+      };
+      const originalArea = areaM2(tiny);
+
+      const collapsed = buffer(tiny, -5);
+      // Should be much smaller than original (collapsed or near-zero)
+      expect(areaM2(collapsed)).toBeLessThan(originalArea * 0.5);
+    });
+
+    it('should buffer a rotated (non-axis-aligned) rectangle', () => {
+      // 45-degree rotated square (side ~14.14 for a 10x10 area)
+      const rotated: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [10, 0],
+          [20, 10],
+          [10, 20],
+          [0, 10],
+          [10, 0]
+        ]]
+      };
+      const originalArea = areaM2(rotated);
+
+      const outward = buffer(rotated, 2);
+      expect(areaM2(outward)).toBeGreaterThan(originalArea);
+
+      const inward = buffer(rotated, -2);
+      expect(areaM2(inward)).toBeLessThan(originalArea);
+      expect(areaM2(inward)).toBeGreaterThan(0);
+    });
+
+    it('should handle a complex irregular parcel (6+ vertices)', () => {
+      // Realistic irregular parcel shape
+      const parcel: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [100, 100],
+          [200, 105],
+          [210, 180],
+          [180, 220],
+          [120, 215],
+          [90, 170],
+          [100, 100]
+        ]]
+      };
+      const originalArea = areaM2(parcel);
+
+      // 5m setback (inward)
+      const setback = buffer(parcel, -5);
+      expect(areaM2(setback)).toBeLessThan(originalArea);
+      expect(areaM2(setback)).toBeGreaterThan(originalArea * 0.3); // Should retain most area
+
+      // 5m outward
+      const expanded = buffer(parcel, 5);
+      expect(areaM2(expanded)).toBeGreaterThan(originalArea);
+    });
   });
 
   describe('area', () => {
@@ -242,26 +359,24 @@ describe('Geometry Operations', () => {
     });
   });
 
-  describe('pointInPoly', () => {
+  describe('isPointInPolygon', () => {
     it('should return true for point inside polygon', () => {
       const rect = createRectangle(0, 0, 10, 10);
-      const point = { type: 'Point' as const, coordinates: [5, 5] };
 
-      expect(pointInPoly(point, rect)).toBe(true);
+      expect(isPointInPolygon([5, 5], rect.coordinates[0])).toBe(true);
     });
 
     it('should return false for point outside polygon', () => {
       const rect = createRectangle(0, 0, 10, 10);
-      const point = { type: 'Point' as const, coordinates: [20, 20] };
 
-      expect(pointInPoly(point, rect)).toBe(false);
+      expect(isPointInPolygon([20, 20], rect.coordinates[0])).toBe(false);
     });
 
-    it('should work with array coordinates', () => {
+    it('should work with various coordinate arrays', () => {
       const rect = createRectangle(0, 0, 10, 10);
 
-      expect(pointInPoly([5, 5], rect)).toBe(true);
-      expect(pointInPoly([20, 20], rect)).toBe(false);
+      expect(isPointInPolygon([5, 5], rect.coordinates[0])).toBe(true);
+      expect(isPointInPolygon([20, 20], rect.coordinates[0])).toBe(false);
     });
   });
 

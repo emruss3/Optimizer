@@ -88,8 +88,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         return '#10B981';
       case 'parking-aisle':
         return '#6EE7B7';
+      case 'circulation':
+        return element.properties.color || '#94A3B8';
       case 'greenspace':
-        return '#059669';
+        return element.properties?.color || '#22C55E';
       default:
         return '#6B7280';
     }
@@ -386,7 +388,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     
     const color = getElementColor(element);
     ctx.fillStyle = color;
-    ctx.globalAlpha = isHovered ? 0.4 : 0.3;
+    // Greenspace gets a more visible semi-transparent fill
+    ctx.globalAlpha = element.type === 'greenspace'
+      ? (isHovered ? 0.55 : 0.45)
+      : (isHovered ? 0.4 : 0.3);
 
     const coords = element.geometry.coordinates[0];
     ctx.beginPath();

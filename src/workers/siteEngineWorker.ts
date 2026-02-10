@@ -1,12 +1,14 @@
 import type { Element, PlannerConfig, PlannerOutput } from '../engine/types';
 import type { Polygon, MultiPolygon } from 'geojson';
-import { normalizeToPolygon, areaM2, intersection } from '../engine/geometry';
+import { normalizeToPolygon, areaM2, intersection, difference, polygons } from '../engine/geometry';
 import { generateSitePlan } from '../engine/planner';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
-import type { BuildingSpec } from '../engine/model';
-import { createBuildingSpec } from '../engine/model';
+import type { BuildingSpec, BuildingType, UnitMixEntry } from '../engine/model';
+import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix } from '../engine/model';
 import { solveParkingBayPacking } from '../engine/parkingBaySolver';
 import { computeFeasibility } from '../engine/feasibility';
+import { optimize } from '../engine/optimizer';
+import type { OptimizeResult } from '../engine/optimizer';
 
 /**
  * Web Worker for heavy site planning calculations.
@@ -58,7 +60,8 @@ class SiteEngineWorker {
     envelope3857: Polygon | MultiPolygon,
     zoning: PlannerConfig['zoning'],
     initialBuildingSpec?: BuildingSpec,
-    parkingSpec?: SiteEngineState['parkingSpec']
+    parkingSpec?: SiteEngineState['parkingSpec'],
+    buildingType?: BuildingType
   ): Promise<void> {
     const envelope = normalizeToPolygon(envelope3857);
     const bounds = envelope.coordinates[0].reduce(
@@ -71,6 +74,7 @@ class SiteEngineWorker {
       { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
     );
 
+    const resolvedType: BuildingType = buildingType ?? 'MF_BAR_V1';
     const fallbackBuilding =
       initialBuildingSpec ??
       createBuildingSpec(
@@ -81,7 +85,8 @@ class SiteEngineWorker {
         },
         Math.min(60, (bounds.maxX - bounds.minX) * 0.4),
         Math.min(30, (bounds.maxY - bounds.minY) * 0.25),
-        3
+        3,
+        resolvedType
       );
 
     this.siteState = {
@@ -174,11 +179,21 @@ class SiteEngineWorker {
     }
     this.siteState.buildings = clampedBuildings;
 
-    const buildingFootprints = clampedBuildings.map(spec => ({
-      id: spec.id,
-      footprint: buildBuildingFootprint(spec),
-      floors: spec.floors
-    }));
+    const SQM_TO_SQFT = 10.7639;
+
+    const buildingFootprints = clampedBuildings.map(spec => {
+      const footprint = buildBuildingFootprint(spec);
+      const gfaSqft = areaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
+      const unitMix = spec.unitMix && spec.unitMix.length > 0
+        ? spec.unitMix
+        : generateDefaultUnitMix(gfaSqft);
+      return {
+        id: spec.id,
+        footprint,
+        floors: spec.floors,
+        unitMix,
+      };
+    });
 
     const parkingSolution = solveParkingBayPacking(
       envelope,
@@ -186,14 +201,22 @@ class SiteEngineWorker {
       parkingSpec
     );
 
+    const parkingAreaM2 = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0) +
+      parkingSolution.aisles.reduce((s, a) => s + areaM2(a), 0);
+
     const feasibility = computeFeasibility({
       envelope,
       buildings: buildingFootprints,
       parkingSolution,
+      parkingAreaM2,
       zoningLimits: {
         maxFar: zoning.maxFar,
         maxCoveragePct: zoning.maxCoveragePct,
-        parkingRatio: zoning.minParkingRatio ?? 1.5
+        parkingRatio: zoning.minParkingRatio ?? 1.5,
+        maxHeightFt: zoning.maxHeightFt,
+        maxDensityDuPerAcre: zoning.maxDensityDuPerAcre,
+        maxImperviousPct: zoning.maxImperviousPct,
+        minOpenSpacePct: zoning.minOpenSpacePct,
       }
     });
 
@@ -288,8 +311,100 @@ class SiteEngineWorker {
       });
     });
 
-    const units = Math.max(1, Math.floor(feasibility.gfaSqft / 800));
-    const parkingRatio = units > 0 ? feasibility.stallsProvided / units : 0;
+    // Circulation elements (drive aisles + connectors)
+    if (parkingSolution.circulationPolygons && parkingSolution.circulationPolygons.length > 0) {
+      parkingSolution.circulationPolygons.forEach((circ, index) => {
+        const footprint = normalizeToPolygon(circ);
+        elements.push({
+          id: `circulation-${index + 1}`,
+          type: 'circulation',
+          name: index === 0 ? 'Main Drive' : `Drive Connector ${index}`,
+          geometry: footprint,
+          properties: {
+            areaSqFt: areaM2(footprint) * 10.7639,
+            color: '#94A3B8',
+          },
+          metadata: {
+            createdAt: now,
+            updatedAt: now,
+            source: 'ai-generated'
+          }
+        });
+      });
+    }
+
+    // ─── Greenspace: geometric difference of envelope minus all used areas ───
+    let greenspaceAreaM2 = 0;
+    try {
+      let remaining: Polygon | ReturnType<typeof difference> = envelope;
+
+      // Subtract building footprints
+      for (const b of buildingFootprints) {
+        remaining = difference(remaining as Polygon, normalizeToPolygon(b.footprint));
+      }
+      // Subtract parking bays
+      for (const bay of parkingSolution.bays) {
+        remaining = difference(remaining as Polygon, normalizeToPolygon(bay));
+      }
+      // Subtract parking aisles
+      for (const aisle of parkingSolution.aisles) {
+        remaining = difference(remaining as Polygon, normalizeToPolygon(aisle));
+      }
+      // Subtract circulation polygons
+      if (parkingSolution.circulationPolygons) {
+        for (const circ of parkingSolution.circulationPolygons) {
+          remaining = difference(remaining as Polygon, normalizeToPolygon(circ));
+        }
+      }
+
+      // Extract individual polygons from the remaining geometry
+      const greenPolygons = polygons(remaining as Polygon);
+      let gsIndex = 0;
+      for (const gp of greenPolygons) {
+        const gpAreaSqft = areaM2(gp) * SQM_TO_SQFT;
+        if (gpAreaSqft < 100) continue; // Filter out slivers < 100 sqft
+        gsIndex++;
+        greenspaceAreaM2 += areaM2(gp);
+        elements.push({
+          id: `greenspace-${gsIndex}`,
+          type: 'greenspace',
+          name: `Open Space ${gsIndex}`,
+          geometry: gp,
+          properties: {
+            areaSqFt: gpAreaSqft,
+            color: '#22C55E',
+          },
+          metadata: {
+            createdAt: now,
+            updatedAt: now,
+            source: 'ai-generated'
+          }
+        });
+      }
+    } catch {
+      // Fallback: calculate greenspace from arithmetic if boolean ops fail
+      const sArea = areaM2(envelope);
+      const fpArea = buildingFootprints.reduce((s, b) => s + areaM2(b.footprint), 0);
+      const circArea = parkingSolution.circulationAreaSqM ?? 0;
+      greenspaceAreaM2 = Math.max(0, sArea - fpArea - parkingAreaM2 - circArea);
+    }
+
+    const totalUnits = feasibility.totalUnits;
+    const parkingRatio = totalUnits > 0 ? feasibility.stallsProvided / totalUnits : 0;
+
+    // Build unit mix summary string
+    const allMix = buildingFootprints.flatMap(b => b.unitMix || []);
+    const mixByType: Record<string, number> = {};
+    for (const entry of allMix) {
+      mixByType[entry.type] = (mixByType[entry.type] || 0) + entry.count;
+    }
+    const unitMixSummary = totalUnits > 0
+      ? `${totalUnits} total (${mixByType['studio'] || 0} studio, ${mixByType['1br'] || 0} 1BR, ${mixByType['2br'] || 0} 2BR, ${mixByType['3br'] || 0} 3BR)`
+      : '';
+
+    // Compute open space percentage from actual greenspace geometry
+    const siteAreaM2 = areaM2(envelope);
+    const openSpacePct = siteAreaM2 > 0 ? (greenspaceAreaM2 / siteAreaM2) * 100 : 0;
 
     return {
       elements,
@@ -298,10 +413,12 @@ class SiteEngineWorker {
         siteCoveragePct: feasibility.coverage * 100,
         achievedFAR: feasibility.far,
         parkingRatio,
-        openSpacePct: 0,
+        openSpacePct,
         stallsProvided: feasibility.stallsProvided,
         stallsRequired: feasibility.stallsRequired,
         parkingAngleDeg: parkingSolution.chosenAngleDeg,
+        totalUnits,
+        unitMixSummary,
         zoningCompliant: feasibility.violations.filter(v => v.severity === 'error').length === 0,
         violations: feasibility.violations.map(v => v.message),
         warnings: feasibility.violations.filter(v => v.severity === 'warning').map(v => v.message)
@@ -321,8 +438,8 @@ self.onmessage = async (e) => {
 
   try {
     if (type === 'INIT_SITE') {
-      const { envelope3857, zoning, initialBuildingSpec, parkingSpec } = data;
-      await worker.initSite(envelope3857, zoning, initialBuildingSpec, parkingSpec);
+      const { envelope3857, zoning, initialBuildingSpec, parkingSpec, buildingType } = data;
+      await worker.initSite(envelope3857, zoning, initialBuildingSpec, parkingSpec, buildingType);
       const result = await worker.solvePlan();
       (self as any).postMessage({
         type: 'PLAN_UPDATED',
@@ -343,6 +460,33 @@ self.onmessage = async (e) => {
       const result = await worker.solvePlan();
       (self as any).postMessage({
         type: 'PLAN_UPDATED',
+        id: requestId,
+        reqId: requestId,
+        ...result,
+      });
+    } else if (type === 'OPTIMIZE') {
+      const { envelope3857, zoning, designParams, parkingSpec, maxIterations } = data;
+      const envelope = normalizeToPolygon(envelope3857);
+
+      const result = optimize({
+        envelope,
+        zoning,
+        designParams,
+        parkingSpec,
+        maxIterations: maxIterations ?? 500,
+        onProgress: (iteration, score) => {
+          (self as any).postMessage({
+            type: 'OPTIMIZE_PROGRESS',
+            id: requestId,
+            reqId: requestId,
+            iteration,
+            score,
+          });
+        },
+      });
+
+      (self as any).postMessage({
+        type: 'OPTIMIZE_RESULT',
         id: requestId,
         reqId: requestId,
         ...result,

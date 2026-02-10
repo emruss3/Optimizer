@@ -150,6 +150,8 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
             <option value="bar">Bar Building</option>
             <option value="L-shape">L-Shaped</option>
             <option value="podium">Podium</option>
+            <option value="u-shape">U-Shape</option>
+            <option value="courtyard-wrap">Courtyard Wrap</option>
             <option value="custom">Custom</option>
           </select>
         </div>

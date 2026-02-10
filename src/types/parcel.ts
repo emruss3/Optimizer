@@ -109,12 +109,32 @@ export interface MarketData {
   vacancyRate: number;
 }
 
-  // Investment analysis interface
+  // Investment analysis interface (pro forma)
   export interface InvestmentAnalysis {
-    totalInvestment: number;
-    projectedRevenue: number;
+    // Revenue
+    grossPotentialRent: number;
+    vacancyLoss: number;
+    effectiveGrossIncome: number;
     operatingExpenses: number;
     netOperatingIncome: number;
+    // Costs
+    totalDevelopmentCost: number;
+    totalHardCosts: number;
+    softCosts: number;
+    contingency: number;
+    financingCosts: number;
+    landCost: number;
+    // Returns
+    yieldOnCost: number;
+    stabilizedValue: number;
+    profit: number;
+    equityMultiple: number;
+    cashOnCash: number;
+    costPerUnit: number;
+    costPerSF: number;
+    // Legacy aliases (for backward compat)
+    totalInvestment: number;
+    projectedRevenue: number;
     capRate: number;
     irr: number;
     paybackPeriod: number;

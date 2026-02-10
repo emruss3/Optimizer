@@ -1,55 +1,229 @@
-// ┬⌐ 2025 ER Technologies. All rights reserved.
+// © 2025 ER Technologies. All rights reserved.
 // Proprietary and confidential. Not for distribution.
 
 import type { Polygon } from 'geojson';
 import type { BuildingSpec, SiteState } from './model';
-import { intersection, pointInPoly, bbox, areaM2, polygons } from './geometry';
+import { intersection, difference, isPointInPolygon, bbox, areaM2, polygons } from './geometry';
+
+// ─── helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Build building footprint polygon from BuildingSpec
- * Creates a rectangle rotated about the anchor point
+ * Rotate a point (x, y) about the origin by (cos, sin), then translate by (tx, ty).
  */
-export function buildBuildingFootprint(spec: BuildingSpec): Polygon {
-  const { anchor, widthM, depthM, rotationRad } = spec;
-
-  // Create rectangle centered at anchor (or corner-based, depending on type)
-  // For MF_BAR_V1, we'll use center anchor
-  const halfWidth = widthM / 2;
-  const halfDepth = depthM / 2;
-
-  // Four corners relative to anchor (before rotation)
-  const corners = [
-    [-halfWidth, -halfDepth],
-    [halfWidth, -halfDepth],
-    [halfWidth, halfDepth],
-    [-halfWidth, halfDepth]
-  ];
-
-  // Rotate corners about origin, then translate to anchor
-  const cos = Math.cos(rotationRad);
-  const sin = Math.sin(rotationRad);
-
-  const rotatedCorners = corners.map(([x, y]) => {
-    const rx = x * cos - y * sin;
-    const ry = x * sin + y * cos;
-    return [anchor.x + rx, anchor.y + ry];
-  });
-
-  // Close the ring
-  rotatedCorners.push([rotatedCorners[0][0], rotatedCorners[0][1]]);
-
-  return {
-    type: 'Polygon',
-    coordinates: [rotatedCorners]
-  };
+function xform(x: number, y: number, cos: number, sin: number, tx: number, ty: number): number[] {
+  return [x * cos - y * sin + tx, x * sin + y * cos + ty];
 }
 
 /**
- * Clamp building to envelope and avoid overlaps
- * Snaps building to nearest feasible pose
+ * Build a closed GeoJSON ring from local-space points, applying rotation + translation.
+ */
+function buildRing(
+  localPoints: number[][],
+  cos: number,
+  sin: number,
+  tx: number,
+  ty: number
+): number[][] {
+  const ring = localPoints.map(([x, y]) => xform(x, y, cos, sin, tx, ty));
+  ring.push([ring[0][0], ring[0][1]]); // close
+  return ring;
+}
+
+/**
+ * Get all vertices of a footprint polygon (excluding the closing duplicate).
+ * Handles polygons with holes (courtyard-wrap) — checks all rings.
+ */
+function getAllVertices(poly: Polygon): number[][] {
+  const verts: number[][] = [];
+  for (const ring of poly.coordinates) {
+    // Skip closing vertex (last == first)
+    for (let i = 0; i < ring.length - 1; i++) {
+      verts.push(ring[i]);
+    }
+  }
+  return verts;
+}
+
+// ─── footprint generators ────────────────────────────────────────────────────
+
+/**
+ * Build building footprint polygon from BuildingSpec.
+ * Supports: MF_BAR_V1, MF_L_SHAPE, MF_PODIUM, MF_U_SHAPE, MF_COURTYARD_WRAP, CUSTOM.
+ */
+export function buildBuildingFootprint(spec: BuildingSpec): Polygon {
+  const { anchor, widthM, depthM, rotationRad } = spec;
+  const cos = Math.cos(rotationRad);
+  const sin = Math.sin(rotationRad);
+  const tx = anchor.x;
+  const ty = anchor.y;
+
+  switch (spec.type) {
+    case 'MF_L_SHAPE':
+      return buildLShapeFootprint(spec, cos, sin, tx, ty);
+    case 'MF_PODIUM':
+      // Podium footprint is the full rectangle (same as bar); tower vs podium floors
+      // are handled in GFA calculations, not footprint shape.
+      return buildRectFootprint(widthM, depthM, cos, sin, tx, ty);
+    case 'MF_U_SHAPE':
+      return buildUShapeFootprint(spec, cos, sin, tx, ty);
+    case 'MF_COURTYARD_WRAP':
+      return buildCourtyardWrapFootprint(spec, cos, sin, tx, ty);
+    case 'MF_BAR_V1':
+    case 'CUSTOM':
+    default:
+      return buildRectFootprint(widthM, depthM, cos, sin, tx, ty);
+  }
+}
+
+/**
+ * Rectangle (bar) footprint centred on anchor.
+ */
+function buildRectFootprint(
+  widthM: number,
+  depthM: number,
+  cos: number,
+  sin: number,
+  tx: number,
+  ty: number
+): Polygon {
+  const hw = widthM / 2;
+  const hd = depthM / 2;
+  const corners = [
+    [-hw, -hd],
+    [hw, -hd],
+    [hw, hd],
+    [-hw, hd]
+  ];
+  return { type: 'Polygon', coordinates: [buildRing(corners, cos, sin, tx, ty)] };
+}
+
+/**
+ * L-shape footprint.
+ * Main bar (widthM × depthM) centred on anchor, plus a wing extending from bottom-right.
  *
- * v1: Simple implementation - projects anchor to nearest point inside envelope
- * and nudges away from collisions
+ *   ┌──────────┐
+ *   │  main    │
+ *   │          ├───────┐
+ *   └──────────┤  wing │
+ *              └───────┘
+ */
+function buildLShapeFootprint(
+  spec: BuildingSpec,
+  cos: number,
+  sin: number,
+  tx: number,
+  ty: number
+): Polygon {
+  const hw = spec.widthM / 2;
+  const hd = spec.depthM / 2;
+  const ww = spec.wingWidth ?? hw * 0.6;
+  const wd = spec.wingDepth ?? spec.depthM;
+
+  // L-shape vertices (CCW), centred on anchor
+  // Main rect top-left → top-right → wing junction → wing outer → wing bottom → bottom-left
+  const pts = [
+    [-hw, -hd],             // top-left of main
+    [hw, -hd],              // top-right of main
+    [hw, hd - wd],          // right edge, where wing starts
+    [hw + ww, hd - wd],     // wing top-right
+    [hw + ww, hd],          // wing bottom-right
+    [-hw, hd],              // bottom-left of main
+  ];
+
+  return { type: 'Polygon', coordinates: [buildRing(pts, cos, sin, tx, ty)] };
+}
+
+/**
+ * U-shape footprint.
+ * Rectangle with a courtyard cutout on one side (bottom).
+ *
+ *   ┌──────────────┐
+ *   │              │
+ *   │  ┌────────┐  │
+ *   │  │courtyard│  │
+ *   └──┘        └──┘
+ */
+function buildUShapeFootprint(
+  spec: BuildingSpec,
+  cos: number,
+  sin: number,
+  tx: number,
+  ty: number
+): Polygon {
+  const hw = spec.widthM / 2;
+  const hd = spec.depthM / 2;
+  const cw = (spec.courtyardWidth ?? spec.widthM * 0.5) / 2;
+  const cd = spec.courtyardDepth ?? spec.depthM * 0.5;
+
+  // Outer rectangle with courtyard notch at bottom (CCW)
+  const pts = [
+    [-hw, -hd],     // top-left
+    [hw, -hd],      // top-right
+    [hw, hd],       // bottom-right
+    [cw, hd],       // courtyard bottom-right
+    [cw, hd - cd],  // courtyard top-right
+    [-cw, hd - cd], // courtyard top-left
+    [-cw, hd],      // courtyard bottom-left
+    [-hw, hd],      // bottom-left
+  ];
+
+  return { type: 'Polygon', coordinates: [buildRing(pts, cos, sin, tx, ty)] };
+}
+
+/**
+ * Courtyard-wrap footprint.
+ * Full rectangle ring: outer rectangle minus inner courtyard.
+ * Represented as a polygon with a hole.
+ *
+ *   ┌──────────────┐
+ *   │ ┌──────────┐ │
+ *   │ │ courtyard│ │
+ *   │ └──────────┘ │
+ *   └──────────────┘
+ */
+function buildCourtyardWrapFootprint(
+  spec: BuildingSpec,
+  cos: number,
+  sin: number,
+  tx: number,
+  ty: number
+): Polygon {
+  const hw = spec.widthM / 2;
+  const hd = spec.depthM / 2;
+  const cw = (spec.courtyardWidth ?? spec.widthM * 0.6) / 2;
+  const cd = (spec.courtyardDepth ?? spec.depthM * 0.5) / 2;
+
+  // Outer ring (CCW)
+  const outer = buildRing(
+    [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]],
+    cos, sin, tx, ty
+  );
+
+  // Inner ring (CW — hole)
+  const inner = buildRing(
+    [[-cw, -cd], [-cw, cd], [cw, cd], [cw, -cd]],
+    cos, sin, tx, ty
+  );
+
+  return { type: 'Polygon', coordinates: [outer, inner] };
+}
+
+// ─── clamping ────────────────────────────────────────────────────────────────
+
+/**
+ * Check if all vertices of a footprint are inside the envelope.
+ * Works with non-rectangular polygons and polygons with holes.
+ */
+function footprintInsideEnvelope(footprint: Polygon, envelope: Polygon): boolean {
+  const verts = getAllVertices(footprint);
+  return verts.every(coord => isPointInPolygon(coord, envelope.coordinates[0]));
+}
+
+/**
+ * Clamp building to envelope and avoid overlaps.
+ * Works with any typology (non-rectangular footprints).
+ *
+ * Uses centroid + all-vertex containment checks rather than bbox-only.
  */
 export function clampBuildingToEnvelope(
   spec: BuildingSpec,
@@ -57,15 +231,11 @@ export function clampBuildingToEnvelope(
   otherBuildings: BuildingSpec[]
 ): BuildingSpec {
   const footprint = buildBuildingFootprint(spec);
-  const footprintBbox = bbox(footprint);
-  const envelopeBbox = bbox(envelope);
 
-  // Check if building is completely outside envelope
-  const allCornersInside = footprint.coordinates[0].slice(0, -1).every(coord =>
-    pointInPoly(coord, envelope)
-  );
+  // Check if building is completely inside envelope
+  const allInside = footprintInsideEnvelope(footprint, envelope);
 
-  if (allCornersInside) {
+  if (allInside) {
     // Check for overlaps with other buildings
     const hasOverlap = otherBuildings.some(other => {
       if (other.id === spec.id) return false;
@@ -74,46 +244,35 @@ export function clampBuildingToEnvelope(
     });
 
     if (!hasOverlap) {
-      // Building is valid, return as-is
       return spec;
     }
   }
 
   // Building needs adjustment
   let newAnchor = { ...spec.anchor };
-  let newRotation = spec.rotationRad;
+  const newRotation = spec.rotationRad;
 
   // Strategy 1: Try to move anchor to center of envelope
   const envBbox = bbox(envelope);
   const envCenterX = (envBbox.minX + envBbox.maxX) / 2;
   const envCenterY = (envBbox.minY + envBbox.maxY) / 2;
 
-  // Check if center position works
-  const testSpec: BuildingSpec = {
-    ...spec,
-    anchor: { x: envCenterX, y: envCenterY }
-  };
+  const testSpec: BuildingSpec = { ...spec, anchor: { x: envCenterX, y: envCenterY } };
   const testFootprint = buildBuildingFootprint(testSpec);
-  const testAllInside = testFootprint.coordinates[0].slice(0, -1).every(coord =>
-    pointInPoly(coord, envelope)
-  );
+  const testAllInside = footprintInsideEnvelope(testFootprint, envelope);
 
   if (testAllInside) {
-    // Check for overlaps at center position
     const testHasOverlap = otherBuildings.some(other => {
       if (other.id === spec.id) return false;
-      const otherFootprint = buildBuildingFootprint(other);
-      return polygonsOverlap(testFootprint, otherFootprint);
+      return polygonsOverlap(testFootprint, buildBuildingFootprint(other));
     });
-
     if (!testHasOverlap) {
       newAnchor = { x: envCenterX, y: envCenterY };
     }
   }
 
-  // Strategy 2: If center doesn't work, try nudging from current position
+  // Strategy 2: nudge toward envelope centre in small steps
   if (newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
-    // Try moving toward envelope center in small steps
     const stepSize = Math.min(spec.widthM, spec.depthM) * 0.1;
     const dx = envCenterX - spec.anchor.x;
     const dy = envCenterY - spec.anchor.y;
@@ -127,23 +286,13 @@ export function clampBuildingToEnvelope(
           x: spec.anchor.x + dx * t,
           y: spec.anchor.y + dy * t
         };
-
-        const candidateSpec: BuildingSpec = {
-          ...spec,
-          anchor: candidateAnchor
-        };
+        const candidateSpec: BuildingSpec = { ...spec, anchor: candidateAnchor };
         const candidateFootprint = buildBuildingFootprint(candidateSpec);
-        const candidateAllInside = candidateFootprint.coordinates[0].slice(0, -1).every(coord =>
-          pointInPoly(coord, envelope)
-        );
-
-        if (candidateAllInside) {
+        if (footprintInsideEnvelope(candidateFootprint, envelope)) {
           const candidateHasOverlap = otherBuildings.some(other => {
             if (other.id === spec.id) return false;
-            const otherFootprint = buildBuildingFootprint(other);
-            return polygonsOverlap(candidateFootprint, otherFootprint);
+            return polygonsOverlap(candidateFootprint, buildBuildingFootprint(other));
           });
-
           if (!candidateHasOverlap) {
             newAnchor = candidateAnchor;
             break;
@@ -153,7 +302,7 @@ export function clampBuildingToEnvelope(
     }
   }
 
-  // Strategy 3: If still no valid position, try deterministic grid nudges
+  // Strategy 3: deterministic grid nudges
   if (newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
     const offsetRange = Math.min(spec.widthM, spec.depthM);
     const step = Math.max(0.5, offsetRange * 0.1);
@@ -163,27 +312,14 @@ export function clampBuildingToEnvelope(
       const offset = ring * step;
       for (let dx = -offset; dx <= offset; dx += step) {
         for (let dy = -offset; dy <= offset; dy += step) {
-          const candidateAnchor = {
-            x: spec.anchor.x + dx,
-            y: spec.anchor.y + dy
-          };
-
-          const candidateSpec: BuildingSpec = {
-            ...spec,
-            anchor: candidateAnchor
-          };
+          const candidateAnchor = { x: spec.anchor.x + dx, y: spec.anchor.y + dy };
+          const candidateSpec: BuildingSpec = { ...spec, anchor: candidateAnchor };
           const candidateFootprint = buildBuildingFootprint(candidateSpec);
-          const candidateAllInside = candidateFootprint.coordinates[0].slice(0, -1).every(coord =>
-            pointInPoly(coord, envelope)
-          );
-
-          if (candidateAllInside) {
+          if (footprintInsideEnvelope(candidateFootprint, envelope)) {
             const candidateHasOverlap = otherBuildings.some(other => {
               if (other.id === spec.id) return false;
-              const otherFootprint = buildBuildingFootprint(other);
-              return polygonsOverlap(candidateFootprint, otherFootprint);
+              return polygonsOverlap(candidateFootprint, buildBuildingFootprint(other));
             });
-
             if (!candidateHasOverlap) {
               newAnchor = candidateAnchor;
               break outer;
@@ -194,7 +330,6 @@ export function clampBuildingToEnvelope(
     }
   }
 
-  // Return clamped spec (respect locks)
   return {
     ...spec,
     anchor: spec.locked?.position ? spec.anchor : newAnchor,
