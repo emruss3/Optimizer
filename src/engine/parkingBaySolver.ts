@@ -280,7 +280,8 @@ function buildCirculation(
 export function solveParkingBayPacking(
   envelope: Polygon,
   buildingFootprints: Polygon[],
-  spec: ParkingBaySpec
+  spec: ParkingBaySpec,
+  maxStalls?: number
 ): ParkingBaySolution {
   const bayDepth = spec.stallD + spec.aisleW + spec.stallD;
   const clearanceM = spec.clearanceM ?? Math.max(spec.stallD, spec.stallW);
@@ -357,15 +358,18 @@ export function solveParkingBayPacking(
     let aisles: Polygon[] = [];
     let baysWithStalls: ParkingBayWithStalls[] = [];
 
-    for (let y = candidateBounds.minY; y < candidateBounds.maxY; y += bayDepth) {
+    let stallCapReached = false;
+    for (let y = candidateBounds.minY; y < candidateBounds.maxY && !stallCapReached; y += bayDepth) {
       const strip = createRect(candidateBounds.minX, y, candidateBounds.maxX, y + bayDepth);
 
       for (const candidatePoly of rotatedCandidates) {
+        if (stallCapReached) break;
         const clipped = intersection(candidatePoly, strip);
         const clippedPolys = asPolygonList(clipped);
         if (clippedPolys.length === 0) continue;
 
         for (const clip of clippedPolys) {
+          if (stallCapReached) break;
           const clipBounds = bbox(clip);
           const usableLength = Math.max(0, clipBounds.maxX - clipBounds.minX);
           const stallsPerSide = Math.floor(usableLength / spec.stallW);
@@ -396,6 +400,11 @@ export function solveParkingBayPacking(
           bays = bays.concat(bay1Polys);
           aisles = aisles.concat(asPolygonList(intersection(clip, aisle)));
           bays = bays.concat(bay2Polys);
+
+          // Stop once we've generated enough stalls
+          if (maxStalls != null && stalls >= maxStalls) {
+            stallCapReached = true;
+          }
         }
       }
     }

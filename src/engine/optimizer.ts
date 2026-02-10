@@ -9,7 +9,7 @@ import { buildBuildingFootprint, clampBuildingToEnvelope } from './buildingGeome
 import { solveParkingBayPacking } from './parkingBaySolver';
 import { computeFeasibility } from './feasibility';
 import { computeProForma } from './proforma';
-import { areaM2, normalizeToPolygon, safeBbox, intersection, difference, polygons } from './geometry';
+import { areaM2, correctedAreaM2, mercatorCorrectionFactor, normalizeToPolygon, safeBbox, intersection, difference, polygons } from './geometry';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ function computeScore(
   // Build footprints with unit mix
   const buildingFootprints = clamped.map(spec => {
     const footprint = buildBuildingFootprint(spec);
-    const gfaSqft = areaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
+    const gfaSqft = correctedAreaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
     const unitMix = spec.unitMix && spec.unitMix.length > 0
       ? spec.unitMix
       : generateDefaultUnitMix(gfaSqft);
@@ -126,11 +126,19 @@ function computeScore(
     };
   });
 
+  // Compute target stalls so the parking solver doesn't fill the entire envelope
+  const estUnits = buildingFootprints.reduce(
+    (sum, b) => sum + (b.unitMix?.reduce((s, e) => s + e.count, 0) ?? 0), 0
+  );
+  const targetRatio = zoningLimits.parkingRatio ?? 1.5;
+  const maxStalls = estUnits > 0 ? Math.ceil(estUnits * targetRatio * 1.1) : undefined;
+
   // Solve parking
   const parkingSolution = solveParkingBayPacking(
     envelope,
     buildingFootprints.map(b => b.footprint),
-    parkingSpec
+    parkingSpec,
+    maxStalls
   );
 
   const parkingAreaM2 = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0) +
@@ -145,8 +153,8 @@ function computeScore(
     zoningLimits
   });
 
-  const siteAreaM2Val = areaM2(envelope);
-  const siteAreaSqft = siteAreaM2Val * SQM_TO_SQFT;
+  const siteAreaM2Val = areaM2(envelope); // raw EPSG:3857 for ratio scoring
+  const siteAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT; // corrected for pro forma
 
   // Compute sub-scores
   const units = feasibility.totalUnits;
@@ -285,7 +293,7 @@ function buildElements(
       name: `Building ${building.id}`,
       geometry: footprint,
       properties: {
-        areaSqFt: areaM2(footprint) * SQM_TO_SQFT,
+        areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
         floors: building.floors
       },
       metadata: {
@@ -311,7 +319,7 @@ function buildElements(
       name: `Parking Bay ${index + 1}`,
       geometry: footprint,
       properties: {
-        areaSqFt: bayArea * SQM_TO_SQFT,
+        areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
         parkingSpaces: estimatedStalls
       },
       metadata: {
@@ -330,7 +338,7 @@ function buildElements(
       name: `Parking Aisle ${index + 1}`,
       geometry: footprint,
       properties: {
-        areaSqFt: areaM2(footprint) * SQM_TO_SQFT
+        areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT
       },
       metadata: {
         createdAt: now,
@@ -350,7 +358,7 @@ function buildElements(
         name: index === 0 ? 'Main Drive' : `Drive Connector ${index}`,
         geometry: footprint,
         properties: {
-          areaSqFt: areaM2(footprint) * SQM_TO_SQFT,
+          areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
           color: '#94A3B8',
         },
         metadata: {
@@ -385,7 +393,7 @@ function buildElements(
       const greenPolygons = polygons(remaining as Polygon);
       let gsIdx = 0;
       for (const gp of greenPolygons) {
-        const gpAreaSqft = areaM2(gp) * SQM_TO_SQFT;
+        const gpAreaSqft = correctedAreaM2(gp) * SQM_TO_SQFT;
         if (gpAreaSqft < 100) continue; // filter slivers
         gsIdx++;
         elements.push({

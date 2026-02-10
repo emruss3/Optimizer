@@ -1,6 +1,6 @@
 import type { Element, PlannerConfig, PlannerOutput } from '../engine/types';
 import type { Polygon, MultiPolygon } from 'geojson';
-import { normalizeToPolygon, areaM2, intersection, difference, polygons } from '../engine/geometry';
+import { normalizeToPolygon, areaM2, correctedAreaM2, mercatorCorrectionFactor, intersection, difference, polygons } from '../engine/geometry';
 import { generateSitePlan } from '../engine/planner';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
 import type { BuildingSpec, BuildingType, UnitMixEntry } from '../engine/model';
@@ -183,7 +183,7 @@ class SiteEngineWorker {
 
     const buildingFootprints = clampedBuildings.map(spec => {
       const footprint = buildBuildingFootprint(spec);
-      const gfaSqft = areaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
+      const gfaSqft = correctedAreaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
       const unitMix = spec.unitMix && spec.unitMix.length > 0
         ? spec.unitMix
         : generateDefaultUnitMix(gfaSqft);
@@ -195,10 +195,18 @@ class SiteEngineWorker {
       };
     });
 
+    // Compute target stalls so the parking solver doesn't fill the entire envelope
+    const estimatedUnits = buildingFootprints.reduce(
+      (sum, b) => sum + (b.unitMix?.reduce((s, e) => s + e.count, 0) ?? 0), 0
+    );
+    const targetParkingRatio = zoning.minParkingRatio ?? 1.5;
+    const maxStalls = Math.ceil(estimatedUnits * targetParkingRatio * 1.1); // 10% buffer
+
     const parkingSolution = solveParkingBayPacking(
       envelope,
       buildingFootprints.map(b => b.footprint),
-      parkingSpec
+      parkingSpec,
+      maxStalls > 0 ? maxStalls : undefined
     );
 
     const parkingAreaM2 = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0) +
@@ -231,7 +239,7 @@ class SiteEngineWorker {
         name: `Building ${building.id}`,
         geometry: footprint,
         properties: {
-          areaSqFt: areaM2(footprint) * 10.7639,
+          areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
           floors: building.floors
         },
         metadata: {
@@ -282,7 +290,7 @@ class SiteEngineWorker {
         name: `Parking Bay ${index + 1}`,
         geometry: footprint,
         properties: {
-          areaSqFt: bayArea * 10.7639,
+          areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
           parkingSpaces: estimatedStalls
         },
         metadata: {
@@ -301,7 +309,7 @@ class SiteEngineWorker {
         name: `Parking Aisle ${index + 1}`,
         geometry: footprint,
         properties: {
-          areaSqFt: areaM2(footprint) * 10.7639
+          areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT
         },
         metadata: {
           createdAt: now,
@@ -321,7 +329,7 @@ class SiteEngineWorker {
           name: index === 0 ? 'Main Drive' : `Drive Connector ${index}`,
           geometry: footprint,
           properties: {
-            areaSqFt: areaM2(footprint) * 10.7639,
+            areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
             color: '#94A3B8',
           },
           metadata: {
@@ -361,10 +369,10 @@ class SiteEngineWorker {
       const greenPolygons = polygons(remaining as Polygon);
       let gsIndex = 0;
       for (const gp of greenPolygons) {
-        const gpAreaSqft = areaM2(gp) * SQM_TO_SQFT;
+        const gpAreaSqft = correctedAreaM2(gp) * SQM_TO_SQFT;
         if (gpAreaSqft < 100) continue; // Filter out slivers < 100 sqft
         gsIndex++;
-        greenspaceAreaM2 += areaM2(gp);
+        greenspaceAreaM2 += correctedAreaM2(gp);
         elements.push({
           id: `greenspace-${gsIndex}`,
           type: 'greenspace',
@@ -383,10 +391,12 @@ class SiteEngineWorker {
       }
     } catch {
       // Fallback: calculate greenspace from arithmetic if boolean ops fail
-      const sArea = areaM2(envelope);
-      const fpArea = buildingFootprints.reduce((s, b) => s + areaM2(b.footprint), 0);
-      const circArea = parkingSolution.circulationAreaSqM ?? 0;
-      greenspaceAreaM2 = Math.max(0, sArea - fpArea - parkingAreaM2 - circArea);
+      const sArea = correctedAreaM2(envelope);
+      const fpArea = buildingFootprints.reduce((s, b) => s + correctedAreaM2(b.footprint), 0);
+      const mCorr = mercatorCorrectionFactor(envelope);
+      const corrParkingArea = parkingAreaM2 * mCorr;
+      const corrCircArea = (parkingSolution.circulationAreaSqM ?? 0) * mCorr;
+      greenspaceAreaM2 = Math.max(0, sArea - fpArea - corrParkingArea - corrCircArea);
     }
 
     const totalUnits = feasibility.totalUnits;
@@ -403,7 +413,7 @@ class SiteEngineWorker {
       : '';
 
     // Compute open space percentage from actual greenspace geometry
-    const siteAreaM2 = areaM2(envelope);
+    const siteAreaM2 = correctedAreaM2(envelope);
     const openSpacePct = siteAreaM2 > 0 ? (greenspaceAreaM2 / siteAreaM2) * 100 : 0;
 
     return {

@@ -61,8 +61,38 @@ export function areaM2(polygon: Polygon): number {
 }
 
 /**
+ * Compute the Mercator correction factor cos²(lat) for an EPSG:3857 polygon.
+ * In EPSG:3857, areas are inflated by 1/cos²(lat).
+ * Multiply an EPSG:3857 area by this factor to get the true ground area.
+ */
+export function mercatorCorrectionFactor(polygon: Polygon): number {
+  const ring = polygon.coordinates[0];
+  if (!ring || ring.length < 2) return 1;
+  // Average Y of non-closing vertices
+  const n = Math.max(1, ring.length - 1);
+  let sumY = 0;
+  for (let i = 0; i < n; i++) {
+    sumY += ring[i][1];
+  }
+  const avgY = sumY / n;
+  // Convert EPSG:3857 Y → latitude (radians)
+  const latRad = Math.atan(Math.exp(avgY / 6378137)) * 2 - Math.PI / 2;
+  const cosLat = Math.cos(latRad);
+  return cosLat * cosLat;
+}
+
+/**
+ * Compute area corrected for Mercator distortion.
+ * Returns the true ground area in m² for an EPSG:3857 polygon.
+ * Use for metrics / display. For geometric operations (intersection, difference), use areaM2().
+ */
+export function correctedAreaM2(polygon: Polygon): number {
+  return areaM2(polygon) * mercatorCorrectionFactor(polygon);
+}
+
+/**
  * Calculate area of a polygon in square feet
- * Converts from m┬▓ to ft┬▓ (coordinates are in meters for EPSG:3857)
+ * Converts from m² to ft² (coordinates are in meters for EPSG:3857)
  */
 export function areaSqft(polygon: Polygon): number {
   return toSqFt(areaM2(polygon));

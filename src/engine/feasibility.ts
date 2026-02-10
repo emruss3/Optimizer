@@ -1,5 +1,5 @@
 import type { Polygon } from 'geojson';
-import { areaM2, intersection, polygons } from './geometry';
+import { areaM2, correctedAreaM2, intersection, polygons } from './geometry';
 import type { FeasibilityViolation } from './types';
 import type { UnitMixEntry } from './model';
 import { totalUnitsFromMix } from './model';
@@ -58,9 +58,14 @@ export function computeFeasibility({
   parkingAreaM2: parkingAreaParam,
   zoningLimits
 }: FeasibilityInput): FeasibilityResult {
-  const siteAreaM2 = areaM2(envelope);
-  const footprintAreaM2 = buildings.reduce((sum, b) => sum + areaM2(b.footprint), 0);
-  const gfaM2 = buildings.reduce((sum, b) => sum + areaM2(b.footprint) * Math.max(1, b.floors), 0);
+  // Raw EPSG:3857 areas (for geometric ratios — Mercator cancels out)
+  const siteAreaM2Raw = areaM2(envelope);
+  const footprintAreaM2Raw = buildings.reduce((sum, b) => sum + areaM2(b.footprint), 0);
+
+  // Corrected areas (for absolute metrics — pro forma, density, display)
+  const siteAreaM2 = correctedAreaM2(envelope);
+  const footprintAreaM2 = buildings.reduce((sum, b) => sum + correctedAreaM2(b.footprint), 0);
+  const gfaM2 = buildings.reduce((sum, b) => sum + correctedAreaM2(b.footprint) * Math.max(1, b.floors), 0);
 
   const gfaSqft = gfaM2 * SQM_TO_SQFT;
   const footprintSqft = footprintAreaM2 * SQM_TO_SQFT;
@@ -127,7 +132,7 @@ export function computeFeasibility({
 
   // ── DENSITY_EXCEEDED ─────────────────────────────────────────────────────
   if (zoningLimits.maxDensityDuPerAcre != null) {
-    const parcelAcres = siteAreaM2 * SQM_TO_ACRES;
+    const parcelAcres = siteAreaM2 * SQM_TO_ACRES; // already Mercator-corrected
     const maxDU = zoningLimits.maxDensityDuPerAcre * parcelAcres;
     if (totalUnits > maxDU) {
       violations.push({
@@ -141,9 +146,10 @@ export function computeFeasibility({
 
   // ── IMPERVIOUS_EXCEEDED ──────────────────────────────────────────────────
   if (zoningLimits.maxImperviousPct != null) {
+    // Use raw EPSG:3857 areas for ratio — correction cancels out
     const parkingAreaM2Used = parkingAreaParam ?? 0;
-    const imperviousM2 = footprintAreaM2 + parkingAreaM2Used;
-    const imperviousPct = siteAreaM2 > 0 ? (imperviousM2 / siteAreaM2) * 100 : 0;
+    const imperviousM2 = footprintAreaM2Raw + parkingAreaM2Used;
+    const imperviousPct = siteAreaM2Raw > 0 ? (imperviousM2 / siteAreaM2Raw) * 100 : 0;
     if (imperviousPct > zoningLimits.maxImperviousPct) {
       violations.push({
         code: 'imperviousExceeded',
@@ -156,9 +162,10 @@ export function computeFeasibility({
 
   // ── OPEN_SPACE_INSUFFICIENT ──────────────────────────────────────────────
   if (zoningLimits.minOpenSpacePct != null) {
+    // Use raw EPSG:3857 areas for ratio — correction cancels out
     const parkingAreaM2Used = parkingAreaParam ?? 0;
-    const usedM2 = footprintAreaM2 + parkingAreaM2Used;
-    const openPct = siteAreaM2 > 0 ? ((siteAreaM2 - usedM2) / siteAreaM2) * 100 : 0;
+    const usedM2 = footprintAreaM2Raw + parkingAreaM2Used;
+    const openPct = siteAreaM2Raw > 0 ? ((siteAreaM2Raw - usedM2) / siteAreaM2Raw) * 100 : 0;
     if (openPct < zoningLimits.minOpenSpacePct) {
       violations.push({
         code: 'openSpaceInsufficient',

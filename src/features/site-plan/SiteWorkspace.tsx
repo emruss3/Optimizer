@@ -8,7 +8,7 @@ import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
 import type { EdgeClassification } from '../../engine/setbacks';
-import { normalizeToPolygon, calculatePolygonCentroid, areaM2 } from '../../engine/geometry';
+import { normalizeToPolygon, calculatePolygonCentroid, areaM2, correctedAreaM2 } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
 import { feetToMeters, metersToFeet } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix } from '../../engine/model';
@@ -380,7 +380,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const gfaSqft = metrics.totalBuiltSF || 0;
     const unitMix = generateDefaultUnitMix(gfaSqft);
     const totalUnits = metrics.totalUnits ?? unitMix.reduce((s, e) => s + e.count, 0);
-    const siteAreaSqft = envelopeMeters ? areaM2(envelopeMeters) * 10.7639 : 43560;
+    const siteAreaSqft = envelopeMeters ? correctedAreaM2(envelopeMeters) * 10.7639 : 43560;
     const surfaceStalls = metrics.stallsProvided ?? 0;
     const landCost = parcel.parval ?? 0;
 
