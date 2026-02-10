@@ -16,6 +16,8 @@ import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
+import { useSitePlans } from '../../hooks/useSitePlans';
+import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 
 type SiteWorkspaceProps = {
   parcel: SelectedParcel;
@@ -43,6 +45,41 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [solverReady, setSolverReady] = useState(false);
   const [usingFallbackEnvelope, setUsingFallbackEnvelope] = useState(false);
   const generateTimerRef = useRef<number | null>(null);
+
+  // Plan persistence
+  const parcelIdStr = String(parcel.ogc_fid ?? parcel.id ?? 'unknown');
+  const {
+    plans: savedPlans,
+    isLoading: savedPlansLoading,
+    error: savedPlansError,
+    save: savePlanToDb,
+    remove: deletePlanFromDb,
+    setFavorite: togglePlanFavorite,
+  } = useSitePlans(parcelIdStr);
+
+  const handleSavePlan = useCallback(
+    (name: string) => {
+      savePlanToDb({
+        parcel_id: parcelIdStr,
+        name,
+        config,
+        elements,
+        metrics,
+        violations,
+        investment: investmentAnalysis,
+      });
+    },
+    [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis]
+  );
+
+  const handleLoadPlan = useCallback(
+    (plan: SavedSitePlan) => {
+      setPlanOutput(plan.elements ?? [], plan.metrics ?? null);
+      setViolations(plan.violations ?? []);
+      setInvestmentAnalysis(plan.investment ?? null);
+    },
+    [setPlanOutput]
+  );
 
   // Create fallback envelope from parcel geometry if RPC fails
   const fallbackEnvelopeMeters = useMemo(() => {
@@ -427,6 +464,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             alternatives={alternatives}
             selectedSolveIndex={selectedSolveIndex}
             onSelectSolve={selectSolve}
+            savedPlans={savedPlans}
+            savedPlansLoading={savedPlansLoading}
+            savedPlansError={savedPlansError}
+            onSavePlan={handleSavePlan}
+            onLoadPlan={handleLoadPlan}
+            onDeletePlan={deletePlanFromDb}
+            onToggleFavorite={togglePlanFavorite}
+            currentElements={elements}
+            currentMetrics={metrics}
+            currentViolations={violations}
+            currentInvestment={investmentAnalysis}
           />
 
           <div className="flex-1 min-w-0">
