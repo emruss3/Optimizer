@@ -333,20 +333,19 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderElementLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     ctx.save();
     const center = ElementService.calculateElementCenter(element);
-    const bounds = ElementService.getElementBounds(element);
-    
-    const width = bounds.maxX - bounds.minX;
-    const height = bounds.maxY - bounds.minY;
-    const area = width * height;
-    
+
+    // Use areaSqFt from element properties (computed by the solver) if available
+    const areaSqFt = element.properties?.areaSqFt;
+    const areaDisplay = areaSqFt ? `${Math.round(areaSqFt).toLocaleString()} sf` : '';
+
     ctx.fillStyle = '#FFFFFF';
     ctx.strokeStyle = '#374151';
     ctx.lineWidth = 1 / zoom;
     ctx.font = `${10 / zoom}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
-    const label = `${element.name || element.type}\n${area.toFixed(0)} sq ft`;
+
+    const label = `${element.name || element.type}${areaDisplay ? '\n' + areaDisplay : ''}`;
     const lines = label.split('\n');
     const lineHeight = 12 / zoom;
     const totalHeight = lines.length * lineHeight;
