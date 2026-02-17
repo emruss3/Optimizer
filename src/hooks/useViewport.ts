@@ -63,7 +63,7 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
   const fitToBounds = useCallback((bounds: { minX: number; minY: number; maxX: number; maxY: number }, canvasWidth: number, canvasHeight: number) => {
     const width = bounds.maxX - bounds.minX;
     const height = bounds.maxY - bounds.minY;
-    
+
     if (width === 0 || height === 0) return;
 
     const padding = 40;
@@ -71,10 +71,12 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
     const scaleY = (canvasHeight - padding * 2) / height;
     const zoom = Math.min(scaleX, scaleY);
 
+    // Canvas applies: ctx.translate(panX, panY) then ctx.scale(zoom, zoom)
+    // So screen = world * zoom + panX. To center the bounds:
     const centerX = bounds.minX + width / 2;
     const centerY = bounds.minY + height / 2;
-    const panX = (canvasWidth / 2) / zoom - centerX;
-    const panY = (canvasHeight / 2) / zoom - centerY;
+    const panX = canvasWidth / 2 - centerX * zoom;
+    const panY = canvasHeight / 2 - centerY * zoom;
 
     setViewport({ zoom, panX, panY });
   }, []);

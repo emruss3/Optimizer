@@ -18,7 +18,7 @@ import { Grid, Building } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
-import { CoordinateTransform } from '../utils/coordinateTransform';
+import { normalizeToPolygon } from '../engine/geometry';
 
 // Modular hooks
 import { useViewport } from '../hooks/useViewport';
@@ -175,14 +175,36 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     return Math.atan2(y2 - y1, x2 - x1);
   }, []);
 
-  // Process parcel geometry (reproject and normalize) using centralized utility
+  // Process parcel geometry: reproject to EPSG:3857 metres (same coordinate
+  // space as solver elements and buildable envelope). NO feet conversion, NO
+  // normalization — the canvas viewport transform handles offset & scale.
   const processedGeometry = useMemo(() => {
     if (!parcel?.geometry) return null;
-
-    return CoordinateTransform.processParcelGeometry(
-      parcel.geometry,
-      feature4326To3857
-    );
+    try {
+      const geom = parcel.geometry as import('geojson').Polygon | import('geojson').MultiPolygon;
+      const coords =
+        geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
+      const is3857 =
+        Math.abs(coords?.[0]?.[0] ?? 0) > 1000 ||
+        Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+      const reprojected = is3857
+        ? geom
+        : (feature4326To3857(geom) as import('geojson').Polygon | import('geojson').MultiPolygon);
+      const polygon = normalizeToPolygon(reprojected);
+      const ring = polygon.coordinates[0];
+      const bounds = ring.reduce(
+        (acc, [x, y]) => ({
+          minX: Math.min(acc.minX, x),
+          minY: Math.min(acc.minY, y),
+          maxX: Math.max(acc.maxX, x),
+          maxY: Math.max(acc.maxY, y),
+        }),
+        { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      );
+      return { geometry: polygon, bounds };
+    } catch {
+      return null;
+    }
   }, [parcel?.geometry]);
 
   // Fit viewport to parcel
