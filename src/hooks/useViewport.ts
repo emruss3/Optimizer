@@ -41,11 +41,11 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
       if (centerX !== undefined && centerY !== undefined) {
         // Zoom towards a specific point
         const worldX = (centerX - prev.panX) / prev.zoom;
-        const worldY = (centerY - prev.panY) / prev.zoom;
+        const worldY = -(centerY - prev.panY) / prev.zoom;
         return {
           zoom: newZoom,
           panX: centerX - worldX * newZoom,
-          panY: centerY - worldY * newZoom
+          panY: centerY + worldY * newZoom
         };
       }
       return { ...prev, zoom: newZoom };
@@ -79,7 +79,7 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
     // canvasWidth/2 = centerX * zoom + panX
     // Therefore: panX = canvasWidth/2 - centerX * zoom
     const panX = canvasWidth / 2 - centerX * zoom;
-    const panY = canvasHeight / 2 - centerY * zoom;
+    const panY = canvasHeight / 2 + centerY * zoom;
 
     setViewport({ zoom, panX, panY });
   }, []);

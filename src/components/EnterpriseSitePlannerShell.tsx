@@ -248,7 +248,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     const rect = canvas.getBoundingClientRect();
     const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-    const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+    const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
     const snapped = grid.snapPoint(worldX, worldY);
 
     // Measurement tool
@@ -350,7 +350,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     // Update hovered element
     const rect = canvas.getBoundingClientRect();
     const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-    const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+    const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
     const hovered = ElementService.findElementAtPoint(elements, worldX, worldY);
     setHoveredElement(hovered?.id || null);
 
@@ -367,7 +367,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (rotation.rotationState.isRotating && rotation.rotationState.elementId) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       
       const angle = rotation.updateRotation(worldX, worldY, event.shiftKey ? 15 : 0);
       if (angle !== null && rotation.rotationState.startAngle !== undefined) {
@@ -435,7 +435,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (vertexEditing.isVertexEditing && vertexEditing.selectedVertex) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       const snapped = grid.snapPoint(worldX, worldY);
       
       setElements(prev => prev.map(element => {
@@ -456,7 +456,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (drawingTools.activeTool === 'measure' && measurement.measurementState.isMeasuring) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       const snapped = grid.snapPoint(worldX, worldY);
       measurement.updateMeasurement(snapped.x, snapped.y);
       return;
@@ -466,7 +466,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (drag.dragState.isDragging && drag.dragState.elementId) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       const snapped = grid.snapPoint(worldX, worldY);
       
       drag.updateDrag(snapped.x, snapped.y);
