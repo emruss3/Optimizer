@@ -1,6 +1,11 @@
+/**
+ * @deprecated — Superseded by parkingBaySolver.ts (Prompt 2+7 pipeline).
+ * Retained for legacy planner.ts / tests. Do NOT import into new code.
+ */
+
 import type { Polygon } from 'geojson';
 import type { Element, PlannerConfig, ParkingMetrics } from './types';
-import { areaSqft, contains, bbox } from './geometry';
+import { areaSqft, isPointInPolygon, bbox } from './geometry';
 
 export interface ParkingConfig {
   targetRatio: number; // stalls per unit
@@ -59,7 +64,7 @@ export function generateParking(
       const y = bounds.minY + row * stallDepth + stallDepth / 2;
       
       // Check if stall center is within buildable area
-      if (contains(buildableArea, { type: 'Point', coordinates: [x, y] })) {
+      if (isPointInPolygon([x, y], buildableArea.coordinates[0])) {
         // Determine stall type
         let type: 'standard' | 'ada' | 'ev' = 'standard';
         if (adaCount < Math.floor(actualStalls * config.adaPct / 100)) {

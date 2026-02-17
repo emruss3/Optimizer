@@ -8,7 +8,7 @@ export interface Vertex {
 
 export interface Element {
   id: string;
-  type: 'building' | 'parking' | 'parking-bay' | 'parking-aisle' | 'greenspace' | 'road' | 'utility' | 'other';
+  type: 'building' | 'parking' | 'parking-bay' | 'parking-aisle' | 'circulation' | 'greenspace' | 'road' | 'utility' | 'other';
   name: string;
   geometry: Polygon;
   properties: {
@@ -51,6 +51,10 @@ export interface PlannerConfig {
     maxFar?: number;
     maxCoveragePct?: number;
     minParkingRatio?: number; // e.g., stalls per unit/sqft
+    maxHeightFt?: number;
+    maxDensityDuPerAcre?: number;
+    maxImperviousPct?: number;
+    minOpenSpacePct?: number;
   };
   designParameters: {
     targetFAR: number;
@@ -81,6 +85,8 @@ export interface PlannerOutput {
     stallsProvided?: number;
     stallsRequired?: number;
     parkingAngleDeg?: number;
+    totalUnits?: number;
+    unitMixSummary?: string;
     zoningCompliant: boolean;
     violations: string[];
     warnings: string[];
@@ -118,6 +124,8 @@ export interface SiteMetrics {
   stallsProvided?: number;
   stallsRequired?: number;
   parkingAngleDeg?: number;
+  totalUnits?: number;
+  unitMixSummary?: string;
   zoningCompliant: boolean;
   violations: string[];
   warnings: string[];

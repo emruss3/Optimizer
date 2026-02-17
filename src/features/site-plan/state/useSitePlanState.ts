@@ -17,7 +17,11 @@ const defaultConfig = (parcelId: string, geometry: GeoJSON.Polygon): PlannerConf
     rearSetbackFt: 20,
     maxFar: 2.0,
     maxCoveragePct: 60,
-    minParkingRatio: 1.0
+    minParkingRatio: 1.0,
+    maxHeightFt: 65,
+    maxDensityDuPerAcre: 40,
+    maxImperviousPct: 80,
+    minOpenSpacePct: 15,
   },
   designParameters: {
     targetFAR: 1.5,

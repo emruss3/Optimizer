@@ -1,3 +1,8 @@
+/**
+ * @deprecated — Superseded by buildingGeometry.ts + model.ts (Prompt 3 pipeline).
+ * Retained for legacy planner.ts / tests. Do NOT import into new code.
+ */
+
 import type { Polygon } from 'geojson';
 import type { Element, PlannerConfig, BuildingTypology } from './types';
 import { areaSqft, bbox, createEnvelope } from './geometry';
@@ -136,7 +141,7 @@ function createBuildingElement(
     geometry,
     properties: {
       areaSqFt: targetArea,
-      units: Math.floor(targetArea / 800), // Assume 800 sqft per unit
+      units: Math.floor(targetArea * 0.85 / 720), // based on weighted avg unit size
       heightFt: Math.min(heightFt, config.maxHeightFt || 100),
       stories,
       use: getUseFromTypology(typology),

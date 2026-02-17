@@ -157,7 +157,7 @@ describe('analysis', () => {
       const efficiency = calculateBuildingEfficiency(sampleElements);
       
       expect(efficiency.avgUnitSize).toBe(1000); // 10000 sqft / 10 units
-      expect(efficiency.buildingEfficiency).toBeCloseTo(0.8, 1); // (10 * 800) / 10000
+      expect(efficiency.buildingEfficiency).toBeCloseTo(0.72, 1); // (10 * 720) / 10000 — weighted avg unit 720 sqft
       expect(efficiency.parkingEfficiency).toBe(1.5); // 15 stalls / 10 units
     });
 

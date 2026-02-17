@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Grid, AlertTriangle, CheckCircle, Building } from 'lucide-react';
+import { Grid, Building } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -81,24 +81,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   onBuildingUpdate,
   onAddBuilding
 }) => {
-  if (import.meta.env.DEV) {
-    console.log('🔍 [EnterpriseSitePlannerShell] Component rendered:', {
-      parcelId: parcel?.ogc_fid,
-      address: parcel?.address,
-      hasPlanElements: planElements.length > 0,
-      hasMetrics: !!metrics,
-      hasParcel: !!parcel,
-      hasGeometry: !!parcel?.geometry,
-      hasSelectedSolve: !!selectedSolve,
-      activePlanId
-    });
-  }
-
   // Early return if no parcel
   if (!parcel) {
-    if (import.meta.env.DEV) {
-      console.warn('⚠️ [EnterpriseSitePlannerShell] No parcel provided');
-    }
     return (
       <div className="flex flex-col h-full bg-gray-50 min-h-[400px] items-center justify-center">
         <div className="text-center">
@@ -145,21 +129,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const vertexEditing = useVertexEditing();
   const measurement = useMeasurement();
   const grid = useGrid(10); // 10 foot grid
-
-  if (import.meta.env.DEV) {
-    console.log('🔍 [EnterpriseSitePlannerShell] Hooks initialized:', {
-      viewport: !!viewport,
-      selection: !!selection,
-      drag: !!drag,
-      drawingTools: !!drawingTools,
-      rotation: !!rotation,
-      vertexEditing: !!vertexEditing,
-      measurement: !!measurement,
-      grid: !!grid,
-      activeTool: drawingTools.activeTool,
-      selectedCount: selection.selectedCount
-    });
-  }
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -248,15 +217,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Handle mouse down
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (import.meta.env.DEV) {
-      console.log('🖱️ [EnterpriseSitePlannerShell] Mouse down:', {
-        button: event.button,
-        ctrlKey: event.ctrlKey,
-        activeTool: drawingTools.activeTool,
-        selectedCount: selection.selectedCount
-      });
-    }
-
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -654,9 +614,11 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   return (
     <div className="flex flex-col h-full bg-gray-50 min-h-[400px]">
       {/* Envelope Status Banner */}
-      {envelopeStatus && (
+      {(envelopeStatus || usingFallbackEnvelope) && (
         <div className={`px-4 py-2 border-b ${
-          envelopeStatus === 'ready' && !usingFallbackEnvelope
+          usingFallbackEnvelope
+            ? 'bg-yellow-50 border-yellow-200'
+            : envelopeStatus === 'ready'
             ? 'bg-green-50 border-green-200'
             : envelopeStatus === 'loading'
             ? 'bg-blue-50 border-blue-200'
@@ -666,17 +628,18 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             <div className="flex items-center space-x-2">
               <span className="text-sm font-medium">
                 Envelope status: <span className={
+                  usingFallbackEnvelope ? 'text-yellow-700' :
                   envelopeStatus === 'ready' ? 'text-green-700' :
                   envelopeStatus === 'loading' ? 'text-blue-700' :
                   'text-yellow-700'
-                }>{envelopeStatus}</span>
+                }>{usingFallbackEnvelope ? 'fallback' : envelopeStatus}</span>
               </span>
               {usingFallbackEnvelope && (
                 <span className="text-sm text-yellow-700">
-                  (Using fallback envelope with default setbacks: 20ft front, 5ft side, 20ft rear)
+                  (Using fallback envelope - Supabase envelope unavailable. Default setbacks: 20ft front, 5ft side, 20ft rear)
                 </span>
               )}
-              {envelopeStatus === 'invalid' && envelopeError && (
+              {envelopeStatus === 'invalid' && envelopeError && !usingFallbackEnvelope && (
                 <span className="text-sm text-red-700">
                   {envelopeError}
                   {envelopeError.includes('returned null') && (
@@ -687,7 +650,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
                 </span>
               )}
             </div>
-            {envelopeStatus === 'invalid' && onRetryEnvelope && (
+            {envelopeStatus === 'invalid' && !usingFallbackEnvelope && onRetryEnvelope && (
               <button
                 onClick={onRetryEnvelope}
                 className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -722,7 +685,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           >
             Templates
           </button> */}
-          {/* Metrics toggle removed — metrics shown in ResultsPanel */}
           <button
             onClick={() => setShowLayers(!showLayers)}
             className="p-2 text-gray-600 hover:text-gray-900"
@@ -790,8 +752,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           />
           
         </div>
-
-        {/* Metrics panel removed — ResultsPanel in SiteWorkspace shows metrics */}
       </div>
 
       {/* Status Bar */}

@@ -88,8 +88,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         return '#10B981';
       case 'parking-aisle':
         return '#6EE7B7';
+      case 'circulation':
+        return element.properties.color || '#94A3B8';
       case 'greenspace':
-        return '#059669';
+        return element.properties?.color || '#22C55E';
       default:
         return '#6B7280';
     }
@@ -333,19 +335,20 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderElementLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     ctx.save();
     const center = ElementService.calculateElementCenter(element);
-
-    // Use areaSqFt from element properties (computed by the solver) if available
+    
+    // Use pre-computed areaSqFt from the solver (Mercator-corrected) instead of
+    // computing area from canvas bounding box (which would be in EPSG:3857 meters²).
     const areaSqFt = element.properties?.areaSqFt;
-    const areaDisplay = areaSqFt ? `${Math.round(areaSqFt).toLocaleString()} sf` : '';
-
+    const areaLabel = areaSqFt != null ? `${Math.round(areaSqFt).toLocaleString()} sq ft` : '';
+    
     ctx.fillStyle = '#FFFFFF';
     ctx.strokeStyle = '#374151';
     ctx.lineWidth = 1 / zoom;
     ctx.font = `${10 / zoom}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-
-    const label = `${element.name || element.type}${areaDisplay ? '\n' + areaDisplay : ''}`;
+    
+    const label = `${element.name || element.type}${areaLabel ? '\n' + areaLabel : ''}`;
     const lines = label.split('\n');
     const lineHeight = 12 / zoom;
     const totalHeight = lines.length * lineHeight;
@@ -385,7 +388,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     
     const color = getElementColor(element);
     ctx.fillStyle = color;
-    ctx.globalAlpha = isHovered ? 0.4 : 0.3;
+    // Greenspace gets a more visible semi-transparent fill
+    ctx.globalAlpha = element.type === 'greenspace'
+      ? (isHovered ? 0.55 : 0.45)
+      : (isHovered ? 0.4 : 0.3);
 
     const coords = element.geometry.coordinates[0];
     ctx.beginPath();

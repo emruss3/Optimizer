@@ -61,8 +61,38 @@ export function areaM2(polygon: Polygon): number {
 }
 
 /**
+ * Compute the Mercator correction factor cos²(lat) for an EPSG:3857 polygon.
+ * In EPSG:3857, areas are inflated by 1/cos²(lat).
+ * Multiply an EPSG:3857 area by this factor to get the true ground area.
+ */
+export function mercatorCorrectionFactor(polygon: Polygon): number {
+  const ring = polygon.coordinates[0];
+  if (!ring || ring.length < 2) return 1;
+  // Average Y of non-closing vertices
+  const n = Math.max(1, ring.length - 1);
+  let sumY = 0;
+  for (let i = 0; i < n; i++) {
+    sumY += ring[i][1];
+  }
+  const avgY = sumY / n;
+  // Convert EPSG:3857 Y → latitude (radians)
+  const latRad = Math.atan(Math.exp(avgY / 6378137)) * 2 - Math.PI / 2;
+  const cosLat = Math.cos(latRad);
+  return cosLat * cosLat;
+}
+
+/**
+ * Compute area corrected for Mercator distortion.
+ * Returns the true ground area in m² for an EPSG:3857 polygon.
+ * Use for metrics / display. For geometric operations (intersection, difference), use areaM2().
+ */
+export function correctedAreaM2(polygon: Polygon): number {
+  return areaM2(polygon) * mercatorCorrectionFactor(polygon);
+}
+
+/**
  * Calculate area of a polygon in square feet
- * Converts from m┬▓ to ft┬▓ (coordinates are in meters for EPSG:3857)
+ * Converts from m² to ft² (coordinates are in meters for EPSG:3857)
  */
 export function areaSqft(polygon: Polygon): number {
   return toSqFt(areaM2(polygon));
@@ -123,7 +153,7 @@ export function calculatePolygonCentroid(vertices: number[][]): number[] {
 }
 
 /**
- * Check if point is in polygon (alias for contains)
+ * Check if point is in polygon (ray-casting algorithm)
  */
 export function isPointInPolygon(point: number[], vertices: number[][]): boolean {
   const x = point[0];
@@ -393,24 +423,6 @@ export function selectLargestRing(geometry: Polygon | MultiPolygon): Polygon {
 }
 
 /**
- * Check if a point is inside a polygon
- */
-export function contains(polygon: Polygon, point: Point): boolean {
-  const coords = polygon.coordinates[0];
-  const x = point.coordinates[0];
-  const y = point.coordinates[1];
-  
-  let inside = false;
-  for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
-    if (((coords[i][1] > y) !== (coords[j][1] > y)) &&
-        (x < (coords[j][0] - coords[i][0]) * (y - coords[i][1]) / (coords[j][1] - coords[i][1]) + coords[i][0])) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-/**
  * Get bounding box of a polygon
  */
 export function bbox(polygon: Polygon): { minX: number; minY: number; maxX: number; maxY: number } {
@@ -435,11 +447,26 @@ export function bbox(polygon: Polygon): { minX: number; minY: number; maxX: numb
 }
 
 /**
- * Buffer/offset a polygon by a given distance (in same units as coordinates)
- * Positive distance = expand outward, negative = shrink inward
+ * Buffer/offset a polygon by a given distance (in same units as coordinates).
+ * Positive distance = expand outward, negative = shrink inward (setbacks).
  *
- * v1: ONLY supports axis-aligned rectangles (for MF_BAR_V1 building footprints)
- * Throws error for non-rectangular polygons
+ * Works on ANY polygon (irregular, concave, 5+ vertices).
+ * Coordinates must be in a planar metre CRS (EPSG:3857).
+ *
+ * Uses a Minkowski-sum approach via polygon-clipping:
+ *   Outward  → union(polygon, each-edge-offset-rect) then union with corner circles
+ *   Inward   → intersect the polygon with all inward half-planes (edge offsets)
+ *
+ * For simplicity and robustness we approximate the offset by:
+ *   1. Compute the straight-skeleton-style edge offsets (move each edge inward/outward
+ *      by `distance` along its normal).
+ *   2. Build the new polygon from the offset edge intersections.
+ *   3. For outward buffers, union with the original to fill concavities.
+ *   4. For inward buffers, intersect with the original to trim overhangs.
+ *
+ * If the inward buffer collapses (area ≤ 0), returns null-equivalent empty polygon.
+ *
+ * When the result is a MultiPolygon, selectLargestRingFromPolygon picks the biggest piece.
  */
 export function buffer(polygon: Polygon, distance: number): Polygon {
   if (!polygon.coordinates || !polygon.coordinates[0] || polygon.coordinates[0].length < 4) {
@@ -450,44 +477,130 @@ export function buffer(polygon: Polygon, distance: number): Polygon {
     return polygon;
   }
 
-  // v1: Only support axis-aligned rectangles (4 vertices)
-  const coords = polygon.coordinates[0];
-  const workingCoords = coords.length > 0 &&
-    coords[0][0] === coords[coords.length - 1][0] &&
-    coords[0][1] === coords[coords.length - 1][1]
-    ? coords.slice(0, -1)
-    : coords;
+  const ring = polygon.coordinates[0];
+  // Ensure we work with a closed ring; strip the closing vertex for edge iteration
+  const isClosed =
+    ring[0][0] === ring[ring.length - 1][0] &&
+    ring[0][1] === ring[ring.length - 1][1];
+  const verts: number[][] = isClosed ? ring.slice(0, -1) : ring.slice();
+  const n = verts.length;
 
-  if (workingCoords.length !== 4) {
-    throw new Error('offset: only rectangles supported in v1');
+  if (n < 3) return polygon;
+
+  // Ensure consistent winding (CCW for outer ring). Compute signed area.
+  let signedArea2 = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    signedArea2 += verts[i][0] * verts[j][1] - verts[j][0] * verts[i][1];
+  }
+  // If CW (signedArea2 < 0), reverse to CCW
+  if (signedArea2 < 0) {
+    verts.reverse();
   }
 
-  // Check if it's axis-aligned (all x values same for two edges, all y values same for two edges)
-  const xs = workingCoords.map(c => c[0]);
-  const ys = workingCoords.map(c => c[1]);
-  const uniqueXs = new Set(xs);
-  const uniqueYs = new Set(ys);
-
-  if (uniqueXs.size !== 2 || uniqueYs.size !== 2) {
-    throw new Error('offset: only rectangles supported in v1');
+  // Compute offset edges: for each edge, shift it by `distance` along its outward normal.
+  // For a CCW polygon the outward normal of edge (A→B) is (dy, -dx) normalized.
+  const offsetLines: Array<{ px: number; py: number; dx: number; dy: number }> = [];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const ex = verts[j][0] - verts[i][0];
+    const ey = verts[j][1] - verts[i][1];
+    const len = Math.sqrt(ex * ex + ey * ey);
+    if (len < 1e-12) continue; // degenerate edge
+    // Outward normal for CCW winding
+    const nx = ey / len;
+    const ny = -ex / len;
+    // Offset point on the shifted edge
+    const px = verts[i][0] + nx * distance;
+    const py = verts[i][1] + ny * distance;
+    offsetLines.push({ px, py, dx: ex, dy: ey });
   }
 
-  // For rectangle offset: d > 0 expands outward, d < 0 shrinks inward
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
+  if (offsetLines.length < 3) {
+    // Degenerate polygon
+    return { type: 'Polygon', coordinates: [[]] };
+  }
 
-  // Offset rectangle
-  const offsetCoords = [
-    [minX - distance, minY - distance],
-    [maxX + distance, minY - distance],
-    [maxX + distance, maxY + distance],
-    [minX - distance, maxY + distance],
-    [minX - distance, minY - distance] // Close ring
-  ];
+  // Intersect consecutive offset lines to find new vertices
+  const offsetVerts: number[][] = [];
+  const m = offsetLines.length;
+  for (let i = 0; i < m; i++) {
+    const j = (i + 1) % m;
+    const pt = lineLineIntersection(offsetLines[i], offsetLines[j]);
+    if (pt) {
+      offsetVerts.push(pt);
+    } else {
+      // Parallel edges → use midpoint of the two offset origins
+      offsetVerts.push([
+        (offsetLines[i].px + offsetLines[j].px) / 2,
+        (offsetLines[i].py + offsetLines[j].py) / 2
+      ]);
+    }
+  }
 
-  return { type: 'Polygon', coordinates: [offsetCoords] };
+  if (offsetVerts.length < 3) {
+    return { type: 'Polygon', coordinates: [[]] };
+  }
+
+  // Close the ring
+  offsetVerts.push([offsetVerts[0][0], offsetVerts[0][1]]);
+
+  const rawOffset: Polygon = { type: 'Polygon', coordinates: [offsetVerts] };
+
+  const originalArea = areaM2(polygon);
+
+  // For inward (negative distance) buffers, intersect with original to prevent overshoot
+  // For outward (positive distance) buffers, union with original to fill concavities
+  let result: Polygon | MultiPolygon;
+  if (distance < 0) {
+    result = intersection(polygon, rawOffset);
+  } else {
+    result = union(polygon, rawOffset);
+  }
+
+  // Normalize to single Polygon (pick largest)
+  const polyList = polygons(result);
+  if (polyList.length === 0) {
+    return { type: 'Polygon', coordinates: [[]] };
+  }
+
+  // Find the largest polygon
+  let best = polyList[0];
+  let bestArea = areaM2(best);
+  for (let i = 1; i < polyList.length; i++) {
+    const a = areaM2(polyList[i]);
+    if (a > bestArea) {
+      bestArea = a;
+      best = polyList[i];
+    }
+  }
+
+  // If area collapsed to near-zero, return empty
+  if (bestArea < 0.01) {
+    return { type: 'Polygon', coordinates: [[]] };
+  }
+
+  // For inward buffers: result must be strictly smaller than original.
+  // If it's not, the offset polygon overshot (edges crossed) and the buffer collapsed.
+  if (distance < 0 && bestArea >= originalArea - 0.01) {
+    return { type: 'Polygon', coordinates: [[]] };
+  }
+
+  return selectLargestRingFromPolygon(best);
+}
+
+/**
+ * Intersect two lines defined as point+direction.
+ * Returns the intersection point or null if parallel.
+ */
+function lineLineIntersection(
+  a: { px: number; py: number; dx: number; dy: number },
+  b: { px: number; py: number; dx: number; dy: number }
+): number[] | null {
+  const denom = a.dx * b.dy - a.dy * b.dx;
+  if (Math.abs(denom) < 1e-12) return null; // parallel
+  const t = ((b.px - a.px) * b.dy - (b.py - a.py) * b.dx) / denom;
+  return [a.px + t * a.dx, a.py + t * a.dy];
 }
 
 /**
@@ -510,16 +623,6 @@ export function area(polygon: Polygon): number {
  */
 export function centroid(polygon: Polygon): number[] {
   return getCentroid(polygon);
-}
-
-/**
- * Check if point is in polygon
- */
-export function pointInPoly(point: Point | number[], poly: Polygon): boolean {
-  if (Array.isArray(point)) {
-    return contains(poly, { type: 'Point', coordinates: point });
-  }
-  return contains(poly, point);
 }
 
 /**

@@ -1,6 +1,9 @@
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { PlannerConfig, PlannerOutput, WorkerAPI, Element, FeasibilityViolation } from '../engine/types';
-import type { BuildingSpec } from '../engine/model';
+import type { BuildingSpec, BuildingType } from '../engine/model';
+import type { OptimizeResult } from '../engine/optimizer';
+
+const DEV = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
 
 let nextId = 0;
 let latest = 0;
@@ -20,24 +23,23 @@ export class PlannerWorkerManager implements WorkerAPI {
 
   private initializeWorker() {
     try {
-      console.log('🔍 [WorkerManager] Initializing worker...');
+      if (DEV) console.log('[WorkerManager] Initializing worker…');
       this.worker = new Worker(
         new URL('./siteEngineWorker.ts', import.meta.url),
         { type: 'module' }
       );
 
       this.worker.onerror = (error) => {
-        console.error('❌ [WorkerManager] Worker error:', error);
+        console.error('[WorkerManager] Worker error:', error);
       };
 
       this.worker.onmessageerror = (error) => {
-        console.error('❌ [WorkerManager] Worker message error:', error);
+        console.error('[WorkerManager] Worker message error:', error);
       };
 
-      console.log('✅ [WorkerManager] Worker initialized successfully');
+      if (DEV) console.log('[WorkerManager] Worker initialized');
     } catch (error) {
-      console.error('❌ [WorkerManager] Failed to initialize worker:', error);
-      // Fallback to synchronous execution
+      console.error('[WorkerManager] Failed to initialize worker:', error);
     }
   }
 
@@ -45,88 +47,44 @@ export class PlannerWorkerManager implements WorkerAPI {
     parcel: Polygon | MultiPolygon,
     config: PlannerConfig
   ): Promise<PlannerOutput> {
-    console.log('🔍 [WorkerManager] generateSitePlan called:', {
-      hasWorker: !!this.worker,
-      parcelType: parcel.type,
-      configParcelId: config.parcelId
-    });
-
     if (!this.worker) {
-      console.log('⚠️ [WorkerManager] No worker available, falling back to synchronous execution');
-      // Fallback to synchronous execution
+      if (DEV) console.log('[WorkerManager] No worker, falling back to sync');
       const { generateSitePlan } = await import('../engine/planner');
-      console.log('✅ [WorkerManager] Synchronous planner imported, generating...');
-      const result = await generateSitePlan(parcel, config);
-      console.log('✅ [WorkerManager] Synchronous generation complete:', {
-        hasElements: !!result?.elements,
-        elementsCount: result?.elements?.length
-      });
-      return result;
+      return generateSitePlan(parcel, config);
     }
 
     const id = ++nextId;
-    console.log(`📤 [WorkerManager] Posting message to worker (id: ${id}):`, {
-      type: 'generate',
-      parcelType: parcel.type,
-      configParcelId: config.parcelId
-    });
-    
+    if (DEV) console.log(`[WorkerManager] POST generate (id: ${id})`);
     this.worker.postMessage({ type: 'generate', id, parcel, config });
-    console.log(`📤 [WorkerManager] Message posted, waiting for response (id: ${id})...`);
-
-    // Set a timeout to detect if worker is hanging
-    const timeout = setTimeout(() => {
-      console.error(`❌ [WorkerManager] Timeout waiting for worker response (id: ${id}) after 30 seconds`);
-    }, 30000);
 
     return new Promise((resolve, reject) => {
-      const onmessage = (e: MessageEvent) => {
-        console.log(`📥 [WorkerManager] Received message (id: ${id}):`, {
-          receivedId: e.data?.id,
-          type: e.data?.type,
-          hasPayload: !!e.data?.payload,
-          hasError: !!e.data?.error
-        });
+      const timeout = setTimeout(() => {
+        console.error(`[WorkerManager] Timeout (id: ${id})`);
+      }, 30000);
 
+      const onmessage = (e: MessageEvent) => {
         const { id: rid, type, payload, error } = e.data || {};
-        if (type !== 'generated' || rid !== id) {
-          console.log(`⏭️ [WorkerManager] Ignoring message (id mismatch or wrong type):`, {
-            expectedId: id,
-            receivedId: rid,
-            type
-          });
-          return;
-        }
-        
+        if (type !== 'generated' || rid !== id) return;
+
         clearTimeout(timeout);
         this.worker!.removeEventListener('message', onmessage);
-        
-        if (id < latest) {
-          console.log(`⏭️ [WorkerManager] Ignoring stale message (id: ${id}, latest: ${latest})`);
-          return; // stale
-        }
-        
+
+        if (id < latest) return; // stale
         latest = id;
-        
+
         if (error) {
-          console.error(`❌ [WorkerManager] Worker returned error (id: ${id}):`, error);
+          console.error(`[WorkerManager] Error (id: ${id}):`, error);
           return reject(new Error(error));
         }
-        
-        console.log(`✅ [WorkerManager] Worker completed successfully (id: ${id}):`, {
-          hasElements: !!payload?.elements,
-          elementsCount: payload?.elements?.length,
-          hasMetrics: !!payload?.metrics
-        });
+
         resolve(payload as PlannerOutput);
       };
-      
+
       this.worker!.addEventListener('message', onmessage);
-      
-      // Also listen for any errors
+
       this.worker!.onerror = (error) => {
         clearTimeout(timeout);
-        console.error(`❌ [WorkerManager] Worker error during generation (id: ${id}):`, error);
+        console.error(`[WorkerManager] Worker error (id: ${id}):`, error);
         reject(error);
       };
     });
@@ -144,7 +102,8 @@ export class PlannerWorkerManager implements WorkerAPI {
       stallD: number;
       aisleW: number;
       anglesDeg: number[];
-    }
+    },
+    buildingType?: BuildingType
   ): Promise<PlanUpdateResult> {
     if (!this.worker) {
       throw new Error('Worker not available');
@@ -158,6 +117,7 @@ export class PlannerWorkerManager implements WorkerAPI {
       zoning,
       initialBuildingSpec,
       parkingSpec,
+      buildingType,
     });
 
     return this.waitForPlanUpdate(id);
@@ -206,21 +166,17 @@ export class PlannerWorkerManager implements WorkerAPI {
         const receivedId = rid || reqId;
 
         if (type !== 'PLAN_UPDATED' || receivedId !== id) {
-          return; // Ignore other messages
+          return;
         }
 
         clearTimeout(timeout);
         this.worker!.removeEventListener('message', onmessage);
 
-        if (id < latest) {
-          console.log(`ΓÅ¡∩╕Å [WorkerManager] Ignoring stale PLAN_UPDATED (id: ${id}, latest: ${latest})`);
-          return;
-        }
-
+        if (id < latest) return; // stale
         latest = id;
 
         if (error) {
-          console.error(`Γ¥î [WorkerManager] Worker returned error (id: ${id}):`, error);
+          console.error(`[WorkerManager] Error (id: ${id}):`, error);
           return reject(new Error(error));
         }
 
@@ -244,6 +200,88 @@ export class PlannerWorkerManager implements WorkerAPI {
         this.worker!.removeEventListener('message', onmessage);
         reject(new Error(`Timeout waiting for PLAN_UPDATED (id: ${id})`));
       }, 30000);
+
+      this.worker.addEventListener('message', onmessage);
+    });
+  }
+
+  /**
+   * Run the simulated-annealing optimizer on the given envelope.
+   * Returns best layout + top 3 alternatives.
+   */
+  async optimizeSite(
+    envelope3857: Polygon,
+    zoning: PlannerConfig['zoning'],
+    designParams: PlannerConfig['designParameters'],
+    parkingSpec?: {
+      stallW: number;
+      stallD: number;
+      aisleW: number;
+      anglesDeg: number[];
+    },
+    maxIterations?: number,
+    onProgress?: (iteration: number, score: number) => void
+  ): Promise<OptimizeResult> {
+    if (!this.worker) {
+      throw new Error('Worker not available');
+    }
+
+    const id = ++nextId;
+    this.worker.postMessage({
+      type: 'OPTIMIZE',
+      id,
+      envelope3857,
+      zoning,
+      designParams,
+      parkingSpec,
+      maxIterations,
+    });
+
+    return new Promise((resolve, reject) => {
+      const onmessage = (e: MessageEvent) => {
+        const { id: rid, reqId, type, ...rest } = e.data || {};
+        const receivedId = rid || reqId;
+
+        if (type === 'OPTIMIZE_PROGRESS' && receivedId === id) {
+          onProgress?.(rest.iteration, rest.score);
+          return;
+        }
+
+        if (type !== 'OPTIMIZE_RESULT' || receivedId !== id) {
+          return;
+        }
+
+        clearTimeout(timeout);
+        this.worker!.removeEventListener('message', onmessage);
+
+        if (rest.error) {
+          return reject(new Error(rest.error));
+        }
+
+        resolve({
+          bestElements: rest.bestElements || [],
+          bestMetrics: rest.bestMetrics || {
+            totalBuiltSF: 0,
+            siteCoveragePct: 0,
+            achievedFAR: 0,
+            parkingRatio: 0,
+            openSpacePct: 0,
+            zoningCompliant: true,
+            violations: [],
+            warnings: [],
+          },
+          bestViolations: rest.bestViolations || [],
+          bestBuildings: rest.bestBuildings || [],
+          top3Alternatives: rest.top3Alternatives || [],
+          iterations: rest.iterations || 0,
+          finalScore: rest.finalScore || 0,
+        });
+      };
+
+      const timeout = setTimeout(() => {
+        this.worker!.removeEventListener('message', onmessage);
+        reject(new Error(`Timeout waiting for OPTIMIZE_RESULT (id: ${id})`));
+      }, 120000);
 
       this.worker.addEventListener('message', onmessage);
     });

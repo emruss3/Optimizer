@@ -1,15 +1,48 @@
 import React from 'react';
 import type { FeasibilityViolation, SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
+import type { EdgeClassification } from '../../../engine/setbacks';
+import { metersToFeet } from '../../../engine/units';
 
 type ResultsPanelProps = {
   metrics: SiteMetrics | null;
   investmentAnalysis: InvestmentAnalysis | null;
   isGenerating: boolean;
   violations: FeasibilityViolation[];
+  edgeClassifications?: EdgeClassification[];
+  setbacks?: { front?: number; side?: number; rear?: number };
 };
 
-const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis, isGenerating, violations }) => {
+/** Human-readable label for an edge type with optional road name */
+function edgeLabel(edge: EdgeClassification, setbacks?: { front?: number; side?: number; rear?: number }): string {
+  const setbackFt =
+    edge.type === 'front'
+      ? (setbacks?.front ?? 20)
+      : edge.type === 'rear'
+        ? (setbacks?.rear ?? 20)
+        : (setbacks?.side ?? 10);
+
+  const roadSuffix = edge.roadName ? `: ${edge.roadName}` : '';
+  return `${capitalize(edge.type)}${roadSuffix} (${setbackFt}ft setback)`;
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Format edge length in feet */
+function edgeLengthFt(edge: EdgeClassification): string {
+  return `${metersToFeet(edge.length).toFixed(0)}ft`;
+}
+
+const ResultsPanel: React.FC<ResultsPanelProps> = ({
+  metrics,
+  investmentAnalysis,
+  isGenerating,
+  violations,
+  edgeClassifications,
+  setbacks,
+}) => {
   return (
     <div className="w-full xl:w-80 bg-white border border-gray-200 rounded-lg p-4">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Results</h3>
@@ -59,6 +92,17 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis
             <span className="text-gray-600">Built SF</span>
             <span className="font-medium">{metrics.totalBuiltSF.toLocaleString()}</span>
           </div>
+          {metrics.totalUnits != null && metrics.totalUnits > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">Units</span>
+              <span className="font-medium">{metrics.totalUnits}</span>
+            </div>
+          )}
+          {metrics.unitMixSummary && (
+            <div className="text-xs text-gray-500 bg-gray-50 rounded px-2 py-1.5">
+              {metrics.unitMixSummary}
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-gray-600">Open Space</span>
             <span className="font-medium">{metrics.openSpacePct.toFixed(1)}%</span>
@@ -66,28 +110,101 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ metrics, investmentAnalysis
         </div>
       )}
 
+      {/* Edge Classifications / Setbacks */}
+      {edgeClassifications && edgeClassifications.length > 0 && (
+        <div className="mb-6">
+          <h4 className="text-sm font-semibold text-gray-900 mb-2">Edge Setbacks</h4>
+          <ul className="space-y-1.5 text-xs">
+            {edgeClassifications.map((edge, idx) => {
+              const colorClass =
+                edge.type === 'front'
+                  ? 'text-blue-700 bg-blue-50'
+                  : edge.type === 'rear'
+                    ? 'text-amber-700 bg-amber-50'
+                    : 'text-gray-700 bg-gray-50';
+              return (
+                <li key={idx} className={`flex justify-between items-center px-2 py-1 rounded ${colorClass}`}>
+                  <span className="font-medium">{edgeLabel(edge, setbacks)}</span>
+                  <span className="text-[10px] opacity-70">{edgeLengthFt(edge)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {investmentAnalysis && (
-        <div className="space-y-3 text-sm text-gray-700">
-          <div className="flex justify-between">
-            <span className="text-gray-600">Total Investment</span>
-            <span className="font-medium">${investmentAnalysis.totalInvestment.toLocaleString()}</span>
+        <div className="space-y-1">
+          <h4 className="text-sm font-semibold text-gray-900 mb-2">Pro Forma</h4>
+
+          {/* Revenue */}
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-1">Revenue</div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Gross Potential Rent</span>
+            <span className="font-medium">${investmentAnalysis.grossPotentialRent?.toLocaleString() ?? '—'}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Projected Revenue</span>
-            <span className="font-medium">${investmentAnalysis.projectedRevenue.toLocaleString()}</span>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Effective Gross Income</span>
+            <span className="font-medium">${investmentAnalysis.effectiveGrossIncome?.toLocaleString() ?? '—'}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex justify-between text-sm">
             <span className="text-gray-600">NOI</span>
-            <span className="font-medium">${investmentAnalysis.netOperatingIncome.toLocaleString()}</span>
+            <span className="font-medium text-green-700">${investmentAnalysis.netOperatingIncome?.toLocaleString() ?? '—'}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Cap Rate</span>
-            <span className="font-medium">{(investmentAnalysis.capRate * 100).toFixed(1)}%</span>
+
+          {/* Costs */}
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-2">Costs</div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Total Dev Cost</span>
+            <span className="font-medium">${investmentAnalysis.totalDevelopmentCost?.toLocaleString() ?? investmentAnalysis.totalInvestment?.toLocaleString() ?? '—'}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">IRR</span>
-            <span className="font-medium">{(investmentAnalysis.irr * 100).toFixed(1)}%</span>
-          </div>
+          {investmentAnalysis.costPerUnit != null && investmentAnalysis.costPerUnit > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Cost / Unit</span>
+              <span className="font-medium">${Math.round(investmentAnalysis.costPerUnit).toLocaleString()}</span>
+            </div>
+          )}
+          {investmentAnalysis.costPerSF != null && investmentAnalysis.costPerSF > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Cost / SF</span>
+              <span className="font-medium">${Math.round(investmentAnalysis.costPerSF).toLocaleString()}</span>
+            </div>
+          )}
+
+          {/* Returns */}
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-2">Returns</div>
+          {investmentAnalysis.yieldOnCost != null && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Yield on Cost</span>
+              <span className="font-medium">{(investmentAnalysis.yieldOnCost * 100).toFixed(2)}%</span>
+            </div>
+          )}
+          {investmentAnalysis.stabilizedValue != null && investmentAnalysis.stabilizedValue > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Stabilized Value</span>
+              <span className="font-medium">${investmentAnalysis.stabilizedValue.toLocaleString()}</span>
+            </div>
+          )}
+          {investmentAnalysis.profit != null && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Profit</span>
+              <span className={`font-medium ${investmentAnalysis.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                ${investmentAnalysis.profit.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {investmentAnalysis.equityMultiple != null && investmentAnalysis.equityMultiple > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Equity Multiple</span>
+              <span className="font-medium">{investmentAnalysis.equityMultiple.toFixed(2)}x</span>
+            </div>
+          )}
+          {investmentAnalysis.cashOnCash != null && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Cash-on-Cash</span>
+              <span className="font-medium">{(investmentAnalysis.cashOnCash * 100).toFixed(2)}%</span>
+            </div>
+          )}
         </div>
       )}
 

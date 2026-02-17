@@ -206,32 +206,14 @@ function generateGreenspaceElements(
 }
 
 /**
- * Optimize site plan for better performance
+ * @deprecated — Real optimisation is now handled by src/engine/optimizer.ts
+ * (simulated-annealing). This is retained as a no-op so legacy callers compile.
  */
 export function optimizeSitePlan(
   initialPlan: PlannerOutput,
-  config: PlannerConfig
+  _config: PlannerConfig
 ): PlannerOutput {
-  // Simple optimization: try to improve building placement
-  const optimizedBuildings = optimizeBuildingPlacement(
-    initialPlan.elements.filter(el => el.type === 'building'),
-    initialPlan.envelope.geometry,
-    config
-  );
-  
-  // Recalculate metrics with optimized buildings
-  const allElements = [
-    ...optimizedBuildings,
-    ...initialPlan.elements.filter(el => el.type !== 'building')
-  ];
-  
-  const metrics = calculateMetrics(allElements, initialPlan.envelope.areaSqFt, config);
-  
-  return {
-    ...initialPlan,
-    elements: allElements,
-    metrics
-  };
+  return initialPlan;
 }
 
 /**
@@ -282,7 +264,8 @@ export function validateSitePlan(
 }
 
 /**
- * Generate multiple site plan alternatives
+ * @deprecated — Alternatives are now produced by the SA optimizer (src/engine/optimizer.ts).
+ * Kept as a thin wrapper so legacy callers (useSitePlanState) still compile.
  */
 export function generateAlternatives(
   parcelGeoJSON: Polygon,
@@ -298,14 +281,4 @@ export function generateAlternatives(
   }
   
   return alternatives;
-}
-
-// Helper function for building optimization
-function optimizeBuildingPlacement(
-  buildings: Element[],
-  envelope: Polygon,
-  config: PlannerConfig
-): Element[] {
-  // Simple optimization: sort by area and adjust positions
-  return buildings.sort((a, b) => (b.properties.areaSqFt || 0) - (a.properties.areaSqFt || 0));
 }

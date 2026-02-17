@@ -7,12 +7,17 @@ import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
-import { normalizeToPolygon, calculatePolygonCentroid } from '../../engine/geometry';
+import type { EdgeClassification } from '../../engine/setbacks';
+import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2 } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
 import { feetToMeters } from '../../engine/units';
+import { typologyToBuildingType, generateDefaultUnitMix } from '../../engine/model';
+import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
+import { useSitePlans } from '../../hooks/useSitePlans';
+import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 
 type SiteWorkspaceProps = {
   parcel: SelectedParcel;
@@ -33,7 +38,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     normalizedGeometry,
     isValidParcel: hasValidGeometry
   } = useSitePlanState(parcel);
-  const { status, envelope, rpcMetrics, error: envelopeError } = useBuildableEnvelope(parcel);
+  const { status, envelope, rpcMetrics, edgeClassifications, error: envelopeError } = useBuildableEnvelope(parcel);
   const [isGenerating, setIsGenerating] = useState(false);
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
   const [investmentAnalysis, setInvestmentAnalysis] = useState<InvestmentAnalysis | null>(null);
@@ -41,9 +46,53 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [usingFallbackEnvelope, setUsingFallbackEnvelope] = useState(false);
   const generateTimerRef = useRef<number | null>(null);
 
+  // Plan persistence
+  const parcelIdStr = String(parcel.ogc_fid ?? parcel.id ?? 'unknown');
+  const {
+    plans: savedPlans,
+    isLoading: savedPlansLoading,
+    error: savedPlansError,
+    save: savePlanToDb,
+    remove: deletePlanFromDb,
+    setFavorite: togglePlanFavorite,
+  } = useSitePlans(parcelIdStr);
+
+  const handleSavePlan = useCallback(
+    (name: string) => {
+      savePlanToDb({
+        parcel_id: parcelIdStr,
+        name,
+        config,
+        elements,
+        metrics,
+        violations,
+        investment: investmentAnalysis,
+      });
+    },
+    [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis]
+  );
+
+  const handleLoadPlan = useCallback(
+    (plan: SavedSitePlan) => {
+      setPlanOutput(plan.elements ?? [], plan.metrics ?? null);
+      setViolations(plan.violations ?? []);
+      setInvestmentAnalysis(plan.investment ?? null);
+    },
+    [setPlanOutput]
+  );
+
   // Create fallback envelope from parcel geometry if RPC fails
   const fallbackEnvelopeMeters = useMemo(() => {
-    if (!parcel?.geometry || status === 'ready' || status === 'loading') return null;
+    // Only create fallback if we don't have a valid RPC envelope
+    // Create fallback when status is 'invalid' OR when we have no envelope but have geometry
+    if (!parcel?.geometry) return null;
+    
+    // If RPC succeeded and we have a valid envelope, no fallback needed
+    if (status === 'ready' && envelope && (envelope.type === 'Polygon' || envelope.type === 'MultiPolygon')) {
+      return null;
+    }
+    
+    // Create fallback when RPC failed, returned null, or status is invalid
     
     try {
       // Reproject parcel geometry to 3857
@@ -100,25 +149,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       console.error('Failed to create fallback envelope:', err);
       return null;
     }
-  }, [parcel?.geometry, status]);
+  }, [parcel?.geometry, status, envelope]);
 
   const envelopeMeters = useMemo(() => {
-    // Use RPC envelope if available
+    // Use RPC envelope if available and valid
     if (envelope && status === 'ready') {
-      if (envelope.type !== 'Polygon' && envelope.type !== 'MultiPolygon') return null;
+      if (envelope.type !== 'Polygon' && envelope.type !== 'MultiPolygon') {
+        // Invalid geometry type, use fallback
+        return fallbackEnvelopeMeters;
+      }
       const geom = envelope as Polygon | MultiPolygon;
       const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
       const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
       const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
-      return normalizeToPolygon(reprojected);
+      const normalized = normalizeToPolygon(reprojected);
+      // Check if normalized polygon is valid (has coordinates)
+      if (normalized.coordinates[0] && normalized.coordinates[0].length > 0) {
+        return normalized;
+      }
     }
     
-    // Use fallback if RPC failed
-    if (fallbackEnvelopeMeters) {
-      return fallbackEnvelopeMeters;
-    }
-    
-    return null;
+    // Use fallback if RPC failed, returned null, or envelope is invalid
+    return fallbackEnvelopeMeters;
   }, [envelope, status, fallbackEnvelopeMeters]);
 
   // Track whether we're using fallback envelope
@@ -126,30 +178,59 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setUsingFallbackEnvelope(envelopeMeters === fallbackEnvelopeMeters && fallbackEnvelopeMeters !== null);
   }, [envelopeMeters, fallbackEnvelopeMeters]);
 
-  // NOTE: All canvas rendering uses EPSG:3857 meters. No feet conversion for geometry.
-  // Feet conversion is only used for display labels and measurements.
+  // Elements and envelope stay in EPSG:3857 meters — no feet conversion.
+  // The canvas viewport fits to processedGeometry (also EPSG:3857 meters).
 
   const handleGenerate = useCallback(async () => {
     if (!envelopeMeters) return;
     setIsGenerating(true);
     try {
-      const result = await workerManager.initSite(envelopeMeters, config.zoning, undefined, {
+      const parkingSpec = {
         stallW: feetToMeters(config.designParameters.parking.stallWidthFt),
         stallD: feetToMeters(config.designParameters.parking.stallDepthFt),
         aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
         anglesDeg: [0, 60, 90]
-      });
-      setPlanOutput(result.elements || [], result.metrics || null);
-      setViolations(result.violations || []);
+      };
+
+      // Use the optimizer for "Generate Plan" — it runs simulated annealing
+      const result = await workerManager.optimizeSite(
+        envelopeMeters,
+        config.zoning,
+        config.designParameters,
+        parkingSpec,
+        200 // iterations
+      );
+
+      // Feed best result into the plan output (already in EPSG:3857 meters)
+      setPlanOutput(
+        result.bestElements || [],
+        result.bestMetrics || null
+      );
+      setViolations(result.bestViolations || []);
+      // Worker state is already synced with the optimizer's best buildings
+      // (the OPTIMIZE handler sets siteState after optimize() returns)
       setSolverReady(true);
     } catch (error) {
-      console.error('Failed to initialize solver:', error);
-      setSolverReady(false);
-      setViolations([{
-        code: 'worker',
-        message: `Failed to initialize solver: ${String(error)}`,
-        severity: 'error'
-      }]);
+      console.error('Failed to run optimizer:', error);
+      // Fallback to basic initSite if optimizer fails
+      try {
+        const fallbackResult = await workerManager.initSite(envelopeMeters, config.zoning, undefined, {
+          stallW: feetToMeters(config.designParameters.parking.stallWidthFt),
+          stallD: feetToMeters(config.designParameters.parking.stallDepthFt),
+          aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
+          anglesDeg: [0, 60, 90]
+        }, typologyToBuildingType(config.designParameters.buildingTypology));
+        setPlanOutput(fallbackResult.elements || [], fallbackResult.metrics || null);
+        setViolations(fallbackResult.violations || []);
+        setSolverReady(true);
+      } catch (fallbackErr) {
+        setSolverReady(false);
+        setViolations([{
+          code: 'worker',
+          message: `Failed to generate plan: ${String(error)}`,
+          severity: 'error'
+        }]);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -166,8 +247,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }, options?: { final?: boolean }) => {
       if (!envelopeMeters) return;
       const runUpdate = async () => {
-        // Shell passes coordinates in EPSG:3857 meters (canvas world space)
-        // and dimensions labeled as "Ft" but actually in meters from the canvas
+        // Canvas coordinates are already in EPSG:3857 meters — pass directly to worker.
+        // (The Shell field names say "Ft" but they're actually meters from the canvas.)
         const result = await workerManager.updateBuilding(update.id, {
           anchorX: update.anchor.x,
           anchorY: update.anchor.y,
@@ -181,6 +262,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       };
 
       // No debounce here - Shell already debounces
+      // Don't swallow errors - surface them to user
       runUpdate().catch(err => {
         console.error('Building update failed:', err);
         setViolations([{
@@ -227,13 +309,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         return;
       }
     }
-
-    // Calculate envelope centroid in meters (EPSG:3857)
+    
+    // Calculate envelope centroid in EPSG:3857 meters
     const coords = envelopeMeters.coordinates[0];
     const centroid = calculatePolygonCentroid(coords);
     const anchorX = centroid[0];
     const anchorY = centroid[1];
-
+    
     // Find next available building ID
     const existingIds = elements.filter(e => e.type === 'building').map(e => e.id);
     let buildingNum = 1;
@@ -241,44 +323,74 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       buildingNum++;
     }
     const newId = `building-${buildingNum}`;
-
-    // Default dimensions in meters (~100ft x 50ft)
+    
+    // Default dimensions in meters (convert from design defaults in feet)
     const defaultWidthM = feetToMeters(100);
     const defaultDepthM = feetToMeters(50);
     const defaultFloors = 3;
-
-    // Create new building via updateBuilding (worker will create if id not found)
-    // Note: widthFt/depthFt labels are legacy — values are in meters for the worker
+    
+    // handleBuildingUpdate now passes values directly to worker (already in meters)
     handleBuildingUpdate({
       id: newId,
       anchor: { x: anchorX, y: anchorY },
       rotationRad: 0,
-      widthFt: defaultWidthM,
-      depthFt: defaultDepthM,
+      widthFt: defaultWidthM,   // actually meters — Shell field name is legacy
+      depthFt: defaultDepthM,   // actually meters — Shell field name is legacy
       floors: defaultFloors
     }, { final: true });
   }, [envelopeMeters, elements, handleBuildingUpdate, solverReady, config, setPlanOutput]);
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
-    return {
-      totalInvestment: metrics.totalBuiltSF * 150,
-      projectedRevenue: metrics.totalBuiltSF * 2.5 * 12,
-      operatingExpenses: metrics.totalBuiltSF * 1.0 * 12,
-      netOperatingIncome: metrics.totalBuiltSF * 1.5 * 12,
-      capRate: 0.06,
-      irr: 0.12,
-      paybackPeriod: 8.3,
-      riskAssessment: 'medium'
+    const gfa = metrics.totalBuiltSF;
+    const units = Math.max(1, Math.floor(gfa * 0.85 / 750));
+    const avgRentPerUnit = 1800;
+    const grossRent = units * avgRentPerUnit * 12;
+    const vacancy = grossRent * 0.05;
+    const egi = grossRent - vacancy;
+    const opex = egi * 0.35;
+    const noi = egi - opex;
+    const hardCosts = gfa * 165;
+    const softCosts = hardCosts * 0.20;
+    const totalDevCost = hardCosts + softCosts + (hardCosts + softCosts) * 0.05;
+    const capRate = 0.055;
+    const baseReturn: InvestmentAnalysis = {
+      totalInvestment: totalDevCost,
+      projectedRevenue: grossRent,
+      operatingExpenses: opex,
+      netOperatingIncome: noi,
+      capRate,
+      irr: noi / totalDevCost,
+      paybackPeriod: totalDevCost / noi,
+      riskAssessment: noi / totalDevCost > 0.07 ? 'low' : noi / totalDevCost > 0.05 ? 'medium' : 'high',
+      // Required additional fields
+      grossPotentialRent: grossRent,
+      vacancyLoss: vacancy,
+      effectiveGrossIncome: egi,
+      totalDevelopmentCost: totalDevCost,
+      totalHardCosts: hardCosts,
+      softCosts: softCosts,
+      contingency: (hardCosts + softCosts) * 0.05,
+      financingCosts: 0,
+      landCost: parcel.parval ?? 0,
+      yieldOnCost: noi / totalDevCost,
+      stabilizedValue: noi / capRate,
+      profit: (noi / capRate) - totalDevCost,
+      equityMultiple: 0,
+      cashOnCash: 0,
+      costPerUnit: totalDevCost / units,
+      costPerSF: totalDevCost / gfa,
     };
-  }, [metrics]);
+    return baseReturn;
+  }, [metrics, parcel.parval]);
 
   useEffect(() => {
     setInvestmentAnalysis(derivedInvestmentAnalysis);
   }, [derivedInvestmentAnalysis]);
 
   useEffect(() => {
-    if (!hasValidGeometry || status !== 'ready') return;
+    // Run handleGenerate when we have ANY envelope (ready or fallback), not just when status === 'ready'
+    if (!hasValidGeometry || !envelopeMeters) return;
     if (generateTimerRef.current) {
       window.clearTimeout(generateTimerRef.current);
     }
@@ -290,7 +402,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         window.clearTimeout(generateTimerRef.current);
       }
     };
-  }, [config, handleGenerate, hasValidGeometry, status]);
+  }, [config, handleGenerate, hasValidGeometry, envelopeMeters]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -313,6 +425,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             alternatives={alternatives}
             selectedSolveIndex={selectedSolveIndex}
             onSelectSolve={selectSolve}
+            savedPlans={savedPlans}
+            savedPlansLoading={savedPlansLoading}
+            savedPlansError={savedPlansError}
+            onSavePlan={handleSavePlan}
+            onLoadPlan={handleLoadPlan}
+            onDeletePlan={deletePlanFromDb}
+            onToggleFavorite={togglePlanFavorite}
+            currentElements={elements}
+            currentMetrics={metrics}
+            currentViolations={violations}
+            currentInvestment={investmentAnalysis}
           />
 
           <div className="flex-1 min-w-0">
@@ -349,6 +472,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             investmentAnalysis={investmentAnalysis}
             isGenerating={isGenerating}
             violations={violations}
+            edgeClassifications={edgeClassifications}
+            setbacks={rpcMetrics?.setbacks}
           />
         </div>
       </div>

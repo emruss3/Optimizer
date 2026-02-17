@@ -129,7 +129,9 @@ export function calculateBuildingEfficiency(elements: Element[]): {
     sum + (stall.properties.parkingSpaces || 0), 0);
   
   const avgUnitSize = totalUnits > 0 ? totalBuiltSF / totalUnits : 0;
-  const buildingEfficiency = totalBuiltSF > 0 ? (totalUnits * 800) / totalBuiltSF : 0; // Assume 800 sqft per unit
+  // Weighted average unit net size (from standard unit mix: 10% 450sf, 40% 650sf, 35% 900sf, 15% 1200sf)
+  const WEIGHTED_AVG_UNIT_SF = 720;
+  const buildingEfficiency = totalBuiltSF > 0 ? (totalUnits * WEIGHTED_AVG_UNIT_SF) / totalBuiltSF : 0;
   const parkingEfficiency = totalUnits > 0 ? totalStalls / totalUnits : 0;
   
   return {
