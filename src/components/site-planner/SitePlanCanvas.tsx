@@ -335,11 +335,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderElementLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     ctx.save();
     const center = ElementService.calculateElementCenter(element);
-    const bounds = ElementService.getElementBounds(element);
     
-    const width = bounds.maxX - bounds.minX;
-    const height = bounds.maxY - bounds.minY;
-    const area = width * height;
+    // Use pre-computed areaSqFt from the solver (Mercator-corrected) instead of
+    // computing area from canvas bounding box (which would be in EPSG:3857 meters²).
+    const areaSqFt = element.properties?.areaSqFt;
+    const areaLabel = areaSqFt != null ? `${Math.round(areaSqFt).toLocaleString()} sq ft` : '';
     
     ctx.fillStyle = '#FFFFFF';
     ctx.strokeStyle = '#374151';
@@ -348,7 +348,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    const label = `${element.name || element.type}\n${area.toFixed(0)} sq ft`;
+    const label = `${element.name || element.type}${areaLabel ? '\n' + areaLabel : ''}`;
     const lines = label.split('\n');
     const lineHeight = 12 / zoom;
     const totalHeight = lines.length * lineHeight;

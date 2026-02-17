@@ -271,6 +271,7 @@ export class PlannerWorkerManager implements WorkerAPI {
             warnings: [],
           },
           bestViolations: rest.bestViolations || [],
+          bestBuildings: rest.bestBuildings || [],
           top3Alternatives: rest.top3Alternatives || [],
           iterations: rest.iterations || 0,
           finalScore: rest.finalScore || 0,

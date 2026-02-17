@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { BarChart3, Grid, AlertTriangle, CheckCircle, Building } from 'lucide-react';
+import { Grid, Building } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -99,7 +99,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // State
   const [elements, setElements] = useState<Element[]>(initialElements);
-  const [showMetrics, setShowMetrics] = useState(true);
   const [showLayers, setShowLayers] = useState(true);
   const [copiedElements, setCopiedElements] = useState<Element[]>([]);
   const [isPanning, setIsPanning] = useState(false);
@@ -687,12 +686,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             Templates
           </button> */}
           <button
-            onClick={() => setShowMetrics(!showMetrics)}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <BarChart3 className="w-5 h-5" />
-          </button>
-          <button
             onClick={() => setShowLayers(!showLayers)}
             className="p-2 text-gray-600 hover:text-gray-900"
           >
@@ -759,43 +752,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           />
           
         </div>
-
-        {/* Metrics Panel */}
-        {showMetrics && displayMetrics && (
-          <div className="w-80 bg-white border-l p-4">
-            <h3 className="text-lg font-semibold mb-4">Site Metrics</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">FAR:</span>
-                <span className="font-medium">{displayMetrics.achievedFAR.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">Coverage:</span>
-                <span className="font-medium">{displayMetrics.siteCoveragePct.toFixed(1)}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">Parking Ratio:</span>
-                <span className="font-medium">{displayMetrics.parkingRatio.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">Built SF:</span>
-                <span className="font-medium">{displayMetrics.totalBuiltSF.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">Open Space:</span>
-                <span className="font-medium">{displayMetrics.openSpacePct.toFixed(1)}%</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Compliance:</span>
-                {displayMetrics.zoningCompliant ? (
-                  <CheckCircle className="w-4 h-4 text-green-600" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-red-600" />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Status Bar */}

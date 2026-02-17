@@ -8,9 +8,9 @@ import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
 import type { EdgeClassification } from '../../engine/setbacks';
-import { normalizeToPolygon, calculatePolygonCentroid, areaM2, correctedAreaM2 } from '../../engine/geometry';
+import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2 } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
-import { feetToMeters, metersToFeet } from '../../engine/units';
+import { feetToMeters } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix } from '../../engine/model';
 import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon } from 'geojson';
@@ -178,27 +178,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setUsingFallbackEnvelope(envelopeMeters === fallbackEnvelopeMeters && fallbackEnvelopeMeters !== null);
   }, [envelopeMeters, fallbackEnvelopeMeters]);
 
-  const envelopeFeet = useMemo(() => {
-    if (!envelopeMeters) return null;
-    return {
-      ...envelopeMeters,
-      coordinates: [
-        envelopeMeters.coordinates[0].map(([x, y]) => [metersToFeet(x), metersToFeet(y)])
-      ]
-    };
-  }, [envelopeMeters]);
-
-  const convertElementsToFeet = useCallback((elements: Element[]) => {
-    return elements.map(element => ({
-      ...element,
-      geometry: {
-        ...element.geometry,
-        coordinates: [
-          element.geometry.coordinates[0].map(([x, y]) => [metersToFeet(x), metersToFeet(y)])
-        ]
-      }
-    }));
-  }, []);
+  // Elements and envelope stay in EPSG:3857 meters — no feet conversion.
+  // The canvas viewport fits to processedGeometry (also EPSG:3857 meters).
 
   const handleGenerate = useCallback(async () => {
     if (!envelopeMeters) return;
@@ -217,25 +198,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         config.zoning,
         config.designParameters,
         parkingSpec,
-        500 // iterations
+        200 // iterations
       );
 
-      // Feed best result into the plan output
+      // Feed best result into the plan output (already in EPSG:3857 meters)
       setPlanOutput(
-        convertElementsToFeet(result.bestElements || []),
+        result.bestElements || [],
         result.bestMetrics || null
       );
       setViolations(result.bestViolations || []);
+      // Worker state is already synced with the optimizer's best buildings
+      // (the OPTIMIZE handler sets siteState after optimize() returns)
       setSolverReady(true);
-
-      // Also init the solver state so manual adjustments work after optimization
-      await workerManager.initSite(
-        envelopeMeters,
-        config.zoning,
-        undefined,
-        parkingSpec,
-        typologyToBuildingType(config.designParameters.buildingTypology)
-      );
     } catch (error) {
       console.error('Failed to run optimizer:', error);
       // Fallback to basic initSite if optimizer fails
@@ -246,7 +220,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
           anglesDeg: [0, 60, 90]
         }, typologyToBuildingType(config.designParameters.buildingTypology));
-        setPlanOutput(convertElementsToFeet(fallbackResult.elements || []), fallbackResult.metrics || null);
+        setPlanOutput(fallbackResult.elements || [], fallbackResult.metrics || null);
         setViolations(fallbackResult.violations || []);
         setSolverReady(true);
       } catch (fallbackErr) {
@@ -260,7 +234,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGenerating(false);
     }
-  }, [config, convertElementsToFeet, envelopeMeters, setPlanOutput]);
+  }, [config, envelopeMeters, setPlanOutput]);
 
   const handleBuildingUpdate = useCallback(
     (update: {
@@ -273,15 +247,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }, options?: { final?: boolean }) => {
       if (!envelopeMeters) return;
       const runUpdate = async () => {
+        // Canvas coordinates are already in EPSG:3857 meters — pass directly to worker.
+        // (The Shell field names say "Ft" but they're actually meters from the canvas.)
         const result = await workerManager.updateBuilding(update.id, {
-          anchorX: feetToMeters(update.anchor.x),
-          anchorY: feetToMeters(update.anchor.y),
+          anchorX: update.anchor.x,
+          anchorY: update.anchor.y,
           rotationRad: update.rotationRad,
-          widthM: feetToMeters(update.widthFt),
-          depthM: feetToMeters(update.depthFt),
+          widthM: update.widthFt,
+          depthM: update.depthFt,
           floors: update.floors
         });
-        setPlanOutput(convertElementsToFeet(result.elements || []), result.metrics || null);
+        setPlanOutput(result.elements || [], result.metrics || null);
         setViolations(result.violations || []);
       };
 
@@ -296,7 +272,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         }]);
       });
     },
-    [convertElementsToFeet, envelopeMeters, setPlanOutput]
+    [envelopeMeters, setPlanOutput]
   );
 
   const handleAddBuilding = useCallback(async () => {
@@ -304,15 +280,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setViolations([{
         code: 'envelope',
         message: 'Buildable envelope not available. Please wait for envelope to load.',
-        severity: 'error'
-      }]);
-      return;
-    }
-
-    if (!envelopeFeet) {
-      setViolations([{
-        code: 'envelope',
-        message: 'Failed to convert envelope to feet. Please try again.',
         severity: 'error'
       }]);
       return;
@@ -328,7 +295,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           anglesDeg: [0, 60, 90] as number[]
         };
         const init = await workerManager.initSite(envelopeMeters, config.zoning, undefined, parkingSpec);
-        setPlanOutput(convertElementsToFeet(init.elements || []), init.metrics || null);
+        setPlanOutput(init.elements || [], init.metrics || null);
         setViolations(init.violations || []);
         setSolverReady(true);
       } catch (error) {
@@ -343,8 +310,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }
     }
     
-    // Calculate envelope centroid (not just bounds center)
-    const coords = envelopeFeet.coordinates[0];
+    // Calculate envelope centroid in EPSG:3857 meters
+    const coords = envelopeMeters.coordinates[0];
     const centroid = calculatePolygonCentroid(coords);
     const anchorX = centroid[0];
     const anchorY = centroid[1];
@@ -357,22 +324,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     const newId = `building-${buildingNum}`;
     
-    // Default dimensions from config or sensible defaults
-    // TODO: Add building defaults to config.designParameters
-    const defaultWidthFt = 100;
-    const defaultDepthFt = 50;
+    // Default dimensions in meters (convert from design defaults in feet)
+    const defaultWidthM = feetToMeters(100);
+    const defaultDepthM = feetToMeters(50);
     const defaultFloors = 3;
     
-    // Create new building via updateBuilding (worker will create if id not found)
+    // handleBuildingUpdate now passes values directly to worker (already in meters)
     handleBuildingUpdate({
       id: newId,
       anchor: { x: anchorX, y: anchorY },
       rotationRad: 0,
-      widthFt: defaultWidthFt,
-      depthFt: defaultDepthFt,
+      widthFt: defaultWidthM,   // actually meters — Shell field name is legacy
+      depthFt: defaultDepthM,   // actually meters — Shell field name is legacy
       floors: defaultFloors
     }, { final: true });
-  }, [envelopeFeet, envelopeMeters, elements, handleBuildingUpdate, solverReady, config, convertElementsToFeet, setPlanOutput]);
+  }, [envelopeMeters, elements, handleBuildingUpdate, solverReady, config, setPlanOutput]);
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
@@ -490,7 +456,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                     stallWidthFt: config.designParameters.parking.stallWidthFt,
                     stallDepthFt: config.designParameters.parking.stallDepthFt
                   }}
-                  buildableEnvelope={envelopeFeet || undefined}
+                  buildableEnvelope={envelopeMeters || undefined}
                   onBuildingUpdate={handleBuildingUpdate}
                   onAddBuilding={handleAddBuilding}
                   envelopeStatus={status}

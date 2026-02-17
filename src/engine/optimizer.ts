@@ -33,6 +33,8 @@ export interface OptimizeResult {
   bestElements: Element[];
   bestMetrics: PlannerOutput['metrics'];
   bestViolations: FeasibilityViolation[];
+  /** Building specs for the best plan — used to sync worker state after optimization */
+  bestBuildings: BuildingSpec[];
   top3Alternatives: Array<{
     elements: Element[];
     metrics: PlannerOutput['metrics'];
@@ -91,9 +93,117 @@ function longestEdge(envelope: Polygon): { start: number[]; dir: number[]; len: 
 }
 
 /**
- * Compute the score for a given plan configuration.
+ * FAST scoring — used during SA iterations.
+ * Skips expensive element building (boolean diff ops for greenspace) and pro forma.
+ * Only computes the numeric score + lightweight metrics needed for acceptance.
  */
-function computeScore(
+function scoreOnly(
+  envelope: Polygon,
+  buildings: BuildingSpec[],
+  parkingSpec: { stallW: number; stallD: number; aisleW: number; anglesDeg: number[] },
+  zoningLimits: { maxFar?: number; maxCoveragePct?: number; parkingRatio?: number },
+  /** Pre-computed values to avoid recalculation every iteration */
+  cached: { siteAreaM2: number; siteAreaSqft: number; maxReasonableUnits: number }
+): { score: number; clampedBuildings: BuildingSpec[] } {
+  // Clamp all buildings
+  const clamped: BuildingSpec[] = [];
+  for (const spec of buildings) {
+    clamped.push(clampBuildingToEnvelope(spec, envelope, clamped));
+  }
+
+  // Build footprints with unit mix
+  const buildingFootprints = clamped.map(spec => {
+    const footprint = buildBuildingFootprint(spec);
+    const gfaSqft = correctedAreaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
+    const unitMix = spec.unitMix && spec.unitMix.length > 0
+      ? spec.unitMix
+      : generateDefaultUnitMix(gfaSqft);
+    return { id: spec.id, footprint, floors: spec.floors, unitMix };
+  });
+
+  // Estimate units for parking cap
+  const estUnits = buildingFootprints.reduce(
+    (sum, b) => sum + (b.unitMix?.reduce((s, e) => s + e.count, 0) ?? 0), 0
+  );
+  const targetRatio = zoningLimits.parkingRatio ?? 1.5;
+  const maxStalls = estUnits > 0 ? Math.ceil(estUnits * targetRatio * 1.1) : undefined;
+
+  // Solve parking
+  const parkingSolution = solveParkingBayPacking(
+    envelope,
+    buildingFootprints.map(b => b.footprint),
+    parkingSpec,
+    maxStalls
+  );
+
+  const parkingAreaM2 = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0) +
+    parkingSolution.aisles.reduce((s, a) => s + areaM2(a), 0);
+
+  // Feasibility (lightweight — no element building)
+  const feasibility = computeFeasibility({
+    envelope,
+    buildings: buildingFootprints,
+    parkingSolution,
+    parkingAreaM2,
+    zoningLimits
+  });
+
+  const units = feasibility.totalUnits;
+
+  // 1. Unit count
+  const unitScore = Math.min(1, units / cached.maxReasonableUnits);
+
+  // 2. Parking compliance
+  let parkingScore = 0;
+  if (feasibility.stallsRequired <= 0) {
+    parkingScore = 1;
+  } else {
+    const ratio = feasibility.stallsProvided / feasibility.stallsRequired;
+    parkingScore = ratio >= 1 ? 1 : ratio >= 0.5 ? (ratio - 0.5) / 0.5 : 0;
+  }
+
+  // 3. FAR utilization
+  const maxFar = zoningLimits.maxFar ?? 2.0;
+  const farScore = feasibility.far > maxFar ? 0 : maxFar > 0 ? feasibility.far / maxFar : 0;
+
+  // 4. Coverage compliance
+  const maxCoverage = (zoningLimits.maxCoveragePct ?? 60) / 100;
+  const coverageScore = feasibility.coverage <= maxCoverage
+    ? 1
+    : Math.max(0, 1 - (feasibility.coverage - maxCoverage) / maxCoverage);
+
+  // 5. Open space (arithmetic — no boolean ops)
+  const footprintAreaM2 = buildingFootprints.reduce((s, b) => s + areaM2(b.footprint), 0);
+  const circulationAreaM2 = parkingSolution.circulationAreaSqM ?? 0;
+  const usedArea = footprintAreaM2 + parkingAreaM2 + circulationAreaM2;
+  const openSpacePct = cached.siteAreaM2 > 0 ? Math.max(0, 1 - usedArea / cached.siteAreaM2) : 0;
+  const openSpaceScore = Math.min(1, openSpacePct * 2);
+
+  // 6. No violations bonus
+  const errorViolations = feasibility.violations.filter(v => v.severity === 'error');
+  const noViolationsScore = errorViolations.length === 0 ? 1 : 0;
+
+  // 7. Yield on cost — SKIP during iterations (expensive), use a quick heuristic
+  // Rough proxy: higher GFA + lower cost ≈ higher yield. Normalize via FAR score.
+  const yieldOnCostScore = farScore * 0.5 + unitScore * 0.5; // cheap proxy
+
+  const totalScore =
+    WEIGHTS.unitCount * unitScore +
+    WEIGHTS.parkingCompliance * parkingScore +
+    WEIGHTS.farUtilization * farScore +
+    WEIGHTS.coverageCompliance * coverageScore +
+    WEIGHTS.openSpace * openSpaceScore +
+    WEIGHTS.noViolations * noViolationsScore +
+    WEIGHTS.yieldOnCost * yieldOnCostScore;
+
+  return { score: totalScore, clampedBuildings: clamped };
+}
+
+/**
+ * FULL scoring — builds elements, metrics, pro forma.
+ * Used only for the final best result and top-3 alternatives (called ~4 times total).
+ */
+function computeFullResult(
   envelope: Polygon,
   buildings: BuildingSpec[],
   parkingSpec: { stallW: number; stallD: number; aisleW: number; anglesDeg: number[] },
@@ -118,22 +228,15 @@ function computeScore(
     const unitMix = spec.unitMix && spec.unitMix.length > 0
       ? spec.unitMix
       : generateDefaultUnitMix(gfaSqft);
-    return {
-      id: spec.id,
-      footprint,
-      floors: spec.floors,
-      unitMix,
-    };
+    return { id: spec.id, footprint, floors: spec.floors, unitMix };
   });
 
-  // Compute target stalls so the parking solver doesn't fill the entire envelope
   const estUnits = buildingFootprints.reduce(
     (sum, b) => sum + (b.unitMix?.reduce((s, e) => s + e.count, 0) ?? 0), 0
   );
   const targetRatio = zoningLimits.parkingRatio ?? 1.5;
   const maxStalls = estUnits > 0 ? Math.ceil(estUnits * targetRatio * 1.1) : undefined;
 
-  // Solve parking
   const parkingSolution = solveParkingBayPacking(
     envelope,
     buildingFootprints.map(b => b.footprint),
@@ -144,7 +247,6 @@ function computeScore(
   const parkingAreaM2 = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0) +
     parkingSolution.aisles.reduce((s, a) => s + areaM2(a), 0);
 
-  // Feasibility
   const feasibility = computeFeasibility({
     envelope,
     buildings: buildingFootprints,
@@ -153,59 +255,39 @@ function computeScore(
     zoningLimits
   });
 
-  const siteAreaM2Val = areaM2(envelope); // raw EPSG:3857 for ratio scoring
-  const siteAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT; // corrected for pro forma
+  const siteAreaM2Val = areaM2(envelope);
+  const siteAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT;
 
-  // Compute sub-scores
   const units = feasibility.totalUnits;
-  const maxReasonableUnits = Math.max(1, Math.floor(siteAreaSqft * 3 * 0.85 / 720)); // ~3 FAR max
-
-  // 1. Unit count: normalized to [0,1]
+  const maxReasonableUnits = Math.max(1, Math.floor(siteAreaSqft * 3 * 0.85 / 720));
   const unitScore = Math.min(1, units / maxReasonableUnits);
 
-  // 2. Parking compliance
   let parkingScore = 0;
   if (feasibility.stallsRequired <= 0) {
     parkingScore = 1;
   } else {
     const ratio = feasibility.stallsProvided / feasibility.stallsRequired;
-    if (ratio >= 1) {
-      parkingScore = 1;
-    } else if (ratio >= 0.5) {
-      parkingScore = (ratio - 0.5) / 0.5; // linear 0→1 for 50%→100%
-    }
+    parkingScore = ratio >= 1 ? 1 : ratio >= 0.5 ? (ratio - 0.5) / 0.5 : 0;
   }
 
-  // 3. FAR utilization
-  let farScore = 0;
   const maxFar = zoningLimits.maxFar ?? 2.0;
-  if (feasibility.far > maxFar) {
-    farScore = 0; // over max = penalty
-  } else if (maxFar > 0) {
-    farScore = feasibility.far / maxFar; // closer to max = better
-  }
+  const farScore = feasibility.far > maxFar ? 0 : maxFar > 0 ? feasibility.far / maxFar : 0;
 
-  // 4. Coverage compliance
   const maxCoverage = (zoningLimits.maxCoveragePct ?? 60) / 100;
-  let coverageScore = 0;
-  if (feasibility.coverage <= maxCoverage) {
-    coverageScore = 1;
-  } else {
-    coverageScore = Math.max(0, 1 - (feasibility.coverage - maxCoverage) / maxCoverage);
-  }
+  const coverageScore = feasibility.coverage <= maxCoverage
+    ? 1
+    : Math.max(0, 1 - (feasibility.coverage - maxCoverage) / maxCoverage);
 
-  // 5. Open space
   const footprintAreaM2 = buildingFootprints.reduce((s, b) => s + areaM2(b.footprint), 0);
   const circulationAreaM2 = parkingSolution.circulationAreaSqM ?? 0;
   const usedArea = footprintAreaM2 + parkingAreaM2 + circulationAreaM2;
   const openSpacePct = siteAreaM2Val > 0 ? Math.max(0, 1 - usedArea / siteAreaM2Val) : 0;
-  const openSpaceScore = Math.min(1, openSpacePct * 2); // 50%+ open space = 1.0
+  const openSpaceScore = Math.min(1, openSpacePct * 2);
 
-  // 6. No violations bonus
   const errorViolations = feasibility.violations.filter(v => v.severity === 'error');
   const noViolationsScore = errorViolations.length === 0 ? 1 : 0;
 
-  // 7. Yield on cost (pro forma)
+  // Full pro forma (only for final results)
   let yieldOnCostScore = 0;
   try {
     const allMix = buildingFootprints.flatMap(b => b.unitMix || []);
@@ -217,7 +299,6 @@ function computeScore(
       structuredStalls: 0,
       landCost: 0,
     });
-    // Target ~6% yield — normalize to [0,1] with 8% = 1.0
     yieldOnCostScore = Math.min(1, Math.max(0, pf.yieldOnCost / 0.08));
   } catch {
     yieldOnCostScore = 0;
@@ -232,12 +313,11 @@ function computeScore(
     WEIGHTS.noViolations * noViolationsScore +
     WEIGHTS.yieldOnCost * yieldOnCostScore;
 
-  // Build elements
+  // Build full elements (expensive — boolean ops for greenspace)
   const elements = buildElements(clamped, buildingFootprints, parkingSolution, feasibility, envelope);
 
   const parkingRatio = units > 0 ? feasibility.stallsProvided / units : 0;
 
-  // Build unit mix summary
   const allMix = buildingFootprints.flatMap(b => b.unitMix || []);
   const mixByType: Record<string, number> = {};
   for (const entry of allMix) {
@@ -466,7 +546,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     envelope,
     zoning,
     designParams,
-    maxIterations = 500,
+    maxIterations = 200,
     onProgress,
   } = input;
 
@@ -515,29 +595,23 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     );
   }
 
-  // ── 2. Simulated annealing loop ─────────────────────────────────────────
+  // ── 2. Pre-compute cached values for fast scoring ───────────────────────
+  const siteAreaM2 = areaM2(envelope);
+  const siteAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT;
+  const maxReasonableUnits = Math.max(1, Math.floor(siteAreaSqft * 3 * 0.85 / 720));
+  const cached = { siteAreaM2: siteAreaM2, siteAreaSqft, maxReasonableUnits };
+
+  // ── 3. Simulated annealing loop (fast — score only, no element building) ─
   let currentBuildings = cloneBuildings(initialBuildings);
-  let currentResult = computeScore(envelope, currentBuildings, parkingSpec, zoningLimits);
-  let currentScore = currentResult.score;
+  let { score: currentScore } = scoreOnly(envelope, currentBuildings, parkingSpec, zoningLimits, cached);
 
   let bestBuildings = cloneBuildings(currentBuildings);
-  let bestResult = currentResult;
   let bestScore = currentScore;
 
-  // Track top 3 unique alternatives (by score buckets)
-  const topN: Array<{
-    buildings: BuildingSpec[];
-    elements: Element[];
-    metrics: PlannerOutput['metrics'];
-    violations: FeasibilityViolation[];
-    score: number;
-  }> = [{
-    buildings: cloneBuildings(currentBuildings),
-    elements: currentResult.elements,
-    metrics: currentResult.metrics,
-    violations: currentResult.violations,
-    score: currentScore
-  }];
+  // Track top-N alternative building configs (score + buildings only, no elements)
+  const topN: Array<{ buildings: BuildingSpec[]; score: number }> = [
+    { buildings: cloneBuildings(currentBuildings), score: currentScore }
+  ];
 
   const T_START = 1.0;
   const T_END = 0.01;
@@ -553,16 +627,12 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     const buildingIdx = Math.floor(Math.random() * candidateBuildings.length);
 
     if (mutationType < 0.35) {
-      // Move
       candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx]);
     } else if (mutationType < 0.6) {
-      // Resize
       candidateBuildings[buildingIdx] = mutateResize(candidateBuildings[buildingIdx]);
     } else if (mutationType < 0.8) {
-      // Rotate
       candidateBuildings[buildingIdx] = mutateRotate(candidateBuildings[buildingIdx]);
     } else if (mutationType < 0.9 && candidateBuildings.length < numBuildings) {
-      // Add building
       const newId = `building-${candidateBuildings.length + 1}`;
       candidateBuildings.push(
         createBuildingSpec(
@@ -576,16 +646,15 @@ export function optimize(input: OptimizeInput): OptimizeResult {
         )
       );
     } else if (candidateBuildings.length > 1) {
-      // Remove building
       candidateBuildings.splice(buildingIdx, 1);
     } else {
-      // Fallback: move
       candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx]);
     }
 
-    // Evaluate candidate
-    const candidateResult = computeScore(envelope, candidateBuildings, parkingSpec, zoningLimits);
-    const candidateScore = candidateResult.score;
+    // Fast score (no element building, no pro forma, no boolean ops)
+    const { score: candidateScore } = scoreOnly(
+      envelope, candidateBuildings, parkingSpec, zoningLimits, cached
+    );
 
     // Accept/reject
     const scoreDiff = candidateScore - currentScore;
@@ -593,32 +662,21 @@ export function optimize(input: OptimizeInput): OptimizeResult {
 
     if (accept) {
       currentBuildings = candidateBuildings;
-      currentResult = candidateResult;
       currentScore = candidateScore;
 
-      // Update best
       if (candidateScore > bestScore) {
         bestBuildings = cloneBuildings(candidateBuildings);
-        bestResult = candidateResult;
         bestScore = candidateScore;
       }
 
-      // Track top-N alternatives (keep top 3 by score, deduplicated by building count)
-      const altEntry = {
-        buildings: cloneBuildings(candidateBuildings),
-        elements: candidateResult.elements,
-        metrics: candidateResult.metrics,
-        violations: candidateResult.violations,
-        score: candidateScore
-      };
-      topN.push(altEntry);
+      // Track top-N alternatives (buildings only — elements built at end)
+      topN.push({ buildings: cloneBuildings(candidateBuildings), score: candidateScore });
       topN.sort((a, b) => b.score - a.score);
-      // Deduplicate: keep only entries with distinct scores (±0.01)
       const deduped: typeof topN = [];
       for (const entry of topN) {
         const isDup = deduped.some(d => Math.abs(d.score - entry.score) < 0.01);
         if (!isDup) deduped.push(entry);
-        if (deduped.length >= 4) break; // keep 4 so we can skip the best later
+        if (deduped.length >= 4) break;
       }
       topN.length = 0;
       topN.push(...deduped);
@@ -630,21 +688,27 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     }
   }
 
-  // Build top 3 alternatives (excluding the best)
+  // ── 4. Build full results only for best + top 3 (expensive, but only ~4 calls) ─
+  const bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits);
+
   const top3Alternatives = topN
     .filter(a => Math.abs(a.score - bestScore) > 0.005)
     .slice(0, 3)
-    .map(a => ({
-      elements: a.elements,
-      metrics: a.metrics,
-      violations: a.violations,
-      score: a.score
-    }));
+    .map(a => {
+      const full = computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits);
+      return {
+        elements: full.elements,
+        metrics: full.metrics,
+        violations: full.violations,
+        score: full.score
+      };
+    });
 
   return {
     bestElements: bestResult.elements,
     bestMetrics: bestResult.metrics,
     bestViolations: bestResult.violations,
+    bestBuildings: bestBuildings,
     top3Alternatives,
     iterations: maxIterations,
     finalScore: bestScore

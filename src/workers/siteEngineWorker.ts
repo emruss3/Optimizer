@@ -30,7 +30,8 @@ type SiteEngineState = {
 };
 
 class SiteEngineWorker {
-  private siteState: SiteEngineState | null = null;
+  /** Exposed so the OPTIMIZE handler can sync state after optimization */
+  public siteState: SiteEngineState | null = null;
 
   /**
    * Generate site plan (legacy + direct call).
@@ -483,7 +484,7 @@ self.onmessage = async (e) => {
         zoning,
         designParams,
         parkingSpec,
-        maxIterations: maxIterations ?? 500,
+        maxIterations: maxIterations ?? 200,
         onProgress: (iteration, score) => {
           (self as any).postMessage({
             type: 'OPTIMIZE_PROGRESS',
@@ -494,6 +495,20 @@ self.onmessage = async (e) => {
           });
         },
       });
+
+      // Sync worker state with the optimizer's best layout so
+      // subsequent UPDATE_BUILDING / Add Building operations work correctly.
+      worker.siteState = {
+        envelope,
+        zoning,
+        buildings: result.bestBuildings ?? [],
+        parkingSpec: parkingSpec ?? {
+          stallW: 2.7432,
+          stallD: 5.4864,
+          aisleW: 7.3152,
+          anglesDeg: [0, 60, 90],
+        },
+      };
 
       (self as any).postMessage({
         type: 'OPTIMIZE_RESULT',
@@ -515,8 +530,13 @@ self.onmessage = async (e) => {
       console.warn(`[Worker] Unknown message type: ${type}`);
     }
   } catch (err: any) {
+    // Route error response to the correct message type so the manager's listener resolves
+    let responseType = 'PLAN_UPDATED';
+    if (type === 'generate') responseType = 'generated';
+    else if (type === 'OPTIMIZE') responseType = 'OPTIMIZE_RESULT';
+
     (self as any).postMessage({
-      type: type === 'generate' ? 'generated' : 'PLAN_UPDATED',
+      type: responseType,
       id: requestId,
       reqId: requestId,
       error: err?.message ?? String(err),
