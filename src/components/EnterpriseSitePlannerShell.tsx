@@ -130,7 +130,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const measurement = useMeasurement();
   const grid = useGrid(10); // 10 foot grid
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   const queueBuildingUpdate = useCallback((update: {
     id: string;
@@ -175,45 +175,38 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     return Math.atan2(y2 - y1, x2 - x1);
   }, []);
 
-  // Process parcel geometry: reproject to EPSG:3857 meters directly (no feet, no normalization)
   const processedGeometry = useMemo(() => {
     if (!parcel?.geometry) return null;
-
-    let geometry3857 = parcel.geometry;
-    
-    // Check if already in 3857 (coords > 1000) or 4326 (degrees)
-    const sampleCoords = parcel.geometry.type === 'Polygon'
-      ? parcel.geometry.coordinates[0][0]
-      : parcel.geometry.type === 'MultiPolygon'
-      ? parcel.geometry.coordinates[0][0][0]
-      : null;
-    
-    if (sampleCoords && (Math.abs(sampleCoords[0]) < 1000 && Math.abs(sampleCoords[1]) < 1000)) {
-      // Likely 4326 (degrees), reproject to 3857
-      geometry3857 = feature4326To3857(parcel.geometry);
+    try {
+      const geom = parcel.geometry as import('geojson').Polygon | import('geojson').MultiPolygon;
+      const coords =
+        geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
+      const is3857 =
+        Math.abs(coords?.[0]?.[0] ?? 0) > 1000 ||
+        Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+      const reprojected = is3857
+        ? geom
+        : (feature4326To3857(geom) as import('geojson').Polygon | import('geojson').MultiPolygon);
+      const polygon = normalizeToPolygon(reprojected);
+      const ring = polygon.coordinates[0];
+      const bounds = ring.reduce(
+        (acc, [x, y]) => ({
+          minX: Math.min(acc.minX, x),
+          minY: Math.min(acc.minY, y),
+          maxX: Math.max(acc.maxX, x),
+          maxY: Math.max(acc.maxY, y),
+        }),
+        { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      );
+      return { geometry: polygon, bounds };
+    } catch {
+      return null;
     }
-    
-    // Normalize to Polygon (handles MultiPolygon by selecting largest)
-    const polygon = normalizeToPolygon(geometry3857);
-    
-    // Compute bounds directly from polygon.coordinates[0]
-    const coords = polygon.coordinates[0];
-    const bounds = coords.reduce(
-      (acc, [x, y]) => ({
-        minX: Math.min(acc.minX, x),
-        minY: Math.min(acc.minY, y),
-        maxX: Math.max(acc.maxX, x),
-        maxY: Math.max(acc.maxY, y)
-      }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
-    );
-    
-    return { geometry: polygon, bounds };
   }, [parcel?.geometry]);
 
   // Fit viewport to parcel
   const fitViewToParcel = useCallback(() => {
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas || !processedGeometry) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -225,7 +218,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   useEffect(() => {
     if (processedGeometry && !hasInitializedView) {
       const initViewport = () => {
-        const canvas = canvasRef.current;
+        const canvas = canvasContainerRef.current;
         if (!canvas) {
           setTimeout(initViewport, 50);
           return;
@@ -243,7 +236,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Handle mouse down
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
     // Panning (middle mouse or Ctrl+drag)
@@ -351,7 +344,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Handle mouse move
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
     // Update hovered element
@@ -539,7 +532,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   // Handle wheel zoom
   const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault();
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -752,7 +745,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         />
 
         {/* Modular Canvas */}
-        <div className="flex-1 relative min-h-[400px] bg-gray-100">
+        <div ref={canvasContainerRef} className="flex-1 relative min-h-[400px] bg-gray-100">
           {showTemplates && (
             <TemplateSelector
               onSelectTemplate={handleApplyTemplate}
