@@ -130,7 +130,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const measurement = useMeasurement();
   const grid = useGrid(10); // 10 foot grid
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  // NOTE: We use a container div ref (not a canvas ref) because the <canvas>
+  // element lives inside SitePlanCanvas which manages its own ref.
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   const queueBuildingUpdate = useCallback((update: {
     id: string;
@@ -213,7 +215,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Fit viewport to parcel
   const fitViewToParcel = useCallback(() => {
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas || !processedGeometry) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -225,7 +227,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   useEffect(() => {
     if (processedGeometry && !hasInitializedView) {
       const initViewport = () => {
-        const canvas = canvasRef.current;
+        const canvas = canvasContainerRef.current;
         if (!canvas) {
           setTimeout(initViewport, 50);
           return;
@@ -243,7 +245,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Handle mouse down
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
     // Panning (middle mouse or Ctrl+drag)
@@ -351,7 +353,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Handle mouse move
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
     // Update hovered element
@@ -539,7 +541,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   // Handle wheel zoom
   const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault();
-    const canvas = canvasRef.current;
+    const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -752,7 +754,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         />
 
         {/* Modular Canvas */}
-        <div className="flex-1 relative min-h-[400px] bg-gray-100">
+        <div ref={canvasContainerRef} className="flex-1 relative min-h-[400px] bg-gray-100">
           {showTemplates && (
             <TemplateSelector
               onSelectTemplate={handleApplyTemplate}
