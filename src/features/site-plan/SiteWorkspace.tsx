@@ -342,52 +342,48 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
-
-    const gfaSqft = metrics.totalBuiltSF || 0;
-    const unitMix = generateDefaultUnitMix(gfaSqft);
-    const totalUnits = metrics.totalUnits ?? unitMix.reduce((s, e) => s + e.count, 0);
-    const siteAreaSqft = envelopeMeters ? correctedAreaM2(envelopeMeters) * 10.7639 : 43560;
-    const surfaceStalls = metrics.stallsProvided ?? 0;
-    const landCost = parcel.parval ?? 0;
-
-    const pf = computeProForma({
-      totalGFASqft: gfaSqft,
-      siteAreaSqft,
-      unitMix,
-      surfaceStalls,
-      structuredStalls: 0,
-      landCost,
-    });
-
+    const gfa = metrics.totalBuiltSF;
+    const units = Math.max(1, Math.floor(gfa * 0.85 / 750));
+    const avgRentPerUnit = 1800;
+    const grossRent = units * avgRentPerUnit * 12;
+    const vacancy = grossRent * 0.05;
+    const egi = grossRent - vacancy;
+    const opex = egi * 0.35;
+    const noi = egi - opex;
+    const hardCosts = gfa * 165;
+    const softCosts = hardCosts * 0.20;
+    const totalDevCost = hardCosts + softCosts + (softCosts + hardCosts) * 0.05;
+    const capRate = 0.055;
+    const stabilizedValue = noi / capRate;
+    const yieldOnCost = noi / totalDevCost;
     return {
-      // Pro forma fields
-      grossPotentialRent: pf.grossPotentialRent,
-      vacancyLoss: pf.vacancyLoss,
-      effectiveGrossIncome: pf.effectiveGrossIncome,
-      operatingExpenses: pf.operatingExpenses,
-      netOperatingIncome: pf.netOperatingIncome,
-      totalDevelopmentCost: pf.totalDevelopmentCost,
-      totalHardCosts: pf.totalHardCosts,
-      softCosts: pf.softCosts,
-      contingency: pf.contingency,
-      financingCosts: pf.financingCosts,
-      landCost: pf.landCost,
-      yieldOnCost: pf.yieldOnCost,
-      stabilizedValue: pf.stabilizedValue,
-      profit: pf.profit,
-      equityMultiple: pf.equityMultiple,
-      cashOnCash: pf.cashOnCash,
-      costPerUnit: pf.costPerUnit,
-      costPerSF: pf.costPerSF,
-      // Legacy aliases
-      totalInvestment: pf.totalDevelopmentCost,
-      projectedRevenue: pf.grossPotentialRent,
-      capRate: 0.055,
-      irr: pf.yieldOnCost > 0 ? pf.yieldOnCost * 1.8 : 0, // rough IRR approximation
-      paybackPeriod: pf.netOperatingIncome > 0 ? pf.totalDevelopmentCost / pf.netOperatingIncome : 0,
-      riskAssessment: pf.yieldOnCost > 0.065 ? 'low' : pf.yieldOnCost > 0.05 ? 'medium' : 'high',
+      totalInvestment: totalDevCost,
+      projectedRevenue: grossRent,
+      operatingExpenses: opex,
+      netOperatingIncome: noi,
+      capRate,
+      irr: yieldOnCost,
+      paybackPeriod: totalDevCost / noi,
+      riskAssessment: yieldOnCost > 0.07 ? 'low' : yieldOnCost > 0.05 ? 'medium' : 'high',
+      // Required fields
+      grossPotentialRent: grossRent,
+      vacancyLoss: vacancy,
+      effectiveGrossIncome: egi,
+      totalDevelopmentCost: totalDevCost,
+      totalHardCosts: hardCosts,
+      softCosts: softCosts,
+      contingency: (softCosts + hardCosts) * 0.05,
+      financingCosts: 0,
+      landCost: parcel.parval ?? 0,
+      yieldOnCost: yieldOnCost,
+      stabilizedValue: stabilizedValue,
+      profit: stabilizedValue - totalDevCost,
+      equityMultiple: 0,
+      cashOnCash: 0,
+      costPerUnit: totalDevCost / units,
+      costPerSF: totalDevCost / gfa,
     };
-  }, [metrics, envelopeMeters, parcel.parval]);
+  }, [metrics, parcel.parval]);
 
   useEffect(() => {
     setInvestmentAnalysis(derivedInvestmentAnalysis);

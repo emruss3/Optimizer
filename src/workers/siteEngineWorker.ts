@@ -11,6 +11,12 @@ import { optimize } from '../engine/optimizer';
 import type { OptimizeResult } from '../engine/optimizer';
 
 /**
+ * Mercator correction factor for EPSG:3857 Y coordinate.
+ * At latitude ~29.5° (San Antonio), Mercator inflates areas by ~1.32x.
+ * Use correctedAreaM2() from geometry.ts for all metric calculations.
+ */
+
+/**
  * Web Worker for heavy site planning calculations.
  *
  * Supports:
@@ -197,11 +203,15 @@ class SiteEngineWorker {
     });
 
     // Compute target stalls so the parking solver doesn't fill the entire envelope
-    const estimatedUnits = buildingFootprints.reduce(
-      (sum, b) => sum + (b.unitMix?.reduce((s, e) => s + e.count, 0) ?? 0), 0
+    // Calculate units from totalGFA using weighted average unit size (750 sqft) with 85% efficiency
+    const totalGFA = buildingFootprints.reduce(
+      (sum, b) => sum + correctedAreaM2(b.footprint) * SQM_TO_SQFT * Math.max(1, b.floors), 0
     );
+    const usableGFA = totalGFA * 0.85; // 85% efficiency
+    const weightedAvgUnitSqft = 0.10 * 450 + 0.40 * 650 + 0.35 * 900 + 0.15 * 1200; // 750 sqft
+    const units = Math.max(1, Math.floor(usableGFA / weightedAvgUnitSqft));
     const targetParkingRatio = zoning.minParkingRatio ?? 1.5;
-    const maxStalls = Math.ceil(estimatedUnits * targetParkingRatio * 1.1); // 10% buffer
+    const maxStalls = Math.ceil(units * targetParkingRatio * 1.15); // 15% buffer
 
     const parkingSolution = solveParkingBayPacking(
       envelope,
@@ -370,8 +380,9 @@ class SiteEngineWorker {
       const greenPolygons = polygons(remaining as Polygon);
       let gsIndex = 0;
       for (const gp of greenPolygons) {
-        const gpAreaSqft = correctedAreaM2(gp) * SQM_TO_SQFT;
-        if (gpAreaSqft < 100) continue; // Filter out slivers < 100 sqft
+        const gpAreaM2 = correctedAreaM2(gp);
+        if (gpAreaM2 < 10) continue; // Filter out slivers < 10 m²
+        const gpAreaSqft = gpAreaM2 * SQM_TO_SQFT;
         gsIndex++;
         greenspaceAreaM2 += correctedAreaM2(gp);
         elements.push({
@@ -394,10 +405,13 @@ class SiteEngineWorker {
       // Fallback: calculate greenspace from arithmetic if boolean ops fail
       const sArea = correctedAreaM2(envelope);
       const fpArea = buildingFootprints.reduce((s, b) => s + correctedAreaM2(b.footprint), 0);
-      const mCorr = mercatorCorrectionFactor(envelope);
-      const corrParkingArea = parkingAreaM2 * mCorr;
-      const corrCircArea = (parkingSolution.circulationAreaSqM ?? 0) * mCorr;
-      greenspaceAreaM2 = Math.max(0, sArea - fpArea - corrParkingArea - corrCircArea);
+      // Parking and circulation areas need Mercator correction
+      const parkingAreaCorrected = parkingSolution.bays.reduce((s, b) => s + correctedAreaM2(b), 0) +
+        parkingSolution.aisles.reduce((s, a) => s + correctedAreaM2(a), 0);
+      const circAreaCorrected = parkingSolution.circulationPolygons
+        ? parkingSolution.circulationPolygons.reduce((s, c) => s + correctedAreaM2(c), 0)
+        : 0;
+      greenspaceAreaM2 = Math.max(0, sArea - fpArea - parkingAreaCorrected - circAreaCorrected);
     }
 
     const totalUnits = feasibility.totalUnits;

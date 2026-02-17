@@ -375,7 +375,28 @@ export function solveParkingBayPacking(
           const stallsPerSide = Math.floor(usableLength / spec.stallW);
           if (stallsPerSide <= 0) continue;
 
-          stalls += stallsPerSide * 2;
+          // Check if adding this bay would exceed the cap
+          if (maxStalls != null && stalls >= maxStalls) {
+            stallCapReached = true;
+            break;
+          }
+
+          // If adding this bay would exceed cap, trim it
+          let finalStallsPerSide = stallsPerSide;
+          if (maxStalls != null && stalls + stallsPerSide * 2 > maxStalls) {
+            const remainingStalls = maxStalls - stalls;
+            if (remainingStalls > 0) {
+              finalStallsPerSide = Math.floor(remainingStalls / 2);
+              stalls = maxStalls;
+              stallCapReached = true;
+            } else {
+              stallCapReached = true;
+              break;
+            }
+          } else {
+            stalls += stallsPerSide * 2;
+          }
+
           islandCount += 1;
 
           const bay1 = createRect(clipBounds.minX, y, clipBounds.maxX, y + spec.stallD);
@@ -391,20 +412,15 @@ export function solveParkingBayPacking(
           const bay2Polys = asPolygonList(intersection(clip, bay2));
 
           bay1Polys.forEach(poly => {
-            baysWithStalls.push({ polygon: poly, stalls: stallsPerSide });
+            baysWithStalls.push({ polygon: poly, stalls: finalStallsPerSide });
           });
           bay2Polys.forEach(poly => {
-            baysWithStalls.push({ polygon: poly, stalls: stallsPerSide });
+            baysWithStalls.push({ polygon: poly, stalls: finalStallsPerSide });
           });
 
           bays = bays.concat(bay1Polys);
           aisles = aisles.concat(asPolygonList(intersection(clip, aisle)));
           bays = bays.concat(bay2Polys);
-
-          // Stop once we've generated enough stalls
-          if (maxStalls != null && stalls >= maxStalls) {
-            stallCapReached = true;
-          }
         }
       }
     }
