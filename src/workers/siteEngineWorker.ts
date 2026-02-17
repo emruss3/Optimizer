@@ -1,6 +1,6 @@
 import type { Element, PlannerConfig, PlannerOutput } from '../engine/types';
 import type { Polygon, MultiPolygon } from 'geojson';
-import { normalizeToPolygon, areaM2, correctedAreaM2, mercatorCorrectionFactor, intersection, difference, polygons } from '../engine/geometry';
+import { normalizeToPolygon, areaM2, intersection, difference, polygons } from '../engine/geometry';
 import { generateSitePlan } from '../engine/planner';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
 import type { BuildingSpec, BuildingType, UnitMixEntry } from '../engine/model';
@@ -13,8 +13,22 @@ import type { OptimizeResult } from '../engine/optimizer';
 /**
  * Mercator correction factor for EPSG:3857 Y coordinate.
  * At latitude ~29.5° (San Antonio), Mercator inflates areas by ~1.32x.
- * Use correctedAreaM2() from geometry.ts for all metric calculations.
  */
+function mercatorCorrectionFactor(y3857: number): number {
+  const latRad = 2 * Math.atan(Math.exp(y3857 / 6378137)) - Math.PI / 2;
+  return Math.pow(Math.cos(latRad), 2);
+}
+
+/**
+ * Compute area corrected for Mercator distortion.
+ * Use for ALL metric calculations (FAR, coverage, display).
+ * Keep raw areaM2() for geometric operations (intersection, difference).
+ */
+function correctedAreaM2(polygon: Polygon): number {
+  const coords = polygon.coordinates[0];
+  const centroidY = coords.reduce((sum, c) => sum + c[1], 0) / coords.length;
+  return areaM2(polygon) * mercatorCorrectionFactor(centroidY);
+}
 
 /**
  * Web Worker for heavy site planning calculations.

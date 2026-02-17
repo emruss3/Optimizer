@@ -74,7 +74,7 @@ export function computeFeasibility({
 
   // ── Unit count from actual unit mixes (no more /800 assumption) ──────────
   const totalUnits = buildings.reduce((sum, b) => sum + totalUnitsFromMix(b.unitMix), 0)
-    || Math.max(1, Math.floor(gfaSqft * 0.85 / 720)); // fallback: weighted avg sqft
+    || Math.max(1, Math.floor(gfaSqft * 0.85 / 750)); // fallback: weighted avg sqft (750 = weighted avg of unit mix)
 
   const parkingRatio = zoningLimits.parkingRatio ?? 1.5;
   const stallsRequired = Math.ceil(totalUnits * parkingRatio);

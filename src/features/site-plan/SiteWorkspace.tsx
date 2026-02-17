@@ -352,37 +352,36 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const noi = egi - opex;
     const hardCosts = gfa * 165;
     const softCosts = hardCosts * 0.20;
-    const totalDevCost = hardCosts + softCosts + (softCosts + hardCosts) * 0.05;
+    const totalDevCost = hardCosts + softCosts + (hardCosts + softCosts) * 0.05;
     const capRate = 0.055;
-    const stabilizedValue = noi / capRate;
-    const yieldOnCost = noi / totalDevCost;
-    return {
+    const baseReturn: InvestmentAnalysis = {
       totalInvestment: totalDevCost,
       projectedRevenue: grossRent,
       operatingExpenses: opex,
       netOperatingIncome: noi,
       capRate,
-      irr: yieldOnCost,
+      irr: noi / totalDevCost,
       paybackPeriod: totalDevCost / noi,
-      riskAssessment: yieldOnCost > 0.07 ? 'low' : yieldOnCost > 0.05 ? 'medium' : 'high',
-      // Required fields
+      riskAssessment: noi / totalDevCost > 0.07 ? 'low' : noi / totalDevCost > 0.05 ? 'medium' : 'high',
+      // Required additional fields
       grossPotentialRent: grossRent,
       vacancyLoss: vacancy,
       effectiveGrossIncome: egi,
       totalDevelopmentCost: totalDevCost,
       totalHardCosts: hardCosts,
       softCosts: softCosts,
-      contingency: (softCosts + hardCosts) * 0.05,
+      contingency: (hardCosts + softCosts) * 0.05,
       financingCosts: 0,
       landCost: parcel.parval ?? 0,
-      yieldOnCost: yieldOnCost,
-      stabilizedValue: stabilizedValue,
-      profit: stabilizedValue - totalDevCost,
+      yieldOnCost: noi / totalDevCost,
+      stabilizedValue: noi / capRate,
+      profit: (noi / capRate) - totalDevCost,
       equityMultiple: 0,
       cashOnCash: 0,
       costPerUnit: totalDevCost / units,
       costPerSF: totalDevCost / gfa,
     };
+    return baseReturn;
   }, [metrics, parcel.parval]);
 
   useEffect(() => {
