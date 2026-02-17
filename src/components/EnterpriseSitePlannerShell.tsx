@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { BarChart3, Grid, AlertTriangle, CheckCircle, Building } from 'lucide-react';
+import { Grid, AlertTriangle, CheckCircle, Building } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -115,7 +115,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // State
   const [elements, setElements] = useState<Element[]>(initialElements);
-  const [showMetrics, setShowMetrics] = useState(true);
   const [showLayers, setShowLayers] = useState(true);
   const [copiedElements, setCopiedElements] = useState<Element[]>([]);
   const [isPanning, setIsPanning] = useState(false);
