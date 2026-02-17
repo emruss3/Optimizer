@@ -73,8 +73,13 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
 
     const centerX = bounds.minX + width / 2;
     const centerY = bounds.minY + height / 2;
-    const panX = (canvasWidth / 2) / zoom - centerX;
-    const panY = (canvasHeight / 2) / zoom - centerY;
+    // Canvas transform order: translate(panX, panY) then scale(zoom)
+    // So: screenX = worldX * zoom + panX
+    // To center world point (centerX, centerY) at screen (canvasWidth/2, canvasHeight/2):
+    // canvasWidth/2 = centerX * zoom + panX
+    // Therefore: panX = canvasWidth/2 - centerX * zoom
+    const panX = canvasWidth / 2 - centerX * zoom;
+    const panY = canvasHeight / 2 - centerY * zoom;
 
     setViewport({ zoom, panX, panY });
   }, []);

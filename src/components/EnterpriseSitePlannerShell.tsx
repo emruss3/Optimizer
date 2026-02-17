@@ -18,7 +18,7 @@ import { Grid, Building } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
-import { CoordinateTransform } from '../utils/coordinateTransform';
+import { normalizeToPolygon } from '../engine/geometry';
 
 // Modular hooks
 import { useViewport } from '../hooks/useViewport';
@@ -175,14 +175,40 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     return Math.atan2(y2 - y1, x2 - x1);
   }, []);
 
-  // Process parcel geometry (reproject and normalize) using centralized utility
+  // Process parcel geometry: reproject to EPSG:3857 meters directly (no feet, no normalization)
   const processedGeometry = useMemo(() => {
     if (!parcel?.geometry) return null;
 
-    return CoordinateTransform.processParcelGeometry(
-      parcel.geometry,
-      feature4326To3857
+    let geometry3857 = parcel.geometry;
+    
+    // Check if already in 3857 (coords > 1000) or 4326 (degrees)
+    const sampleCoords = parcel.geometry.type === 'Polygon'
+      ? parcel.geometry.coordinates[0][0]
+      : parcel.geometry.type === 'MultiPolygon'
+      ? parcel.geometry.coordinates[0][0][0]
+      : null;
+    
+    if (sampleCoords && (Math.abs(sampleCoords[0]) < 1000 && Math.abs(sampleCoords[1]) < 1000)) {
+      // Likely 4326 (degrees), reproject to 3857
+      geometry3857 = feature4326To3857(parcel.geometry);
+    }
+    
+    // Normalize to Polygon (handles MultiPolygon by selecting largest)
+    const polygon = normalizeToPolygon(geometry3857);
+    
+    // Compute bounds directly from polygon.coordinates[0]
+    const coords = polygon.coordinates[0];
+    const bounds = coords.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        minY: Math.min(acc.minY, y),
+        maxX: Math.max(acc.maxX, x),
+        maxY: Math.max(acc.maxY, y)
+      }),
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
     );
+    
+    return { geometry: polygon, bounds };
   }, [parcel?.geometry]);
 
   // Fit viewport to parcel
