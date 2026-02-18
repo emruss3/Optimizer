@@ -30,13 +30,13 @@ const defaultConfig = (parcelId: string, geometry: GeoJSON.Polygon): PlannerConf
       targetRatio: 1.5,
       stallWidthFt: 9,
       stallDepthFt: 18,
-      aisleWidthFt: 12,
+      aisleWidthFt: 24,
       adaPct: 5,
       evPct: 10,
       layoutAngle: 0
     },
     buildingTypology: 'bar',
-    numBuildings: 2
+    numBuildings: undefined
   }
 });
 

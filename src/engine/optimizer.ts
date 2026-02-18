@@ -551,7 +551,17 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   } = input;
 
   const buildingType = typologyToBuildingType(designParams.buildingTypology);
-  const numBuildings = designParams.numBuildings ?? 2;
+
+  // Auto-calculate how many buildings are needed to achieve target FAR
+  const SQM_TO_SQFT_CONST = 10.7639;
+  const envelopeAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT_CONST;
+  const targetGFA = envelopeAreaSqft * (zoning.maxFar ?? 1.5);
+  const defaultFloors = 3;
+  const defaultBuildingFootprintSqft = (200 * 0.3048) * (60 * 0.3048) * SQM_TO_SQFT_CONST; // ~12,000 sqft
+  const calculatedNumBuildings = Math.max(1, Math.min(20, Math.ceil(targetGFA / (defaultBuildingFootprintSqft * defaultFloors))));
+  const numBuildings = designParams.numBuildings === undefined
+    ? calculatedNumBuildings
+    : Math.max(designParams.numBuildings, calculatedNumBuildings);
 
   const parkingSpec = input.parkingSpec ?? {
     stallW: 2.7432,  // 9ft
@@ -632,7 +642,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       candidateBuildings[buildingIdx] = mutateResize(candidateBuildings[buildingIdx]);
     } else if (mutationType < 0.8) {
       candidateBuildings[buildingIdx] = mutateRotate(candidateBuildings[buildingIdx]);
-    } else if (mutationType < 0.9 && candidateBuildings.length < numBuildings) {
+    } else if (mutationType < 0.9 && candidateBuildings.length < numBuildings * 1.5) {
       const newId = `building-${candidateBuildings.length + 1}`;
       candidateBuildings.push(
         createBuildingSpec(
@@ -645,7 +655,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
           buildingType
         )
       );
-    } else if (candidateBuildings.length > 1) {
+    } else if (candidateBuildings.length > Math.max(1, Math.floor(numBuildings * 0.5))) {
       candidateBuildings.splice(buildingIdx, 1);
     } else {
       candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx]);

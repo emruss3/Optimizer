@@ -488,8 +488,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         renderParkingStripes(ctx, element, viewport.zoom);
       }
       
-      // Render labels only for buildings, parking bays, and circulation
-      if (showLabels && (element.type === 'building' || element.type === 'parking' || element.type === 'parking-bay' || element.type === 'circulation')) {
+      // Render labels only for buildings and parking bays
+      if (showLabels && (element.type === 'building' || element.type === 'parking-bay')) {
         renderElementLabel(ctx, element, viewport.zoom);
       }
       
