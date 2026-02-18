@@ -9,7 +9,7 @@ import { buildBuildingFootprint, clampBuildingToEnvelope } from './buildingGeome
 import { solveParkingBayPacking } from './parkingBaySolver';
 import { computeFeasibility } from './feasibility';
 import { computeProForma } from './proforma';
-import { areaM2, correctedAreaM2, mercatorCorrectionFactor, normalizeToPolygon, safeBbox, intersection, difference, polygons } from './geometry';
+import { areaM2, correctedAreaM2, mercatorCorrectionFactor, normalizeToPolygon, safeBbox, intersection, difference, polygons, isPointInPolygon } from './geometry';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -111,6 +111,18 @@ function scoreOnly(
     clamped.push(clampBuildingToEnvelope(spec, envelope, clamped));
   }
 
+  // Containment check: penalize any building still outside envelope
+  let containmentPenalty = 0;
+  for (const spec of clamped) {
+    const footprint = buildBuildingFootprint(spec);
+    const verts = footprint.coordinates[0];
+    for (let i = 0; i < verts.length - 1; i++) {
+      if (!isPointInPolygon(verts[i], envelope.coordinates[0])) {
+        containmentPenalty += 0.5; // heavy penalty per outside vertex
+      }
+    }
+  }
+
   // Build footprints with unit mix
   const buildingFootprints = clamped.map(spec => {
     const footprint = buildBuildingFootprint(spec);
@@ -196,7 +208,9 @@ function scoreOnly(
     WEIGHTS.noViolations * noViolationsScore +
     WEIGHTS.yieldOnCost * yieldOnCostScore;
 
-  return { score: totalScore, clampedBuildings: clamped };
+  // Apply containment penalty
+  const finalScore = containmentPenalty > 0 ? totalScore * Math.max(0, 1 - containmentPenalty) : totalScore;
+  return { score: finalScore, clampedBuildings: clamped };
 }
 
 /**
@@ -580,29 +594,58 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const edge = longestEdge(envelope);
   const [sx, sy] = edge.start;
   const [dx, dy] = edge.dir;
-  const bbox = safeBbox(envelope);
-  const envCenterX = (bbox[0] + bbox[2]) / 2;
-  const envCenterY = (bbox[1] + bbox[3]) / 2;
+  const edgeBbox = safeBbox(envelope);
+  const envCenterX = (edgeBbox[0] + edgeBbox[2]) / 2;
+  const envCenterY = (edgeBbox[1] + edgeBbox[3]) / 2;
+
+  // Align building rotation to the longest edge
+  const edgeAngleRad = Math.atan2(dy, dx);
 
   // Normal to longest edge (perpendicular, inward)
   const nx = -dy;
   const ny = dx;
-  // Offset inward by some amount
-  const insetDist = Math.min(edge.len * 0.1, 20);
+
+  // Check which direction is "inward" (toward center)
+  const testX = sx + nx * 10;
+  const testY = sy + ny * 10;
+  const toCenterDot = (testX - sx) * (envCenterX - sx) + (testY - sy) * (envCenterY - sy);
+  const inwardNx = toCenterDot >= 0 ? nx : -nx;
+  const inwardNy = toCenterDot >= 0 ? ny : -ny;
+
+  // Calculate how many buildings can actually fit physically
+  const defaultWidthM = 200 * 0.3048; // ~61m
+  const defaultDepthM = 60 * 0.3048;  // ~18m
+  const buildingFootprintArea = defaultWidthM * defaultDepthM;
+  const envelopeArea = areaM2(envelope);
+  // Buildings should use at most ~40% of envelope area (rest for parking, open space, circulation)
+  const maxPhysicalBuildings = Math.max(1, Math.floor(envelopeArea * 0.4 / buildingFootprintArea));
+  const effectiveNumBuildings = Math.min(numBuildings, maxPhysicalBuildings);
+
+  // Distribute buildings in rows along the longest edge direction
+  const insetDist = defaultDepthM * 0.75; // offset from edge by ~75% of building depth
 
   const initialBuildings: BuildingSpec[] = [];
-  for (let i = 0; i < numBuildings; i++) {
-    const t = (i + 1) / (numBuildings + 1); // evenly spaced along edge
-    const px = sx + dx * edge.len * t + nx * insetDist;
-    const py = sy + dy * edge.len * t + ny * insetDist;
-    initialBuildings.push(
-      createBuildingSpec(
-        `building-${i + 1}`,
-        { x: px, y: py },
-        undefined, undefined, undefined,
-        buildingType
-      )
+  const colsPerRow = Math.max(1, Math.floor(edge.len / (defaultWidthM * 1.2)));
+  for (let i = 0; i < effectiveNumBuildings; i++) {
+    const row = Math.floor(i / colsPerRow);
+    const col = i % colsPerRow;
+
+    const t = (col + 1) / (colsPerRow + 1);
+    const rowOffset = insetDist + row * (defaultDepthM * 1.5);
+
+    const px = sx + dx * edge.len * t + inwardNx * rowOffset;
+    const py = sy + dy * edge.len * t + inwardNy * rowOffset;
+
+    const spec = createBuildingSpec(
+      `building-${i + 1}`,
+      { x: px, y: py },
+      undefined, undefined, undefined,
+      buildingType
     );
+    // Align rotation to the longest edge
+    spec.rotationRad = edgeAngleRad;
+
+    initialBuildings.push(spec);
   }
 
   // ── 2. Pre-compute cached values for fast scoring ───────────────────────
@@ -642,7 +685,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       candidateBuildings[buildingIdx] = mutateResize(candidateBuildings[buildingIdx]);
     } else if (mutationType < 0.8) {
       candidateBuildings[buildingIdx] = mutateRotate(candidateBuildings[buildingIdx]);
-    } else if (mutationType < 0.9 && candidateBuildings.length < numBuildings * 1.5) {
+    } else if (mutationType < 0.9 && candidateBuildings.length < effectiveNumBuildings * 1.5) {
       const newId = `building-${candidateBuildings.length + 1}`;
       candidateBuildings.push(
         createBuildingSpec(
@@ -655,7 +698,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
           buildingType
         )
       );
-    } else if (candidateBuildings.length > Math.max(1, Math.floor(numBuildings * 0.5))) {
+    } else if (candidateBuildings.length > Math.max(1, Math.floor(effectiveNumBuildings * 0.5))) {
       candidateBuildings.splice(buildingIdx, 1);
     } else {
       candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx]);
