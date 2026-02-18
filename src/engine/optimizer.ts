@@ -133,29 +133,18 @@ function scoreOnly(
     return { id: spec.id, footprint, floors: spec.floors, unitMix };
   });
 
-  // Estimate units for parking cap
-  const estUnits = buildingFootprints.reduce(
-    (sum, b) => sum + (b.unitMix?.reduce((s, e) => s + e.count, 0) ?? 0), 0
-  );
-  const targetRatio = zoningLimits.parkingRatio ?? 1.5;
-  const maxStalls = estUnits > 0 ? Math.ceil(estUnits * targetRatio * 1.1) : undefined;
+  // FAST parking estimate — skip expensive boolean ops during SA iterations
+  const buildingFootprintTotal = buildingFootprints.reduce((s, b) => s + areaM2(b.footprint), 0);
+  const availableParkingArea = Math.max(0, cached.siteAreaM2 - buildingFootprintTotal);
+  const stallAreaM2 = parkingSpec.stallW * parkingSpec.stallD * 2 + parkingSpec.aisleW * parkingSpec.stallW; // rough per-stall area
+  const estimatedStalls = Math.floor(availableParkingArea * 0.6 / stallAreaM2); // 60% efficiency
+  const parkingAreaM2 = estimatedStalls * stallAreaM2;
 
-  // Solve parking
-  const parkingSolution = solveParkingBayPacking(
-    envelope,
-    buildingFootprints.map(b => b.footprint),
-    parkingSpec,
-    maxStalls
-  );
-
-  const parkingAreaM2 = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0) +
-    parkingSolution.aisles.reduce((s, a) => s + areaM2(a), 0);
-
-  // Feasibility (lightweight — no element building)
+  // Lightweight feasibility with estimated parking
   const feasibility = computeFeasibility({
     envelope,
     buildings: buildingFootprints,
-    parkingSolution,
+    parkingSolution: { stallsAchieved: estimatedStalls },
     parkingAreaM2,
     zoningLimits
   });
@@ -185,9 +174,7 @@ function scoreOnly(
     : Math.max(0, 1 - (feasibility.coverage - maxCoverage) / maxCoverage);
 
   // 5. Open space (arithmetic — no boolean ops)
-  const footprintAreaM2 = buildingFootprints.reduce((s, b) => s + areaM2(b.footprint), 0);
-  const circulationAreaM2 = parkingSolution.circulationAreaSqM ?? 0;
-  const usedArea = footprintAreaM2 + parkingAreaM2 + circulationAreaM2;
+  const usedArea = buildingFootprintTotal + parkingAreaM2;
   const openSpacePct = cached.siteAreaM2 > 0 ? Math.max(0, 1 - usedArea / cached.siteAreaM2) : 0;
   const openSpaceScore = Math.min(1, openSpacePct * 2);
 
@@ -195,9 +182,8 @@ function scoreOnly(
   const errorViolations = feasibility.violations.filter(v => v.severity === 'error');
   const noViolationsScore = errorViolations.length === 0 ? 1 : 0;
 
-  // 7. Yield on cost — SKIP during iterations (expensive), use a quick heuristic
-  // Rough proxy: higher GFA + lower cost ≈ higher yield. Normalize via FAR score.
-  const yieldOnCostScore = farScore * 0.5 + unitScore * 0.5; // cheap proxy
+  // 7. Yield on cost — cheap proxy during SA (full pro forma only for final results)
+  const yieldOnCostScore = farScore * 0.5 + unitScore * 0.5;
 
   const totalScore =
     WEIGHTS.unitCount * unitScore +
@@ -572,10 +558,10 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const targetGFA = envelopeAreaSqft * (zoning.maxFar ?? 1.5);
   const defaultFloors = 3;
   const defaultBuildingFootprintSqft = (200 * 0.3048) * (60 * 0.3048) * SQM_TO_SQFT_CONST; // ~12,000 sqft
-  const calculatedNumBuildings = Math.max(1, Math.min(20, Math.ceil(targetGFA / (defaultBuildingFootprintSqft * defaultFloors))));
+  const calculatedNumBuildings = Math.max(1, Math.min(8, Math.ceil(targetGFA / (defaultBuildingFootprintSqft * defaultFloors))));
   const numBuildings = designParams.numBuildings === undefined
     ? calculatedNumBuildings
-    : Math.max(designParams.numBuildings, calculatedNumBuildings);
+    : designParams.numBuildings; // Use explicit value directly
 
   const parkingSpec = input.parkingSpec ?? {
     stallW: 2.7432,  // 9ft
@@ -616,9 +602,9 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const defaultWidthM = 200 * 0.3048; // ~61m
   const defaultDepthM = 60 * 0.3048;  // ~18m
   const buildingFootprintArea = defaultWidthM * defaultDepthM;
-  const envelopeArea = areaM2(envelope);
+  const envelopeCorrectedArea = correctedAreaM2(envelope);
   // Buildings should use at most ~40% of envelope area (rest for parking, open space, circulation)
-  const maxPhysicalBuildings = Math.max(1, Math.floor(envelopeArea * 0.4 / buildingFootprintArea));
+  const maxPhysicalBuildings = Math.max(1, Math.floor(envelopeCorrectedArea * 0.4 / buildingFootprintArea));
   const effectiveNumBuildings = Math.min(numBuildings, maxPhysicalBuildings);
 
   // Distribute buildings in rows along the longest edge direction

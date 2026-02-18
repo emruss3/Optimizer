@@ -199,7 +199,7 @@ export class PlannerWorkerManager implements WorkerAPI {
       const timeout = setTimeout(() => {
         this.worker!.removeEventListener('message', onmessage);
         reject(new Error(`Timeout waiting for PLAN_UPDATED (id: ${id})`));
-      }, 30000);
+      }, 60000);
 
       this.worker.addEventListener('message', onmessage);
     });
