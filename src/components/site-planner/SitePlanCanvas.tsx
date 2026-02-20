@@ -78,75 +78,80 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     };
   }, [onWheel]);
 
-  // Get element color and opacity based on z-order spec
-  const getElementStyle = useCallback((element: Element): { color: string; opacity: number } => {
+  // Get element color, opacity, and stroke based on type
+  const getElementStyle = useCallback((element: Element): { color: string; opacity: number; stroke: boolean } => {
     switch (element.type) {
       case 'greenspace':
-        return { color: '#22C55E', opacity: 0.15 };
+        return { color: '#BBF7D0', opacity: 0.25, stroke: false };
       case 'parking-aisle':
-        return { color: '#94A3B8', opacity: 0.2 };
       case 'circulation':
-        return { color: '#94A3B8', opacity: 0.25 };
+        return { color: '#CBD5E1', opacity: 0.4, stroke: false };
       case 'parking':
       case 'parking-bay':
-        return { color: '#60A5FA', opacity: 0.3 };
+        return { color: '#E2E8F0', opacity: 0.5, stroke: false };
       case 'building':
-        return { color: '#3B82F6', opacity: 0.5 };
+        return { color: '#3B82F6', opacity: 0.6, stroke: true };
       default:
-        return { color: '#6B7280', opacity: 0.3 };
+        return { color: '#6B7280', opacity: 0.3, stroke: false };
     }
   }, []);
 
-  // Render parcel boundary (stroke only, no fill)
+  // Render parcel boundary (dashed stroke, no fill)
   const renderParcelBoundary = useCallback((ctx: CanvasRenderingContext2D, geometry: any, zoom: number) => {
-    ctx.save();
-    ctx.strokeStyle = '#6B7280';
-    ctx.lineWidth = 2 / zoom;
-    ctx.globalAlpha = 0.8;
-    
     let coords: number[][];
     if (geometry.type === 'Polygon') {
       coords = geometry.coordinates[0] as number[][];
     } else if (geometry.type === 'MultiPolygon') {
       coords = (geometry.coordinates as number[][][])[0][0];
     } else {
-      ctx.restore();
       return;
     }
-    
-    if (coords && coords.length > 0) {
-      ctx.beginPath();
-      ctx.moveTo(coords[0][0], coords[0][1]);
-      for (let i = 1; i < coords.length; i++) {
-        ctx.lineTo(coords[i][0], coords[i][1]);
-      }
-      ctx.closePath();
-      ctx.stroke();
+    if (!coords || coords.length === 0) return;
+
+    ctx.save();
+    ctx.strokeStyle = '#374151';
+    ctx.lineWidth = 2 / zoom;
+    ctx.globalAlpha = 0.8;
+    ctx.setLineDash([10 / zoom, 5 / zoom]);
+
+    ctx.beginPath();
+    ctx.moveTo(coords[0][0], coords[0][1]);
+    for (let i = 1; i < coords.length; i++) {
+      ctx.lineTo(coords[i][0], coords[i][1]);
     }
-    
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     ctx.restore();
   }, []);
 
-  // Render buildable envelope (filled region, primary)
+  // Render buildable envelope (subtle fill + dashed border)
   const renderBuildableEnvelope = useCallback((ctx: CanvasRenderingContext2D, envelope: import('geojson').Polygon, zoom: number) => {
-    ctx.save();
-    ctx.fillStyle = '#DBEAFE';
-    ctx.strokeStyle = '#3B82F6';
-    ctx.lineWidth = 2 / zoom;
-    ctx.globalAlpha = 0.4;
-    
     const coords = envelope.coordinates[0];
-    if (coords && coords.length > 0) {
-      ctx.beginPath();
-      ctx.moveTo(coords[0][0], coords[0][1]);
-      for (let i = 1; i < coords.length; i++) {
-        ctx.lineTo(coords[i][0], coords[i][1]);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+    if (!coords || coords.length === 0) return;
+
+    ctx.save();
+
+    // Very subtle fill
+    ctx.fillStyle = '#DBEAFE';
+    ctx.globalAlpha = 0.15;
+    ctx.beginPath();
+    ctx.moveTo(coords[0][0], coords[0][1]);
+    for (let i = 1; i < coords.length; i++) {
+      ctx.lineTo(coords[i][0], coords[i][1]);
     }
-    
+    ctx.closePath();
+    ctx.fill();
+
+    // Subtle dashed border
+    ctx.strokeStyle = '#93C5FD';
+    ctx.lineWidth = 1 / zoom;
+    ctx.globalAlpha = 0.5;
+    ctx.setLineDash([8 / zoom, 4 / zoom]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
     ctx.restore();
   }, []);
 
@@ -336,79 +341,73 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, [parkingViz]);
 
-  // Render element labels (Y-flipped to appear right-side up)
+  // Render element labels — building-only, clean style
   const renderElementLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
-    // Determine label text based on element type
-    let label: string;
-    if (element.type === 'building') {
-      const areaSqFt = element.properties?.areaSqFt;
-      const areaLabel = areaSqFt != null ? `${Math.round(areaSqFt).toLocaleString()} sq ft` : '';
-      label = `${element.name || 'Building'}${areaLabel ? '\n' + areaLabel : ''}`;
-    } else if (element.type === 'parking' || element.type === 'parking-bay') {
-      const stalls = element.properties?.stalls ?? element.properties?.stallCount;
-      label = stalls != null ? `${stalls} stalls` : '';
-    } else if (element.type === 'circulation') {
-      label = element.name || 'Circulation';
-    } else {
-      return; // greenspace, parking-aisle: no label
+    if (element.type !== 'building') return; // Only label buildings
+
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 3) return;
+
+    // Find center of polygon
+    let cx = 0, cy = 0;
+    const n = coords.length - 1; // exclude closing vertex
+    for (let i = 0; i < n; i++) {
+      cx += coords[i][0];
+      cy += coords[i][1];
     }
-    if (!label) return;
+    cx /= n;
+    cy /= n;
+
+    const fontSize = Math.max(10, 14 / zoom);
 
     ctx.save();
-    const center = ElementService.calculateElementCenter(element);
-
-    // Flip locally so text renders right-side up (canvas Y is negated)
-    ctx.translate(center.x, center.y);
+    // Flip Y for text (canvas Y is inverted)
+    ctx.translate(cx, cy);
     ctx.scale(1, -1);
 
-    ctx.fillStyle = '#FFFFFF';
-    ctx.strokeStyle = '#374151';
-    ctx.lineWidth = 1 / zoom;
-    ctx.font = `${10 / zoom}px sans-serif`;
+    ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    const lines = label.split('\n');
-    const lineHeight = 12 / zoom;
-    const totalHeight = lines.length * lineHeight;
+    const name = element.name?.replace('Building ', '') || element.id;
+    const area = element.properties?.areaSqFt;
+    const areaText = area ? `${Math.round(area).toLocaleString()} SF` : '';
 
-    // Draw background
+    // Background pill
+    const textWidth = Math.max(ctx.measureText(name).width, areaText ? ctx.measureText(areaText).width : 0);
     const padding = 4 / zoom;
-    const textWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
+    const bgWidth = textWidth + padding * 4;
+    const bgHeight = (areaText ? fontSize * 2.4 : fontSize * 1.4) + padding * 2;
 
-    ctx.fillRect(
-      -textWidth / 2 - padding,
-      -totalHeight / 2 - padding,
-      textWidth + padding * 2,
-      totalHeight + padding * 2
-    );
-    ctx.strokeRect(
-      -textWidth / 2 - padding,
-      -totalHeight / 2 - padding,
-      textWidth + padding * 2,
-      totalHeight + padding * 2
-    );
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    const r = 3 / zoom;
+    ctx.roundRect(-bgWidth / 2, -bgHeight / 2, bgWidth, bgHeight, r);
+    ctx.fill();
 
-    // Draw text
-    ctx.fillStyle = '#374151';
-    lines.forEach((line, index) => {
-      ctx.fillText(line, 0, -totalHeight / 2 + (index + 0.5) * lineHeight);
-    });
+    // Text
+    ctx.fillStyle = '#1E293B';
+    ctx.fillText(name, 0, areaText ? -fontSize * 0.5 : 0);
+    if (areaText) {
+      ctx.font = `400 ${fontSize * 0.85}px Inter, system-ui, sans-serif`;
+      ctx.fillStyle = '#64748B';
+      ctx.fillText(areaText, 0, fontSize * 0.5);
+    }
 
     ctx.restore();
   }, []);
 
   // Render individual element
   const renderElement = useCallback((ctx: CanvasRenderingContext2D, element: Element, isSelected: boolean, isHovered: boolean, zoom: number) => {
-    ctx.save();
-    
     const style = getElementStyle(element);
-    ctx.strokeStyle = isSelected ? '#3B82F6' : isHovered ? '#60A5FA' : '#6B7280';
-    ctx.lineWidth = isSelected ? 3 / zoom : isHovered ? 2 / zoom : 1 / zoom;
-    ctx.fillStyle = style.color;
-    ctx.globalAlpha = isHovered ? Math.min(style.opacity + 0.1, 1) : style.opacity;
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 3) return;
 
-    const coords = element.geometry.coordinates[0];
+    ctx.save();
+
+    // Fill
+    ctx.fillStyle = style.color;
+    ctx.globalAlpha = isHovered ? Math.min(style.opacity + 0.2, 1) : style.opacity;
     ctx.beginPath();
     ctx.moveTo(coords[0][0], coords[0][1]);
     for (let i = 1; i < coords.length; i++) {
@@ -416,7 +415,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
+
+    // Stroke — ONLY for buildings and selected elements
+    if (style.stroke || isSelected) {
+      ctx.strokeStyle = isSelected ? '#F59E0B' : '#1E40AF';
+      ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+    }
 
     ctx.restore();
   }, [getElementStyle]);
@@ -449,22 +455,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       renderGrid(ctx, processedGeometry.bounds, gridState.size, viewport.zoom);
     }
 
-    // Render buildable envelope (filled, primary)
+    // Render buildable envelope (subtle background)
     if (buildableEnvelope) {
       renderBuildableEnvelope(ctx, buildableEnvelope, viewport.zoom);
     }
 
-    // Render parcel boundary (stroke only)
-    if (processedGeometry) {
-      renderParcelBoundary(ctx, processedGeometry.geometry, viewport.zoom);
-    }
-
-    // Render measurement line
-    if (measurementState?.isMeasuring && measurementState.startPoint && measurementState.endPoint) {
-      renderMeasurement(ctx, measurementState.startPoint, measurementState.endPoint, viewport.zoom);
-    }
-
-    // Sort elements by z-order: greenspace → parking-aisle → circulation → parking-bay → building → other
+    // Sort elements by z-order: greenspace → parking/aisles → circulation → buildings
     const zOrder: Record<string, number> = {
       'greenspace': 0,
       'parking-aisle': 1,
@@ -482,22 +478,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       const isSelected = selectedElements.has(element.id);
       const isHovered = hoveredElement === element.id;
       renderElement(ctx, element, isSelected, isHovered, viewport.zoom);
-      
-      // Render parking stripes for parking elements
-      if (element.type === 'parking' || element.type === 'parking-bay') {
-        renderParkingStripes(ctx, element, viewport.zoom);
-      }
-      
-      // Render labels only for buildings and parking bays
-      if (showLabels && (element.type === 'building' || element.type === 'parking-bay')) {
-        renderElementLabel(ctx, element, viewport.zoom);
-      }
-      
+
       // Render vertex handles if selected
       if (isSelected) {
         renderVertexHandles(ctx, element, isSelected, isVertexEditing, selectedVertex, viewport.zoom);
       }
-      
+
       // Render rotation handle if single element selected
       if (isSelected && selectedElements.size === 1) {
         const center = ElementService.calculateElementCenter(element);
@@ -509,8 +495,27 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       }
     });
 
+    // Render parcel boundary (dashed line, on top of everything)
+    if (processedGeometry) {
+      renderParcelBoundary(ctx, processedGeometry.geometry, viewport.zoom);
+    }
+
+    // Render building labels on top of everything
+    if (showLabels) {
+      sortedElements.forEach((element) => {
+        if (element.type === 'building') {
+          renderElementLabel(ctx, element, viewport.zoom);
+        }
+      });
+    }
+
+    // Render measurement line
+    if (measurementState?.isMeasuring && measurementState.startPoint && measurementState.endPoint) {
+      renderMeasurement(ctx, measurementState.startPoint, measurementState.endPoint, viewport.zoom);
+    }
+
     ctx.restore();
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderParkingStripes, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
