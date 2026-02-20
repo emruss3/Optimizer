@@ -105,10 +105,10 @@ function scoreOnly(
   /** Pre-computed values to avoid recalculation every iteration */
   cached: { siteAreaM2: number; siteAreaSqft: number; maxReasonableUnits: number }
 ): { score: number; clampedBuildings: BuildingSpec[] } {
-  // Clamp all buildings
+  // Clamp all buildings (skip expensive overlap checks during SA)
   const clamped: BuildingSpec[] = [];
   for (const spec of buildings) {
-    clamped.push(clampBuildingToEnvelope(spec, envelope, clamped));
+    clamped.push(clampBuildingToEnvelope(spec, envelope, clamped, true));
   }
 
   // Containment check: penalize any building still outside envelope
@@ -578,25 +578,12 @@ export function optimize(input: OptimizeInput): OptimizeResult {
 
   // ── 1. Generate initial layout ──────────────────────────────────────────
   const edge = longestEdge(envelope);
-  const [sx, sy] = edge.start;
-  const [dx, dy] = edge.dir;
   const edgeBbox = safeBbox(envelope);
   const envCenterX = (edgeBbox[0] + edgeBbox[2]) / 2;
   const envCenterY = (edgeBbox[1] + edgeBbox[3]) / 2;
 
   // Align building rotation to the longest edge
-  const edgeAngleRad = Math.atan2(dy, dx);
-
-  // Normal to longest edge (perpendicular, inward)
-  const nx = -dy;
-  const ny = dx;
-
-  // Check which direction is "inward" (toward center)
-  const testX = sx + nx * 10;
-  const testY = sy + ny * 10;
-  const toCenterDot = (testX - sx) * (envCenterX - sx) + (testY - sy) * (envCenterY - sy);
-  const inwardNx = toCenterDot >= 0 ? nx : -nx;
-  const inwardNy = toCenterDot >= 0 ? ny : -ny;
+  const edgeAngleRad = Math.atan2(edge.dir[1], edge.dir[0]);
 
   // Calculate how many buildings can actually fit physically
   const defaultWidthM = 200 * 0.3048; // ~61m
@@ -607,30 +594,54 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const maxPhysicalBuildings = Math.max(1, Math.floor(envelopeCorrectedArea * 0.4 / buildingFootprintArea));
   const effectiveNumBuildings = Math.min(numBuildings, maxPhysicalBuildings);
 
-  // Distribute buildings in rows along the longest edge direction
-  const insetDist = defaultDepthM * 0.75; // offset from edge by ~75% of building depth
+  // Grid-within-envelope initial placement:
+  // Sample candidate positions, keep only those whose footprint is fully inside envelope.
+  const cos = Math.cos(edgeAngleRad);
+  const sin = Math.sin(edgeAngleRad);
+  const gapX = defaultWidthM * 1.25;   // column spacing
+  const gapY = defaultDepthM * 1.75;   // row spacing (room for parking)
+  const envW = edgeBbox[2] - edgeBbox[0];
+  const envH = edgeBbox[3] - edgeBbox[1];
+  const cols = Math.max(1, Math.floor(envW / gapX));
+  const rows = Math.max(1, Math.floor(envH / gapY));
+
+  const candidatePositions: Array<{ x: number; y: number }> = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const localX = (col + 0.5) * gapX - envW / 2;
+      const localY = (row + 0.5) * gapY - envH / 2;
+      const px = envCenterX + localX * cos - localY * sin;
+      const py = envCenterY + localX * sin + localY * cos;
+      candidatePositions.push({ x: px, y: py });
+    }
+  }
 
   const initialBuildings: BuildingSpec[] = [];
-  const colsPerRow = Math.max(1, Math.floor(edge.len / (defaultWidthM * 1.2)));
-  for (let i = 0; i < effectiveNumBuildings; i++) {
-    const row = Math.floor(i / colsPerRow);
-    const col = i % colsPerRow;
-
-    const t = (col + 1) / (colsPerRow + 1);
-    const rowOffset = insetDist + row * (defaultDepthM * 1.5);
-
-    const px = sx + dx * edge.len * t + inwardNx * rowOffset;
-    const py = sy + dy * edge.len * t + inwardNy * rowOffset;
-
+  let buildingNum = 0;
+  for (const pos of candidatePositions) {
+    if (initialBuildings.length >= effectiveNumBuildings) break;
     const spec = createBuildingSpec(
-      `building-${i + 1}`,
-      { x: px, y: py },
-      undefined, undefined, undefined,
-      buildingType
+      `building-${++buildingNum}`,
+      pos, undefined, undefined, undefined, buildingType
     );
-    // Align rotation to the longest edge
     spec.rotationRad = edgeAngleRad;
+    const footprint = buildBuildingFootprint(spec);
+    const inside = footprint.coordinates[0].every(
+      ([vx, vy]) => isPointInPolygon([vx, vy], envelope.coordinates[0])
+    );
+    if (inside) initialBuildings.push(spec);
+  }
 
+  // Fallback: one building at envelope centroid, sized to fit
+  if (initialBuildings.length === 0) {
+    const spec = createBuildingSpec(
+      'building-1',
+      { x: envCenterX, y: envCenterY },
+      Math.min(defaultWidthM, envW * 0.5),
+      Math.min(defaultDepthM, envH * 0.5),
+      undefined, buildingType
+    );
+    spec.rotationRad = edgeAngleRad;
     initialBuildings.push(spec);
   }
 

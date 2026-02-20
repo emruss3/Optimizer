@@ -228,7 +228,8 @@ function footprintInsideEnvelope(footprint: Polygon, envelope: Polygon): boolean
 export function clampBuildingToEnvelope(
   spec: BuildingSpec,
   envelope: Polygon,
-  otherBuildings: BuildingSpec[]
+  otherBuildings: BuildingSpec[],
+  skipOverlapCheck = false
 ): BuildingSpec {
   const footprint = buildBuildingFootprint(spec);
 
@@ -236,6 +237,7 @@ export function clampBuildingToEnvelope(
   const allInside = footprintInsideEnvelope(footprint, envelope);
 
   if (allInside) {
+    if (skipOverlapCheck) return spec; // fast path for SA
     // Check for overlaps with other buildings
     const hasOverlap = otherBuildings.some(other => {
       if (other.id === spec.id) return false;
@@ -262,7 +264,7 @@ export function clampBuildingToEnvelope(
   const testAllInside = footprintInsideEnvelope(testFootprint, envelope);
 
   if (testAllInside) {
-    const testHasOverlap = otherBuildings.some(other => {
+    const testHasOverlap = skipOverlapCheck ? false : otherBuildings.some(other => {
       if (other.id === spec.id) return false;
       return polygonsOverlap(testFootprint, buildBuildingFootprint(other));
     });
@@ -289,7 +291,7 @@ export function clampBuildingToEnvelope(
         const candidateSpec: BuildingSpec = { ...spec, anchor: candidateAnchor };
         const candidateFootprint = buildBuildingFootprint(candidateSpec);
         if (footprintInsideEnvelope(candidateFootprint, envelope)) {
-          const candidateHasOverlap = otherBuildings.some(other => {
+          const candidateHasOverlap = skipOverlapCheck ? false : otherBuildings.some(other => {
             if (other.id === spec.id) return false;
             return polygonsOverlap(candidateFootprint, buildBuildingFootprint(other));
           });
@@ -316,7 +318,7 @@ export function clampBuildingToEnvelope(
           const candidateSpec: BuildingSpec = { ...spec, anchor: candidateAnchor };
           const candidateFootprint = buildBuildingFootprint(candidateSpec);
           if (footprintInsideEnvelope(candidateFootprint, envelope)) {
-            const candidateHasOverlap = otherBuildings.some(other => {
+            const candidateHasOverlap = skipOverlapCheck ? false : otherBuildings.some(other => {
               if (other.id === spec.id) return false;
               return polygonsOverlap(candidateFootprint, buildBuildingFootprint(other));
             });
@@ -345,7 +347,7 @@ export function clampBuildingToEnvelope(
       };
       const shrunkFootprint = buildBuildingFootprint(shrunkSpec);
       if (footprintInsideEnvelope(shrunkFootprint, envelope)) {
-        const shrunkHasOverlap = otherBuildings.some(other => {
+        const shrunkHasOverlap = skipOverlapCheck ? false : otherBuildings.some(other => {
           if (other.id === spec.id) return false;
           return polygonsOverlap(shrunkFootprint, buildBuildingFootprint(other));
         });
