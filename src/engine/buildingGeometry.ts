@@ -220,15 +220,17 @@ function footprintInsideEnvelope(footprint: Polygon, envelope: Polygon): boolean
 }
 
 /**
- * Clamp building to envelope and avoid overlaps.
- * Works with any typology (non-rectangular footprints).
+ * Clamp building to envelope and (optionally) avoid overlaps with other buildings.
  *
- * Uses centroid + all-vertex containment checks rather than bbox-only.
+ * @param skipOverlapCheck - When true, skip the expensive polygon-intersection overlap
+ *   tests. Use this during SA iterations where only containment matters; the full
+ *   overlap check is only needed for final result rendering.
  */
 export function clampBuildingToEnvelope(
   spec: BuildingSpec,
   envelope: Polygon,
-  otherBuildings: BuildingSpec[]
+  otherBuildings: BuildingSpec[],
+  skipOverlapCheck = false
 ): BuildingSpec {
   const footprint = buildBuildingFootprint(spec);
 
@@ -236,78 +238,63 @@ export function clampBuildingToEnvelope(
   const allInside = footprintInsideEnvelope(footprint, envelope);
 
   if (allInside) {
+    if (skipOverlapCheck) return spec; // fast path for SA iterations
+
     // Check for overlaps with other buildings
     const hasOverlap = otherBuildings.some(other => {
       if (other.id === spec.id) return false;
-      const otherFootprint = buildBuildingFootprint(other);
-      return polygonsOverlap(footprint, otherFootprint);
+      return polygonsOverlap(footprint, buildBuildingFootprint(other));
     });
-
-    if (!hasOverlap) {
-      return spec;
-    }
+    if (!hasOverlap) return spec;
   }
 
-  // Building needs adjustment
+  // Building needs adjustment — move to a valid position inside the envelope.
   let newAnchor = { ...spec.anchor };
-  const newRotation = spec.rotationRad;
 
-  // Strategy 1: Try to move anchor to center of envelope
+  // Strategy 1: Move anchor to envelope bbox center
   const envBbox = bbox(envelope);
   const envCenterX = (envBbox.minX + envBbox.maxX) / 2;
   const envCenterY = (envBbox.minY + envBbox.maxY) / 2;
-
   const testSpec: BuildingSpec = { ...spec, anchor: { x: envCenterX, y: envCenterY } };
   const testFootprint = buildBuildingFootprint(testSpec);
-  const testAllInside = footprintInsideEnvelope(testFootprint, envelope);
 
-  if (testAllInside) {
-    const testHasOverlap = otherBuildings.some(other => {
+  if (footprintInsideEnvelope(testFootprint, envelope)) {
+    const ok = skipOverlapCheck || !otherBuildings.some(other => {
       if (other.id === spec.id) return false;
       return polygonsOverlap(testFootprint, buildBuildingFootprint(other));
     });
-    if (!testHasOverlap) {
-      newAnchor = { x: envCenterX, y: envCenterY };
-    }
+    if (ok) newAnchor = { x: envCenterX, y: envCenterY };
   }
 
-  // Strategy 2: nudge toward envelope centre in small steps
+  // Strategy 2: Nudge toward envelope centre in small steps
   if (newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
     const stepSize = Math.min(spec.widthM, spec.depthM) * 0.1;
     const dx = envCenterX - spec.anchor.x;
     const dy = envCenterY - spec.anchor.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-
     if (dist > 0) {
       const steps = Math.ceil(dist / stepSize);
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        const candidateAnchor = {
-          x: spec.anchor.x + dx * t,
-          y: spec.anchor.y + dy * t
-        };
+        const candidateAnchor = { x: spec.anchor.x + dx * t, y: spec.anchor.y + dy * t };
         const candidateSpec: BuildingSpec = { ...spec, anchor: candidateAnchor };
         const candidateFootprint = buildBuildingFootprint(candidateSpec);
         if (footprintInsideEnvelope(candidateFootprint, envelope)) {
-          const candidateHasOverlap = otherBuildings.some(other => {
+          const ok = skipOverlapCheck || !otherBuildings.some(other => {
             if (other.id === spec.id) return false;
             return polygonsOverlap(candidateFootprint, buildBuildingFootprint(other));
           });
-          if (!candidateHasOverlap) {
-            newAnchor = candidateAnchor;
-            break;
-          }
+          if (ok) { newAnchor = candidateAnchor; break; }
         }
       }
     }
   }
 
-  // Strategy 3: deterministic grid nudges
-  if (newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
+  // Strategy 3: Deterministic grid nudges (only when overlap checking enabled)
+  if (!skipOverlapCheck && newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
     const offsetRange = Math.min(spec.widthM, spec.depthM);
     const step = Math.max(0.5, offsetRange * 0.1);
     const steps = Math.max(1, Math.floor(offsetRange / step));
-
     outer: for (let ring = 1; ring <= steps; ring++) {
       const offset = ring * step;
       for (let dx = -offset; dx <= offset; dx += step) {
@@ -316,14 +303,11 @@ export function clampBuildingToEnvelope(
           const candidateSpec: BuildingSpec = { ...spec, anchor: candidateAnchor };
           const candidateFootprint = buildBuildingFootprint(candidateSpec);
           if (footprintInsideEnvelope(candidateFootprint, envelope)) {
-            const candidateHasOverlap = otherBuildings.some(other => {
+            const ok = !otherBuildings.some(other => {
               if (other.id === spec.id) return false;
               return polygonsOverlap(candidateFootprint, buildBuildingFootprint(other));
             });
-            if (!candidateHasOverlap) {
-              newAnchor = candidateAnchor;
-              break outer;
-            }
+            if (ok) { newAnchor = candidateAnchor; break outer; }
           }
         }
       }
@@ -332,10 +316,8 @@ export function clampBuildingToEnvelope(
 
   // Strategy 4: Shrink building progressively until it fits at envelope center
   if (newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
-    const envBbox2 = bbox(envelope);
-    const cx = (envBbox2.minX + envBbox2.maxX) / 2;
-    const cy = (envBbox2.minY + envBbox2.maxY) / 2;
-
+    const cx = envCenterX;
+    const cy = envCenterY;
     for (let scale = 0.9; scale >= 0.3; scale -= 0.1) {
       const shrunkSpec: BuildingSpec = {
         ...spec,
@@ -345,29 +327,16 @@ export function clampBuildingToEnvelope(
       };
       const shrunkFootprint = buildBuildingFootprint(shrunkSpec);
       if (footprintInsideEnvelope(shrunkFootprint, envelope)) {
-        const shrunkHasOverlap = otherBuildings.some(other => {
+        const ok = skipOverlapCheck || !otherBuildings.some(other => {
           if (other.id === spec.id) return false;
           return polygonsOverlap(shrunkFootprint, buildBuildingFootprint(other));
         });
-        if (!shrunkHasOverlap) {
-          return {
-            ...shrunkSpec,
-            locked: spec.locked,
-          };
-        }
+        if (ok) return { ...shrunkSpec, locked: spec.locked };
       }
     }
-
-    // Strategy 5: Force tiny building at centroid as absolute last resort
-    const tinySpec: BuildingSpec = {
-      ...spec,
-      anchor: { x: cx, y: cy },
-      widthM: 10,
-      depthM: 10,
-      rotationRad: 0,
-    };
-    const tinyFootprint = buildBuildingFootprint(tinySpec);
-    if (footprintInsideEnvelope(tinyFootprint, envelope)) {
+    // Strategy 5: Force tiny building at centroid — absolute last resort
+    const tinySpec: BuildingSpec = { ...spec, anchor: { x: cx, y: cy }, widthM: 10, depthM: 10, rotationRad: 0 };
+    if (footprintInsideEnvelope(buildBuildingFootprint(tinySpec), envelope)) {
       return { ...tinySpec, locked: spec.locked };
     }
   }
@@ -375,7 +344,7 @@ export function clampBuildingToEnvelope(
   return {
     ...spec,
     anchor: spec.locked?.position ? spec.anchor : newAnchor,
-    rotationRad: spec.locked?.rotation ? spec.rotationRad : newRotation
+    rotationRad: spec.locked?.rotation ? spec.rotationRad : spec.rotationRad
   };
 }
 

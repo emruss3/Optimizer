@@ -105,10 +105,10 @@ function scoreOnly(
   /** Pre-computed values to avoid recalculation every iteration */
   cached: { siteAreaM2: number; siteAreaSqft: number; maxReasonableUnits: number }
 ): { score: number; clampedBuildings: BuildingSpec[] } {
-  // Clamp all buildings
+  // Clamp all buildings — skip overlap check for speed (SA doesn't need exact overlap resolution)
   const clamped: BuildingSpec[] = [];
   for (const spec of buildings) {
-    clamped.push(clampBuildingToEnvelope(spec, envelope, clamped));
+    clamped.push(clampBuildingToEnvelope(spec, envelope, clamped, true));
   }
 
   // Containment check: penalize any building still outside envelope
@@ -607,30 +607,62 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const maxPhysicalBuildings = Math.max(1, Math.floor(envelopeCorrectedArea * 0.4 / buildingFootprintArea));
   const effectiveNumBuildings = Math.min(numBuildings, maxPhysicalBuildings);
 
-  // Distribute buildings in rows along the longest edge direction
-  const insetDist = defaultDepthM * 0.75; // offset from edge by ~75% of building depth
+  // Grid-within-envelope initial placement:
+  // Sample candidate positions in a grid aligned to the longest edge, keep only those
+  // whose building footprint is fully inside the envelope.
+  const cos = Math.cos(edgeAngleRad);
+  const sin = Math.sin(edgeAngleRad);
 
+  const gapX = defaultWidthM * 1.25;   // column spacing (125% of width)
+  const gapY = defaultDepthM * 1.75;   // row spacing (175% of depth for parking lane)
+  const envW = edgeBbox[2] - edgeBbox[0];
+  const envH = edgeBbox[3] - edgeBbox[1];
+  const cols = Math.max(1, Math.floor(envW / gapX));
+  const rows = Math.max(1, Math.floor(envH / gapY));
+
+  const candidatePositions: Array<{ x: number; y: number }> = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      // Offset within bbox, shifted by half a cell from the boundary
+      const localX = (col + 0.5) * gapX - envW / 2;
+      const localY = (row + 0.5) * gapY - envH / 2;
+      // Rotate local coords by edge angle around envelope center
+      const px = envCenterX + localX * cos - localY * sin;
+      const py = envCenterY + localX * sin + localY * cos;
+      candidatePositions.push({ x: px, y: py });
+    }
+  }
+
+  // Place buildings at valid grid positions (fully inside envelope)
   const initialBuildings: BuildingSpec[] = [];
-  const colsPerRow = Math.max(1, Math.floor(edge.len / (defaultWidthM * 1.2)));
-  for (let i = 0; i < effectiveNumBuildings; i++) {
-    const row = Math.floor(i / colsPerRow);
-    const col = i % colsPerRow;
-
-    const t = (col + 1) / (colsPerRow + 1);
-    const rowOffset = insetDist + row * (defaultDepthM * 1.5);
-
-    const px = sx + dx * edge.len * t + inwardNx * rowOffset;
-    const py = sy + dy * edge.len * t + inwardNy * rowOffset;
-
+  let buildingNum = 0;
+  for (const pos of candidatePositions) {
+    if (initialBuildings.length >= effectiveNumBuildings) break;
     const spec = createBuildingSpec(
-      `building-${i + 1}`,
-      { x: px, y: py },
+      `building-${++buildingNum}`,
+      pos,
       undefined, undefined, undefined,
       buildingType
     );
-    // Align rotation to the longest edge
     spec.rotationRad = edgeAngleRad;
+    const footprint = buildBuildingFootprint(spec);
+    const inside = footprint.coordinates[0].every(
+      ([vx, vy]) => isPointInPolygon([vx, vy], envelope.coordinates[0])
+    );
+    if (inside) initialBuildings.push(spec);
+  }
 
+  // Fallback: if grid produced nothing, place one building at envelope centroid
+  if (initialBuildings.length === 0) {
+    const spec = createBuildingSpec(
+      'building-1',
+      { x: envCenterX, y: envCenterY },
+      Math.min(defaultWidthM, (edgeBbox[2] - edgeBbox[0]) * 0.5),
+      Math.min(defaultDepthM, (edgeBbox[3] - edgeBbox[1]) * 0.5),
+      undefined,
+      buildingType
+    );
+    spec.rotationRad = edgeAngleRad;
     initialBuildings.push(spec);
   }
 
