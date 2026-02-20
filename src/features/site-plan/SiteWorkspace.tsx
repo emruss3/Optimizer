@@ -8,7 +8,7 @@ import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
 import type { EdgeClassification } from '../../engine/setbacks';
-import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2 } from '../../engine/geometry';
+import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2, buffer, intersection, polygons, areaM2 } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
 import { feetToMeters } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix } from '../../engine/model';
@@ -83,8 +83,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   // Create fallback envelope from parcel geometry if RPC fails
   const fallbackEnvelopeMeters = useMemo(() => {
-    // Only create fallback if we don't have a valid RPC envelope
-    // Create fallback when status is 'invalid' OR when we have no envelope but have geometry
     if (!parcel?.geometry) return null;
     
     // If RPC succeeded and we have a valid envelope, no fallback needed
@@ -92,59 +90,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return null;
     }
     
-    // Create fallback when RPC failed, returned null, or status is invalid
-    
     try {
-      // Reproject parcel geometry to 3857
       const geom = parcel.geometry as Polygon | MultiPolygon;
       const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
       const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
       const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
       const normalized = normalizeToPolygon(reprojected);
       
-      // Get bbox and apply default setbacks (20ft front, 5ft side, 20ft rear)
-      const coords3857 = normalized.coordinates[0];
-      const bounds = coords3857.reduce(
-        (acc, [x, y]) => ({
-          minX: Math.min(acc.minX, x),
-          minY: Math.min(acc.minY, y),
-          maxX: Math.max(acc.maxX, x),
-          maxY: Math.max(acc.maxY, y)
-        }),
-        { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
-      );
+      // Buffer INWARD by a uniform 6m (~20ft) setback — follows parcel shape
+      const inset = buffer(normalized, -feetToMeters(20));
       
-      // Convert setbacks to meters (20ft = 6.096m, 5ft = 1.524m)
-      const frontSetbackM = feetToMeters(20);
-      const sideSetbackM = feetToMeters(5);
-      const rearSetbackM = feetToMeters(20);
-      
-      // Inset bbox by setbacks (assuming front is minY, rear is maxY, sides are minX/maxX)
-      const insetBounds = {
-        minX: bounds.minX + sideSetbackM,
-        minY: bounds.minY + frontSetbackM,
-        maxX: bounds.maxX - sideSetbackM,
-        maxY: bounds.maxY - rearSetbackM
-      };
-      
-      // Ensure valid bounds
-      if (insetBounds.minX >= insetBounds.maxX || insetBounds.minY >= insetBounds.maxY) {
+      // Validate result
+      if (!inset.coordinates?.[0]?.length || inset.coordinates[0].length < 4) {
         return null;
       }
-      
-      // Create rectangle polygon from inset bounds
-      const fallbackPoly: Polygon = {
-        type: 'Polygon',
-        coordinates: [[
-          [insetBounds.minX, insetBounds.minY],
-          [insetBounds.maxX, insetBounds.minY],
-          [insetBounds.maxX, insetBounds.maxY],
-          [insetBounds.minX, insetBounds.maxY],
-          [insetBounds.minX, insetBounds.minY]
-        ]]
-      };
-      
-      return fallbackPoly;
+      return inset;
     } catch (err) {
       console.error('Failed to create fallback envelope:', err);
       return null;
@@ -152,26 +112,54 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [parcel?.geometry, status, envelope]);
 
   const envelopeMeters = useMemo(() => {
+    let env: Polygon | null = null;
+
     // Use RPC envelope if available and valid
     if (envelope && status === 'ready') {
-      if (envelope.type !== 'Polygon' && envelope.type !== 'MultiPolygon') {
-        // Invalid geometry type, use fallback
-        return fallbackEnvelopeMeters;
-      }
-      const geom = envelope as Polygon | MultiPolygon;
-      const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
-      const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
-      const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
-      const normalized = normalizeToPolygon(reprojected);
-      // Check if normalized polygon is valid (has coordinates)
-      if (normalized.coordinates[0] && normalized.coordinates[0].length > 0) {
-        return normalized;
+      if (envelope.type === 'Polygon' || envelope.type === 'MultiPolygon') {
+        const geom = envelope as Polygon | MultiPolygon;
+        const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
+        const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+        const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
+        const normalized = normalizeToPolygon(reprojected);
+        if (normalized.coordinates[0] && normalized.coordinates[0].length > 0) {
+          env = normalized;
+        }
       }
     }
-    
-    // Use fallback if RPC failed, returned null, or envelope is invalid
-    return fallbackEnvelopeMeters;
-  }, [envelope, status, fallbackEnvelopeMeters]);
+
+    if (!env) {
+      env = fallbackEnvelopeMeters;
+    }
+
+    if (!env) return null;
+
+    // SAFETY: clip envelope to parcel boundary — envelope must NEVER extend beyond parcel
+    try {
+      if (parcel?.geometry) {
+        const geom = parcel.geometry as Polygon | MultiPolygon;
+        const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
+        const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+        const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
+        const parcelPoly = normalizeToPolygon(reprojected);
+
+        const clipped = intersection(parcelPoly, env);
+        const clippedPolys = polygons(clipped);
+        if (clippedPolys.length > 0) {
+          // Pick largest polygon from intersection result
+          let best = clippedPolys[0];
+          let bestArea = areaM2(best);
+          for (let i = 1; i < clippedPolys.length; i++) {
+            const a = areaM2(clippedPolys[i]);
+            if (a > bestArea) { bestArea = a; best = clippedPolys[i]; }
+          }
+          return best;
+        }
+      }
+    } catch { /* fall through to unclipped env */ }
+
+    return env;
+  }, [envelope, status, fallbackEnvelopeMeters, parcel?.geometry]);
 
   // Track whether we're using fallback envelope
   useEffect(() => {
@@ -198,7 +186,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         config.zoning,
         config.designParameters,
         parkingSpec,
-        200 // iterations
+        50 // iterations — kept low for responsiveness; SA converges quickly
       );
 
       // Feed best result into the plan output (already in EPSG:3857 meters)

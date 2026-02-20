@@ -330,6 +330,48 @@ export function clampBuildingToEnvelope(
     }
   }
 
+  // Strategy 4: Shrink building progressively until it fits at envelope center
+  if (newAnchor.x === spec.anchor.x && newAnchor.y === spec.anchor.y) {
+    const envBbox2 = bbox(envelope);
+    const cx = (envBbox2.minX + envBbox2.maxX) / 2;
+    const cy = (envBbox2.minY + envBbox2.maxY) / 2;
+
+    for (let scale = 0.9; scale >= 0.3; scale -= 0.1) {
+      const shrunkSpec: BuildingSpec = {
+        ...spec,
+        anchor: { x: cx, y: cy },
+        widthM: Math.max(8, spec.widthM * scale),
+        depthM: Math.max(8, spec.depthM * scale),
+      };
+      const shrunkFootprint = buildBuildingFootprint(shrunkSpec);
+      if (footprintInsideEnvelope(shrunkFootprint, envelope)) {
+        const shrunkHasOverlap = otherBuildings.some(other => {
+          if (other.id === spec.id) return false;
+          return polygonsOverlap(shrunkFootprint, buildBuildingFootprint(other));
+        });
+        if (!shrunkHasOverlap) {
+          return {
+            ...shrunkSpec,
+            locked: spec.locked,
+          };
+        }
+      }
+    }
+
+    // Strategy 5: Force tiny building at centroid as absolute last resort
+    const tinySpec: BuildingSpec = {
+      ...spec,
+      anchor: { x: cx, y: cy },
+      widthM: 10,
+      depthM: 10,
+      rotationRad: 0,
+    };
+    const tinyFootprint = buildBuildingFootprint(tinySpec);
+    if (footprintInsideEnvelope(tinyFootprint, envelope)) {
+      return { ...tinySpec, locked: spec.locked };
+    }
+  }
+
   return {
     ...spec,
     anchor: spec.locked?.position ? spec.anchor : newAnchor,

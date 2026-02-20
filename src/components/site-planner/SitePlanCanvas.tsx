@@ -78,22 +78,22 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     };
   }, [onWheel]);
 
-  // Get element color
-  const getElementColor = useCallback((element: Element): string => {
+  // Get element color and opacity based on z-order spec
+  const getElementStyle = useCallback((element: Element): { color: string; opacity: number } => {
     switch (element.type) {
-      case 'building':
-        return '#3B82F6';
+      case 'greenspace':
+        return { color: '#22C55E', opacity: 0.15 };
+      case 'parking-aisle':
+        return { color: '#94A3B8', opacity: 0.2 };
+      case 'circulation':
+        return { color: '#94A3B8', opacity: 0.25 };
       case 'parking':
       case 'parking-bay':
-        return '#10B981';
-      case 'parking-aisle':
-        return '#6EE7B7';
-      case 'circulation':
-        return element.properties.color || '#94A3B8';
-      case 'greenspace':
-        return element.properties?.color || '#22C55E';
+        return { color: '#60A5FA', opacity: 0.3 };
+      case 'building':
+        return { color: '#3B82F6', opacity: 0.5 };
       default:
-        return '#6B7280';
+        return { color: '#6B7280', opacity: 0.3 };
     }
   }, []);
 
@@ -226,12 +226,16 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.arc(endPoint.x, endPoint.y, 4 / zoom, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw distance label
+    // Draw distance label (Y-flipped so text is right-side up)
     const dx = endPoint.x - startPoint.x;
     const dy = endPoint.y - startPoint.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
     const midX = (startPoint.x + endPoint.x) / 2;
     const midY = (startPoint.y + endPoint.y) / 2;
+
+    ctx.save();
+    ctx.translate(midX, midY);
+    ctx.scale(1, -1);
 
     ctx.fillStyle = '#FFFFFF';
     ctx.strokeStyle = '#EF4444';
@@ -247,10 +251,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const textWidth = metrics.width;
     const textHeight = 16 / zoom;
 
-    ctx.fillRect(midX - textWidth / 2 - padding, midY - textHeight / 2 - padding, textWidth + padding * 2, textHeight + padding * 2);
-    ctx.strokeRect(midX - textWidth / 2 - padding, midY - textHeight / 2 - padding, textWidth + padding * 2, textHeight + padding * 2);
+    ctx.fillRect(-textWidth / 2 - padding, -textHeight / 2 - padding, textWidth + padding * 2, textHeight + padding * 2);
+    ctx.strokeRect(-textWidth / 2 - padding, -textHeight / 2 - padding, textWidth + padding * 2, textHeight + padding * 2);
     ctx.fillStyle = '#EF4444';
-    ctx.fillText(text, midX, midY);
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
 
     ctx.restore();
   }, []);
@@ -331,51 +336,65 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, [parkingViz]);
 
-  // Render element labels
+  // Render element labels (Y-flipped to appear right-side up)
   const renderElementLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
+    // Determine label text based on element type
+    let label: string;
+    if (element.type === 'building') {
+      const areaSqFt = element.properties?.areaSqFt;
+      const areaLabel = areaSqFt != null ? `${Math.round(areaSqFt).toLocaleString()} sq ft` : '';
+      label = `${element.name || 'Building'}${areaLabel ? '\n' + areaLabel : ''}`;
+    } else if (element.type === 'parking' || element.type === 'parking-bay') {
+      const stalls = element.properties?.stalls ?? element.properties?.stallCount;
+      label = stalls != null ? `${stalls} stalls` : '';
+    } else if (element.type === 'circulation') {
+      label = element.name || 'Circulation';
+    } else {
+      return; // greenspace, parking-aisle: no label
+    }
+    if (!label) return;
+
     ctx.save();
     const center = ElementService.calculateElementCenter(element);
-    
-    // Use pre-computed areaSqFt from the solver (Mercator-corrected) instead of
-    // computing area from canvas bounding box (which would be in EPSG:3857 meters²).
-    const areaSqFt = element.properties?.areaSqFt;
-    const areaLabel = areaSqFt != null ? `${Math.round(areaSqFt).toLocaleString()} sq ft` : '';
-    
+
+    // Flip locally so text renders right-side up (canvas Y is negated)
+    ctx.translate(center.x, center.y);
+    ctx.scale(1, -1);
+
     ctx.fillStyle = '#FFFFFF';
     ctx.strokeStyle = '#374151';
     ctx.lineWidth = 1 / zoom;
     ctx.font = `${10 / zoom}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
-    const label = `${element.name || element.type}${areaLabel ? '\n' + areaLabel : ''}`;
+
     const lines = label.split('\n');
     const lineHeight = 12 / zoom;
     const totalHeight = lines.length * lineHeight;
-    
+
     // Draw background
     const padding = 4 / zoom;
     const textWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
-    
+
     ctx.fillRect(
-      center.x - textWidth / 2 - padding,
-      center.y - totalHeight / 2 - padding,
+      -textWidth / 2 - padding,
+      -totalHeight / 2 - padding,
       textWidth + padding * 2,
       totalHeight + padding * 2
     );
     ctx.strokeRect(
-      center.x - textWidth / 2 - padding,
-      center.y - totalHeight / 2 - padding,
+      -textWidth / 2 - padding,
+      -totalHeight / 2 - padding,
       textWidth + padding * 2,
       totalHeight + padding * 2
     );
-    
+
     // Draw text
     ctx.fillStyle = '#374151';
     lines.forEach((line, index) => {
-      ctx.fillText(line, center.x, center.y - totalHeight / 2 + (index + 0.5) * lineHeight);
+      ctx.fillText(line, 0, -totalHeight / 2 + (index + 0.5) * lineHeight);
     });
-    
+
     ctx.restore();
   }, []);
 
@@ -383,15 +402,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderElement = useCallback((ctx: CanvasRenderingContext2D, element: Element, isSelected: boolean, isHovered: boolean, zoom: number) => {
     ctx.save();
     
+    const style = getElementStyle(element);
     ctx.strokeStyle = isSelected ? '#3B82F6' : isHovered ? '#60A5FA' : '#6B7280';
     ctx.lineWidth = isSelected ? 3 / zoom : isHovered ? 2 / zoom : 1 / zoom;
-    
-    const color = getElementColor(element);
-    ctx.fillStyle = color;
-    // Greenspace gets a more visible semi-transparent fill
-    ctx.globalAlpha = element.type === 'greenspace'
-      ? (isHovered ? 0.55 : 0.45)
-      : (isHovered ? 0.4 : 0.3);
+    ctx.fillStyle = style.color;
+    ctx.globalAlpha = isHovered ? Math.min(style.opacity + 0.1, 1) : style.opacity;
 
     const coords = element.geometry.coordinates[0];
     ctx.beginPath();
@@ -404,7 +419,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.stroke();
 
     ctx.restore();
-  }, [getElementColor]);
+  }, [getElementStyle]);
 
   // Render function
   const render = useCallback(() => {
@@ -427,7 +442,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Apply view transformations
     ctx.save();
     ctx.translate(viewport.panX, viewport.panY);
-    ctx.scale(viewport.zoom, viewport.zoom);
+    ctx.scale(viewport.zoom, -viewport.zoom);
 
     // Render grid
     if (gridState?.enabled && processedGeometry) {
@@ -449,8 +464,21 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       renderMeasurement(ctx, measurementState.startPoint, measurementState.endPoint, viewport.zoom);
     }
 
-    // Render elements
-    elements.forEach((element) => {
+    // Sort elements by z-order: greenspace → parking-aisle → circulation → parking-bay → building → other
+    const zOrder: Record<string, number> = {
+      'greenspace': 0,
+      'parking-aisle': 1,
+      'circulation': 2,
+      'parking': 3,
+      'parking-bay': 3,
+      'building': 4,
+    };
+    const sortedElements = [...elements].sort(
+      (a, b) => (zOrder[a.type] ?? 5) - (zOrder[b.type] ?? 5)
+    );
+
+    // Render elements in z-order
+    sortedElements.forEach((element) => {
       const isSelected = selectedElements.has(element.id);
       const isHovered = hoveredElement === element.id;
       renderElement(ctx, element, isSelected, isHovered, viewport.zoom);
@@ -460,8 +488,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         renderParkingStripes(ctx, element, viewport.zoom);
       }
       
-      // Render labels
-      if (showLabels) {
+      // Render labels only for buildings and parking bays
+      if (showLabels && (element.type === 'building' || element.type === 'parking-bay')) {
         renderElementLabel(ctx, element, viewport.zoom);
       }
       
@@ -476,7 +504,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         const bounds = ElementService.getElementBounds(element);
         const handleDistance = 30 / viewport.zoom;
         const handleX = center.x;
-        const handleY = bounds.minY - handleDistance;
+        const handleY = bounds.maxY + handleDistance;
         renderRotationHandle(ctx, center.x, center.y, handleX, handleY, viewport.zoom);
       }
     });
@@ -493,7 +521,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     const rect = canvas.getBoundingClientRect();
     const worldX = (event.clientX - rect.left - viewport.panX) / viewport.zoom;
-    const worldY = (event.clientY - rect.top - viewport.panY) / viewport.zoom;
+    const worldY = -(event.clientY - rect.top - viewport.panY) / viewport.zoom;
 
     const hovered = ElementService.findElementAtPoint(elements, worldX, worldY);
     // Note: We can't set hoveredElement here directly, it needs to be passed as prop
@@ -507,7 +535,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     const rect = canvas.getBoundingClientRect();
     const worldX = (event.clientX - rect.left - viewport.panX) / viewport.zoom;
-    const worldY = (event.clientY - rect.top - viewport.panY) / viewport.zoom;
+    const worldY = -(event.clientY - rect.top - viewport.panY) / viewport.zoom;
 
     const clickedElement = ElementService.findElementAtPoint(elements, worldX, worldY);
     onElementClick(clickedElement || null, event);

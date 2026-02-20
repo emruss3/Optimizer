@@ -130,8 +130,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const measurement = useMeasurement();
   const grid = useGrid(10); // 10 foot grid
 
-  // NOTE: We use a container div ref (not a canvas ref) because the <canvas>
-  // element lives inside SitePlanCanvas which manages its own ref.
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
   const queueBuildingUpdate = useCallback((update: {
@@ -177,40 +175,33 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     return Math.atan2(y2 - y1, x2 - x1);
   }, []);
 
-  // Process parcel geometry: reproject to EPSG:3857 meters directly (no feet, no normalization)
   const processedGeometry = useMemo(() => {
     if (!parcel?.geometry) return null;
-
-    let geometry3857 = parcel.geometry;
-    
-    // Check if already in 3857 (coords > 1000) or 4326 (degrees)
-    const sampleCoords = parcel.geometry.type === 'Polygon'
-      ? parcel.geometry.coordinates[0][0]
-      : parcel.geometry.type === 'MultiPolygon'
-      ? parcel.geometry.coordinates[0][0][0]
-      : null;
-    
-    if (sampleCoords && (Math.abs(sampleCoords[0]) < 1000 && Math.abs(sampleCoords[1]) < 1000)) {
-      // Likely 4326 (degrees), reproject to 3857
-      geometry3857 = feature4326To3857(parcel.geometry);
+    try {
+      const geom = parcel.geometry as import('geojson').Polygon | import('geojson').MultiPolygon;
+      const coords =
+        geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
+      const is3857 =
+        Math.abs(coords?.[0]?.[0] ?? 0) > 1000 ||
+        Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+      const reprojected = is3857
+        ? geom
+        : (feature4326To3857(geom) as import('geojson').Polygon | import('geojson').MultiPolygon);
+      const polygon = normalizeToPolygon(reprojected);
+      const ring = polygon.coordinates[0];
+      const bounds = ring.reduce(
+        (acc, [x, y]) => ({
+          minX: Math.min(acc.minX, x),
+          minY: Math.min(acc.minY, y),
+          maxX: Math.max(acc.maxX, x),
+          maxY: Math.max(acc.maxY, y),
+        }),
+        { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+      );
+      return { geometry: polygon, bounds };
+    } catch {
+      return null;
     }
-    
-    // Normalize to Polygon (handles MultiPolygon by selecting largest)
-    const polygon = normalizeToPolygon(geometry3857);
-    
-    // Compute bounds directly from polygon.coordinates[0]
-    const coords = polygon.coordinates[0];
-    const bounds = coords.reduce(
-      (acc, [x, y]) => ({
-        minX: Math.min(acc.minX, x),
-        minY: Math.min(acc.minY, y),
-        maxX: Math.max(acc.maxX, x),
-        maxY: Math.max(acc.maxY, y)
-      }),
-      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
-    );
-    
-    return { geometry: polygon, bounds };
   }, [parcel?.geometry]);
 
   // Fit viewport to parcel
@@ -257,7 +248,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     const rect = canvas.getBoundingClientRect();
     const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-    const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+    const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
     const snapped = grid.snapPoint(worldX, worldY);
 
     // Measurement tool
@@ -359,7 +350,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     // Update hovered element
     const rect = canvas.getBoundingClientRect();
     const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-    const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+    const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
     const hovered = ElementService.findElementAtPoint(elements, worldX, worldY);
     setHoveredElement(hovered?.id || null);
 
@@ -376,7 +367,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (rotation.rotationState.isRotating && rotation.rotationState.elementId) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       
       const angle = rotation.updateRotation(worldX, worldY, event.shiftKey ? 15 : 0);
       if (angle !== null && rotation.rotationState.startAngle !== undefined) {
@@ -444,7 +435,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (vertexEditing.isVertexEditing && vertexEditing.selectedVertex) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       const snapped = grid.snapPoint(worldX, worldY);
       
       setElements(prev => prev.map(element => {
@@ -465,7 +456,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (drawingTools.activeTool === 'measure' && measurement.measurementState.isMeasuring) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       const snapped = grid.snapPoint(worldX, worldY);
       measurement.updateMeasurement(snapped.x, snapped.y);
       return;
@@ -475,7 +466,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     if (drag.dragState.isDragging && drag.dragState.elementId) {
       const rect = canvas.getBoundingClientRect();
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
-      const worldY = (event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
+      const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       const snapped = grid.snapPoint(worldX, worldY);
       
       drag.updateDrag(snapped.x, snapped.y);

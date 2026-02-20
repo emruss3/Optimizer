@@ -30,6 +30,16 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Format a number as USD with no decimal places */
+const fmtUSD = (value: number | null | undefined): string => {
+  if (value == null) return '—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value);
+};
+
 /** Format edge length in feet */
 function edgeLengthFt(edge: EdgeClassification): string {
   return `${metersToFeet(edge.length).toFixed(0)}ft`;
@@ -141,33 +151,33 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-1">Revenue</div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Gross Potential Rent</span>
-            <span className="font-medium">${investmentAnalysis.grossPotentialRent?.toLocaleString() ?? '—'}</span>
+            <span className="font-medium">{fmtUSD(investmentAnalysis.grossPotentialRent)}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Effective Gross Income</span>
-            <span className="font-medium">${investmentAnalysis.effectiveGrossIncome?.toLocaleString() ?? '—'}</span>
+            <span className="font-medium">{fmtUSD(investmentAnalysis.effectiveGrossIncome)}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">NOI</span>
-            <span className="font-medium text-green-700">${investmentAnalysis.netOperatingIncome?.toLocaleString() ?? '—'}</span>
+            <span className="font-medium text-green-700">{fmtUSD(investmentAnalysis.netOperatingIncome)}</span>
           </div>
 
           {/* Costs */}
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-2">Costs</div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Total Dev Cost</span>
-            <span className="font-medium">${investmentAnalysis.totalDevelopmentCost?.toLocaleString() ?? investmentAnalysis.totalInvestment?.toLocaleString() ?? '—'}</span>
+            <span className="font-medium">{fmtUSD(investmentAnalysis.totalDevelopmentCost ?? investmentAnalysis.totalInvestment)}</span>
           </div>
           {investmentAnalysis.costPerUnit != null && investmentAnalysis.costPerUnit > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Cost / Unit</span>
-              <span className="font-medium">${Math.round(investmentAnalysis.costPerUnit).toLocaleString()}</span>
+              <span className="font-medium">{fmtUSD(investmentAnalysis.costPerUnit)}</span>
             </div>
           )}
           {investmentAnalysis.costPerSF != null && investmentAnalysis.costPerSF > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Cost / SF</span>
-              <span className="font-medium">${Math.round(investmentAnalysis.costPerSF).toLocaleString()}</span>
+              <span className="font-medium">{fmtUSD(investmentAnalysis.costPerSF)}</span>
             </div>
           )}
 
@@ -182,14 +192,14 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
           {investmentAnalysis.stabilizedValue != null && investmentAnalysis.stabilizedValue > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Stabilized Value</span>
-              <span className="font-medium">${investmentAnalysis.stabilizedValue.toLocaleString()}</span>
+              <span className="font-medium">{fmtUSD(investmentAnalysis.stabilizedValue)}</span>
             </div>
           )}
           {investmentAnalysis.profit != null && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Profit</span>
               <span className={`font-medium ${investmentAnalysis.profit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                ${investmentAnalysis.profit.toLocaleString()}
+                {fmtUSD(investmentAnalysis.profit)}
               </span>
             </div>
           )}
