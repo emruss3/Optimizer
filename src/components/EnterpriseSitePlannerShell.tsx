@@ -234,8 +234,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
-    // Panning (middle mouse or Ctrl+drag)
-    if (event.button === 1 || (event.button === 0 && event.ctrlKey)) {
+    // Panning (middle mouse or Alt+drag). Alt is used instead of Ctrl so that
+    // Ctrl/Cmd+click remains available for multi-select below.
+    if (event.button === 1 || (event.button === 0 && event.altKey)) {
       setIsPanning(true);
       setLastPanPoint({ x: event.clientX, y: event.clientY });
       return;
