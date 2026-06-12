@@ -120,6 +120,10 @@ class SiteEngineWorker {
       throw new Error('Site not initialized');
     }
 
+    // A manual update means the user placed/sized this building deliberately —
+    // pin it so solvePlan() re-fits everything else around it instead of moving it.
+    const userPinned = { position: true, rotation: true, dimensions: true };
+
     const idx = this.siteState.buildings.findIndex(b => b.id === buildingId);
     if (idx === -1) {
       this.siteState.buildings.push({
@@ -130,7 +134,8 @@ class SiteEngineWorker {
           patch.depthM ?? 18,
           patch.floors ?? 3
         ),
-        rotationRad: patch.rotationRad ?? 0
+        rotationRad: patch.rotationRad ?? 0,
+        locked: userPinned
       });
       return;
     }
@@ -142,7 +147,8 @@ class SiteEngineWorker {
       rotationRad: patch.rotationRad ?? existing.rotationRad,
       widthM: patch.widthM ?? existing.widthM,
       depthM: patch.depthM ?? existing.depthM,
-      floors: patch.floors ?? existing.floors
+      floors: patch.floors ?? existing.floors,
+      locked: userPinned
     };
   }
 

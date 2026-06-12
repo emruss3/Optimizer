@@ -144,4 +144,31 @@ describe('clampBuildingToEnvelope', () => {
     const clamped = clampBuildingToEnvelope(spec, envelope, []);
     expect(clamped.anchor).toBeDefined();
   });
+
+  describe('user-pinned (locked) buildings are sovereign', () => {
+    // Anchor a 60×18 building well OUTSIDE a 200×200 envelope it would otherwise
+    // fit inside — so an unlocked building gets relocated but a pinned one doesn't.
+    const outsideAnchor = { x: 300, y: 300 };
+
+    it('returns a position-locked building unchanged even when placed outside', () => {
+      const spec: BuildingSpec = {
+        ...createBuildingSpec('b1', { ...outsideAnchor }, 60, 18, 3, 'MF_BAR_V1'),
+        rotationRad: 0.5,
+        locked: { position: true, rotation: true, dimensions: true }
+      };
+      const out = clampBuildingToEnvelope(spec, bigEnvelope(), []);
+      // Sovereign: anchor, size and rotation are preserved exactly.
+      expect(out.anchor).toEqual(outsideAnchor);
+      expect(out.widthM).toBe(60);
+      expect(out.depthM).toBe(18);
+      expect(out.rotationRad).toBe(0.5);
+    });
+
+    it('still relocates an unlocked building placed outside the envelope', () => {
+      const spec = createBuildingSpec('b2', { ...outsideAnchor }, 60, 18, 3, 'MF_BAR_V1');
+      const out = clampBuildingToEnvelope(spec, bigEnvelope(), []);
+      // Unlocked buildings are moved back inside (anchor no longer outside).
+      expect(out.anchor).not.toEqual(outsideAnchor);
+    });
+  });
 });
