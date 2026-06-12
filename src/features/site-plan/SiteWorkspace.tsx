@@ -332,47 +332,53 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
-    const gfa = metrics.totalBuiltSF;
-    const units = Math.max(1, Math.floor(gfa * 0.85 / 750));
-    const avgRentPerUnit = 1800;
-    const grossRent = units * avgRentPerUnit * 12;
-    const vacancy = grossRent * 0.05;
-    const egi = grossRent - vacancy;
-    const opex = egi * 0.35;
-    const noi = egi - opex;
-    const hardCosts = gfa * 165;
-    const softCosts = hardCosts * 0.20;
-    const totalDevCost = hardCosts + softCosts + (hardCosts + softCosts) * 0.05;
-    const capRate = 0.055;
-    const baseReturn: InvestmentAnalysis = {
-      totalInvestment: totalDevCost,
-      projectedRevenue: grossRent,
-      operatingExpenses: opex,
-      netOperatingIncome: noi,
-      capRate,
-      irr: noi / totalDevCost,
-      paybackPeriod: totalDevCost / noi,
-      riskAssessment: noi / totalDevCost > 0.07 ? 'low' : noi / totalDevCost > 0.05 ? 'medium' : 'high',
-      // Required additional fields
-      grossPotentialRent: grossRent,
-      vacancyLoss: vacancy,
-      effectiveGrossIncome: egi,
-      totalDevelopmentCost: totalDevCost,
-      totalHardCosts: hardCosts,
-      softCosts: softCosts,
-      contingency: (hardCosts + softCosts) * 0.05,
-      financingCosts: 0,
+    const gfa = metrics.totalBuiltSF || 0;
+    if (gfa <= 0) return null;
+
+    // Single source of truth for underwriting — the same engine the optimizer
+    // scores with. Unit mix (and thus rents) is regenerated from GFA so revenue
+    // matches the engine's assumptions rather than a flat per-unit guess.
+    const siteAreaSqft = envelopeMeters ? correctedAreaM2(envelopeMeters) * 10.7639 : 0;
+    const unitMix = generateDefaultUnitMix(gfa);
+    const pf = computeProForma({
+      totalGFASqft: gfa,
+      siteAreaSqft,
+      unitMix,
+      surfaceStalls: metrics.stallsProvided ?? 0,
+      structuredStalls: 0,
       landCost: parcel.parval ?? 0,
-      yieldOnCost: noi / totalDevCost,
-      stabilizedValue: noi / capRate,
-      profit: (noi / capRate) - totalDevCost,
-      equityMultiple: 0,
-      cashOnCash: 0,
-      costPerUnit: totalDevCost / units,
-      costPerSF: totalDevCost / gfa,
+    });
+
+    return {
+      grossPotentialRent: pf.grossPotentialRent,
+      vacancyLoss: pf.vacancyLoss,
+      effectiveGrossIncome: pf.effectiveGrossIncome,
+      operatingExpenses: pf.operatingExpenses,
+      netOperatingIncome: pf.netOperatingIncome,
+      totalDevelopmentCost: pf.totalDevelopmentCost,
+      totalHardCosts: pf.totalHardCosts,
+      softCosts: pf.softCosts,
+      contingency: pf.contingency,
+      financingCosts: pf.financingCosts,
+      landCost: pf.landCost,
+      yieldOnCost: pf.yieldOnCost,
+      stabilizedValue: pf.stabilizedValue,
+      profit: pf.profit,
+      equityMultiple: pf.equityMultiple,
+      cashOnCash: pf.cashOnCash,
+      costPerUnit: pf.costPerUnit,
+      costPerSF: pf.costPerSF,
+      // Legacy aliases (kept for backward compat with older panels)
+      totalInvestment: pf.totalDevelopmentCost,
+      projectedRevenue: pf.grossPotentialRent,
+      capRate: 0.055,
+      // NOTE: a true IRR needs time-phased cash flows (a later phase). Until then
+      // expose 0 rather than mislabeling unlevered yield-on-cost as IRR.
+      irr: 0,
+      paybackPeriod: pf.netOperatingIncome > 0 ? pf.totalDevelopmentCost / pf.netOperatingIncome : 0,
+      riskAssessment: pf.yieldOnCost > 0.07 ? 'low' : pf.yieldOnCost > 0.05 ? 'medium' : 'high',
     };
-    return baseReturn;
-  }, [metrics, parcel.parval]);
+  }, [metrics, envelopeMeters, parcel.parval]);
 
   useEffect(() => {
     setInvestmentAnalysis(derivedInvestmentAnalysis);
