@@ -69,7 +69,8 @@ describe('Geometry Operations', () => {
       const result = union();
       expect(result.type).toBe('Polygon');
       if (result.type === 'Polygon') {
-        expect(result.coordinates[0].length).toBe(0);
+        // Empty union → a polygon with no rings
+        expect(result.coordinates.length).toBe(0);
       }
     });
   });

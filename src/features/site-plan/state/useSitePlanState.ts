@@ -2,11 +2,6 @@ import { useCallback, useMemo, useState } from 'react';
 import type { Element, PlannerConfig, PlannerOutput, SiteMetrics } from '../../../engine/types';
 import type { SelectedParcel } from '../../../types/parcel';
 import { toPolygon } from '../../../engine/geometry/normalize';
-import { generateAlternatives, validateSitePlan } from '../../../engine/planner';
-
-type SolveScore = {
-  score: number;
-};
 
 const defaultConfig = (parcelId: string, geometry: GeoJSON.Polygon): PlannerConfig => ({
   parcelId,
@@ -77,7 +72,6 @@ export const useSitePlanState = (parcel?: SelectedParcel | null) => {
   const [elements, setElements] = useState<Element[]>([]);
   const [metrics, setMetrics] = useState<SiteMetrics | null>(null);
   const [alternatives, setAlternatives] = useState<PlannerOutput[]>([]);
-  const [solveScores, setSolveScores] = useState<SolveScore[]>([]);
   const [selectedSolveIndex, setSelectedSolveIndex] = useState<number | null>(null);
 
   const selectedSolve = useMemo(
@@ -94,45 +88,16 @@ export const useSitePlanState = (parcel?: SelectedParcel | null) => {
     setMetrics(nextMetrics);
   }, []);
 
-  const generateAlternativePlans = useCallback(() => {
-    if (!normalizedGeometry) return;
-    const variations: Partial<PlannerConfig>[] = [];
-    const baseFAR = config.designParameters.targetFAR;
-    const baseCoverage = config.designParameters.targetCoveragePct || 50;
-    const baseParking = config.designParameters.parking.targetRatio;
-
-    const farVariations = [baseFAR * 0.8, baseFAR * 0.9, baseFAR, baseFAR * 1.1, baseFAR * 1.2];
-    const coverageVariations = [baseCoverage * 0.9, baseCoverage, baseCoverage * 1.1];
-    const parkingVariations = [baseParking - 0.25, baseParking, baseParking + 0.25];
-
-    for (const far of farVariations.slice(0, 3)) {
-      for (const coverage of coverageVariations) {
-        for (const parking of parkingVariations.slice(0, 1)) {
-          if (variations.length >= 9) break;
-          variations.push({
-            designParameters: {
-              ...config.designParameters,
-              targetFAR: far,
-              targetCoveragePct: coverage,
-              parking: {
-                ...config.designParameters.parking,
-                targetRatio: parking
-              }
-            }
-          });
-        }
-        if (variations.length >= 9) break;
-      }
-      if (variations.length >= 9) break;
-    }
-
-    const altPlans = generateAlternatives(normalizedGeometry, config, variations);
-    const scores = altPlans.map(plan => ({ score: validateSitePlan(plan, config).score }));
-    setAlternatives(altPlans);
-    setSolveScores(scores);
-    setSelectedSolveIndex(0);
-    setPlanOutput(altPlans[0]?.elements || [], altPlans[0]?.metrics || null);
-  }, [config, normalizedGeometry, setPlanOutput]);
+  /**
+   * Populate the alternatives table from optimizer output.
+   * The SA optimizer (src/engine/optimizer.ts) already returns the best layout
+   * plus ranked top-3 alternatives, so we surface those directly rather than
+   * re-running the deprecated legacy planner. Index 0 is always the best plan.
+   */
+  const applyAlternatives = useCallback((plans: PlannerOutput[]) => {
+    setAlternatives(plans);
+    setSelectedSolveIndex(plans.length > 0 ? 0 : null);
+  }, []);
 
   const selectSolve = useCallback(
     (index: number) => {
@@ -154,11 +119,10 @@ export const useSitePlanState = (parcel?: SelectedParcel | null) => {
     metrics,
     setPlanOutput,
     alternatives,
-    solveScores,
     selectedSolveIndex,
     selectedSolve,
     selectSolve,
-    generateAlternativePlans,
+    applyAlternatives,
     normalizedGeometry,
     normalizedParcelId,
     isValidParcel

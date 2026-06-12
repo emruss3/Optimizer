@@ -5,6 +5,7 @@ import React from 'react';
 import { MousePointer, Ruler, Grid3x3, Magnet, Building, Car, TreePine } from 'lucide-react';
 import type { DrawingTool } from '../../hooks/useDrawingTools';
 import type { SiteMetrics } from '../../engine/types';
+import { metersToFeet } from '../../engine/units';
 
 interface StatusBarProps {
   activeTool: DrawingTool;
@@ -113,7 +114,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           <div className="flex items-center space-x-2">
             <Ruler className="w-4 h-4 text-red-400" />
             <span className="text-red-400 font-medium">
-              {measurementDistance.toFixed(1)} ft
+              {metersToFeet(measurementDistance).toFixed(1)} ft
             </span>
           </div>
         )}

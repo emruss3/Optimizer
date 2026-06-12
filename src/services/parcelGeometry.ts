@@ -425,8 +425,14 @@ export class ParcelGeometryService {
     // Check for self-intersecting polygon
     if (geometry.coordinates.length >= 4) {
       const coords = geometry.coordinates;
+      const isClosed =
+        coords[0][0] === coords[coords.length - 1][0] &&
+        coords[0][1] === coords[coords.length - 1][1];
       for (let i = 0; i < coords.length - 1; i++) {
         for (let j = i + 2; j < coords.length - 1; j++) {
+          // In a closed ring the last segment is adjacent to the first —
+          // they share a vertex, which is not a self-intersection
+          if (isClosed && i === 0 && j === coords.length - 2) continue;
           if (this.linesIntersect(coords[i], coords[i + 1], coords[j], coords[j + 1])) {
             errors.push('Self-intersecting polygon detected');
             break;

@@ -1,15 +1,16 @@
 // © 2025 ER Technologies. All rights reserved.
 // Proprietary and confidential. Not for distribution.
 
+import { vi } from 'vitest';
 import { ParcelGeometryService, ParcelGeometry3857, ParcelBuildableEnvelope } from './parcelGeometry';
 import { GeoJSON } from '../types/parcel';
 
-// Mock Supabase client
-const mockSupabase = {
-  rpc: jest.fn()
-};
+// Mock Supabase client (vi.mock is hoisted, so the mock object must be hoisted too)
+const { mockSupabase } = vi.hoisted(() => ({
+  mockSupabase: { rpc: vi.fn() }
+}));
 
-jest.mock('../lib/supabase', () => ({
+vi.mock('../lib/supabase', () => ({
   supabase: mockSupabase
 }));
 
@@ -18,7 +19,7 @@ describe('ParcelGeometryService', () => {
 
   beforeEach(() => {
     service = new ParcelGeometryService();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('fetchParcelGeometry3857', () => {

@@ -34,7 +34,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     selectedSolveIndex,
     selectedSolve,
     selectSolve,
-    generateAlternativePlans,
+    applyAlternatives,
     normalizedGeometry,
     isValidParcel: hasValidGeometry
   } = useSitePlanState(parcel);
@@ -186,6 +186,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         result.bestMetrics || null
       );
       setViolations(result.bestViolations || []);
+
+      // Surface the optimizer's best + ranked alternatives in the solve table.
+      // (Replaces the deprecated legacy-planner "generateAlternatives" path.)
+      const optimizerPlans = [
+        { elements: result.bestElements || [], metrics: result.bestMetrics || null },
+        ...(result.top3Alternatives || []).map(alt => ({
+          elements: alt.elements || [],
+          metrics: alt.metrics || null,
+        })),
+      ];
+      applyAlternatives(optimizerPlans as Parameters<typeof applyAlternatives>[0]);
       // Worker state is already synced with the optimizer's best buildings
       // (the OPTIMIZE handler sets siteState after optimize() returns)
       setSolverReady(true);
@@ -213,7 +224,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGenerating(false);
     }
-  }, [config, envelopeMeters, setPlanOutput]);
+  }, [config, envelopeMeters, setPlanOutput, applyAlternatives]);
 
   const handleBuildingUpdate = useCallback(
     (update: {
@@ -405,7 +416,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             status={status}
             isGenerating={isGenerating}
             onGenerate={handleGenerate}
-            onGenerateAlternatives={generateAlternativePlans}
+            onGenerateAlternatives={handleGenerate}
             alternatives={alternatives}
             selectedSolveIndex={selectedSolveIndex}
             onSelectSolve={selectSolve}
