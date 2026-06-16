@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Polygon } from 'geojson';
-import { optimize, type OptimizeInput } from './optimizer';
+import { optimize, solveConstructive, type OptimizeInput } from './optimizer';
 
 // A ~120m square envelope in EPSG:3857 (near San Antonio); large enough to place
 // at least one default multifamily bar building.
@@ -79,5 +79,26 @@ describe('optimize (simulated annealing)', () => {
     const b = run();
     expect(a.finalScore).toBe(b.finalScore);
     expect(a.bestMetrics.totalBuiltSF).toBe(b.bestMetrics.totalBuiltSF);
+  });
+
+  it('honors the target-FAR slider: a higher target builds more', () => {
+    // High zoning cap so feasibility never clips the target; compare a low vs
+    // high targetFAR on the same parcel. Use the constructive (no-SA) path so the
+    // comparison is deterministic and reflects only the target.
+    const z = { ...zoning, maxFar: 3.0 };
+    const low = solveConstructive({
+      envelope, zoning: z, designParams: { ...designParams, targetFAR: 0.2 }, seed: 1,
+    });
+    const high = solveConstructive({
+      envelope, zoning: z, designParams: { ...designParams, targetFAR: 2.0 }, seed: 1,
+    });
+    expect(high.bestMetrics.totalBuiltSF).toBeGreaterThan(low.bestMetrics.totalBuiltSF);
+  });
+
+  it('solveConstructive returns a plausible plan with no annealing', () => {
+    const r = solveConstructive({ envelope, zoning, designParams, seed: 7 });
+    expect(r.iterations).toBe(0);
+    expect(r.bestElements.some(e => e.type === 'building')).toBe(true);
+    expect(r.bestMetrics.totalBuiltSF).toBeGreaterThan(0);
   });
 });

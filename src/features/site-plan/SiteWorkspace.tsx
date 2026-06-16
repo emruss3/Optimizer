@@ -226,6 +226,41 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
   }, [config, envelopeMeters, setPlanOutput, applyAlternatives]);
 
+  // Live re-solve: a fast, deterministic constructive solve (no annealing) run
+  // when the user nudges parameter sliders, so the plan updates without clicking
+  // "Generate". Quietly no-ops on failure — it's a preview, not a commit.
+  const liveResolve = useCallback(async () => {
+    if (!envelopeMeters) return;
+    try {
+      const parkingSpec = {
+        stallW: feetToMeters(config.designParameters.parking.stallWidthFt),
+        stallD: feetToMeters(config.designParameters.parking.stallDepthFt),
+        aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
+        anglesDeg: [0, 60, 90],
+      };
+      // 0 iterations → constructive solve: target-FAR layout + parking + metrics.
+      const result = await workerManager.optimizeSite(
+        envelopeMeters,
+        config.zoning,
+        config.designParameters,
+        parkingSpec,
+        0
+      );
+      setPlanOutput(result.bestElements || [], result.bestMetrics || null);
+      setViolations(result.bestViolations || []);
+      const plans = [
+        { elements: result.bestElements || [], metrics: result.bestMetrics || null },
+        ...(result.top3Alternatives || []).map(alt => ({
+          elements: alt.elements || [],
+          metrics: alt.metrics || null,
+        })),
+      ];
+      applyAlternatives(plans as Parameters<typeof applyAlternatives>[0]);
+    } catch {
+      /* live preview failure is non-fatal — the user can still click Generate */
+    }
+  }, [config, envelopeMeters, setPlanOutput, applyAlternatives]);
+
   const handleBuildingUpdate = useCallback(
     (update: {
       id: string;
@@ -404,6 +439,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [hasValidGeometry, envelopeMeters]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live re-solve when a design parameter changes (FAR, coverage, parking,
+  // typology) — but only after the first plan exists. Debounced so dragging a
+  // slider doesn't fire a solve per pixel. Reads the latest solverReady /
+  // liveResolve from the fresh closure created on each parameter change.
+  const liveResolveTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!solverReady || !envelopeMeters) return;
+    if (liveResolveTimer.current) window.clearTimeout(liveResolveTimer.current);
+    liveResolveTimer.current = window.setTimeout(() => { liveResolve(); }, 350);
+    return () => {
+      if (liveResolveTimer.current) window.clearTimeout(liveResolveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.designParameters]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel

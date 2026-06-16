@@ -580,10 +580,13 @@ export function optimize(input: OptimizeInput): OptimizeResult {
 
   const buildingType = typologyToBuildingType(designParams.buildingTypology);
 
-  // Auto-calculate how many buildings are needed to achieve target FAR
+  // Auto-calculate how many buildings are needed to achieve target FAR.
+  // Honor the user's target FAR (the slider) and fall back to the zoning max.
+  // zoning.maxFar remains the COMPLIANCE cap, enforced in computeFeasibility.
   const SQM_TO_SQFT_CONST = 10.7639;
   const envelopeAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT_CONST;
-  const targetGFA = envelopeAreaSqft * (zoning.maxFar ?? 1.5);
+  const targetFAR = designParams.targetFAR ?? zoning.maxFar ?? 1.5;
+  const targetGFA = envelopeAreaSqft * targetFAR;
   const defaultFloors = 3;
   const defaultBuildingFootprintSqft = (200 * 0.3048) * (60 * 0.3048) * SQM_TO_SQFT_CONST; // ~12,000 sqft
   const calculatedNumBuildings = Math.max(1, Math.min(8, Math.ceil(targetGFA / (defaultBuildingFootprintSqft * defaultFloors))));
@@ -791,4 +794,16 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     iterations: maxIterations,
     finalScore: bestScore
   };
+}
+
+/**
+ * Deterministic constructive solve — a single pass with no simulated annealing.
+ *
+ * Generates the target-FAR-driven initial grid layout and evaluates it once
+ * (parking, feasibility, pro forma). Fast (no SA loop) and fully reproducible,
+ * so it's suitable for live re-solving as the user moves parameter sliders.
+ * Use optimize() (with iterations) to refine/explore from there.
+ */
+export function solveConstructive(input: Omit<OptimizeInput, 'maxIterations'>): OptimizeResult {
+  return optimize({ ...input, maxIterations: 0 });
 }
