@@ -32,13 +32,30 @@ const UNIT_TYPE_DEFS: Array<{
   { type: '3br',    avgSqft: 1200, pct: 0.15, rentPerMonth: 2800 },
 ];
 
+/** Double-loaded-corridor width (5 ft) and core (stairs/elevators/lobby) loss. */
+const CORRIDOR_WIDTH_M = 1.524;
+const CORE_FACTOR = 0.07;
+
+/**
+ * Floor-plate efficiency (net rentable / gross) for a double-loaded-corridor
+ * building of the given depth in metres. A central corridor consumes a fixed
+ * width, so deeper plates lose proportionally less of the floor to circulation
+ * and yield more units per unit of GFA. Clamped to a sane [0.5, 0.9] range.
+ */
+export function corridorEfficiency(depthM: number): number {
+  if (!Number.isFinite(depthM) || depthM <= CORRIDOR_WIDTH_M) return 0.5;
+  const eff = (1 - CORRIDOR_WIDTH_M / depthM) - CORE_FACTOR;
+  return Math.max(0.5, Math.min(0.9, eff));
+}
+
 /**
  * Generate a default unit mix from a gross floor area (in sqft).
- * Efficiency factor: 85% of GFA is net leasable.
- * Total units = floor(netLeasable / weightedAvgSqft)
+ * `efficiency` is the net-leasable fraction of GFA (default 0.85). Pass
+ * corridorEfficiency(building depth) for a depth-aware, double-loaded-corridor
+ * count. Total units = floor(GFA * efficiency / weightedAvgSqft).
  */
-export function generateDefaultUnitMix(gfaSqft: number): UnitMixEntry[] {
-  const EFFICIENCY = 0.85;
+export function generateDefaultUnitMix(gfaSqft: number, efficiency = 0.85): UnitMixEntry[] {
+  const EFFICIENCY = efficiency;
   const weightedAvgSqft = UNIT_TYPE_DEFS.reduce(
     (sum, d) => sum + d.avgSqft * d.pct, 0
   );
