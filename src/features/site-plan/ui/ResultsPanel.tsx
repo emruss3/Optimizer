@@ -98,6 +98,12 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
               <span className="font-medium">{metrics.parkingAngleDeg}°</span>
             </div>
           )}
+          {(metrics.adaStalls != null || metrics.evStalls != null) && (
+            <div className="flex justify-between">
+              <span className="text-gray-600">ADA / EV stalls</span>
+              <span className="font-medium">{metrics.adaStalls ?? 0} / {metrics.evStalls ?? 0}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span className="text-gray-600">Built SF</span>
             <span className="font-medium">{metrics.totalBuiltSF.toLocaleString()}</span>

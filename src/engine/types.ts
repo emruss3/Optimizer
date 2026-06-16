@@ -85,6 +85,8 @@ export interface PlannerOutput {
     stallsProvided?: number;
     stallsRequired?: number;
     parkingAngleDeg?: number;
+    adaStalls?: number;
+    evStalls?: number;
     totalUnits?: number;
     unitMixSummary?: string;
     zoningCompliant: boolean;
