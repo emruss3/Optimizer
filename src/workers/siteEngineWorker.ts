@@ -3,7 +3,7 @@ import type { Polygon, MultiPolygon } from 'geojson';
 import { normalizeToPolygon, areaM2, intersection, difference, polygons } from '../engine/geometry';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
 import type { BuildingSpec, BuildingType, UnitMixEntry } from '../engine/model';
-import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix } from '../engine/model';
+import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix, corridorEfficiency } from '../engine/model';
 import { solveParkingBayPacking } from '../engine/parkingBaySolver';
 import { computeFeasibility } from '../engine/feasibility';
 import { optimize } from '../engine/optimizer';
@@ -192,7 +192,7 @@ class SiteEngineWorker {
       const gfaSqft = correctedAreaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
       const unitMix = spec.unitMix && spec.unitMix.length > 0
         ? spec.unitMix
-        : generateDefaultUnitMix(gfaSqft);
+        : generateDefaultUnitMix(gfaSqft, corridorEfficiency(spec.depthM));
       return {
         id: spec.id,
         footprint,
