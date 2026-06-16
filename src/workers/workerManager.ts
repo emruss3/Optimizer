@@ -1,5 +1,5 @@
-import type { Polygon, MultiPolygon } from 'geojson';
-import type { PlannerConfig, PlannerOutput, WorkerAPI, Element, FeasibilityViolation } from '../engine/types';
+import type { Polygon } from 'geojson';
+import type { PlannerConfig, PlannerOutput, Element, FeasibilityViolation } from '../engine/types';
 import type { BuildingSpec, BuildingType } from '../engine/model';
 import type { OptimizeResult } from '../engine/optimizer';
 
@@ -14,7 +14,7 @@ export interface PlanUpdateResult {
   violations: FeasibilityViolation[];
 }
 
-export class PlannerWorkerManager implements WorkerAPI {
+export class PlannerWorkerManager {
   private worker: Worker | null = null;
 
   constructor() {
@@ -41,53 +41,6 @@ export class PlannerWorkerManager implements WorkerAPI {
     } catch (error) {
       console.error('[WorkerManager] Failed to initialize worker:', error);
     }
-  }
-
-  async generateSitePlan(
-    parcel: Polygon | MultiPolygon,
-    config: PlannerConfig
-  ): Promise<PlannerOutput> {
-    if (!this.worker) {
-      if (DEV) console.log('[WorkerManager] No worker, falling back to sync');
-      const { generateSitePlan } = await import('../engine/planner');
-      return generateSitePlan(parcel, config);
-    }
-
-    const id = ++nextId;
-    if (DEV) console.log(`[WorkerManager] POST generate (id: ${id})`);
-    this.worker.postMessage({ type: 'generate', id, parcel, config });
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        console.error(`[WorkerManager] Timeout (id: ${id})`);
-      }, 30000);
-
-      const onmessage = (e: MessageEvent) => {
-        const { id: rid, type, payload, error } = e.data || {};
-        if (type !== 'generated' || rid !== id) return;
-
-        clearTimeout(timeout);
-        this.worker!.removeEventListener('message', onmessage);
-
-        if (id < latest) return; // stale
-        latest = id;
-
-        if (error) {
-          console.error(`[WorkerManager] Error (id: ${id}):`, error);
-          return reject(new Error(error));
-        }
-
-        resolve(payload as PlannerOutput);
-      };
-
-      this.worker!.addEventListener('message', onmessage);
-
-      this.worker!.onerror = (error) => {
-        clearTimeout(timeout);
-        console.error(`[WorkerManager] Worker error (id: ${id}):`, error);
-        reject(error);
-      };
-    });
   }
 
   /**
@@ -295,7 +248,7 @@ export class PlannerWorkerManager implements WorkerAPI {
   }
 }
 
-// Single instance satisfying WorkerAPI
+// Single shared worker-manager instance
 export const workerManager = new PlannerWorkerManager();
 
 export function terminatePlannerWorker() {

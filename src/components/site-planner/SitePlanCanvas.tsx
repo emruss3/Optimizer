@@ -5,6 +5,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import type { Element } from '../../engine/types';
 import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
+import { feetToMeters, metersToFeet } from '../../engine/units';
 
 interface SitePlanCanvasProps {
   elements: Element[];
@@ -231,10 +232,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.arc(endPoint.x, endPoint.y, 4 / zoom, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw distance label (Y-flipped so text is right-side up)
+    // Draw distance label (Y-flipped so text is right-side up).
+    // World coords are EPSG:3857 metres → convert to feet for display.
     const dx = endPoint.x - startPoint.x;
     const dy = endPoint.y - startPoint.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    const distance = metersToFeet(Math.sqrt(dx * dx + dy * dy));
     const midX = (startPoint.x + endPoint.x) / 2;
     const midY = (startPoint.y + endPoint.y) / 2;
 
@@ -450,9 +452,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.translate(viewport.panX, viewport.panY);
     ctx.scale(viewport.zoom, -viewport.zoom);
 
-    // Render grid
+    // Render grid. gridState.size is in feet; world space is metres → convert.
     if (gridState?.enabled && processedGeometry) {
-      renderGrid(ctx, processedGeometry.bounds, gridState.size, viewport.zoom);
+      renderGrid(ctx, processedGeometry.bounds, feetToMeters(gridState.size), viewport.zoom);
     }
 
     // Render buildable envelope (subtle background)

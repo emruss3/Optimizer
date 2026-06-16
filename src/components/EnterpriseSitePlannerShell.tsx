@@ -81,17 +81,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   onBuildingUpdate,
   onAddBuilding
 }) => {
-  // Early return if no parcel
-  if (!parcel) {
-    return (
-      <div className="flex flex-col h-full bg-gray-50 min-h-[400px] items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No Parcel Selected</h2>
-          <p className="text-gray-600">Please select a parcel to use the site planner</p>
-        </div>
-      </div>
-    );
-  }
+  // NOTE: Do NOT early-return before the hooks below — React requires hooks to
+  // run unconditionally on every render. The `!parcel` guard lives just before
+  // the JSX return instead (see below).
 
   // Use selectedSolve if provided, otherwise use planElements/metrics
   const initialElements = selectedSolve?.elements || planElements;
@@ -108,6 +100,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const [hoveredElement, setHoveredElement] = useState<string | null>(null);
   const [displayMetrics, setDisplayMetrics] = useState<SiteMetrics | null>(initialMetrics || null);
   const updateTimerRef = useRef<number | null>(null);
+  // Element rotation (degrees) captured at the moment a rotation drag starts,
+  // so rotation is applied to the original geometry rather than compounding.
+  const rotationStartDegRef = useRef(0);
   
   // Update elements and metrics when selectedSolve changes
   useEffect(() => {
@@ -239,8 +234,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
-    // Panning (middle mouse or Ctrl+drag)
-    if (event.button === 1 || (event.button === 0 && event.ctrlKey)) {
+    // Panning (middle mouse or Alt+drag). Alt is used instead of Ctrl so that
+    // Ctrl/Cmd+click remains available for multi-select below.
+    if (event.button === 1 || (event.button === 0 && event.altKey)) {
       setIsPanning(true);
       setLastPanPoint({ x: event.clientX, y: event.clientY });
       return;
@@ -289,13 +285,15 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           const bounds = ElementService.getElementBounds(selectedElement);
           const handleDistance = 30 / viewport.viewport.zoom; // Rotation handle distance
           const handleX = center.x;
-          const handleY = bounds.minY - handleDistance;
-          
+          // Must match the render position in SitePlanCanvas (drawn at bounds.maxY + 30/zoom)
+          const handleY = bounds.maxY + handleDistance;
+
           // Check if clicked on rotation handle
           const distToHandle = Math.sqrt(Math.pow(worldX - handleX, 2) + Math.pow(worldY - handleY, 2));
           if (distToHandle < 15 / viewport.viewport.zoom) {
             const startAngle = ElementService.calculateAngle(center, { x: worldX, y: worldY });
             const originalCoords = selectedElement.geometry.coordinates[0];
+            rotationStartDegRef.current = (selectedElement.properties?.rotation as number) || 0;
             rotation.startRotation(selectedId, center.x, center.y, startAngle, originalCoords);
             return;
           }
@@ -327,9 +325,20 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         if (event.ctrlKey || event.metaKey) {
           selection.toggleSelection(clickedElement.id);
         } else {
-          selection.selectElement(clickedElement.id);
+          // Preserve an existing multi-selection when the user grabs one of its
+          // members, so the whole group can be dragged together. Otherwise select
+          // just the clicked element.
+          const draggingGroup = selection.isSelected(clickedElement.id) && selection.selectedCount > 1;
+          const idsToDrag = draggingGroup
+            ? selection.selectedElements
+            : new Set<string>([clickedElement.id]);
+          if (!draggingGroup) {
+            selection.selectElement(clickedElement.id);
+          }
+          // Capture original vertices for EVERY element being dragged so that
+          // per-frame deltas are applied to originals (no runaway accumulation).
           const originalVertices = elements
-            .filter(el => el.id === clickedElement.id)
+            .filter(el => idsToDrag.has(el.id))
             .map(el => ({ id: el.id, coords: el.geometry.coordinates[0] }));
           drag.startDrag(clickedElement.id, worldX, worldY, originalVertices);
         }
@@ -340,7 +349,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         }
       }
     }
-  }, [elements, viewport.viewport, drawingTools, selection, drag]);
+  }, [elements, viewport.viewport, drawingTools, selection, drag, grid, measurement, vertexEditing, rotation]);
 
   // Handle mouse move
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -372,24 +381,24 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       const angle = rotation.updateRotation(worldX, worldY, event.shiftKey ? 15 : 0);
       if (angle !== null && rotation.rotationState.startAngle !== undefined) {
         const element = elements.find(el => el.id === rotation.rotationState.elementId);
-        if (element && rotation.rotationState.rotationCenter) {
+        const baseCoords = rotation.rotationState.originalCoords;
+        if (element && rotation.rotationState.rotationCenter && baseCoords) {
           // Calculate delta from start angle
           let deltaAngle = angle - rotation.rotationState.startAngle;
           // Normalize to -180 to 180 range
           if (deltaAngle > 180) deltaAngle -= 360;
           if (deltaAngle < -180) deltaAngle += 360;
-          
-          // Get current rotation from element properties
-          const currentRotation = element.properties?.rotation || 0;
-          const newRotation = currentRotation + deltaAngle;
-          
-          // Apply rotation relative to original position
-          const originalCoords = element.geometry.coordinates[0];
-          const rotatedCoords = originalCoords.map(([x, y]) => {
+
+          // Absolute rotation = rotation at drag start + delta since start.
+          const newRotation = rotationStartDegRef.current + deltaAngle;
+
+          // Rotate the ORIGINAL geometry (captured at drag start) by the delta,
+          // so repeated mouse-moves don't compound onto already-rotated coords.
+          const rotatedCoords = baseCoords.map(([x, y]) => {
             const rotated = ElementService.rotatePoint(
               { x, y },
               rotation.rotationState.rotationCenter!,
-              newRotation
+              deltaAngle
             );
             return [rotated.x, rotated.y];
           });
@@ -629,6 +638,18 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selection.selectedCount, copiedElements.length, handleDelete, handleCopy, handlePaste, fitViewToParcel, viewport]);
+
+  // Guard placed AFTER all hooks so hook order stays stable across renders.
+  if (!parcel) {
+    return (
+      <div className="flex flex-col h-full bg-gray-50 min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">No Parcel Selected</h2>
+          <p className="text-gray-600">Please select a parcel to use the site planner</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-50 min-h-[400px]">

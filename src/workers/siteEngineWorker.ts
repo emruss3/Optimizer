@@ -1,7 +1,6 @@
 import type { Element, PlannerConfig, PlannerOutput } from '../engine/types';
 import type { Polygon, MultiPolygon } from 'geojson';
 import { normalizeToPolygon, areaM2, intersection, difference, polygons } from '../engine/geometry';
-import { generateSitePlan } from '../engine/planner';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
 import type { BuildingSpec, BuildingType, UnitMixEntry } from '../engine/model';
 import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix } from '../engine/model';
@@ -52,26 +51,6 @@ type SiteEngineState = {
 class SiteEngineWorker {
   /** Exposed so the OPTIMIZE handler can sync state after optimization */
   public siteState: SiteEngineState | null = null;
-
-  /**
-   * Generate site plan (legacy + direct call).
-   */
-  async generateSitePlan(parcelGeoJSON: any, config: PlannerConfig): Promise<PlannerOutput> {
-    console.log('🏗️ Generating site plan in worker...');
-    const startTime = performance.now();
-
-    try {
-      const result = await generateSitePlan(parcelGeoJSON, config);
-
-      const endTime = performance.now();
-      console.log(`✅ Site plan generated in ${(endTime - startTime).toFixed(2)}ms`);
-
-      return result;
-    } catch (error) {
-      console.error('Error generating site plan:', error);
-      throw error;
-    }
-  }
 
   /**
    * Initialize worker state for solver-style interactions.
@@ -141,6 +120,10 @@ class SiteEngineWorker {
       throw new Error('Site not initialized');
     }
 
+    // A manual update means the user placed/sized this building deliberately —
+    // pin it so solvePlan() re-fits everything else around it instead of moving it.
+    const userPinned = { position: true, rotation: true, dimensions: true };
+
     const idx = this.siteState.buildings.findIndex(b => b.id === buildingId);
     if (idx === -1) {
       this.siteState.buildings.push({
@@ -151,7 +134,8 @@ class SiteEngineWorker {
           patch.depthM ?? 18,
           patch.floors ?? 3
         ),
-        rotationRad: patch.rotationRad ?? 0
+        rotationRad: patch.rotationRad ?? 0,
+        locked: userPinned
       });
       return;
     }
@@ -163,7 +147,8 @@ class SiteEngineWorker {
       rotationRad: patch.rotationRad ?? existing.rotationRad,
       widthM: patch.widthM ?? existing.widthM,
       depthM: patch.depthM ?? existing.depthM,
-      floors: patch.floors ?? existing.floors
+      floors: patch.floors ?? existing.floors,
+      locked: userPinned
     };
   }
 
@@ -544,24 +529,13 @@ self.onmessage = async (e) => {
         reqId: requestId,
         ...result,
       });
-    } else if (type === 'generate') {
-      // Legacy support
-      const { parcel, config } = data;
-      const out = await worker.generateSitePlan(parcel, config);
-      (self as any).postMessage({
-        type: 'generated',
-        id: requestId,
-        reqId: requestId,
-        payload: out,
-      });
     } else {
       console.warn(`[Worker] Unknown message type: ${type}`);
     }
   } catch (err: any) {
     // Route error response to the correct message type so the manager's listener resolves
     let responseType = 'PLAN_UPDATED';
-    if (type === 'generate') responseType = 'generated';
-    else if (type === 'OPTIMIZE') responseType = 'OPTIMIZE_RESULT';
+    if (type === 'OPTIMIZE') responseType = 'OPTIMIZE_RESULT';
 
     (self as any).postMessage({
       type: responseType,

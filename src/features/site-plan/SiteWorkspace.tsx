@@ -34,7 +34,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     selectedSolveIndex,
     selectedSolve,
     selectSolve,
-    generateAlternativePlans,
+    applyAlternatives,
     normalizedGeometry,
     isValidParcel: hasValidGeometry
   } = useSitePlanState(parcel);
@@ -186,6 +186,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         result.bestMetrics || null
       );
       setViolations(result.bestViolations || []);
+
+      // Surface the optimizer's best + ranked alternatives in the solve table.
+      // (Replaces the deprecated legacy-planner "generateAlternatives" path.)
+      const optimizerPlans = [
+        { elements: result.bestElements || [], metrics: result.bestMetrics || null },
+        ...(result.top3Alternatives || []).map(alt => ({
+          elements: alt.elements || [],
+          metrics: alt.metrics || null,
+        })),
+      ];
+      applyAlternatives(optimizerPlans as Parameters<typeof applyAlternatives>[0]);
       // Worker state is already synced with the optimizer's best buildings
       // (the OPTIMIZE handler sets siteState after optimize() returns)
       setSolverReady(true);
@@ -213,7 +224,42 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGenerating(false);
     }
-  }, [config, envelopeMeters, setPlanOutput]);
+  }, [config, envelopeMeters, setPlanOutput, applyAlternatives]);
+
+  // Live re-solve: a fast, deterministic constructive solve (no annealing) run
+  // when the user nudges parameter sliders, so the plan updates without clicking
+  // "Generate". Quietly no-ops on failure — it's a preview, not a commit.
+  const liveResolve = useCallback(async () => {
+    if (!envelopeMeters) return;
+    try {
+      const parkingSpec = {
+        stallW: feetToMeters(config.designParameters.parking.stallWidthFt),
+        stallD: feetToMeters(config.designParameters.parking.stallDepthFt),
+        aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
+        anglesDeg: [0, 60, 90],
+      };
+      // 0 iterations → constructive solve: target-FAR layout + parking + metrics.
+      const result = await workerManager.optimizeSite(
+        envelopeMeters,
+        config.zoning,
+        config.designParameters,
+        parkingSpec,
+        0
+      );
+      setPlanOutput(result.bestElements || [], result.bestMetrics || null);
+      setViolations(result.bestViolations || []);
+      const plans = [
+        { elements: result.bestElements || [], metrics: result.bestMetrics || null },
+        ...(result.top3Alternatives || []).map(alt => ({
+          elements: alt.elements || [],
+          metrics: alt.metrics || null,
+        })),
+      ];
+      applyAlternatives(plans as Parameters<typeof applyAlternatives>[0]);
+    } catch {
+      /* live preview failure is non-fatal — the user can still click Generate */
+    }
+  }, [config, envelopeMeters, setPlanOutput, applyAlternatives]);
 
   const handleBuildingUpdate = useCallback(
     (update: {
@@ -321,47 +367,53 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
-    const gfa = metrics.totalBuiltSF;
-    const units = Math.max(1, Math.floor(gfa * 0.85 / 750));
-    const avgRentPerUnit = 1800;
-    const grossRent = units * avgRentPerUnit * 12;
-    const vacancy = grossRent * 0.05;
-    const egi = grossRent - vacancy;
-    const opex = egi * 0.35;
-    const noi = egi - opex;
-    const hardCosts = gfa * 165;
-    const softCosts = hardCosts * 0.20;
-    const totalDevCost = hardCosts + softCosts + (hardCosts + softCosts) * 0.05;
-    const capRate = 0.055;
-    const baseReturn: InvestmentAnalysis = {
-      totalInvestment: totalDevCost,
-      projectedRevenue: grossRent,
-      operatingExpenses: opex,
-      netOperatingIncome: noi,
-      capRate,
-      irr: noi / totalDevCost,
-      paybackPeriod: totalDevCost / noi,
-      riskAssessment: noi / totalDevCost > 0.07 ? 'low' : noi / totalDevCost > 0.05 ? 'medium' : 'high',
-      // Required additional fields
-      grossPotentialRent: grossRent,
-      vacancyLoss: vacancy,
-      effectiveGrossIncome: egi,
-      totalDevelopmentCost: totalDevCost,
-      totalHardCosts: hardCosts,
-      softCosts: softCosts,
-      contingency: (hardCosts + softCosts) * 0.05,
-      financingCosts: 0,
+    const gfa = metrics.totalBuiltSF || 0;
+    if (gfa <= 0) return null;
+
+    // Single source of truth for underwriting — the same engine the optimizer
+    // scores with. Unit mix (and thus rents) is regenerated from GFA so revenue
+    // matches the engine's assumptions rather than a flat per-unit guess.
+    const siteAreaSqft = envelopeMeters ? correctedAreaM2(envelopeMeters) * 10.7639 : 0;
+    const unitMix = generateDefaultUnitMix(gfa);
+    const pf = computeProForma({
+      totalGFASqft: gfa,
+      siteAreaSqft,
+      unitMix,
+      surfaceStalls: metrics.stallsProvided ?? 0,
+      structuredStalls: 0,
       landCost: parcel.parval ?? 0,
-      yieldOnCost: noi / totalDevCost,
-      stabilizedValue: noi / capRate,
-      profit: (noi / capRate) - totalDevCost,
-      equityMultiple: 0,
-      cashOnCash: 0,
-      costPerUnit: totalDevCost / units,
-      costPerSF: totalDevCost / gfa,
+    });
+
+    return {
+      grossPotentialRent: pf.grossPotentialRent,
+      vacancyLoss: pf.vacancyLoss,
+      effectiveGrossIncome: pf.effectiveGrossIncome,
+      operatingExpenses: pf.operatingExpenses,
+      netOperatingIncome: pf.netOperatingIncome,
+      totalDevelopmentCost: pf.totalDevelopmentCost,
+      totalHardCosts: pf.totalHardCosts,
+      softCosts: pf.softCosts,
+      contingency: pf.contingency,
+      financingCosts: pf.financingCosts,
+      landCost: pf.landCost,
+      yieldOnCost: pf.yieldOnCost,
+      stabilizedValue: pf.stabilizedValue,
+      profit: pf.profit,
+      equityMultiple: pf.equityMultiple,
+      cashOnCash: pf.cashOnCash,
+      costPerUnit: pf.costPerUnit,
+      costPerSF: pf.costPerSF,
+      // Legacy aliases (kept for backward compat with older panels)
+      totalInvestment: pf.totalDevelopmentCost,
+      projectedRevenue: pf.grossPotentialRent,
+      capRate: 0.055,
+      // NOTE: a true IRR needs time-phased cash flows (a later phase). Until then
+      // expose 0 rather than mislabeling unlevered yield-on-cost as IRR.
+      irr: 0,
+      paybackPeriod: pf.netOperatingIncome > 0 ? pf.totalDevelopmentCost / pf.netOperatingIncome : 0,
+      riskAssessment: pf.yieldOnCost > 0.07 ? 'low' : pf.yieldOnCost > 0.05 ? 'medium' : 'high',
     };
-    return baseReturn;
-  }, [metrics, parcel.parval]);
+  }, [metrics, envelopeMeters, parcel.parval]);
 
   useEffect(() => {
     setInvestmentAnalysis(derivedInvestmentAnalysis);
@@ -388,6 +440,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return () => window.clearTimeout(timer);
   }, [hasValidGeometry, envelopeMeters]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Live re-solve when a design parameter changes (FAR, coverage, parking,
+  // typology) — but only after the first plan exists. Debounced so dragging a
+  // slider doesn't fire a solve per pixel. Reads the latest solverReady /
+  // liveResolve from the fresh closure created on each parameter change.
+  const liveResolveTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (!solverReady || !envelopeMeters) return;
+    if (liveResolveTimer.current) window.clearTimeout(liveResolveTimer.current);
+    liveResolveTimer.current = window.setTimeout(() => { liveResolve(); }, 350);
+    return () => {
+      if (liveResolveTimer.current) window.clearTimeout(liveResolveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.designParameters]);
+
   const plannerParcel = isValidParcel(parcel)
     ? parcel
     : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356);
@@ -405,7 +472,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             status={status}
             isGenerating={isGenerating}
             onGenerate={handleGenerate}
-            onGenerateAlternatives={generateAlternativePlans}
+            onGenerateAlternatives={handleGenerate}
             alternatives={alternatives}
             selectedSolveIndex={selectedSolveIndex}
             onSelectSolve={selectSolve}

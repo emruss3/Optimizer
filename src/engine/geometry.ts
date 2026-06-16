@@ -140,16 +140,22 @@ export function calculatePolygonBounds(vertices: number[][]): { minX: number; mi
  */
 export function calculatePolygonCentroid(vertices: number[][]): number[] {
   if (vertices.length === 0) return [0, 0];
-  
+
+  // Exclude the closing vertex (first == last) so it isn't double-counted
+  const isClosed =
+    vertices.length > 1 &&
+    vertices[0][0] === vertices[vertices.length - 1][0] &&
+    vertices[0][1] === vertices[vertices.length - 1][1];
+  const n = isClosed ? vertices.length - 1 : vertices.length;
+
   let cx = 0;
   let cy = 0;
-  
-  for (const vertex of vertices) {
-    cx += vertex[0];
-    cy += vertex[1];
+  for (let i = 0; i < n; i++) {
+    cx += vertices[i][0];
+    cy += vertices[i][1];
   }
-  
-  return [cx / vertices.length, cy / vertices.length];
+
+  return [cx / n, cy / n];
 }
 
 /**
@@ -760,13 +766,21 @@ function pointToLineDistance(point: number[], lineStart: number[], lineEnd: numb
 
 function getCentroid(polygon: Polygon): number[] {
   const coords = polygon.coordinates[0];
+  if (!coords || coords.length === 0) return [0, 0];
+
+  // Exclude the closing vertex (first == last) so it isn't double-counted
+  const isClosed =
+    coords.length > 1 &&
+    coords[0][0] === coords[coords.length - 1][0] &&
+    coords[0][1] === coords[coords.length - 1][1];
+  const n = isClosed ? coords.length - 1 : coords.length;
+
   let cx = 0;
   let cy = 0;
-  
-  for (const coord of coords) {
-    cx += coord[0];
-    cy += coord[1];
+  for (let i = 0; i < n; i++) {
+    cx += coords[i][0];
+    cy += coords[i][1];
   }
-  
-  return [cx / coords.length, cy / coords.length];
+
+  return [cx / n, cy / n];
 }

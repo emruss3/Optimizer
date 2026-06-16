@@ -23,10 +23,15 @@ export interface OptimizeInput {
     aisleW: number;
     anglesDeg: number[];
   };
-  /** Max iterations (default 500) */
+  /** Max iterations (default 200) */
   maxIterations?: number;
   /** Callback for progress reporting */
   onProgress?: (iteration: number, score: number) => void;
+  /**
+   * RNG seed. Fixed by default so the same inputs always produce the same plan
+   * (reproducible, diffable results). Pass a varying seed to explore.
+   */
+  seed?: number;
 }
 
 export interface OptimizeResult {
@@ -59,14 +64,33 @@ const WEIGHTS = {
 
 const SQM_TO_SQFT = 10.7639;
 
+/** Default RNG seed — keeps optimizer output reproducible across runs. */
+const DEFAULT_SEED = 0x9e3779b9;
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Deterministic PRNG (mulberry32). Returns a function producing values in
+ * [0, 1). Used instead of Math.random() so a given seed always yields the same
+ * sequence — and therefore the same site plan.
+ */
+function makeRng(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 function cloneBuildings(buildings: BuildingSpec[]): BuildingSpec[] {
   return buildings.map(b => ({ ...b, anchor: { ...b.anchor }, locked: b.locked ? { ...b.locked } : undefined }));
 }
 
-function randomInRange(min: number, max: number): number {
-  return min + Math.random() * (max - min);
+function randomInRange(rng: () => number, min: number, max: number): number {
+  return min + rng() * (max - min);
 }
 
 /**
@@ -502,10 +526,10 @@ function buildElements(
 
 // ─── mutations ───────────────────────────────────────────────────────────────
 
-function mutateMove(building: BuildingSpec): BuildingSpec {
+function mutateMove(building: BuildingSpec, rng: () => number): BuildingSpec {
   if (building.locked?.position) return building;
-  const shift = randomInRange(5, 20);
-  const angle = Math.random() * Math.PI * 2;
+  const shift = randomInRange(rng, 5, 20);
+  const angle = rng() * Math.PI * 2;
   return {
     ...building,
     anchor: {
@@ -515,10 +539,10 @@ function mutateMove(building: BuildingSpec): BuildingSpec {
   };
 }
 
-function mutateResize(building: BuildingSpec): BuildingSpec {
+function mutateResize(building: BuildingSpec, rng: () => number): BuildingSpec {
   if (building.locked?.dimensions) return building;
-  const dw = randomInRange(-10, 10);
-  const dd = randomInRange(-10, 10);
+  const dw = randomInRange(rng, -10, 10);
+  const dd = randomInRange(rng, -10, 10);
   return {
     ...building,
     widthM: Math.max(5, building.widthM + dw),
@@ -526,9 +550,9 @@ function mutateResize(building: BuildingSpec): BuildingSpec {
   };
 }
 
-function mutateRotate(building: BuildingSpec): BuildingSpec {
+function mutateRotate(building: BuildingSpec, rng: () => number): BuildingSpec {
   if (building.locked?.rotation) return building;
-  const dAngle = randomInRange(-30, 30) * (Math.PI / 180);
+  const dAngle = randomInRange(rng, -30, 30) * (Math.PI / 180);
   return {
     ...building,
     rotationRad: building.rotationRad + dAngle
@@ -548,14 +572,21 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     designParams,
     maxIterations = 200,
     onProgress,
+    seed = DEFAULT_SEED,
   } = input;
+
+  // Seeded RNG → deterministic, reproducible layouts for the same inputs.
+  const rng = makeRng(seed);
 
   const buildingType = typologyToBuildingType(designParams.buildingTypology);
 
-  // Auto-calculate how many buildings are needed to achieve target FAR
+  // Auto-calculate how many buildings are needed to achieve target FAR.
+  // Honor the user's target FAR (the slider) and fall back to the zoning max.
+  // zoning.maxFar remains the COMPLIANCE cap, enforced in computeFeasibility.
   const SQM_TO_SQFT_CONST = 10.7639;
   const envelopeAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT_CONST;
-  const targetGFA = envelopeAreaSqft * (zoning.maxFar ?? 1.5);
+  const targetFAR = designParams.targetFAR ?? zoning.maxFar ?? 1.5;
+  const targetGFA = envelopeAreaSqft * targetFAR;
   const defaultFloors = 3;
   const defaultBuildingFootprintSqft = (200 * 0.3048) * (60 * 0.3048) * SQM_TO_SQFT_CONST; // ~12,000 sqft
   const calculatedNumBuildings = Math.max(1, Math.min(8, Math.ceil(targetGFA / (defaultBuildingFootprintSqft * defaultFloors))));
@@ -673,23 +704,23 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     const candidateBuildings = cloneBuildings(currentBuildings);
 
     // Pick a random mutation
-    const mutationType = Math.random();
-    const buildingIdx = Math.floor(Math.random() * candidateBuildings.length);
+    const mutationType = rng();
+    const buildingIdx = Math.floor(rng() * candidateBuildings.length);
 
     if (mutationType < 0.35) {
-      candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx]);
+      candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx], rng);
     } else if (mutationType < 0.6) {
-      candidateBuildings[buildingIdx] = mutateResize(candidateBuildings[buildingIdx]);
+      candidateBuildings[buildingIdx] = mutateResize(candidateBuildings[buildingIdx], rng);
     } else if (mutationType < 0.8) {
-      candidateBuildings[buildingIdx] = mutateRotate(candidateBuildings[buildingIdx]);
+      candidateBuildings[buildingIdx] = mutateRotate(candidateBuildings[buildingIdx], rng);
     } else if (mutationType < 0.9 && candidateBuildings.length < effectiveNumBuildings * 1.5) {
       const newId = `building-${candidateBuildings.length + 1}`;
       candidateBuildings.push(
         createBuildingSpec(
           newId,
           {
-            x: envCenterX + randomInRange(-20, 20),
-            y: envCenterY + randomInRange(-20, 20)
+            x: envCenterX + randomInRange(rng, -20, 20),
+            y: envCenterY + randomInRange(rng, -20, 20)
           },
           undefined, undefined, undefined,
           buildingType
@@ -698,7 +729,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     } else if (candidateBuildings.length > Math.max(1, Math.floor(effectiveNumBuildings * 0.5))) {
       candidateBuildings.splice(buildingIdx, 1);
     } else {
-      candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx]);
+      candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx], rng);
     }
 
     // Fast score (no element building, no pro forma, no boolean ops)
@@ -708,7 +739,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
 
     // Accept/reject
     const scoreDiff = candidateScore - currentScore;
-    const accept = scoreDiff > 0 || Math.random() < Math.exp(scoreDiff / temperature);
+    const accept = scoreDiff > 0 || rng() < Math.exp(scoreDiff / temperature);
 
     if (accept) {
       currentBuildings = candidateBuildings;
@@ -763,4 +794,16 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     iterations: maxIterations,
     finalScore: bestScore
   };
+}
+
+/**
+ * Deterministic constructive solve — a single pass with no simulated annealing.
+ *
+ * Generates the target-FAR-driven initial grid layout and evaluates it once
+ * (parking, feasibility, pro forma). Fast (no SA loop) and fully reproducible,
+ * so it's suitable for live re-solving as the user moves parameter sliders.
+ * Use optimize() (with iterations) to refine/explore from there.
+ */
+export function solveConstructive(input: Omit<OptimizeInput, 'maxIterations'>): OptimizeResult {
+  return optimize({ ...input, maxIterations: 0 });
 }

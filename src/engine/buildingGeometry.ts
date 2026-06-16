@@ -231,6 +231,14 @@ export function clampBuildingToEnvelope(
   otherBuildings: BuildingSpec[],
   skipOverlapCheck = false
 ): BuildingSpec {
+  // User-pinned buildings are sovereign: the solver never relocates or resizes
+  // them — it re-fits parking / open space around them instead. Any containment
+  // or overlap issue is surfaced as a feasibility violation, not silently fixed.
+  // (Optimizer candidates are never position-locked, so SA is unaffected.)
+  if (spec.locked?.position) {
+    return spec;
+  }
+
   const footprint = buildBuildingFootprint(spec);
 
   // Check if building is completely inside envelope

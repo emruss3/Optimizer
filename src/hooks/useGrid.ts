@@ -2,7 +2,7 @@
 // Proprietary and confidential. Not for distribution.
 
 import { useState, useCallback } from 'react';
-import { feetToMeters, metersToFeet } from '../engine/units';
+import { feetToMeters } from '../engine/units';
 
 export interface GridState {
   enabled: boolean;
@@ -39,13 +39,12 @@ export function useGrid(initialSize = 10): UseGridReturn {
 
   const snapPoint = useCallback((x: number, y: number): { x: number; y: number } => {
     if (!gridState.snapToGrid) return { x, y };
+    // x,y are world coordinates in metres (EPSG:3857); grid size is in feet.
     const sizeMeters = feetToMeters(gridState.size);
-    const xMeters = feetToMeters(x);
-    const yMeters = feetToMeters(y);
-
+    if (sizeMeters <= 0) return { x, y };
     return {
-      x: metersToFeet(Math.round(xMeters / sizeMeters) * sizeMeters),
-      y: metersToFeet(Math.round(yMeters / sizeMeters) * sizeMeters)
+      x: Math.round(x / sizeMeters) * sizeMeters,
+      y: Math.round(y / sizeMeters) * sizeMeters
     };
   }, [gridState.snapToGrid, gridState.size]);
 

@@ -141,7 +141,3 @@ export interface FeasibilityViolation {
   delta?: number;
   severity: 'error' | 'warning';
 }
-
-export interface WorkerAPI {
-  generateSitePlan: (parcel: GeoJSON.Polygon | GeoJSON.MultiPolygon, config: PlannerConfig) => Promise<PlannerOutput>;
-}
