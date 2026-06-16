@@ -676,6 +676,26 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     initialBuildings.push(spec);
   }
 
+  // ── Constructive mode (maxIterations === 0): size floors so the achieved FAR
+  // tracks the target. Without this the layout keeps the typology-default floor
+  // count, so the FAR slider would only change building count, not actual FAR.
+  // (SA leaves floors to mutation/typology; this only runs for the fast path.)
+  if (maxIterations === 0) {
+    const placedFootprintM2 = initialBuildings.reduce(
+      (s, b) => s + correctedAreaM2(buildBuildingFootprint(b)), 0
+    );
+    const envCorrectedM2 = correctedAreaM2(envelope);
+    const coverage = envCorrectedM2 > 0 ? placedFootprintM2 / envCorrectedM2 : 0;
+    if (coverage > 0) {
+      // Ground floor 14ft + 10ft per upper floor ≤ maxHeightFt.
+      const maxFloorsByHeight = zoning.maxHeightFt
+        ? Math.max(1, Math.floor((zoning.maxHeightFt - 4) / 10))
+        : 100;
+      const floors = Math.max(1, Math.min(maxFloorsByHeight, Math.round(targetFAR / coverage)));
+      for (const b of initialBuildings) b.floors = floors;
+    }
+  }
+
   // ── 2. Pre-compute cached values for fast scoring ───────────────────────
   const siteAreaM2 = areaM2(envelope);
   const siteAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT;

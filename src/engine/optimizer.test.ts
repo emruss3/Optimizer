@@ -101,4 +101,19 @@ describe('optimize (simulated annealing)', () => {
     expect(r.bestElements.some(e => e.type === 'building')).toBe(true);
     expect(r.bestMetrics.totalBuiltSF).toBeGreaterThan(0);
   });
+
+  it('constructive solve sizes floors so achieved FAR tracks the target', () => {
+    // High caps so neither FAR nor height clips the requested target.
+    const z = { ...zoning, maxFar: 5.0, maxHeightFt: 300 };
+    const low = solveConstructive({
+      envelope, zoning: z, designParams: { ...designParams, targetFAR: 1.0 }, seed: 3,
+    });
+    const high = solveConstructive({
+      envelope, zoning: z, designParams: { ...designParams, targetFAR: 3.0 }, seed: 3,
+    });
+    // Achieved FAR rises with the target and lands within ~one floor of it.
+    expect(high.bestMetrics.achievedFAR).toBeGreaterThan(low.bestMetrics.achievedFAR);
+    expect(Math.abs(low.bestMetrics.achievedFAR - 1.0)).toBeLessThan(0.75);
+    expect(Math.abs(high.bestMetrics.achievedFAR - 3.0)).toBeLessThan(0.75);
+  });
 });
