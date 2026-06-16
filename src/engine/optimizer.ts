@@ -638,7 +638,19 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const envelopeCorrectedArea = correctedAreaM2(envelope);
   // Buildings should use at most ~40% of envelope area (rest for parking, open space, circulation)
   const maxPhysicalBuildings = Math.max(1, Math.floor(envelopeCorrectedArea * 0.4 / buildingFootprintArea));
-  const effectiveNumBuildings = Math.min(numBuildings, maxPhysicalBuildings);
+  let effectiveNumBuildings = Math.min(numBuildings, maxPhysicalBuildings);
+
+  // Constructive fast path: let target COVERAGE drive the building count (FAR
+  // then drives floors below). Buildings sit in spaced grid cells, so a
+  // coverage-driven count stays overlap-free — no scaling/clamp churn. Uses raw
+  // EPSG:3857 areas so the ratio matches feasibility's coverage (Mercator cancels).
+  if (maxIterations === 0) {
+    const maxCov = (zoning.maxCoveragePct ?? 60) / 100;
+    const targetCov = Math.min((designParams.targetCoveragePct ?? 50) / 100, maxCov);
+    const envRawM2 = areaM2(envelope);
+    const coverageDrivenCount = Math.round(targetCov * envRawM2 / buildingFootprintArea);
+    effectiveNumBuildings = Math.max(1, Math.min(maxPhysicalBuildings, coverageDrivenCount));
+  }
 
   // Grid-within-envelope initial placement:
   // Sample candidate positions, keep only those whose footprint is fully inside envelope.
