@@ -132,4 +132,33 @@ describe('optimize (simulated annealing)', () => {
     expect(Math.abs(low.bestMetrics.achievedFAR - 1.0)).toBeLessThan(0.75);
     expect(Math.abs(high.bestMetrics.achievedFAR - 3.0)).toBeLessThan(0.75);
   });
+
+  it('constructive solve lets target coverage drive the building count', () => {
+    // A larger envelope so the coverage-driven count isn't physically capped.
+    const SIDE2 = 320;
+    const bigEnvelope: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [X0, Y0],
+        [X0 + SIDE2, Y0],
+        [X0 + SIDE2, Y0 + SIDE2],
+        [X0, Y0 + SIDE2],
+        [X0, Y0],
+      ]],
+    };
+    const z = { ...zoning, maxCoveragePct: 80, maxFar: 5.0, maxHeightFt: 400 };
+    const low = solveConstructive({
+      envelope: bigEnvelope, zoning: z,
+      designParams: { ...designParams, targetCoveragePct: 10, targetFAR: 1.0 }, seed: 5,
+    });
+    const high = solveConstructive({
+      envelope: bigEnvelope, zoning: z,
+      designParams: { ...designParams, targetCoveragePct: 30, targetFAR: 1.0 }, seed: 5,
+    });
+    // Coverage rises with the target...
+    expect(high.bestMetrics.siteCoveragePct).toBeGreaterThan(low.bestMetrics.siteCoveragePct);
+    // ...and the low target (10%, well under any cap) tracks within a few points.
+    expect(low.bestMetrics.siteCoveragePct).toBeGreaterThan(6);
+    expect(low.bestMetrics.siteCoveragePct).toBeLessThan(16);
+  });
 });
