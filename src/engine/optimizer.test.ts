@@ -102,6 +102,22 @@ describe('optimize (simulated annealing)', () => {
     expect(r.bestMetrics.totalBuiltSF).toBeGreaterThan(0);
   });
 
+  it('reports ADA/EV stalls as designated subsets of provided parking', () => {
+    const dp = {
+      ...designParams,
+      parking: { ...designParams.parking, adaPct: 5, evPct: 10 },
+    };
+    const r = solveConstructive({ envelope, zoning, designParams: dp, seed: 11 });
+    const provided = r.bestMetrics.stallsProvided ?? 0;
+    expect(provided).toBeGreaterThan(0);
+    // ADA: at least one, and ceil(provided * 5%); EV: ceil(provided * 10%).
+    expect(r.bestMetrics.adaStalls).toBe(Math.max(1, Math.ceil(provided * 0.05)));
+    expect(r.bestMetrics.evStalls).toBe(Math.ceil(provided * 0.10));
+    // They are designations within provided parking, never more than the total.
+    expect(r.bestMetrics.adaStalls!).toBeLessThanOrEqual(provided);
+    expect(r.bestMetrics.evStalls!).toBeLessThanOrEqual(provided);
+  });
+
   it('constructive solve sizes floors so achieved FAR tracks the target', () => {
     // High caps so neither FAR nor height clips the requested target.
     const z = { ...zoning, maxFar: 5.0, maxHeightFt: 300 };

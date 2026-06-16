@@ -231,7 +231,8 @@ function computeFullResult(
   envelope: Polygon,
   buildings: BuildingSpec[],
   parkingSpec: { stallW: number; stallD: number; aisleW: number; anglesDeg: number[] },
-  zoningLimits: { maxFar?: number; maxCoveragePct?: number; parkingRatio?: number }
+  zoningLimits: { maxFar?: number; maxCoveragePct?: number; parkingRatio?: number },
+  quotas: { adaPct: number; evPct: number }
 ): {
   score: number;
   elements: Element[];
@@ -351,6 +352,12 @@ function computeFullResult(
     ? `${units} total (${mixByType['studio'] || 0} studio, ${mixByType['1br'] || 0} 1BR, ${mixByType['2br'] || 0} 2BR, ${mixByType['3br'] || 0} 3BR)`
     : '';
 
+  // ADA / EV are designated subsets of the provided stalls (code/compliance).
+  // ADA requires at least one accessible stall whenever parking exists.
+  const provided = feasibility.stallsProvided;
+  const adaStalls = provided > 0 ? Math.max(1, Math.ceil(provided * quotas.adaPct / 100)) : 0;
+  const evStalls = Math.ceil(provided * quotas.evPct / 100);
+
   const metrics: PlannerOutput['metrics'] = {
     totalBuiltSF: feasibility.gfaSqft,
     siteCoveragePct: feasibility.coverage * 100,
@@ -360,6 +367,8 @@ function computeFullResult(
     stallsProvided: feasibility.stallsProvided,
     stallsRequired: feasibility.stallsRequired,
     parkingAngleDeg: parkingSolution.chosenAngleDeg,
+    adaStalls,
+    evStalls,
     totalUnits: units,
     unitMixSummary,
     zoningCompliant: errorViolations.length === 0,
@@ -607,6 +616,12 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     parkingRatio: zoning.minParkingRatio ?? 1.5
   };
 
+  // ADA / EV designation percentages (surfaced in the final metrics).
+  const parkingQuotas = {
+    adaPct: designParams.parking?.adaPct ?? 5,
+    evPct: designParams.parking?.evPct ?? 10
+  };
+
   // ── 1. Generate initial layout ──────────────────────────────────────────
   const edge = longestEdge(envelope);
   const edgeBbox = safeBbox(envelope);
@@ -790,13 +805,13 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   }
 
   // ── 4. Build full results only for best + top 3 (expensive, but only ~4 calls) ─
-  const bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits);
+  const bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits, parkingQuotas);
 
   const top3Alternatives = topN
     .filter(a => Math.abs(a.score - bestScore) > 0.005)
     .slice(0, 3)
     .map(a => {
-      const full = computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits);
+      const full = computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits, parkingQuotas);
       return {
         elements: full.elements,
         metrics: full.metrics,
