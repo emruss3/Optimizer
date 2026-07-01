@@ -22,7 +22,7 @@
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
     "test:report": "playwright show-report",
-    "check:planner-imports": "node scripts/check-planner-imports.js"
+    "check:planner-imports": "node scripts/check-planner-imports.cjs"
   },
   "dependencies": {
     "@deck.gl/aggregation-layers": "^9.2.0",

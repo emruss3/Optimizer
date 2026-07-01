@@ -41,8 +41,6 @@ const GROUP_A = [
   'src/engine/metrics/parcelMetrics.ts',
   'src/workers/workerManager.ts',
   'src/workers/siteEngineWorker.ts',
-  'src/engine/workers/sitegenie/index.ts',
-  'src/engine/workers/sitegenie/planner.ts',
   'src/api/fetchEnvelope.ts',
   'src/api/planner.ts',
   'src/utils/reproject.ts',
@@ -161,14 +159,10 @@ function matchesGroupBOrC(resolvedPath, bcFile) {
   if (resolvedNoExt === bcNoExt) {
     return true;
   }
-  
-  // Match by filename
-  const resolvedFilename = path.basename(normalizedResolved, path.extname(normalizedResolved));
-  const bcFilename = path.basename(normalizedBC, path.extname(normalizedBC));
-  if (resolvedFilename === bcFilename) {
-    return true;
-  }
-  
+
+  // NOTE: no basename-only matching — common names like `types.ts` exist in
+  // both live (src/engine/types.ts) and legacy trees, so filename matching
+  // flagged every Group A file as a violation.
   return false;
 }
 
