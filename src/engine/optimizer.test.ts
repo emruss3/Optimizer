@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Polygon } from 'geojson';
 import { optimize, solveConstructive, type OptimizeInput } from './optimizer';
+import { createBuildingSpec, type BuildingSpec } from './model';
 
 // A ~120m square envelope in EPSG:3857 (near San Antonio); large enough to place
 // at least one default multifamily bar building.
@@ -100,6 +101,37 @@ describe('optimize (simulated annealing)', () => {
     expect(r.iterations).toBe(0);
     expect(r.bestElements.some(e => e.type === 'building')).toBe(true);
     expect(r.bestMetrics.totalBuiltSF).toBeGreaterThan(0);
+  });
+
+  it('keeps a user-pinned building exactly in place (constructive AND SA)', () => {
+    const pinnedSpec: BuildingSpec = {
+      ...createBuildingSpec('user-1', { x: X0 + 40, y: Y0 + 40 }, 30, 15, 4, 'MF_BAR_V1'),
+      rotationRad: 0.3,
+      locked: { position: true, rotation: true, dimensions: true },
+    };
+    for (const iters of [0, 40]) {
+      const r = optimize({
+        envelope, zoning, designParams,
+        maxIterations: iters, seed: 21,
+        pinnedBuildings: [pinnedSpec],
+      });
+      const kept = r.bestBuildings.find(b => b.id === 'user-1');
+      expect(kept, `pinned building survived ${iters}-iteration solve`).toBeDefined();
+      expect(kept!.anchor).toEqual({ x: X0 + 40, y: Y0 + 40 });
+      expect(kept!.widthM).toBe(30);
+      expect(kept!.depthM).toBe(15);
+      expect(kept!.rotationRad).toBe(0.3);
+      expect(kept!.floors).toBe(4); // dimensions locked → floors untouched too
+    }
+  });
+
+  it('drops pins anchored outside the envelope (stale parcel state)', () => {
+    const stale: BuildingSpec = {
+      ...createBuildingSpec('stale-1', { x: X0 - 500, y: Y0 - 500 }, 30, 15, 3),
+      locked: { position: true, rotation: true, dimensions: true },
+    };
+    const r = solveConstructive({ envelope, zoning, designParams, seed: 3, pinnedBuildings: [stale] });
+    expect(r.bestBuildings.some(b => b.id === 'stale-1')).toBe(false);
   });
 
   it('reports ADA/EV stalls as designated subsets of provided parking', () => {

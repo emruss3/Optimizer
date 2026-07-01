@@ -32,6 +32,13 @@ export interface OptimizeInput {
    * (reproducible, diffable results). Pass a varying seed to explore.
    */
   seed?: number;
+  /**
+   * User-pinned buildings (locked.position). They are kept EXACTLY as given —
+   * never moved, resized, or removed — and the solver fills in around them.
+   * Pins anchored outside the envelope are ignored (guards against stale state
+   * from a previously selected parcel).
+   */
+  pinnedBuildings?: BuildingSpec[];
 }
 
 export interface OptimizeResult {
@@ -675,10 +682,24 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     }
   }
 
-  const initialBuildings: BuildingSpec[] = [];
+  // User pins are sovereign: seed the layout with them exactly as given.
+  // (Anchor-outside-envelope pins are dropped — stale state from another parcel.)
+  const pinned = cloneBuildings(
+    (input.pinnedBuildings ?? []).filter(b =>
+      b.locked?.position && isPointInPolygon([b.anchor.x, b.anchor.y], envelope.coordinates[0])
+    )
+  );
+  const pinnedFootprints = pinned.map(b => buildBuildingFootprint(b));
+  const overlapsPinned = (fp: Polygon): boolean =>
+    pinnedFootprints.some(pf => {
+      const overlap = polygons(intersection(fp, pf)).reduce((s, p) => s + areaM2(p), 0);
+      return overlap > 0.5;
+    });
+
+  const initialBuildings: BuildingSpec[] = [...pinned];
   let buildingNum = 0;
   for (const pos of candidatePositions) {
-    if (initialBuildings.length >= effectiveNumBuildings) break;
+    if (initialBuildings.length >= Math.max(effectiveNumBuildings, pinned.length)) break;
     const spec = createBuildingSpec(
       `building-${++buildingNum}`,
       pos, undefined, undefined, undefined, buildingType
@@ -688,7 +709,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     const inside = footprint.coordinates[0].every(
       ([vx, vy]) => isPointInPolygon([vx, vy], envelope.coordinates[0])
     );
-    if (inside) initialBuildings.push(spec);
+    if (inside && !overlapsPinned(footprint)) initialBuildings.push(spec);
   }
 
   // Fallback: one building at envelope centroid, sized to fit
@@ -729,7 +750,10 @@ export function optimize(input: OptimizeInput): OptimizeResult {
         maxFloorsByFar,
         Math.round(targetFAR / coverage)
       ));
-      for (const b of initialBuildings) b.floors = floors;
+      // Pinned buildings keep their own floor count (dimensions are sovereign).
+      for (const b of initialBuildings) {
+        if (!b.locked?.dimensions) b.floors = floors;
+      }
     }
   }
 
@@ -784,7 +808,16 @@ export function optimize(input: OptimizeInput): OptimizeResult {
         )
       );
     } else if (candidateBuildings.length > Math.max(1, Math.floor(effectiveNumBuildings * 0.5))) {
-      candidateBuildings.splice(buildingIdx, 1);
+      // Remove a building — but never a user-pinned one.
+      const removable: number[] = [];
+      for (let i = 0; i < candidateBuildings.length; i++) {
+        if (!candidateBuildings[i].locked?.position) removable.push(i);
+      }
+      if (removable.length > 0) {
+        candidateBuildings.splice(removable[Math.floor(rng() * removable.length)], 1);
+      } else {
+        candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx], rng);
+      }
     } else {
       candidateBuildings[buildingIdx] = mutateMove(candidateBuildings[buildingIdx], rng);
     }
