@@ -1,6 +1,6 @@
 import type { Element, PlannerConfig, PlannerOutput } from '../engine/types';
 import type { Polygon, MultiPolygon } from 'geojson';
-import { normalizeToPolygon, areaM2, intersection, difference, polygons } from '../engine/geometry';
+import { normalizeToPolygon, areaM2, correctedAreaM2, intersection, difference, polygons } from '../engine/geometry';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
 import type { BuildingSpec, BuildingType, UnitMixEntry } from '../engine/model';
 import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix, corridorEfficiency } from '../engine/model';
@@ -9,25 +9,9 @@ import { computeFeasibility } from '../engine/feasibility';
 import { optimize } from '../engine/optimizer';
 import type { OptimizeResult } from '../engine/optimizer';
 
-/**
- * Mercator correction factor for EPSG:3857 Y coordinate.
- * At latitude ~29.5° (San Antonio), Mercator inflates areas by ~1.32x.
- */
-function mercatorCorrectionFactor(y3857: number): number {
-  const latRad = 2 * Math.atan(Math.exp(y3857 / 6378137)) - Math.PI / 2;
-  return Math.pow(Math.cos(latRad), 2);
-}
-
-/**
- * Compute area corrected for Mercator distortion.
- * Use for ALL metric calculations (FAR, coverage, display).
- * Keep raw areaM2() for geometric operations (intersection, difference).
- */
-function correctedAreaM2(polygon: Polygon): number {
-  const coords = polygon.coordinates[0];
-  const centroidY = coords.reduce((sum, c) => sum + c[1], 0) / coords.length;
-  return areaM2(polygon) * mercatorCorrectionFactor(centroidY);
-}
+// Mercator correction comes from engine/geometry.correctedAreaM2 — the worker
+// previously carried its own near-duplicate implementation, which was one of
+// the "two sources of truth" trust issues flagged in the audit.
 
 /**
  * Web Worker for heavy site planning calculations.
@@ -492,11 +476,18 @@ self.onmessage = async (e) => {
       const { envelope3857, zoning, designParams, parkingSpec, maxIterations } = data;
       const envelope = normalizeToPolygon(envelope3857);
 
+      // User-pinned buildings survive re-solves and Generate: the optimizer
+      // keeps them exactly where the user put them and fills in around them.
+      // (optimize() drops any pin anchored outside this envelope, which guards
+      // against stale state from a previously selected parcel.)
+      const pinnedBuildings = worker.siteState?.buildings.filter(b => b.locked?.position) ?? [];
+
       const result = optimize({
         envelope,
         zoning,
         designParams,
         parkingSpec,
+        pinnedBuildings,
         maxIterations: maxIterations ?? 200,
         onProgress: (iteration, score) => {
           (self as any).postMessage({
