@@ -133,6 +133,26 @@ describe('optimize (simulated annealing)', () => {
     expect(Math.abs(high.bestMetrics.achievedFAR - 3.0)).toBeLessThan(0.75);
   });
 
+  it('constructive achieved FAR never exceeds zoning.maxFar (rounding capped)', () => {
+    const z = { ...zoning, maxFar: 1.5, maxHeightFt: 400 };
+    const r = solveConstructive({
+      envelope, zoning: z,
+      designParams: { ...designParams, targetFAR: 3.0 }, seed: 9,
+    });
+    expect(r.bestMetrics.achievedFAR).toBeLessThanOrEqual(1.5 + 1e-6);
+    expect(r.bestMetrics.achievedFAR).toBeGreaterThan(0.4); // still builds meaningfully
+    expect(r.bestMetrics.violations.some(v => v.includes('FAR'))).toBe(false);
+  });
+
+  it('constructive mode honors an explicitly requested numBuildings', () => {
+    const r = solveConstructive({
+      envelope, zoning,
+      designParams: { ...designParams, numBuildings: 1, targetCoveragePct: 60 }, seed: 13,
+    });
+    const buildings = r.bestElements.filter(e => e.type === 'building');
+    expect(buildings.length).toBe(1);
+  });
+
   it('constructive solve lets target coverage drive the building count', () => {
     // A larger envelope so the coverage-driven count isn't physically capped.
     const SIDE2 = 320;

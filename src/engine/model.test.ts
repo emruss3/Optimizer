@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { corridorEfficiency, generateDefaultUnitMix, totalUnitsFromMix } from './model';
+import { corridorEfficiency, generateDefaultUnitMix, generateUnitMixForCount, totalUnitsFromMix } from './model';
+
+describe('generateUnitMixForCount', () => {
+  it('distributes an exact count across the mix (sums precisely)', () => {
+    for (const n of [1, 7, 50, 123]) {
+      expect(totalUnitsFromMix(generateUnitMixForCount(n))).toBe(n);
+    }
+  });
+
+  it('handles zero and negative counts without going negative', () => {
+    expect(totalUnitsFromMix(generateUnitMixForCount(0))).toBe(0);
+    expect(totalUnitsFromMix(generateUnitMixForCount(-5))).toBe(0);
+  });
+});
 
 describe('corridorEfficiency', () => {
   it('rises with building depth (deeper plates lose less to the corridor)', () => {

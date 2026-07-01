@@ -644,7 +644,8 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   // then drives floors below). Buildings sit in spaced grid cells, so a
   // coverage-driven count stays overlap-free — no scaling/clamp churn. Uses raw
   // EPSG:3857 areas so the ratio matches feasibility's coverage (Mercator cancels).
-  if (maxIterations === 0) {
+  // An explicitly requested numBuildings always wins over the coverage target.
+  if (maxIterations === 0 && designParams.numBuildings == null) {
     const maxCov = (zoning.maxCoveragePct ?? 60) / 100;
     const targetCov = Math.min((designParams.targetCoveragePct ?? 50) / 100, maxCov);
     const envRawM2 = areaM2(envelope);
@@ -718,7 +719,16 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       const maxFloorsByHeight = zoning.maxHeightFt
         ? Math.max(1, Math.floor((zoning.maxHeightFt - 4) / 10))
         : 100;
-      const floors = Math.max(1, Math.min(maxFloorsByHeight, Math.round(targetFAR / coverage)));
+      // Compliance cap: never let rounding push achieved FAR past zoning.maxFar
+      // (mirrors how the coverage-driven count caps at maxCoveragePct).
+      const maxFloorsByFar = zoning.maxFar != null
+        ? Math.max(1, Math.floor(zoning.maxFar / coverage + 1e-9))
+        : Infinity;
+      const floors = Math.max(1, Math.min(
+        maxFloorsByHeight,
+        maxFloorsByFar,
+        Math.round(targetFAR / coverage)
+      ));
       for (const b of initialBuildings) b.floors = floors;
     }
   }

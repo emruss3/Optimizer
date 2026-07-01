@@ -11,7 +11,7 @@ import type { EdgeClassification } from '../../engine/setbacks';
 import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2, buffer, intersection, polygons, areaM2 } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
 import { feetToMeters } from '../../engine/units';
-import { typologyToBuildingType, generateDefaultUnitMix } from '../../engine/model';
+import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount } from '../../engine/model';
 import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
@@ -371,10 +371,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (gfa <= 0) return null;
 
     // Single source of truth for underwriting — the same engine the optimizer
-    // scores with. Unit mix (and thus rents) is regenerated from GFA so revenue
-    // matches the engine's assumptions rather than a flat per-unit guess.
+    // scores with. When the plan metrics carry a (depth-aware) unit count, build
+    // the mix from that exact count so the pro forma's revenue line agrees with
+    // the "Units" figure on screen; otherwise fall back to the GFA heuristic.
     const siteAreaSqft = envelopeMeters ? correctedAreaM2(envelopeMeters) * 10.7639 : 0;
-    const unitMix = generateDefaultUnitMix(gfa);
+    const unitMix = metrics.totalUnits && metrics.totalUnits > 0
+      ? generateUnitMixForCount(metrics.totalUnits)
+      : generateDefaultUnitMix(gfa);
     const pf = computeProForma({
       totalGFASqft: gfa,
       siteAreaSqft,

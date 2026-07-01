@@ -49,22 +49,16 @@ export function corridorEfficiency(depthM: number): number {
 }
 
 /**
- * Generate a default unit mix from a gross floor area (in sqft).
- * `efficiency` is the net-leasable fraction of GFA (default 0.85). Pass
- * corridorEfficiency(building depth) for a depth-aware, double-loaded-corridor
- * count. Total units = floor(GFA * efficiency / weightedAvgSqft).
+ * Distribute an exact unit count across the standard mix percentages.
+ * Use when the total is already known (e.g., the engine's depth-aware count)
+ * so revenue and density are computed from the same number the UI displays.
  */
-export function generateDefaultUnitMix(gfaSqft: number, efficiency = 0.85): UnitMixEntry[] {
-  const EFFICIENCY = efficiency;
-  const weightedAvgSqft = UNIT_TYPE_DEFS.reduce(
-    (sum, d) => sum + d.avgSqft * d.pct, 0
-  );
-  const totalUnits = Math.max(1, Math.floor(gfaSqft * EFFICIENCY / weightedAvgSqft));
-
+export function generateUnitMixForCount(totalUnits: number): UnitMixEntry[] {
+  const total = Math.max(0, Math.floor(totalUnits));
   let assigned = 0;
-  const entries: UnitMixEntry[] = UNIT_TYPE_DEFS.map((def, idx) => {
+  return UNIT_TYPE_DEFS.map((def, idx) => {
     const isLast = idx === UNIT_TYPE_DEFS.length - 1;
-    const count = isLast ? totalUnits - assigned : Math.round(totalUnits * def.pct);
+    const count = isLast ? total - assigned : Math.round(total * def.pct);
     assigned += count;
     return {
       type: def.type,
@@ -73,8 +67,20 @@ export function generateDefaultUnitMix(gfaSqft: number, efficiency = 0.85): Unit
       rentPerMonth: def.rentPerMonth,
     };
   });
+}
 
-  return entries;
+/**
+ * Generate a default unit mix from a gross floor area (in sqft).
+ * `efficiency` is the net-leasable fraction of GFA (default 0.85). Pass
+ * corridorEfficiency(building depth) for a depth-aware, double-loaded-corridor
+ * count. Total units = floor(GFA * efficiency / weightedAvgSqft).
+ */
+export function generateDefaultUnitMix(gfaSqft: number, efficiency = 0.85): UnitMixEntry[] {
+  const weightedAvgSqft = UNIT_TYPE_DEFS.reduce(
+    (sum, d) => sum + d.avgSqft * d.pct, 0
+  );
+  const totalUnits = Math.max(1, Math.floor(gfaSqft * efficiency / weightedAvgSqft));
+  return generateUnitMixForCount(totalUnits);
 }
 
 /**
