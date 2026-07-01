@@ -4,7 +4,7 @@
 import type { Polygon } from 'geojson';
 import type { Element, PlannerConfig, PlannerOutput, FeasibilityViolation } from './types';
 import type { BuildingSpec, BuildingType, PlanState, UnitMixEntry } from './model';
-import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix } from './model';
+import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix, corridorEfficiency } from './model';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from './buildingGeometry';
 import { solveParkingBayPacking } from './parkingBaySolver';
 import { computeFeasibility } from './feasibility';
@@ -153,7 +153,7 @@ function scoreOnly(
     const gfaSqft = correctedAreaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
     const unitMix = spec.unitMix && spec.unitMix.length > 0
       ? spec.unitMix
-      : generateDefaultUnitMix(gfaSqft);
+      : generateDefaultUnitMix(gfaSqft, corridorEfficiency(spec.depthM));
     return { id: spec.id, footprint, floors: spec.floors, unitMix };
   });
 
@@ -252,7 +252,7 @@ function computeFullResult(
     const gfaSqft = correctedAreaM2(footprint) * SQM_TO_SQFT * Math.max(1, spec.floors);
     const unitMix = spec.unitMix && spec.unitMix.length > 0
       ? spec.unitMix
-      : generateDefaultUnitMix(gfaSqft);
+      : generateDefaultUnitMix(gfaSqft, corridorEfficiency(spec.depthM));
     return { id: spec.id, footprint, floors: spec.floors, unitMix };
   });
 
