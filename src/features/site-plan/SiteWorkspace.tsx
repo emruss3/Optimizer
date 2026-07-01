@@ -11,11 +11,12 @@ import type { EdgeClassification } from '../../engine/setbacks';
 import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2, buffer, intersection, polygons, areaM2 } from '../../engine/geometry';
 import { feature4326To3857 } from '../../utils/reproject';
 import { feetToMeters } from '../../engine/units';
-import { typologyToBuildingType, generateDefaultUnitMix } from '../../engine/model';
+import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount } from '../../engine/model';
 import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
+import Massing3D from './ui/Massing3D';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 
@@ -31,6 +32,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     metrics,
     setPlanOutput,
     alternatives,
+    solveScores,
     selectedSolveIndex,
     selectedSolve,
     selectSolve,
@@ -40,6 +42,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   } = useSitePlanState(parcel);
   const { status, envelope, rpcMetrics, edgeClassifications, error: envelopeError } = useBuildableEnvelope(parcel);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
   const [investmentAnalysis, setInvestmentAnalysis] = useState<InvestmentAnalysis | null>(null);
   const [solverReady, setSolverReady] = useState(false);
@@ -196,7 +199,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           metrics: alt.metrics || null,
         })),
       ];
-      applyAlternatives(optimizerPlans as Parameters<typeof applyAlternatives>[0]);
+      const optimizerScores = [
+        result.finalScore ?? 0,
+        ...(result.top3Alternatives || []).map(alt => alt.score ?? 0),
+      ];
+      applyAlternatives(optimizerPlans as Parameters<typeof applyAlternatives>[0], optimizerScores);
       // Worker state is already synced with the optimizer's best buildings
       // (the OPTIMIZE handler sets siteState after optimize() returns)
       setSolverReady(true);
@@ -255,7 +262,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           metrics: alt.metrics || null,
         })),
       ];
-      applyAlternatives(plans as Parameters<typeof applyAlternatives>[0]);
+      const scores = [
+        result.finalScore ?? 0,
+        ...(result.top3Alternatives || []).map(alt => alt.score ?? 0),
+      ];
+      applyAlternatives(plans as Parameters<typeof applyAlternatives>[0], scores);
     } catch {
       /* live preview failure is non-fatal — the user can still click Generate */
     }
@@ -371,10 +382,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (gfa <= 0) return null;
 
     // Single source of truth for underwriting — the same engine the optimizer
-    // scores with. Unit mix (and thus rents) is regenerated from GFA so revenue
-    // matches the engine's assumptions rather than a flat per-unit guess.
+    // scores with. When the plan metrics carry a (depth-aware) unit count, build
+    // the mix from that exact count so the pro forma's revenue line agrees with
+    // the "Units" figure on screen; otherwise fall back to the GFA heuristic.
     const siteAreaSqft = envelopeMeters ? correctedAreaM2(envelopeMeters) * 10.7639 : 0;
-    const unitMix = generateDefaultUnitMix(gfa);
+    const unitMix = metrics.totalUnits && metrics.totalUnits > 0
+      ? generateUnitMixForCount(metrics.totalUnits)
+      : generateDefaultUnitMix(gfa);
     const pf = computeProForma({
       totalGFASqft: gfa,
       siteAreaSqft,
@@ -474,6 +488,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             onGenerate={handleGenerate}
             onGenerateAlternatives={handleGenerate}
             alternatives={alternatives}
+            alternativeScores={solveScores}
             selectedSolveIndex={selectedSolveIndex}
             onSelectSolve={selectSolve}
             savedPlans={savedPlans}
@@ -490,7 +505,29 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           />
 
           <div className="flex-1 min-w-0">
-            <div className="h-full">
+            <div className="h-full flex flex-col">
+              <div className="flex justify-end mb-2">
+                <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+                  <button
+                    onClick={() => setViewMode('2d')}
+                    className={`px-3 py-1.5 ${viewMode === '2d' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    2D Plan
+                  </button>
+                  <button
+                    onClick={() => setViewMode('3d')}
+                    className={`px-3 py-1.5 border-l border-gray-200 ${viewMode === '3d' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    3D Massing
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 min-h-0">
+                {viewMode === '3d' ? (
+                  <SitePlannerErrorBoundary>
+                    <Massing3D elements={elements} />
+                  </SitePlannerErrorBoundary>
+                ) : (
               <SitePlannerErrorBoundary>
                 <EnterpriseSitePlanner
                   parcel={plannerParcel}
@@ -515,6 +552,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                   }}
                 />
               </SitePlannerErrorBoundary>
+                )}
+              </div>
             </div>
           </div>
 

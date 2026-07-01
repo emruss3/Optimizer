@@ -21,6 +21,8 @@ type ParametersPanelProps = {
   onGenerate: () => void;
   onGenerateAlternatives: () => void;
   alternatives: PlannerOutput[];
+  /** Optimizer scores (0–1), aligned with `alternatives` */
+  alternativeScores?: number[];
   selectedSolveIndex: number | null;
   onSelectSolve: (index: number) => void;
 
@@ -50,6 +52,7 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
   onGenerate,
   onGenerateAlternatives,
   alternatives,
+  alternativeScores,
   selectedSolveIndex,
   onSelectSolve,
   savedPlans,
@@ -350,7 +353,7 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
             <h3 className="text-sm font-semibold mb-2">Solves</h3>
             <SolveTable
               solves={alternatives}
-              baseConfig={config}
+              scores={alternativeScores}
               selectedIndex={selectedSolveIndex}
               onSelect={(index) => onSelectSolve(index)}
               savedPlans={savedPlans}

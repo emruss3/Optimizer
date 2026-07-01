@@ -3,13 +3,14 @@
 
 import { useMemo } from 'react';
 import { CheckCircle, XCircle, Star } from 'lucide-react';
-import type { PlannerOutput, PlannerConfig, SiteMetrics } from '../../engine/types';
+import type { PlannerOutput, SiteMetrics } from '../../engine/types';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
-import { validateSitePlan } from '../../engine/planner';
 
 interface SolveTableProps {
   solves: PlannerOutput[];
-  baseConfig: PlannerConfig;
+  /** Optimizer scores (0–1) aligned with `solves` — the same score the SA
+   *  optimizes, so the table ranks plans by the engine's own objective. */
+  scores?: number[];
   selectedIndex: number | null;
   onSelect: (index: number, solve: PlannerOutput) => void;
   /** Saved plans to show alongside generated alternatives */
@@ -32,7 +33,7 @@ interface RowData {
 
 export function SolveTable({
   solves,
-  baseConfig,
+  scores,
   selectedIndex,
   onSelect,
   savedPlans = [],
@@ -63,17 +64,17 @@ export function SolveTable({
       });
     }
 
-    // Generated alternatives
+    // Generated alternatives — score comes from the optimizer itself (0–1,
+    // shown as 0–100), not the deprecated legacy validateSitePlan scorer.
     for (let i = 0; i < solves.length; i++) {
       const solve = solves[i];
-      const validation = validateSitePlan(solve, baseConfig);
       result.push({
         key: `gen-${i}`,
         label: `Solve ${i + 1}`,
         isSaved: false,
         isFavorite: false,
         metrics: solve.metrics,
-        score: validation.score,
+        score: (scores?.[i] ?? 0) * 100,
         zoningCompliant: solve.metrics.zoningCompliant ?? false,
         onClick: () => onSelect(i, solve),
         isSelected: selectedIndex === i,
@@ -81,7 +82,7 @@ export function SolveTable({
     }
 
     return result;
-  }, [solves, baseConfig, selectedIndex, onSelect, savedPlans, onLoadSavedPlan]);
+  }, [solves, scores, selectedIndex, onSelect, savedPlans, onLoadSavedPlan]);
 
   if (rows.length === 0) {
     return null;

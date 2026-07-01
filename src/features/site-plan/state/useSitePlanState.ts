@@ -72,6 +72,7 @@ export const useSitePlanState = (parcel?: SelectedParcel | null) => {
   const [elements, setElements] = useState<Element[]>([]);
   const [metrics, setMetrics] = useState<SiteMetrics | null>(null);
   const [alternatives, setAlternatives] = useState<PlannerOutput[]>([]);
+  const [solveScores, setSolveScores] = useState<number[]>([]);
   const [selectedSolveIndex, setSelectedSolveIndex] = useState<number | null>(null);
 
   const selectedSolve = useMemo(
@@ -93,9 +94,11 @@ export const useSitePlanState = (parcel?: SelectedParcel | null) => {
    * The SA optimizer (src/engine/optimizer.ts) already returns the best layout
    * plus ranked top-3 alternatives, so we surface those directly rather than
    * re-running the deprecated legacy planner. Index 0 is always the best plan.
+   * `scores` are the optimizer's own 0–1 scores, aligned with `plans`.
    */
-  const applyAlternatives = useCallback((plans: PlannerOutput[]) => {
+  const applyAlternatives = useCallback((plans: PlannerOutput[], scores: number[] = []) => {
     setAlternatives(plans);
+    setSolveScores(scores);
     setSelectedSolveIndex(plans.length > 0 ? 0 : null);
   }, []);
 
@@ -119,6 +122,7 @@ export const useSitePlanState = (parcel?: SelectedParcel | null) => {
     metrics,
     setPlanOutput,
     alternatives,
+    solveScores,
     selectedSolveIndex,
     selectedSolve,
     selectSolve,

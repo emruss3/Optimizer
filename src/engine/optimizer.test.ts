@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Polygon } from 'geojson';
 import { optimize, solveConstructive, type OptimizeInput } from './optimizer';
+import { createBuildingSpec, type BuildingSpec } from './model';
 
 // A ~120m square envelope in EPSG:3857 (near San Antonio); large enough to place
 // at least one default multifamily bar building.
@@ -102,6 +103,37 @@ describe('optimize (simulated annealing)', () => {
     expect(r.bestMetrics.totalBuiltSF).toBeGreaterThan(0);
   });
 
+  it('keeps a user-pinned building exactly in place (constructive AND SA)', () => {
+    const pinnedSpec: BuildingSpec = {
+      ...createBuildingSpec('user-1', { x: X0 + 40, y: Y0 + 40 }, 30, 15, 4, 'MF_BAR_V1'),
+      rotationRad: 0.3,
+      locked: { position: true, rotation: true, dimensions: true },
+    };
+    for (const iters of [0, 40]) {
+      const r = optimize({
+        envelope, zoning, designParams,
+        maxIterations: iters, seed: 21,
+        pinnedBuildings: [pinnedSpec],
+      });
+      const kept = r.bestBuildings.find(b => b.id === 'user-1');
+      expect(kept, `pinned building survived ${iters}-iteration solve`).toBeDefined();
+      expect(kept!.anchor).toEqual({ x: X0 + 40, y: Y0 + 40 });
+      expect(kept!.widthM).toBe(30);
+      expect(kept!.depthM).toBe(15);
+      expect(kept!.rotationRad).toBe(0.3);
+      expect(kept!.floors).toBe(4); // dimensions locked → floors untouched too
+    }
+  });
+
+  it('drops pins anchored outside the envelope (stale parcel state)', () => {
+    const stale: BuildingSpec = {
+      ...createBuildingSpec('stale-1', { x: X0 - 500, y: Y0 - 500 }, 30, 15, 3),
+      locked: { position: true, rotation: true, dimensions: true },
+    };
+    const r = solveConstructive({ envelope, zoning, designParams, seed: 3, pinnedBuildings: [stale] });
+    expect(r.bestBuildings.some(b => b.id === 'stale-1')).toBe(false);
+  });
+
   it('reports ADA/EV stalls as designated subsets of provided parking', () => {
     const dp = {
       ...designParams,
@@ -131,6 +163,26 @@ describe('optimize (simulated annealing)', () => {
     expect(high.bestMetrics.achievedFAR).toBeGreaterThan(low.bestMetrics.achievedFAR);
     expect(Math.abs(low.bestMetrics.achievedFAR - 1.0)).toBeLessThan(0.75);
     expect(Math.abs(high.bestMetrics.achievedFAR - 3.0)).toBeLessThan(0.75);
+  });
+
+  it('constructive achieved FAR never exceeds zoning.maxFar (rounding capped)', () => {
+    const z = { ...zoning, maxFar: 1.5, maxHeightFt: 400 };
+    const r = solveConstructive({
+      envelope, zoning: z,
+      designParams: { ...designParams, targetFAR: 3.0 }, seed: 9,
+    });
+    expect(r.bestMetrics.achievedFAR).toBeLessThanOrEqual(1.5 + 1e-6);
+    expect(r.bestMetrics.achievedFAR).toBeGreaterThan(0.4); // still builds meaningfully
+    expect(r.bestMetrics.violations.some(v => v.includes('FAR'))).toBe(false);
+  });
+
+  it('constructive mode honors an explicitly requested numBuildings', () => {
+    const r = solveConstructive({
+      envelope, zoning,
+      designParams: { ...designParams, numBuildings: 1, targetCoveragePct: 60 }, seed: 13,
+    });
+    const buildings = r.bestElements.filter(e => e.type === 'building');
+    expect(buildings.length).toBe(1);
   });
 
   it('constructive solve lets target coverage drive the building count', () => {

@@ -290,25 +290,17 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, []);
 
-  // Render parking stripes
+  // Render stall dividers inside a parking bay, angled per the solver's layout.
   const renderParkingStripes = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     if (element.type !== 'parking' && element.type !== 'parking-bay') return;
     if (!parkingViz) return;
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 3) return;
 
     ctx.save();
-    
-    // Get element bounds and center for rotation
-    const bounds = ElementService.getElementBounds(element);
-    const centerX = (bounds.minX + bounds.maxX) / 2;
-    const centerY = (bounds.minY + bounds.maxY) / 2;
-    
-    // Rotate context around element center
-    ctx.translate(centerX, centerY);
-    ctx.rotate((parkingViz.angleDeg * Math.PI) / 180);
-    ctx.translate(-centerX, -centerY);
-    
-    // Clip to the polygon shape
-    const coords = element.geometry.coordinates[0];
+
+    // Clip to the bay polygon in WORLD space first — clipping after rotating
+    // would rotate the clip region away from where the bay is actually drawn.
     ctx.beginPath();
     ctx.moveTo(coords[0][0], coords[0][1]);
     for (let i = 1; i < coords.length; i++) {
@@ -316,30 +308,35 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
     ctx.closePath();
     ctx.clip();
-    
-    // Calculate bounds in rotated space (after rotation, bounds may have changed)
-    // We'll use the original bounds but draw dividers across the full clipped area
-    const stallWidth = parkingViz.stallWidthFt;
-    
+
+    // Then rotate the stripe direction around the bay centre.
+    const bounds = ElementService.getElementBounds(element);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    ctx.translate(centerX, centerY);
+    ctx.rotate((parkingViz.angleDeg * Math.PI) / 180);
+
+    // World units are metres; the stall width arrives in feet.
+    const stallWidth = feetToMeters(parkingViz.stallWidthFt);
+    if (stallWidth <= 0) {
+      ctx.restore();
+      return;
+    }
+
+    // Span the bay's diagonal so rotated stripes always cover the clip region.
+    const halfDiag = Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2;
+
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 1 / zoom;
     ctx.globalAlpha = 0.8;
-    
-    // Draw vertical divider lines (in rotated space) spaced by stallWidthFt
-    // Start from the leftmost edge and draw dividers every stallWidthFt
-    const startX = bounds.minX;
-    const endX = bounds.maxX;
-    const minY = bounds.minY;
-    const maxY = bounds.maxY;
-    
-    // Draw dividers from left to right, spaced by stallWidthFt
-    for (let x = startX + stallWidth; x < endX; x += stallWidth) {
+
+    for (let x = -halfDiag + stallWidth; x < halfDiag; x += stallWidth) {
       ctx.beginPath();
-      ctx.moveTo(x, minY);
-      ctx.lineTo(x, maxY);
+      ctx.moveTo(x, -halfDiag);
+      ctx.lineTo(x, halfDiag);
       ctx.stroke();
     }
-    
+
     ctx.restore();
   }, [parkingViz]);
 
@@ -481,6 +478,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       const isHovered = hoveredElement === element.id;
       renderElement(ctx, element, isSelected, isHovered, viewport.zoom);
 
+      // Stall dividers on parking bays (angle + stall width from the solver)
+      if (element.type === 'parking' || element.type === 'parking-bay') {
+        renderParkingStripes(ctx, element, viewport.zoom);
+      }
+
       // Render vertex handles if selected
       if (isSelected) {
         renderVertexHandles(ctx, element, isSelected, isVertexEditing, selectedVertex, viewport.zoom);
@@ -517,7 +519,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
 
     ctx.restore();
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
