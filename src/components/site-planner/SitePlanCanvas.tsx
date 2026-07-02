@@ -7,6 +7,7 @@ import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
 import { feetToMeters, metersToFeet } from '../../engine/units';
 import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt } from './planRendering';
+import type { EdgeClassification } from '../../engine/setbacks';
 
 interface SitePlanCanvasProps {
   elements: Element[];
@@ -14,6 +15,8 @@ interface SitePlanCanvasProps {
   viewport: ViewportState;
   processedGeometry: { geometry: any; bounds: { minX: number; minY: number; maxX: number; maxY: number } } | null;
   buildableEnvelope?: import('geojson').Polygon;
+  edgeClassifications?: EdgeClassification[];
+  setbacks?: { front?: number; side?: number; rear?: number };
   isVertexEditing?: boolean;
   selectedVertex?: { elementId: string; vertexIndex: number } | null;
   measurementState?: { isMeasuring: boolean; startPoint: { x: number; y: number } | null; endPoint: { x: number; y: number } | null };
@@ -34,6 +37,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   viewport,
   processedGeometry,
   buildableEnvelope,
+  edgeClassifications,
+  setbacks,
   isVertexEditing = false,
   selectedVertex = null,
   measurementState,
@@ -81,7 +86,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   }, [onWheel]);
 
   // Get element color, opacity, and stroke based on type
-  const getElementStyle = useCallback((element: Element): { color: string; opacity: number; stroke: boolean } => {
+  const getElementStyle = useCallback((element: Element): { color: string; opacity: number; stroke: boolean; strokeColor?: string } => {
     switch (element.type) {
       case 'greenspace':
         return { color: '#BBF7D0', opacity: 0.25, stroke: false };
@@ -93,6 +98,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         return { color: '#E2E8F0', opacity: 0.5, stroke: false };
       case 'building':
         return { color: '#BFDBFE', opacity: 0.95, stroke: true };
+      case 'other':
+        // Generated LOTS use type 'other' (brief Phase 2): parcel-line style,
+        // rendered below everything so they never paint over buildings.
+        return { color: '#F8FAFC', opacity: 0.85, stroke: true, strokeColor: '#94A3B8' };
       default:
         return { color: '#6B7280', opacity: 0.3, stroke: false };
     }
@@ -424,9 +433,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.closePath();
     ctx.fill();
 
-    // Stroke — ONLY for buildings and selected elements
+    // Stroke — ONLY for stroked styles and selected elements
     if (style.stroke || isSelected) {
-      ctx.strokeStyle = isSelected ? '#F59E0B' : '#1E40AF';
+      ctx.strokeStyle = isSelected ? '#F59E0B' : (style.strokeColor ?? '#1E40AF');
       ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
       ctx.globalAlpha = 1;
       ctx.stroke();
@@ -560,6 +569,54 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, []);
 
+  // Road-classified setback edges: front (blue) / rear (amber) / side (gray),
+  // labeled with the setback distance — the zoning read TestFit charges for.
+  const renderEdgeSetbacks = useCallback((ctx: CanvasRenderingContext2D, zoom: number) => {
+    if (!edgeClassifications || edgeClassifications.length === 0) return;
+    const EDGE_COLORS: Record<string, string> = {
+      front: '#2563EB',
+      rear: '#D97706',
+      side: '#64748B',
+    };
+    const fontSize = 10 / zoom;
+
+    ctx.save();
+    for (const edge of edgeClassifications) {
+      const [[x1, y1], [x2, y2]] = edge.edge;
+      ctx.strokeStyle = EDGE_COLORS[edge.type] ?? '#64748B';
+      ctx.lineWidth = 3 / zoom;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      const setbackFt =
+        edge.type === 'front' ? setbacks?.front :
+        edge.type === 'rear' ? setbacks?.rear :
+        setbacks?.side;
+      if (setbackFt == null) continue;
+
+      const midX = (x1 + x2) / 2;
+      const midY = (y1 + y2) / 2;
+      ctx.save();
+      ctx.translate(midX, midY);
+      ctx.scale(1, -1);
+      ctx.globalAlpha = 1;
+      ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const text = `${edge.type[0].toUpperCase()} ${setbackFt}′`;
+      const w = ctx.measureText(text).width + 6 / zoom;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(-w / 2, -fontSize * 0.8, w, fontSize * 1.6);
+      ctx.fillStyle = EDGE_COLORS[edge.type] ?? '#64748B';
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+  }, [edgeClassifications, setbacks]);
+
   // Screen-space scale bar (drawn after the world transform is popped)
   const renderScaleBar = useCallback((ctx: CanvasRenderingContext2D, zoom: number, cssW: number, cssH: number) => {
     const { ft, px } = pickScaleBarFt(zoom);
@@ -621,6 +678,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     // Sort elements by z-order: greenspace → parking/aisles → circulation → buildings
     const zOrder: Record<string, number> = {
+      'other': -1, // generated lots sit under everything
       'greenspace': 0,
       'parking-aisle': 1,
       'circulation': 2,
@@ -675,6 +733,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       renderParcelBoundary(ctx, processedGeometry.geometry, viewport.zoom);
     }
 
+    // Color-coded front/side/rear edges with setback labels
+    renderEdgeSetbacks(ctx, viewport.zoom);
+
     // Render building labels on top of everything
     if (showLabels) {
       sortedElements.forEach((element) => {
@@ -694,7 +755,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Scale bar in screen space (after the world transform is popped)
     const dpr = window.devicePixelRatio || 1;
     renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

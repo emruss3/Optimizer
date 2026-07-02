@@ -48,6 +48,9 @@ interface EnterpriseSitePlannerProps {
   selectedSolve?: PlannerOutput;
   parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number };
   buildableEnvelope?: import('geojson').Polygon;
+  /** Road-classified parcel edges (front/side/rear) for the setback overlay */
+  edgeClassifications?: import('../engine/setbacks').EdgeClassification[];
+  setbacks?: { front?: number; side?: number; rear?: number };
   envelopeStatus?: 'loading' | 'ready' | 'invalid';
   envelopeError?: string | null;
   usingFallbackEnvelope?: boolean;
@@ -74,6 +77,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   selectedSolve,
   parkingViz,
   buildableEnvelope,
+  edgeClassifications,
+  setbacks,
   envelopeStatus,
   envelopeError,
   usingFallbackEnvelope,
@@ -803,6 +808,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             viewport={viewport.viewport}
             processedGeometry={processedGeometry}
             buildableEnvelope={buildableEnvelope}
+            edgeClassifications={edgeClassifications}
+            setbacks={setbacks}
             isVertexEditing={vertexEditing.isVertexEditing}
             selectedVertex={vertexEditing.selectedVertex}
             measurementState={measurement.measurementState}
