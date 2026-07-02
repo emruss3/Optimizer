@@ -140,10 +140,22 @@ class SiteEngineWorker {
    * Solve current plan state and return updated elements, metrics, violations
    * v1: placeholder - will be implemented with parking solver and metrics
    */
+  /**
+   * Replace the entire building set (undo/redo restore, deletes) and re-solve.
+   */
+  async setBuildings(buildings: BuildingSpec[]): Promise<void> {
+    if (!this.siteState) {
+      throw new Error('Site not initialized');
+    }
+    this.siteState.buildings = Array.isArray(buildings) ? buildings : [];
+  }
+
   async solvePlan(): Promise<{
     elements: Element[];
     metrics: PlannerOutput['metrics'];
     violations: Array<{ code: string; message: string; delta?: number; severity: 'error' | 'warning' }>;
+    /** Canonical building specs after clamping — the undo/redo unit of state */
+    buildings: BuildingSpec[];
   }> {
     if (!this.siteState) {
       return {
@@ -159,6 +171,7 @@ class SiteEngineWorker {
           warnings: [],
         },
         violations: [],
+        buildings: [],
       };
     }
 
@@ -431,7 +444,8 @@ class SiteEngineWorker {
         violations: feasibility.violations.map(v => v.message),
         warnings: feasibility.violations.filter(v => v.severity === 'warning').map(v => v.message)
       },
-      violations: feasibility.violations
+      violations: feasibility.violations,
+      buildings: this.siteState.buildings
     };
   }
 }
@@ -465,6 +479,17 @@ self.onmessage = async (e) => {
         depthM,
         floors,
       });
+      const result = await worker.solvePlan();
+      (self as any).postMessage({
+        type: 'PLAN_UPDATED',
+        id: requestId,
+        reqId: requestId,
+        ...result,
+      });
+    } else if (type === 'SET_BUILDINGS') {
+      // Undo/redo restore + deletes: replace the building set and re-solve
+      const { buildings } = data;
+      await worker.setBuildings(buildings);
       const result = await worker.solvePlan();
       (self as any).postMessage({
         type: 'PLAN_UPDATED',
