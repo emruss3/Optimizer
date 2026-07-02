@@ -99,21 +99,44 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   const [showTemplates, setShowTemplates] = useState(false);
   const [hoveredElement, setHoveredElement] = useState<string | null>(null);
   const [displayMetrics, setDisplayMetrics] = useState<SiteMetrics | null>(initialMetrics || null);
-  const updateTimerRef = useRef<number | null>(null);
   // Element rotation (degrees) captured at the moment a rotation drag starts,
   // so rotation is applied to the original geometry rather than compounding.
   const rotationStartDegRef = useRef(0);
+  // Id of the element the user is actively dragging/rotating. While set,
+  // incoming solver results are merged around it — the solver re-packs parking
+  // and open space live, but never touches the element in the user's hand.
+  const activeManipulationRef = useRef<string | null>(null);
   
+  // Merge solver results in WITHOUT touching the element being manipulated —
+  // this is what lets parking re-pack live under a drag with no fighting.
+  const mergeIncoming = useCallback((prev: Element[], incoming: Element[]): Element[] => {
+    const activeId = activeManipulationRef.current;
+    if (!activeId) return incoming;
+    const local = prev.find(el => el.id === activeId);
+    if (!local) return incoming;
+    let replaced = false;
+    const merged = incoming.map(el => {
+      if (el.id === activeId) {
+        replaced = true;
+        return local;
+      }
+      return el;
+    });
+    // Solver result may not contain the active element yet (e.g. brand-new
+    // building) — keep the local one alive rather than dropping it mid-drag.
+    return replaced ? merged : [...merged, local];
+  }, []);
+
   // Update elements and metrics when selectedSolve changes
   useEffect(() => {
     if (selectedSolve) {
-      setElements(selectedSolve.elements);
+      setElements(prev => mergeIncoming(prev, selectedSolve.elements));
       setDisplayMetrics(selectedSolve.metrics);
     } else if (planElements.length > 0 || metrics) {
-      setElements(planElements);
+      setElements(prev => mergeIncoming(prev, planElements));
       setDisplayMetrics(metrics || null);
     }
-  }, [selectedSolve, planElements, metrics]);
+  }, [selectedSolve, planElements, metrics, mergeIncoming]);
 
   // Modular hooks
   const viewport = useViewport();
@@ -127,6 +150,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
 
+  // Stream updates continuously — no debounce. The workspace coalesces them
+  // (latest-wins) and feeds the solver at whatever rate it can actually solve,
+  // so parking re-packs live DURING the drag instead of after release.
   const queueBuildingUpdate = useCallback((update: {
     id: string;
     anchor: { x: number; y: number };
@@ -136,16 +162,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     floors?: number;
   }, options?: { final?: boolean }) => {
     if (!onBuildingUpdate) return;
-    if (options?.final) {
-      onBuildingUpdate(update, { final: true });
-      return;
-    }
-    if (updateTimerRef.current) {
-      window.clearTimeout(updateTimerRef.current);
-    }
-    updateTimerRef.current = window.setTimeout(() => {
-      onBuildingUpdate(update);
-    }, 80);
+    onBuildingUpdate(update, options?.final ? { final: true } : undefined);
   }, [onBuildingUpdate]);
 
   const getElementDimensions = useCallback((element: Element) => {
@@ -294,6 +311,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             const startAngle = ElementService.calculateAngle(center, { x: worldX, y: worldY });
             const originalCoords = selectedElement.geometry.coordinates[0];
             rotationStartDegRef.current = (selectedElement.properties?.rotation as number) || 0;
+            activeManipulationRef.current = selectedId;
             rotation.startRotation(selectedId, center.x, center.y, startAngle, originalCoords);
             return;
           }
@@ -303,6 +321,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             const nearest = ElementService.findNearestVertex(selectedElement, worldX, worldY, 15 / viewport.viewport.zoom);
             if (nearest) {
               vertexEditing.enableVertexEditing(selectedId, nearest.vertexIndex);
+              activeManipulationRef.current = selectedId;
               drag.startDrag(selectedId, worldX, worldY);
               return;
             }
@@ -316,6 +335,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         const nearest = ElementService.findNearestVertex(clickedElement, worldX, worldY, 15 / viewport.viewport.zoom);
         if (nearest) {
           vertexEditing.enableVertexEditing(clickedElement.id, nearest.vertexIndex);
+          activeManipulationRef.current = clickedElement.id;
           drag.startDrag(clickedElement.id, worldX, worldY);
           return;
         }
@@ -340,6 +360,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           const originalVertices = elements
             .filter(el => idsToDrag.has(el.id))
             .map(el => ({ id: el.id, coords: el.geometry.coordinates[0] }));
+          activeManipulationRef.current = clickedElement.id;
           drag.startDrag(clickedElement.id, worldX, worldY, originalVertices);
         }
       } else {
@@ -536,6 +557,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     setIsPanning(false);
     drag.endDrag();
     rotation.endRotation();
+    // Release the element back to the solver — the final update above becomes
+    // the authoritative geometry once the worker round-trips.
+    activeManipulationRef.current = null;
   }, [drag, elements, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate, rotation]);
 
   // Handle wheel zoom
@@ -592,12 +616,12 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     selection.selectAll(newElements.map(el => el.id));
   }, [copiedElements, elements, selection.selectAll]);
 
-  // Update elements from props
+  // Update elements from props (merge-preserving, same as the primary sync)
   useEffect(() => {
     if (planElements.length > 0) {
-      setElements(planElements);
+      setElements(prev => mergeIncoming(prev, planElements));
     }
-  }, [planElements]);
+  }, [planElements, mergeIncoming]);
 
   // Keyboard shortcuts
   useEffect(() => {

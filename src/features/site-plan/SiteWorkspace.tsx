@@ -272,43 +272,61 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
   }, [config, envelopeMeters, setPlanOutput, applyAlternatives]);
 
-  const handleBuildingUpdate = useCallback(
-    (update: {
-      id: string;
-      anchor: { x: number; y: number };
-      rotationRad: number;
-      widthFt: number;
-      depthFt: number;
-      floors?: number;
-    }, options?: { final?: boolean }) => {
-      if (!envelopeMeters) return;
-      const runUpdate = async () => {
-        // Canvas coordinates are already in EPSG:3857 meters — pass directly to worker.
-        // (The Shell field names say "Ft" but they're actually meters from the canvas.)
-        const result = await workerManager.updateBuilding(update.id, {
-          anchorX: update.anchor.x,
-          anchorY: update.anchor.y,
-          rotationRad: update.rotationRad,
-          widthM: update.widthFt,
-          depthM: update.depthFt,
-          floors: update.floors
-        });
+  // ── Dynamic drag re-solve ────────────────────────────────────────────────
+  // The Shell streams building updates on EVERY mouse move. We coalesce them
+  // latest-wins and keep exactly one solve in flight, so the plan re-packs
+  // around the drag at whatever rate the engine can actually deliver — the
+  // TestFit "co-creation" feel — without ever queueing a backlog.
+  type BuildingUpdate = {
+    id: string;
+    anchor: { x: number; y: number };
+    rotationRad: number;
+    widthFt: number;
+    depthFt: number;
+    floors?: number;
+  };
+  const updateInFlightRef = useRef(false);
+  const pendingUpdateRef = useRef<BuildingUpdate | null>(null);
+
+  const pumpBuildingUpdates = useCallback(() => {
+    if (updateInFlightRef.current) return;
+    const update = pendingUpdateRef.current;
+    if (!update) return;
+    pendingUpdateRef.current = null;
+    updateInFlightRef.current = true;
+
+    // Canvas coordinates are already in EPSG:3857 meters — pass directly to
+    // worker. (The Shell field names say "Ft" but they carry meters.)
+    workerManager
+      .updateBuilding(update.id, {
+        anchorX: update.anchor.x,
+        anchorY: update.anchor.y,
+        rotationRad: update.rotationRad,
+        widthM: update.widthFt,
+        depthM: update.depthFt,
+        floors: update.floors,
+      })
+      .then(result => {
         setPlanOutput(result.elements || [], result.metrics || null);
         setViolations(result.violations || []);
-      };
-
-      // No debounce here - Shell already debounces
-      // Don't swallow errors - surface them to user
-      runUpdate().catch(err => {
+      })
+      .catch(err => {
         console.error('Building update failed:', err);
-        setViolations([{
-          code: 'worker',
-          message: String(err),
-          severity: 'error'
-        }]);
+        setViolations([{ code: 'worker', message: String(err), severity: 'error' }]);
+      })
+      .finally(() => {
+        updateInFlightRef.current = false;
+        pumpBuildingUpdates(); // drain whatever arrived while solving
       });
+  }, [setPlanOutput]);
+
+  const handleBuildingUpdate = useCallback(
+    (update: BuildingUpdate, _options?: { final?: boolean }) => {
+      if (!envelopeMeters) return;
+      pendingUpdateRef.current = update; // latest-wins (the final release update is always last)
+      pumpBuildingUpdates();
     },
-    [envelopeMeters, setPlanOutput]
+    [envelopeMeters, pumpBuildingUpdates]
   );
 
   const handleAddBuilding = useCallback(async () => {
