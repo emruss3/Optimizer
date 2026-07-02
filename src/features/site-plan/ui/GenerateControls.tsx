@@ -5,6 +5,10 @@ type GenerateControlsProps = {
   isGenerating: boolean;
   onGenerate: () => void;
   onGenerateAlternatives: () => void;
+  /** Brief Phase 2: market-grounded SF lot fit (fails soft if RPC is absent) */
+  onGenerateLots?: () => void;
+  isGeneratingLots?: boolean;
+  lotFitSummary?: string | null;
 };
 
 const statusCopy: Record<GenerateControlsProps['status'], string> = {
@@ -17,7 +21,10 @@ const GenerateControls: React.FC<GenerateControlsProps> = ({
   status,
   isGenerating,
   onGenerate,
-  onGenerateAlternatives
+  onGenerateAlternatives,
+  onGenerateLots,
+  isGeneratingLots,
+  lotFitSummary
 }) => {
   return (
     <div className="space-y-3">
@@ -36,6 +43,20 @@ const GenerateControls: React.FC<GenerateControlsProps> = ({
       >
         Generate Alternatives
       </button>
+      {onGenerateLots && (
+        <>
+          <button
+            onClick={onGenerateLots}
+            disabled={isGeneratingLots}
+            className="w-full px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 disabled:opacity-50"
+          >
+            {isGeneratingLots ? 'Fitting lots…' : 'Generate Lot Fit (SF)'}
+          </button>
+          {lotFitSummary && (
+            <p className="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5">{lotFitSummary}</p>
+          )}
+        </>
+      )}
     </div>
   );
 };

@@ -3,8 +3,59 @@
 
 import { useMemo } from 'react';
 import { CheckCircle, XCircle, Star } from 'lucide-react';
-import type { PlannerOutput, SiteMetrics } from '../../engine/types';
+import type { Element, PlannerOutput, SiteMetrics } from '../../engine/types';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
+
+const THUMB_FILL: Record<string, string> = {
+  building: '#3B82F6',
+  parking: '#E2E8F0',
+  'parking-bay': '#E2E8F0',
+  'parking-aisle': '#CBD5E1',
+  circulation: '#CBD5E1',
+  greenspace: '#BBF7D0',
+  other: '#F1F5F9',
+};
+
+/** Tiny SVG mini-plan so schemes compare visually, TestFit-card style. */
+function PlanThumb({ elements }: { elements?: Element[] }) {
+  const view = useMemo(() => {
+    const polys = (elements ?? [])
+      .filter(e => THUMB_FILL[e.type] && e.geometry?.coordinates?.[0]?.length >= 4)
+      .sort((a, b) => (a.type === 'building' ? 1 : 0) - (b.type === 'building' ? 1 : 0));
+    if (polys.length === 0) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of polys) {
+      for (const [x, y] of el.geometry.coordinates[0]) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    const w = Math.max(1e-6, maxX - minX);
+    const h = Math.max(1e-6, maxY - minY);
+    const paths = polys.map(el => ({
+      // Flip Y so north-up matches the canvas
+      d: el.geometry.coordinates[0]
+        .map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${(((x - minX) / w) * 52 + 2).toFixed(1)},${((1 - (y - minY) / h) * 36 + 2).toFixed(1)}`)
+        .join(' ') + ' Z',
+      fill: THUMB_FILL[el.type],
+      stroke: el.type === 'building' ? '#1E40AF' : el.type === 'other' ? '#94A3B8' : 'none',
+    }));
+    return paths;
+  }, [elements]);
+
+  if (!view) {
+    return <div className="w-14 h-10 rounded bg-gray-100 border border-gray-200 flex-shrink-0" />;
+  }
+  return (
+    <svg viewBox="0 0 56 40" className="w-14 h-10 rounded bg-gray-50 border border-gray-200 flex-shrink-0">
+      {view.map((p, i) => (
+        <path key={i} d={p.d} fill={p.fill} stroke={p.stroke} strokeWidth={0.75} />
+      ))}
+    </svg>
+  );
+}
 
 interface SolveTableProps {
   solves: PlannerOutput[];
@@ -25,6 +76,7 @@ interface RowData {
   isSaved: boolean;
   isFavorite: boolean;
   metrics: SiteMetrics;
+  elements?: Element[];
   score: number;
   zoningCompliant: boolean;
   onClick: () => void;
@@ -57,6 +109,7 @@ export function SolveTable({
         isSaved: true,
         isFavorite: plan.is_favorite,
         metrics: plan.metrics,
+        elements: plan.elements ?? undefined,
         score: 0, // saved plans don't have a live score
         zoningCompliant: plan.metrics.zoningCompliant ?? false,
         onClick: () => onLoadSavedPlan?.(plan),
@@ -74,6 +127,7 @@ export function SolveTable({
         isSaved: false,
         isFavorite: false,
         metrics: solve.metrics,
+        elements: solve.elements,
         score: (scores?.[i] ?? 0) * 100,
         zoningCompliant: solve.metrics.zoningCompliant ?? false,
         onClick: () => onSelect(i, solve),
@@ -138,7 +192,8 @@ export function SolveTable({
                   }`}
                 >
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2">
+                      <PlanThumb elements={row.elements} />
                       {row.isFavorite && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500 flex-shrink-0" />}
                       <span className="truncate max-w-[100px]" title={row.label}>{row.label}</span>
                       {row.isSaved && (

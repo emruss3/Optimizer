@@ -409,7 +409,11 @@ export default function ProjectPanel() {
               
               return (
                 <div className="flex-1 overflow-hidden">
-                  <SitePlanDesigner parcel={selectedParcelForPlanner} />
+                  {/* Renders full-screen via portal; closing returns to Summary */}
+                  <SitePlanDesigner
+                    parcel={selectedParcelForPlanner}
+                    onClose={() => setActiveTab('summary')}
+                  />
                 </div>
               );
             })()}
