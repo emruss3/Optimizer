@@ -20,6 +20,10 @@ type ParametersPanelProps = {
   isGenerating: boolean;
   onGenerate: () => void;
   onGenerateAlternatives: () => void;
+  /** Brief Phase 2: market-grounded SF lot fit */
+  onGenerateLots?: () => void;
+  isGeneratingLots?: boolean;
+  lotFitSummary?: string | null;
   alternatives: PlannerOutput[];
   /** Optimizer scores (0–1), aligned with `alternatives` */
   alternativeScores?: number[];
@@ -51,6 +55,9 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
   isGenerating,
   onGenerate,
   onGenerateAlternatives,
+  onGenerateLots,
+  isGeneratingLots,
+  lotFitSummary,
   alternatives,
   alternativeScores,
   selectedSolveIndex,
@@ -246,6 +253,9 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
           isGenerating={isGenerating}
           onGenerate={onGenerate}
           onGenerateAlternatives={onGenerateAlternatives}
+          onGenerateLots={onGenerateLots}
+          isGeneratingLots={isGeneratingLots}
+          lotFitSummary={lotFitSummary}
         />
 
         {/* ── Save Plan ───────────────────────────────────────────────── */}
