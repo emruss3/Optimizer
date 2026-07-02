@@ -6,6 +6,7 @@ import type { Element } from '../../engine/types';
 import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
 import { feetToMeters, metersToFeet } from '../../engine/units';
+import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt } from './planRendering';
 
 interface SitePlanCanvasProps {
   elements: Element[];
@@ -91,7 +92,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       case 'parking-bay':
         return { color: '#E2E8F0', opacity: 0.5, stroke: false };
       case 'building':
-        return { color: '#3B82F6', opacity: 0.6, stroke: true };
+        return { color: '#BFDBFE', opacity: 0.95, stroke: true };
       default:
         return { color: '#6B7280', opacity: 0.3, stroke: false };
     }
@@ -369,8 +370,17 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.textBaseline = 'middle';
 
     const name = element.name?.replace('Building ', '') || element.id;
-    const area = element.properties?.areaSqFt;
-    const areaText = area ? `${Math.round(area).toLocaleString()} SF` : '';
+    const area = element.properties?.areaSqFt as number | undefined;
+    const floors = Math.max(
+      1,
+      Math.floor(
+        ((element.properties?.floors as number) || (element.properties?.stories as number) || 1)
+      )
+    );
+    // Floors + total GFA reads like a TestFit tag; footprint SF alone undersells it
+    const areaText = area
+      ? `${floors} fl · ${Math.round(area * floors).toLocaleString()} SF`
+      : `${floors} fl`;
 
     // Background pill
     const textWidth = Math.max(ctx.measureText(name).width, areaText ? ctx.measureText(areaText).width : 0);
@@ -397,8 +407,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   }, []);
 
   // Render individual element
-  const renderElement = useCallback((ctx: CanvasRenderingContext2D, element: Element, isSelected: boolean, isHovered: boolean, zoom: number) => {
-    const style = getElementStyle(element);
+  const renderElement = useCallback((ctx: CanvasRenderingContext2D, element: Element, isSelected: boolean, isHovered: boolean, zoom: number) => {    const style = getElementStyle(element);
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 3) return;
 
@@ -425,6 +434,157 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     ctx.restore();
   }, [getElementStyle]);
+
+  // Building interior detail: unit-division ticks + corridor centreline.
+  // This is what makes a bar read as apartments instead of a blue rectangle.
+  const renderBuildingDetail = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 4) return;
+
+    const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
+    // Skip when ticks would be sub-3px noise
+    if (UNIT_SPACING_M * zoom < 3) return;
+
+    ctx.save();
+    // Clip to the footprint so ticks never bleed outside
+    ctx.beginPath();
+    ctx.moveTo(coords[0][0], coords[0][1]);
+    for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.strokeStyle = 'rgba(30, 64, 175, 0.30)';
+    ctx.lineWidth = 1 / zoom;
+    for (const [[x1, y1], [x2, y2]] of computeUnitTicks(coords, UNIT_SPACING_M)) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+
+    const corridor = corridorLine(coords);
+    if (corridor) {
+      ctx.strokeStyle = 'rgba(30, 64, 175, 0.55)';
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.setLineDash([4 / zoom, 3 / zoom]);
+      ctx.beginPath();
+      ctx.moveTo(corridor[0][0], corridor[0][1]);
+      ctx.lineTo(corridor[1][0], corridor[1][1]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }, []);
+
+  // Per-bay stall count (the engine computes these; show them like TestFit does)
+  const renderBayCount = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
+    const stalls = element.properties?.parkingSpaces as number | undefined;
+    if (!stalls || stalls <= 0) return;
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 4) return;
+
+    let cx = 0, cy = 0;
+    const n = coords.length - 1;
+    for (let i = 0; i < n; i++) {
+      cx += coords[i][0];
+      cy += coords[i][1];
+    }
+    cx /= n;
+    cy /= n;
+
+    const fontSize = 11 / zoom;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, -1); // flip so text is upright
+    ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const text = `${stalls}`;
+    const w = ctx.measureText(text).width + 8 / zoom;
+    const h = fontSize * 1.5;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, -h / 2, w, h, 2 / zoom);
+    ctx.fill();
+    ctx.fillStyle = '#475569';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }, []);
+
+  // Dimension callouts (width × depth in ft) for the selected building
+  const renderDimensions = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 4) return;
+
+    const OFFSET_M = 12 / zoom + 2; // stay clear of the footprint at any zoom
+    const dims = edgeDimensions(coords, OFFSET_M);
+    const fontSize = 12 / zoom;
+
+    ctx.save();
+    ctx.strokeStyle = '#64748B';
+    ctx.fillStyle = '#334155';
+    ctx.lineWidth = 1 / zoom;
+
+    for (const d of dims) {
+      const [[x1, y1], [x2, y2]] = d.line;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      // end ticks
+      const ex = x2 - x1, ey = y2 - y1;
+      const len = Math.hypot(ex, ey) || 1;
+      const tx = (-ey / len) * (4 / zoom);
+      const ty = (ex / len) * (4 / zoom);
+      for (const [px, py] of [[x1, y1], [x2, y2]] as const) {
+        ctx.beginPath();
+        ctx.moveTo(px - tx, py - ty);
+        ctx.lineTo(px + tx, py + ty);
+        ctx.stroke();
+      }
+      // label
+      ctx.save();
+      ctx.translate(d.labelAt[0], d.labelAt[1]);
+      ctx.scale(1, -1);
+      ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const text = `${Math.round(metersToFeet(d.lengthM))} ft`;
+      const w = ctx.measureText(text).width + 8 / zoom;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(-w / 2, -fontSize * 0.8, w, fontSize * 1.6);
+      ctx.fillStyle = '#334155';
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+  }, []);
+
+  // Screen-space scale bar (drawn after the world transform is popped)
+  const renderScaleBar = useCallback((ctx: CanvasRenderingContext2D, zoom: number, cssW: number, cssH: number) => {
+    const { ft, px } = pickScaleBarFt(zoom);
+    const x2 = cssW - 20;
+    const x1 = x2 - px;
+    const y = cssH - 18;
+
+    ctx.save();
+    ctx.strokeStyle = '#475569';
+    ctx.fillStyle = '#475569';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x1, y);
+    ctx.lineTo(x2, y);
+    ctx.moveTo(x1, y - 4);
+    ctx.lineTo(x1, y + 4);
+    ctx.moveTo(x2, y - 4);
+    ctx.lineTo(x2, y + 4);
+    ctx.stroke();
+    ctx.font = '600 11px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${ft} ft`, (x1 + x2) / 2, y - 4);
+    ctx.restore();
+  }, []);
 
   // Render function
   const render = useCallback(() => {
@@ -478,9 +638,20 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       const isHovered = hoveredElement === element.id;
       renderElement(ctx, element, isSelected, isHovered, viewport.zoom);
 
-      // Stall dividers on parking bays (angle + stall width from the solver)
+      // Unit ticks + corridor line make buildings read as apartments
+      if (element.type === 'building') {
+        renderBuildingDetail(ctx, element, viewport.zoom);
+      }
+
+      // Stall dividers + per-bay counts on parking (from the solver)
       if (element.type === 'parking' || element.type === 'parking-bay') {
         renderParkingStripes(ctx, element, viewport.zoom);
+        renderBayCount(ctx, element, viewport.zoom);
+      }
+
+      // Dimension callouts (width × depth) on the selected building
+      if (isSelected && element.type === 'building') {
+        renderDimensions(ctx, element, viewport.zoom);
       }
 
       // Render vertex handles if selected
@@ -519,7 +690,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
 
     ctx.restore();
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+
+    // Scale bar in screen space (after the world transform is popped)
+    const dpr = window.devicePixelRatio || 1;
+    renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
