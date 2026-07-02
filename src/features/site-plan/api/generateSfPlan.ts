@@ -20,16 +20,30 @@ export interface SfPlanResponse {
   target_source?: string;
   context_confidence?: string;
   lots_generated?: number;
+  /** EPSG:4326 — what we render (converted to the canvas's 3857 frame) */
   lots?: Array<{ lot: number; area_sqft?: number; geom: unknown }>;
   footprints?: Array<{ lot: number; footprint_sqft?: number; geom: unknown }>;
+  /**
+   * Local-feet frame (EPSG:2274-derived, origin 0,0). We deliberately do NOT
+   * render from it on the live canvas — its frame differs from the canvas's
+   * EPSG:3857 world — but its presence is tolerated and its per-lot areas are
+   * authoritative backend truth (never measured client-side).
+   */
+  canvas_frame?: {
+    units?: string;
+    lots?: Array<{ lot: number; area_sqft?: number }>;
+    footprints?: Array<{ lot: number; footprint_sqft?: number }>;
+  };
   flags?: unknown;
 }
 
 export interface SfPlanSummary {
   lots: number;
   targetLotSqft?: number;
+  targetFootprintSqft?: number;
   targetSource?: string;
   confidence?: string;
+  flags: string[];
 }
 
 /** Parse a geom that may arrive as an object or a JSON string; 4326 → 3857. */
@@ -55,6 +69,15 @@ export function sfPlanToElements(resp: SfPlanResponse): { elements: Element[]; s
   const now = new Date().toISOString();
   const elements: Element[] = [];
 
+  // Areas are backend truth. Prefer canvas_frame's per-lot areas (EPSG:2274
+  // true feet) when present; the 4326 list carries the same figures otherwise.
+  const frameLotArea = new Map<number, number | undefined>(
+    (resp.canvas_frame?.lots ?? []).map(l => [l.lot, l.area_sqft])
+  );
+  const frameFpArea = new Map<number, number | undefined>(
+    (resp.canvas_frame?.footprints ?? []).map(f => [f.lot, f.footprint_sqft])
+  );
+
   for (const lot of resp.lots ?? []) {
     const poly = toCanvasPolygon(lot.geom);
     if (!poly) continue;
@@ -63,7 +86,7 @@ export function sfPlanToElements(resp: SfPlanResponse): { elements: Element[]; s
       type: 'other',
       name: `Lot ${lot.lot}`,
       geometry: poly,
-      properties: { areaSqFt: lot.area_sqft, color: '#E5E7EB' },
+      properties: { areaSqFt: frameLotArea.get(lot.lot) ?? lot.area_sqft, color: '#E5E7EB' },
       metadata: { createdAt: now, updatedAt: now, source: 'ai-generated' },
     });
   }
@@ -76,7 +99,12 @@ export function sfPlanToElements(resp: SfPlanResponse): { elements: Element[]; s
       type: 'building',
       name: `Building ${fp.lot}`,
       geometry: poly,
-      properties: { areaSqFt: fp.footprint_sqft, floors: 1, use: 'residential', color: '#3B82F6' },
+      properties: {
+        areaSqFt: frameFpArea.get(fp.lot) ?? fp.footprint_sqft,
+        floors: 1,
+        use: 'residential',
+        color: '#3B82F6',
+      },
       metadata: { createdAt: now, updatedAt: now, source: 'ai-generated' },
     });
   }
@@ -86,8 +114,12 @@ export function sfPlanToElements(resp: SfPlanResponse): { elements: Element[]; s
     summary: {
       lots: resp.lots_generated ?? (resp.lots?.length ?? 0),
       targetLotSqft: resp.target_lot_sqft,
+      targetFootprintSqft: resp.target_footprint_sqft,
       targetSource: resp.target_source,
       confidence: resp.context_confidence,
+      flags: Array.isArray(resp.flags)
+        ? (resp.flags as unknown[]).filter((f): f is string => typeof f === 'string')
+        : [],
     },
   };
 }

@@ -119,9 +119,13 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
   const targetFootprint = fmtNum(p(builtForm, 'underwrite_target', 'footprint_sqft') ?? p(builtForm, 'underwrite_target_footprint_sqft'));
   const medianFootprint = fmtNum(p(builtForm, 'footprint_sqft', 'p50') ?? p(builtForm, 'p50_footprint_sqft'));
   const p75Footprint = fmtNum(p(builtForm, 'footprint_sqft', 'p75') ?? p(builtForm, 'p75_footprint_sqft'));
+  const stories = fmtNum(p(builtForm, 'stories', 'p50') ?? p(builtForm, 'p50_stories') ?? p(builtForm, 'stories'));
   const priceBldgSf = fmtUsd(p(pricing, 'price_per_bldg_sqft') ?? p(pricing, 'usd_per_bldg_sf'));
   const priceLotSf = fmtUsd(p(pricing, 'price_per_lot_sqft') ?? p(pricing, 'usd_per_lot_sf'));
-  const hasComps = nComps || targetFootprint || medianFootprint || priceBldgSf;
+  const saleP50 = fmtUsd(p(pricing, 'sale_price', 'p50') ?? p(pricing, 'p50_sale_price'));
+  const saleP25 = fmtUsd(p(pricing, 'sale_price', 'p25') ?? p(pricing, 'p25_sale_price'));
+  const saleP75 = fmtUsd(p(pricing, 'sale_price', 'p75') ?? p(pricing, 'p75_sale_price'));
+  const hasComps = nComps || targetFootprint || medianFootprint || priceBldgSf || saleP50;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -167,28 +171,52 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
           <Row label="Max height" v={context.maxHeightFt} unit="ft" />
           <Row label="Max density" v={context.maxDensityDuAc} unit="DU/ac" />
           <Row label="Max coverage" v={context.maxCoveragePct} unit="%" />
+          {context.parkingStrategy && (
+            <div className="flex items-center justify-between text-sm py-0.5">
+              <span className="text-gray-600">Parking strategy</span>
+              <span className="font-medium text-gray-900">{context.parkingStrategy.replace(/_/g, ' ')}</span>
+            </div>
+          )}
+          {context.flags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {context.flags.map(flag => (
+                <span
+                  key={flag}
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200"
+                >
+                  ⚠ {flag.replace(/_/g, ' ')}
+                </span>
+              ))}
+            </div>
+          )}
         </>
       )}
 
-      {uses.length > 0 && (
-        <div className="mt-3">
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Use (as-of-right only)
-          </label>
-          <select
-            value={use}
-            onChange={e => onUseChange(e.target.value)}
-            className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white"
-          >
-            {!uses.includes(use) && <option value={use}>{use.replace(/_/g, ' ')}</option>}
-            {uses.map(u => (
-              <option key={u} value={u}>
-                {u.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {(() => {
+        // Newer backend embeds permitted uses in the context payload; the
+        // standalone RPC remains as fallback. Either way: legal uses only.
+        const allUses = uses.length > 0 ? uses : context?.permittedUses ?? [];
+        if (allUses.length === 0) return null;
+        return (
+          <div className="mt-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Use (as-of-right only)
+            </label>
+            <select
+              value={use}
+              onChange={e => onUseChange(e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white"
+            >
+              {!allUses.includes(use) && <option value={use}>{use.replace(/_/g, ' ')}</option>}
+              {allUses.map(u => (
+                <option key={u} value={u}>
+                  {u.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+      })()}
 
       {hasComps && (
         <div className="mt-3 pt-3 border-t border-gray-100">
@@ -224,6 +252,23 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
             <div className="flex justify-between text-sm py-0.5">
               <span className="text-gray-600">Price / lot SF</span>
               <span className="font-medium">{priceLotSf}</span>
+            </div>
+          )}
+          {stories && (
+            <div className="flex justify-between text-sm py-0.5">
+              <span className="text-gray-600">Typical stories</span>
+              <span className="font-medium">{stories}</span>
+            </div>
+          )}
+          {saleP50 && (
+            <div className="flex justify-between text-sm py-0.5">
+              <span className="text-gray-600">Sale price (median)</span>
+              <span className="font-medium">
+                {saleP50}
+                {saleP25 && saleP75 && (
+                  <span className="text-gray-400 font-normal"> ({saleP25}–{saleP75})</span>
+                )}
+              </span>
             </div>
           )}
         </div>

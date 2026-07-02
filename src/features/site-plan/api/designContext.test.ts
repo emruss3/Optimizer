@@ -42,6 +42,18 @@ describe('normalizeDesignContext', () => {
     expect(normalizeDesignContext('oops')).toBeNull();
     expect(normalizeDesignContext({ unrelated: true })).toBeNull();
   });
+
+  it('reads flags, parking strategy, and embedded permitted uses (new brief shape)', () => {
+    const ctx = normalizeDesignContext({
+      zoning_base: 'RS5',
+      parking_strategy: 'surface',
+      flags: ['flood_zone_ae', { flag: 'review_required' }],
+      permitted_uses: { feasible_uses_as_of_right: ['single_family', 'duplex'] },
+    })!;
+    expect(ctx.parkingStrategy).toBe('surface');
+    expect(ctx.flags).toEqual(['flood_zone_ae', 'review_required']);
+    expect(ctx.permittedUses).toEqual(['single_family', 'duplex']);
+  });
 });
 
 describe('contextToZoningPatch', () => {

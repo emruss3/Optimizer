@@ -382,9 +382,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }
       // Additive per the brief: generated lots/footprints join the existing plan
       setPlanOutput([...elements, ...generated], metrics);
+      const flagsNote = summary.flags.length > 0 ? ` · ⚠ ${summary.flags.join(', ')}` : '';
       setLotFitSummary(
-        `${summary.lots} lots · target ${summary.targetLotSqft?.toLocaleString() ?? '—'} SF ` +
-        `(${summary.targetSource ?? 'n/a'}) · confidence ${summary.confidence ?? 'n/a'}`
+        `${summary.lots} lots · lot target ${summary.targetLotSqft?.toLocaleString() ?? '—'} SF, ` +
+        `footprint ${summary.targetFootprintSqft?.toLocaleString() ?? '—'} SF ` +
+        `(${summary.targetSource ?? 'n/a'}) · confidence ${summary.confidence ?? 'n/a'}${flagsNote}`
       );
     } finally {
       setIsGeneratingLots(false);

@@ -32,6 +32,12 @@ export interface DesignContext {
   maxHeightFt?: ContextValue;
   maxDensityDuAc?: ContextValue;
   maxCoveragePct?: ContextValue;
+  /** e.g. 'surface' | 'tuck_under' — display-only for now */
+  parkingStrategy?: string;
+  /** Backend warning flags (flood zone, review triggers, …) → warning chips */
+  flags: string[];
+  /** As-of-right uses embedded in the context payload (newer backend shape) */
+  permittedUses: string[];
   raw: Record<string, unknown>;
 }
 
@@ -90,6 +96,9 @@ export function normalizeDesignContext(json: unknown): DesignContext | null {
     maxHeightFt: cv(pick(o, 'height_ft', 'max_height_ft', 'maxHeightFt')),
     maxDensityDuAc: cv(pick(o, 'density_du_ac', 'max_density_du_per_acre', 'density')),
     maxCoveragePct: cv(pick(o, 'coverage_pct', 'max_coverage_pct', 'max_impervious_coverage_pct')),
+    parkingStrategy: (pick(o, 'parking_strategy', 'parkingStrategy') as string) ?? undefined,
+    flags: normalizeFlags(pick(o, 'flags', 'warnings')),
+    permittedUses: normalizePermittedUses(pick(o, 'permitted_uses', 'permittedUses')),
     raw: o,
   };
 
@@ -159,6 +168,15 @@ export function fetchLocalBuiltForm(ogcFid: number) {
 
 export function fetchLocalPricing(ogcFid: number) {
   return rpc('fn_local_pricing', { p_ogc_fid: ogcFid });
+}
+
+/** Tolerant reader for warning flags → list of strings for chips. */
+export function normalizeFlags(json: unknown): string[] {
+  if (json == null) return [];
+  const list = Array.isArray(json) ? json : typeof json === 'object' ? Object.values(json) : [json];
+  return list
+    .map(f => (typeof f === 'string' ? f : (f as Record<string, unknown>)?.flag ?? (f as Record<string, unknown>)?.message))
+    .filter((f): f is string => typeof f === 'string' && f.length > 0);
 }
 
 /** Tolerant reader for the permitted-uses payload → list of use strings. */

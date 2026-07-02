@@ -50,14 +50,25 @@ describe('sfPlanToElements', () => {
     expect(summary.lots).toBe(3);
   });
 
-  it('carries target/provenance into the summary', () => {
+  it('carries target/provenance/flags into the summary', () => {
     const { summary } = sfPlanToElements({
       lots: [],
       target_lot_sqft: 6000,
+      target_footprint_sqft: 1800,
       target_source: 'local_comps_p75',
       context_confidence: 'high',
+      flags: ['flood_zone_ae'],
     });
     expect(summary.targetSource).toBe('local_comps_p75');
-    expect(summary.confidence).toBe('high');
+    expect(summary.targetFootprintSqft).toBe(1800);
+    expect(summary.flags).toEqual(['flood_zone_ae']);
+  });
+
+  it('prefers canvas_frame areas (backend EPSG:2274 truth) over the 4326 list', () => {
+    const { elements } = sfPlanToElements({
+      lots: [{ lot: 1, area_sqft: 5990, geom: lotGeom4326 }],
+      canvas_frame: { units: 'feet_us_survey', lots: [{ lot: 1, area_sqft: 6000 }] },
+    });
+    expect(elements[0].properties.areaSqFt).toBe(6000);
   });
 });
