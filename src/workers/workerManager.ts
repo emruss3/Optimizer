@@ -12,6 +12,8 @@ export interface PlanUpdateResult {
   elements: Element[];
   metrics: PlannerOutput['metrics'];
   violations: FeasibilityViolation[];
+  /** Canonical building specs after the solve — the undo/redo unit of state */
+  buildings?: BuildingSpec[];
 }
 
 export class PlannerWorkerManager {
@@ -106,6 +108,18 @@ export class PlannerWorkerManager {
   }
 
   /**
+   * Replace the whole building set (undo/redo restore, deletes) and re-solve.
+   */
+  async setBuildings(buildings: BuildingSpec[]): Promise<PlanUpdateResult> {
+    if (!this.worker) {
+      throw new Error('Worker not available');
+    }
+    const id = ++nextId;
+    this.worker.postMessage({ type: 'SET_BUILDINGS', id, buildings });
+    return this.waitForPlanUpdate(id);
+  }
+
+  /**
    * Wait for PLAN_UPDATED response from worker
    */
   private waitForPlanUpdate(id: number): Promise<PlanUpdateResult> {
@@ -115,7 +129,7 @@ export class PlannerWorkerManager {
 
     return new Promise((resolve, reject) => {
       const onmessage = (e: MessageEvent) => {
-        const { id: rid, reqId, type, elements, metrics, violations, error } = e.data || {};
+        const { id: rid, reqId, type, elements, metrics, violations, buildings, error } = e.data || {};
         const receivedId = rid || reqId;
 
         if (type !== 'PLAN_UPDATED' || receivedId !== id) {
@@ -146,6 +160,7 @@ export class PlannerWorkerManager {
             warnings: [],
           },
           violations: violations || [],
+          buildings: buildings || undefined,
         });
       };
 

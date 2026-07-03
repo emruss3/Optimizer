@@ -139,7 +139,7 @@ export class HBUAnalyzer {
     }
     
     // 2. Analyze market conditions
-    const marketFactors = await this.analyzeMarketFactors(parcel);
+    const marketFactors = await this.analyzeMarketFactors(parcel, zoningData);
     console.log('Market factors analyzed:', marketFactors);
     
     // 3. Calculate financial projections for each use
@@ -364,9 +364,14 @@ export class HBUAnalyzer {
   }
 
   /**
-   * Analyze market factors affecting the parcel
+   * Analyze market factors affecting the parcel.
+   * zoningData must be passed in — referencing the caller's local was a
+   * ReferenceError that crashed the whole HBU panel.
    */
-  private async analyzeMarketFactors(parcel: SelectedParcel): Promise<MarketFactor[]> {
+  private async analyzeMarketFactors(
+    parcel: SelectedParcel,
+    zoningData?: { zoning_type?: string | null }
+  ): Promise<MarketFactor[]> {
     const factors: MarketFactor[] = [];
 
     // Location factors
@@ -386,7 +391,7 @@ export class HBUAnalyzer {
     });
 
     // Zoning flexibility
-    if (zoningData.zoning_type === 'Mixed-Use') {
+    if (zoningData?.zoning_type === 'Mixed-Use') {
       factors.push({
         factor: 'Zoning Flexibility',
         impact: 'positive',

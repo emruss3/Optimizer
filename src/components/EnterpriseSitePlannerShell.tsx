@@ -39,6 +39,23 @@ import { StatusBar } from './site-planner/StatusBar';
 // Services
 import { ElementService } from '../services/elementService';
 import { TemplateService } from '../services/templateService';
+import { computeSnapDelta } from './site-planner/snapping';
+
+/** Centroid of a ring, excluding the closing vertex. */
+function ringCentroid(coords: number[][]): { x: number; y: number } {
+  const n =
+    coords.length > 1 &&
+    coords[0][0] === coords[coords.length - 1][0] &&
+    coords[0][1] === coords[coords.length - 1][1]
+      ? coords.length - 1
+      : coords.length;
+  let x = 0, y = 0;
+  for (let i = 0; i < n; i++) {
+    x += coords[i][0];
+    y += coords[i][1];
+  }
+  return { x: x / Math.max(1, n), y: y / Math.max(1, n) };
+}
 
 interface EnterpriseSitePlannerProps {
   parcel: SelectedParcel;
@@ -67,6 +84,11 @@ interface EnterpriseSitePlannerProps {
     options?: { final?: boolean }
   ) => void;
   onAddBuilding?: () => void;
+  /**
+   * Delete buildings for real (worker-side). Without this, deleting a
+   * building is cosmetic — it reappears on the next re-solve.
+   */
+  onDeleteBuildings?: (ids: string[]) => void;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -84,7 +106,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   usingFallbackEnvelope,
   onRetryEnvelope,
   onBuildingUpdate,
-  onAddBuilding
+  onAddBuilding,
+  onDeleteBuildings
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
   // run unconditionally on every render. The `!parcel` guard lives just before
@@ -111,6 +134,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   // incoming solver results are merged around it — the solver re-packs parking
   // and open space live, but never touches the element in the user's hand.
   const activeManipulationRef = useRef<string | null>(null);
+  // Last delta actually applied to the dragged element (incl. magnetic snap),
+  // so mouse-up commits exactly what the user saw.
+  const lastDragDeltaRef = useRef<{ dx: number; dy: number } | null>(null);
   
   // Merge solver results in WITHOUT touching the element being manipulated —
   // this is what lets parking re-pack live under a drag with no fighting.
@@ -503,24 +529,53 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       const worldX = (event.clientX - rect.left - viewport.viewport.panX) / viewport.viewport.zoom;
       const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
       const snapped = grid.snapPoint(worldX, worldY);
-      
+
       drag.updateDrag(snapped.x, snapped.y);
       const delta = drag.getDragDelta();
       if (delta) {
         const draggedElement = elements.find(el => el.id === drag.dragState.elementId);
-        if (draggedElement?.type === 'building' && onBuildingUpdate) {
-          const center = ElementService.calculateElementCenter(draggedElement);
+        // ORIGINAL (drag-start) coords are the base for both the visual move
+        // and the solver anchor. Deriving the anchor from the already-moved
+        // element + total delta double-counted the displacement (~2x drift).
+        const origCoords = drag.dragState.originalVertices?.find(
+          v => v.id === drag.dragState.elementId
+        )?.coords;
+
+        let dx = delta.deltaX;
+        let dy = delta.deltaY;
+        // Magnetic setback snap (buildings only; hold Alt to bypass)
+        if (
+          draggedElement?.type === 'building' &&
+          origCoords &&
+          buildableEnvelope?.coordinates?.[0] &&
+          !event.altKey
+        ) {
+          const moved = origCoords.map(([x, y]) => [x + dx, y + dy]);
+          const snapHit = computeSnapDelta(
+            moved,
+            buildableEnvelope.coordinates[0],
+            12 / viewport.viewport.zoom
+          );
+          if (snapHit) {
+            dx += snapHit.dx;
+            dy += snapHit.dy;
+          }
+        }
+        lastDragDeltaRef.current = { dx, dy };
+
+        if (draggedElement?.type === 'building' && onBuildingUpdate && origCoords) {
+          const baseCenter = ringCentroid(origCoords);
           const { widthFt, depthFt } = getElementDimensions(draggedElement);
           setElements(prev => ElementService.moveElements(
             prev,
             selection.selectedElements,
-            delta.deltaX,
-            delta.deltaY,
+            dx,
+            dy,
             drag.dragState.originalVertices
           ));
           queueBuildingUpdate({
             id: draggedElement.id,
-            anchor: { x: center.x + delta.deltaX, y: center.y + delta.deltaY },
+            anchor: { x: baseCenter.x + dx, y: baseCenter.y + dy },
             rotationRad: getElementRotationRad(draggedElement),
             widthFt,
             depthFt,
@@ -532,31 +587,37 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         setElements(prev => ElementService.moveElements(
           prev,
           selection.selectedElements,
-          delta.deltaX,
-          delta.deltaY,
+          dx,
+          dy,
           drag.dragState.originalVertices
         ));
       }
     }
-  }, [isPanning, lastPanPoint, viewport.viewport.zoom, viewport.viewport.panX, viewport.viewport.panY, viewport.pan, drag.dragState, drag.updateDrag, drag.getDragDelta, selection.selectedElements, elements, measurement.measurementState, measurement.updateMeasurement, grid.snapPoint, drawingTools.activeTool, vertexEditing.isVertexEditing, vertexEditing.selectedVertex, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate]);
+  }, [isPanning, lastPanPoint, viewport.viewport.zoom, viewport.viewport.panX, viewport.viewport.panY, viewport.pan, drag.dragState, drag.updateDrag, drag.getDragDelta, selection.selectedElements, elements, measurement.measurementState, measurement.updateMeasurement, grid.snapPoint, drawingTools.activeTool, vertexEditing.isVertexEditing, vertexEditing.selectedVertex, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate, buildableEnvelope]);
 
   // Handle mouse up
   const handleMouseUp = useCallback(() => {
     if (drag.dragState.isDragging && drag.dragState.elementId) {
-      const delta = drag.getDragDelta();
       const draggedElement = elements.find(el => el.id === drag.dragState.elementId);
-      if (delta && draggedElement?.type === 'building' && onBuildingUpdate) {
-        const center = ElementService.calculateElementCenter(draggedElement);
+      const origCoords = drag.dragState.originalVertices?.find(
+        v => v.id === drag.dragState.elementId
+      )?.coords;
+      // Use the last APPLIED delta (includes any magnetic snap) so the final
+      // authoritative position matches what the user saw during the drag.
+      const applied = lastDragDeltaRef.current;
+      if (applied && draggedElement?.type === 'building' && onBuildingUpdate && origCoords) {
+        const baseCenter = ringCentroid(origCoords);
         const { widthFt, depthFt } = getElementDimensions(draggedElement);
         queueBuildingUpdate({
           id: draggedElement.id,
-          anchor: { x: center.x + delta.deltaX, y: center.y + delta.deltaY },
+          anchor: { x: baseCenter.x + applied.dx, y: baseCenter.y + applied.dy },
           rotationRad: getElementRotationRad(draggedElement),
           widthFt,
           depthFt,
           floors: draggedElement.properties?.stories || draggedElement.properties?.floors
         }, { final: true });
       }
+      lastDragDeltaRef.current = null;
     }
 
     setIsPanning(false);
@@ -604,10 +665,18 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Element operations
   const handleDelete = useCallback(() => {
+    // Buildings must be deleted worker-side or they reappear on the next
+    // re-solve; everything else (user-drawn annotations) is local state.
+    const buildingIds = elements
+      .filter(el => selection.selectedElements.has(el.id) && el.type === 'building')
+      .map(el => el.id);
+    if (buildingIds.length > 0 && onDeleteBuildings) {
+      onDeleteBuildings(buildingIds);
+    }
     setElements(prev => ElementService.deleteElements(prev, selection.selectedElements));
     selection.clearSelection();
     vertexEditing.disableVertexEditing();
-  }, [selection.selectedElements, selection.clearSelection, vertexEditing.disableVertexEditing]);
+  }, [elements, selection.selectedElements, selection.clearSelection, vertexEditing.disableVertexEditing, onDeleteBuildings]);
 
   const handleCopy = useCallback(() => {
     const toCopy = elements.filter(el => selection.selectedElements.has(el.id));
