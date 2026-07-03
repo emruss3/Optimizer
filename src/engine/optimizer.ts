@@ -7,6 +7,7 @@ import type { BuildingSpec, BuildingType, PlanState, UnitMixEntry } from './mode
 import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix, corridorEfficiency } from './model';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from './buildingGeometry';
 import { solveParkingBayPacking } from './parkingBaySolver';
+import { placeBarsAlongEdges } from './edgePlacement';
 import { computeFeasibility } from './feasibility';
 import { computeProForma } from './proforma';
 import { areaM2, correctedAreaM2, mercatorCorrectionFactor, normalizeToPolygon, safeBbox, intersection, difference, polygons, isPointInPolygon } from './geometry';
@@ -690,14 +691,35 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     )
   );
   const pinnedFootprints = pinned.map(b => buildBuildingFootprint(b));
-  const overlapsPinned = (fp: Polygon): boolean =>
-    pinnedFootprints.some(pf => {
+  const placedFootprints: Polygon[] = [...pinnedFootprints];
+  const overlapsPlaced = (fp: Polygon): boolean =>
+    placedFootprints.some(pf => {
       const overlap = polygons(intersection(fp, pf)).reduce((s, p) => s + areaM2(p), 0);
       return overlap > 0.5;
     });
 
   const initialBuildings: BuildingSpec[] = [...pinned];
   let buildingNum = 0;
+
+  // Constructive fast path: TestFit-style EDGE-HUGGING placement — bars laid
+  // flush along the buildable envelope's edges (longest frontage first)
+  // instead of a centered grid. The grid below remains the fallback filler.
+  if (maxIterations === 0) {
+    const need = Math.max(0, effectiveNumBuildings - pinned.length);
+    const edgeBars = placeBarsAlongEdges(envelope, {
+      widthM: defaultWidthM,
+      depthM: defaultDepthM,
+      count: need,
+      buildingType,
+      avoidFootprints: pinnedFootprints,
+    });
+    for (const bar of edgeBars) {
+      initialBuildings.push(bar);
+      placedFootprints.push(buildBuildingFootprint(bar));
+    }
+    buildingNum = edgeBars.length;
+  }
+
   for (const pos of candidatePositions) {
     if (initialBuildings.length >= Math.max(effectiveNumBuildings, pinned.length)) break;
     const spec = createBuildingSpec(
@@ -709,7 +731,10 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     const inside = footprint.coordinates[0].every(
       ([vx, vy]) => isPointInPolygon([vx, vy], envelope.coordinates[0])
     );
-    if (inside && !overlapsPinned(footprint)) initialBuildings.push(spec);
+    if (inside && !overlapsPlaced(footprint)) {
+      initialBuildings.push(spec);
+      placedFootprints.push(footprint);
+    }
   }
 
   // Fallback: one building at envelope centroid, sized to fit
