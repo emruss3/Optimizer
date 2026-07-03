@@ -20,6 +20,8 @@ export interface Element {
     use?: string; // e.g., 'residential', 'commercial', 'mixed-use'
     color?: string;
     rotation?: number; // in degrees
+    /** Per-building unit mix (drives the unit-level floorplate rendering) */
+    unitMix?: Array<{ type: string; count: number; avgSqft: number }>;
     [key: string]: any;
   };
   metadata: {

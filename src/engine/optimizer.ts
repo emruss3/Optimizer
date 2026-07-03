@@ -398,7 +398,7 @@ function computeFullResult(
  */
 function buildElements(
   buildings: BuildingSpec[],
-  buildingFootprints: Array<{ id: string; footprint: Polygon; floors: number }>,
+  buildingFootprints: Array<{ id: string; footprint: Polygon; floors: number; unitMix?: UnitMixEntry[] }>,
   parkingSolution: { bays: Polygon[]; aisles: Polygon[]; stallsAchieved: number; circulationPolygons?: Polygon[] },
   feasibility: { gfaSqft: number },
   envelope?: Polygon
@@ -415,7 +415,8 @@ function buildElements(
       geometry: footprint,
       properties: {
         areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
-        floors: building.floors
+        floors: building.floors,
+        unitMix: building.unitMix
       },
       metadata: {
         createdAt: now,

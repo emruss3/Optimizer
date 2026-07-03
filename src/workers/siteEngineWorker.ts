@@ -247,7 +247,8 @@ class SiteEngineWorker {
         geometry: footprint,
         properties: {
           areaSqFt: correctedAreaM2(footprint) * SQM_TO_SQFT,
-          floors: building.floors
+          floors: building.floors,
+          unitMix: building.unitMix
         },
         metadata: {
           createdAt: now,
