@@ -173,13 +173,28 @@ function buildCirculation(
   envelope: Polygon,
   aisles: Polygon[],
   bays: Polygon[],
-  chosenAngleDeg: number
+  buildingFootprints: Polygon[]
 ): {
   circulationPolygons: Polygon[];
   accessPoint: [number, number];
   isFullyConnected: boolean;
   circulationAreaSqM: number;
 } {
+  // Drives must never run THROUGH buildings — clip every circulation polygon
+  // against the footprints and drop slivers (these were the "random grey
+  // lines" crossing the plan).
+  const clipToOpenGround = (polys: Polygon[]): Polygon[] => {
+    let parts: Polygon[] = polys;
+    for (const fp of buildingFootprints) {
+      const next: Polygon[] = [];
+      for (const part of parts) {
+        next.push(...asPolygonList(difference(part, fp)));
+      }
+      parts = next;
+    }
+    return parts.filter(p => areaM2(p) > 15);
+  };
+
   const { accessPoint, edgeStart, edgeEnd } = findAccessPoint(envelope);
   const envBounds = bbox(envelope);
 
@@ -214,8 +229,8 @@ function buildCirculation(
     MAIN_DRIVE_WIDTH_M
   );
 
-  // Clip to envelope
-  const mainDriveClipped = asPolygonList(intersection(envelope, mainDriveRaw));
+  // Clip to envelope, then carve out buildings
+  const mainDriveClipped = clipToOpenGround(asPolygonList(intersection(envelope, mainDriveRaw)));
   const circulationPolygons: Polygon[] = [...mainDriveClipped];
 
   // Build connectors: for each bay aisle, if not within threshold of main drive, add connector
@@ -259,7 +274,7 @@ function buildCirculation(
       nearestPoint[0], nearestPoint[1],
       MAIN_DRIVE_WIDTH_M
     );
-    const connectorClipped = asPolygonList(intersection(envelope, connector));
+    const connectorClipped = clipToOpenGround(asPolygonList(intersection(envelope, connector)));
     circulationPolygons.push(...connectorClipped);
     connectedCount++;
   }
@@ -449,12 +464,12 @@ export function solveParkingBayPacking(
   const mergedBays = mergePolygons(bestBays);
   const mergedAisles = mergePolygons(bestAisles);
 
-  // Build circulation spine + connectors
+  // Build circulation spine + connectors (never through buildings)
   const circulation = buildCirculation(
     envelope,
     mergedAisles,
     mergedBays,
-    bestAngle
+    buildingFootprints
   );
 
   return {

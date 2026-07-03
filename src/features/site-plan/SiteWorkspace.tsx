@@ -13,6 +13,8 @@ import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2, buffer, 
 import { feature4326To3857 } from '../../utils/reproject';
 import { feetToMeters } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount, type BuildingSpec } from '../../engine/model';
+import { placeBarsAlongEdges } from '../../engine/edgePlacement';
+import { buildBuildingFootprint } from '../../engine/buildingGeometry';
 import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
@@ -520,12 +522,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }
     }
     
-    // Calculate envelope centroid in EPSG:3857 meters
-    const coords = envelopeMeters.coordinates[0];
-    const centroid = calculatePolygonCentroid(coords);
-    const anchorX = centroid[0];
-    const anchorY = centroid[1];
-    
+    // Default dimensions in meters (convert from design defaults in feet)
+    const defaultWidthM = feetToMeters(100);
+    const defaultDepthM = feetToMeters(50);
+    const defaultFloors = 3;
+
+    // Place the new building at a LEGAL spot: flush along an open envelope
+    // edge, avoiding existing buildings. The old envelope-centroid anchor sat
+    // near/over the boundary on irregular parcels — and since user-added
+    // buildings are pinned, the engine faithfully kept the bad spot.
+    const existingFootprints = currentBuildingsRef.current.map(b => buildBuildingFootprint(b));
+    const slot = placeBarsAlongEdges(envelopeMeters, {
+      widthM: defaultWidthM,
+      depthM: defaultDepthM,
+      count: 1,
+      avoidFootprints: existingFootprints,
+    })[0];
+    const centroid = calculatePolygonCentroid(envelopeMeters.coordinates[0]);
+    const anchor = slot ? slot.anchor : { x: centroid[0], y: centroid[1] };
+    const rotationRad = slot ? slot.rotationRad : 0;
+
     // Find next available building ID
     const existingIds = elements.filter(e => e.type === 'building').map(e => e.id);
     let buildingNum = 1;
@@ -533,17 +549,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       buildingNum++;
     }
     const newId = `building-${buildingNum}`;
-    
-    // Default dimensions in meters (convert from design defaults in feet)
-    const defaultWidthM = feetToMeters(100);
-    const defaultDepthM = feetToMeters(50);
-    const defaultFloors = 3;
-    
+
     // handleBuildingUpdate now passes values directly to worker (already in meters)
     handleBuildingUpdate({
       id: newId,
-      anchor: { x: anchorX, y: anchorY },
-      rotationRad: 0,
+      anchor,
+      rotationRad,
       widthFt: defaultWidthM,   // actually meters — Shell field name is legacy
       depthFt: defaultDepthM,   // actually meters — Shell field name is legacy
       floors: defaultFloors

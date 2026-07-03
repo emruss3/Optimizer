@@ -617,6 +617,50 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, [edgeClassifications, setbacks]);
 
+  // Screen-space legend (bottom-left) — names every color on the sheet so
+  // open space and drive aisles aren't "unidentified green areas / grey lines".
+  const renderLegend = useCallback((ctx: CanvasRenderingContext2D, cssH: number, hasLots: boolean) => {
+    const entries: Array<[string, string]> = [
+      ['Building', '#BFDBFE'],
+      ['Parking', '#E2E8F0'],
+      ['Drive / aisle', '#CBD5E1'],
+      ['Open space', '#BBF7D0'],
+    ];
+    if (hasLots) entries.push(['Lot line', '#F8FAFC']);
+
+    const pad = 8;
+    const rowH = 16;
+    const boxW = 120;
+    const boxH = entries.length * rowH + pad * 2 - 4;
+    const x = 12;
+    const y = cssH - boxH - 12;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.strokeStyle = '#E5E7EB';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = '500 10px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    entries.forEach(([label, color], i) => {
+      const rowY = y + pad + i * rowH + rowH / 2 - 2;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = '#94A3B8';
+      ctx.beginPath();
+      ctx.roundRect(x + pad, rowY - 5, 10, 10, 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#475569';
+      ctx.fillText(label, x + pad + 16, rowY);
+    });
+    ctx.restore();
+  }, []);
+
   // Screen-space scale bar (drawn after the world transform is popped)
   const renderScaleBar = useCallback((ctx: CanvasRenderingContext2D, zoom: number, cssW: number, cssH: number) => {
     const { ft, px } = pickScaleBarFt(zoom);
@@ -752,10 +796,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     ctx.restore();
 
-    // Scale bar in screen space (after the world transform is popped)
+    // Screen-space chrome (after the world transform is popped)
     const dpr = window.devicePixelRatio || 1;
     renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+    renderLegend(ctx, canvas.height / dpr, elements.some(e => e.type === 'other'));
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
