@@ -92,8 +92,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       case 'greenspace':
         return { color: '#BBF7D0', opacity: 0.25, stroke: false };
       case 'parking-aisle':
+        return { color: '#CBD5E1', opacity: 0.45, stroke: false };
       case 'circulation':
-        return { color: '#CBD5E1', opacity: 0.4, stroke: false };
+        return { color: '#C4CFDA', opacity: 0.6, stroke: false };
       case 'parking':
       case 'parking-bay':
         return { color: '#E2E8F0', opacity: 0.5, stroke: false };
@@ -573,6 +574,38 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, []);
 
+  // Small in-plan zone label ("Drive", "Open space") so grey/green areas are
+  // identified on the sheet itself, not only in the legend.
+  const renderZoneLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number, text: string) => {
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 4) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let cx = 0, cy = 0;
+    const n = coords.length - 1;
+    for (let i = 0; i < n; i++) {
+      const [x, y] = coords[i];
+      cx += x; cy += y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    cx /= n; cy /= n;
+    // Only when the zone is big enough on screen to deserve a name
+    if (Math.max(maxX - minX, maxY - minY) * zoom < 80) return;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, -1);
+    ctx.font = `500 ${11 / zoom}px Inter, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = '#475569';
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }, []);
+
   // Per-bay stall count (the engine computes these; show them like TestFit does)
   const renderBayCount = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     const stalls = element.properties?.parkingSpaces as number | undefined;
@@ -843,6 +876,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         renderBayCount(ctx, element, viewport.zoom);
       }
 
+      // Name the zones on the sheet: drives and larger open spaces
+      if (element.type === 'circulation' && element.name === 'Main Drive') {
+        renderZoneLabel(ctx, element, viewport.zoom, 'Drive');
+      }
+      if (element.type === 'greenspace' && ((element.properties?.areaSqFt as number) ?? 0) > 4000) {
+        renderZoneLabel(ctx, element, viewport.zoom, 'Open space');
+      }
+
       // Dimension callouts (width × depth) on the selected building
       if (isSelected && element.type === 'building') {
         renderDimensions(ctx, element, viewport.zoom);
@@ -892,7 +933,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const dpr = window.devicePixelRatio || 1;
     renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
     renderLegend(ctx, canvas.height / dpr, elements.some(e => e.type === 'other'));
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

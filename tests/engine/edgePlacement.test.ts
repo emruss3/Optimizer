@@ -76,6 +76,30 @@ describe('placeBarsAlongEdges', () => {
     }
   });
 
+  it('fills short/jagged frontages with variable-width bars (real-parcel sliver)', () => {
+    // ~200m × 30m sliver whose long edges are broken into short survey
+    // segments — the shape that previously fell through to a single tiny
+    // centred fallback building ("9k SF on 3 acres").
+    const sliver: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [0, 0], [42, 1], [85, 0], [128, 2], [170, 1], [200, 0],
+        [200, 30], [165, 29], [120, 31], [80, 30], [40, 31], [0, 30],
+        [0, 0],
+      ]],
+    };
+    const bars = placeBarsAlongEdges(sliver, { widthM: 61, depthM: 18, count: 6 });
+    expect(bars.length).toBeGreaterThanOrEqual(2);
+    // Variable widths: bars size themselves to the frontage
+    expect(bars.some(b => b.widthM < 61)).toBe(true);
+    for (const b of bars) {
+      const fp = buildBuildingFootprint(b);
+      for (const [x, y] of fp.coordinates[0]) {
+        expect(isPointInPolygon([x, y], sliver.coordinates[0])).toBe(true);
+      }
+    }
+  });
+
   it('is deterministic and handles degenerate input', () => {
     const env = rect(160, 80);
     const a = placeBarsAlongEdges(env, { widthM: 60, depthM: 18, count: 3 });

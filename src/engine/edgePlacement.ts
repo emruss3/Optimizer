@@ -24,6 +24,13 @@ export interface EdgePlacementOptions {
   marginM?: number;
   /** Gap between bars along an edge (default 6m ≈ 20ft separation) */
   gapM?: number;
+  /**
+   * Minimum bar width (default 24m ≈ 80ft). Bars SIZE THEMSELVES to the
+   * frontage: a full-width bar where the edge allows, shorter bars down to
+   * this minimum on short/jagged segments — real parcels rarely offer a
+   * clean 200ft straightaway.
+   */
+  minWidthM?: number;
   buildingType?: BuildingType;
   /** Footprints that new bars must not overlap (e.g. user-pinned buildings) */
   avoidFootprints?: Polygon[];
@@ -78,27 +85,25 @@ export function placeBarsAlongEdges(envelope: Polygon, opts: EdgePlacementOption
     const ny = ccw ? dx : -dx;
     const rotation = Math.atan2(dy, dx);
 
-    // How many full-width slots fit along this edge?
+    // Greedy fill along the edge: full-width bars where they fit, then a
+    // final shorter bar down to minWidth — so short/jagged frontages still
+    // host buildings instead of falling through to the centred fallback.
     const usable = edge.len - 2 * margin;
-    const slots = Math.floor((usable + gap) / (widthM + gap));
-    if (slots <= 0) continue;
-
-    // Center the run of slots on the edge so leftovers split evenly.
-    const runLength = slots * widthM + (slots - 1) * gap;
-    const start = margin + (usable - runLength) / 2;
-
-    for (let s = 0; s < slots && placed.length < opts.count; s++) {
-      const along = start + s * (widthM + gap) + widthM / 2;
+    const minW = Math.min(opts.minWidthM ?? 24, widthM);
+    let along = margin;
+    while (usable - (along - margin) >= minW && placed.length < opts.count) {
+      const w = Math.min(widthM, edge.len - margin - along);
       const inset = margin + depthM / 2;
+      const cx = along + w / 2;
       const anchor = {
-        x: edge.a[0] + dx * along + nx * inset,
-        y: edge.a[1] + dy * along + ny * inset,
+        x: edge.a[0] + dx * cx + nx * inset,
+        y: edge.a[1] + dy * cx + ny * inset,
       };
 
       const spec = createBuildingSpec(
         `${opts.idPrefix ?? 'building'}-${++n}`,
         anchor,
-        widthM,
+        w,
         depthM,
         undefined,
         opts.buildingType ?? 'MF_BAR_V1'
@@ -109,11 +114,16 @@ export function placeBarsAlongEdges(envelope: Polygon, opts: EdgePlacementOption
       const inside = footprint.coordinates[0].every(([vx, vy]) =>
         isPointInPolygon([vx, vy], ring)
       );
-      if (!inside) continue;
-      if (placedFootprints.some(pf => overlapArea(footprint, pf) > 0.5)) continue;
-
-      placed.push(spec);
-      placedFootprints.push(footprint);
+      const clear = inside && !placedFootprints.some(pf => overlapArea(footprint, pf) > 0.5);
+      if (clear) {
+        placed.push(spec);
+        placedFootprints.push(footprint);
+        along += w + gap;
+      } else {
+        // Slide forward and try a fresh slot further down the edge
+        n--;
+        along += Math.max(minW / 2, 6);
+      }
     }
   }
 

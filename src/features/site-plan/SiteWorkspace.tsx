@@ -197,8 +197,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return parcelPoly3857;
   }, [envelope, status, parcel?.geometry]);
 
-  // Track whether we're using fallback envelope (no RPC envelope available)
-  const usingFallbackEnvelope = !!(envelopeMeters && !(envelope && status === 'ready'));
+  // Fallback = the envelope fetch SETTLED without a usable RPC envelope.
+  // (While status is 'loading' the banner shows loading — previously this
+  // flashed a misleading "fallback" banner during the ~600ms fetch.)
+  const usingFallbackEnvelope = !!(envelopeMeters && status !== 'loading' && !(envelope && status === 'ready'));
 
   // Elements and envelope stay in EPSG:3857 meters — no feet conversion.
   // The canvas viewport fits to processedGeometry (also EPSG:3857 meters).
