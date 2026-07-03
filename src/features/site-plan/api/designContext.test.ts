@@ -43,6 +43,34 @@ describe('normalizeDesignContext', () => {
     expect(normalizeDesignContext({ unrelated: true })).toBeNull();
   });
 
+  it('reads the LIVE backend shape (verified against parcel 667899)', () => {
+    const ctx = normalizeDesignContext({
+      zoning_base: 'RS10',
+      zoning_subtype: 'single_family',
+      regime: 'civil_horizontal',
+      confidence: 'medium',
+      parking_strategy: 'driveway',
+      flags: [],
+      far_max: { value: null, source: 'missing' },
+      height_max_ft: { value: null, source: 'missing' },
+      setbacks: {
+        front: { value: 20, source: 'typology_default' },
+        side: { value: 5, source: 'typology_default' },
+        rear: { value: 20, source: 'zoning' },
+      },
+    })!;
+    expect(ctx.zoningBase).toBe('RS10');
+    expect(ctx.setbackRearFt).toMatchObject({ value: 20, source: 'zoning' });
+    expect(ctx.setbackFrontFt!.source).toBe('typology_default'); // → "est." badge
+    // Null-valued fields normalize but never ground the solver config
+    expect(ctx.maxFar!.value).toBeNull();
+    expect(contextToZoningPatch(ctx)).toEqual({
+      frontSetbackFt: 20,
+      sideSetbackFt: 5,
+      rearSetbackFt: 20,
+    });
+  });
+
   it('reads flags, parking strategy, and embedded permitted uses (new brief shape)', () => {
     const ctx = normalizeDesignContext({
       zoning_base: 'RS5',

@@ -115,13 +115,40 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
       : 'Architectural · Vertical'
     : null;
 
+  // Accessor paths verified against the LIVE payloads (parcel 667899):
+  // built form nests stats under `distribution`, the underwrite target is
+  // `underwrite_target.footprint_sqft_p75`, and prices are p-distributions.
   const nComps = fmtNum(p(builtForm, 'n_comps'));
-  const targetFootprint = fmtNum(p(builtForm, 'underwrite_target', 'footprint_sqft') ?? p(builtForm, 'underwrite_target_footprint_sqft'));
-  const medianFootprint = fmtNum(p(builtForm, 'footprint_sqft', 'p50') ?? p(builtForm, 'p50_footprint_sqft'));
-  const p75Footprint = fmtNum(p(builtForm, 'footprint_sqft', 'p75') ?? p(builtForm, 'p75_footprint_sqft'));
-  const stories = fmtNum(p(builtForm, 'stories', 'p50') ?? p(builtForm, 'p50_stories') ?? p(builtForm, 'stories'));
-  const priceBldgSf = fmtUsd(p(pricing, 'price_per_bldg_sqft') ?? p(pricing, 'usd_per_bldg_sf'));
-  const priceLotSf = fmtUsd(p(pricing, 'price_per_lot_sqft') ?? p(pricing, 'usd_per_lot_sf'));
+  const targetFootprint = fmtNum(
+    p(builtForm, 'underwrite_target', 'footprint_sqft_p75') ??
+    p(builtForm, 'underwrite_target', 'footprint_sqft') ??
+    p(builtForm, 'underwrite_target_footprint_sqft')
+  );
+  const distFp = (q: string) =>
+    fmtNum(
+      p(builtForm, 'distribution', 'footprint_sqft', q) ??
+      p(builtForm, 'footprint_sqft', q) ??
+      p(builtForm, `${q}_footprint_sqft`)
+    );
+  const p25Footprint = distFp('p25');
+  const medianFootprint = distFp('p50');
+  const p75Footprint = distFp('p75');
+  const p90Footprint = distFp('p90');
+  const stories = fmtNum(
+    p(builtForm, 'distribution', 'stories', 'p50') ??
+    p(builtForm, 'stories', 'p50') ??
+    p(builtForm, 'p50_stories')
+  );
+  const priceBldgSf = fmtUsd(
+    p(pricing, 'price_per_building_sf', 'p50') ??
+    p(pricing, 'price_per_bldg_sqft') ??
+    p(pricing, 'usd_per_bldg_sf')
+  );
+  const priceLotSf = fmtUsd(
+    p(pricing, 'price_per_lot_sf', 'p50') ??
+    p(pricing, 'price_per_lot_sqft') ??
+    p(pricing, 'usd_per_lot_sf')
+  );
   const saleP50 = fmtUsd(p(pricing, 'sale_price', 'p50') ?? p(pricing, 'p50_sale_price'));
   const saleP25 = fmtUsd(p(pricing, 'sale_price', 'p25') ?? p(pricing, 'p25_sale_price'));
   const saleP75 = fmtUsd(p(pricing, 'sale_price', 'p75') ?? p(pricing, 'p75_sale_price'));
@@ -232,14 +259,13 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
           )}
           {medianFootprint && (
             <div className="flex justify-between text-sm py-0.5">
-              <span className="text-gray-600">Median footprint</span>
-              <span className="font-medium">{medianFootprint} SF</span>
-            </div>
-          )}
-          {p75Footprint && (
-            <div className="flex justify-between text-sm py-0.5">
-              <span className="text-gray-600">p75 footprint</span>
-              <span className="font-medium">{p75Footprint} SF</span>
+              <span className="text-gray-600">Footprints p25–p90</span>
+              <span className="font-medium tabular-nums">
+                {[p25Footprint, medianFootprint, p75Footprint, p90Footprint]
+                  .filter(Boolean)
+                  .join(' · ')}{' '}
+                SF
+              </span>
             </div>
           )}
           {priceBldgSf && (
