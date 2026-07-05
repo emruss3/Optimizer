@@ -24,6 +24,8 @@ export interface DesignContext {
   zoningSubtype?: string;
   /** 'civil_horizontal' (lots/streets) vs 'architectural_vertical' (massing) */
   regime?: string;
+  /** Backend-resolved typology for the selected use, e.g. 'single_family' */
+  typology?: string;
   confidence?: Confidence;
   setbackFrontFt?: ContextValue;
   setbackSideFt?: ContextValue;
@@ -86,6 +88,7 @@ export function normalizeDesignContext(json: unknown): DesignContext | null {
     zoningBase: (pick(o, 'zoning_base', 'zoningBase', 'zoning') as string) ?? undefined,
     zoningSubtype: (pick(o, 'zoning_subtype', 'zoningSubtype', 'subtype') as string) ?? undefined,
     regime: (pick(o, 'regime', 'design_regime') as string) ?? undefined,
+    typology: (pick(o, 'typology') as string) ?? undefined,
     confidence: CONFIDENCES.includes(pick(o, 'confidence', 'context_confidence') as Confidence)
       ? (pick(o, 'confidence', 'context_confidence') as Confidence)
       : undefined,
@@ -135,6 +138,19 @@ export function contextToZoningPatch(ctx: DesignContext): Record<string, number>
   if (density != null && density > 0) patch.maxDensityDuPerAcre = density;
   if (coverage != null && coverage > 0) patch.maxCoveragePct = coverage;
   return patch;
+}
+
+/**
+ * Civil/horizontal regime (single-family lots + driveways) vs
+ * architectural/vertical (multifamily massing + parking fields). This is the
+ * routing switch: horizontal parcels get the market-grounded lot generator;
+ * vertical parcels get the massing engine. HBU-by-zoning, in one predicate.
+ */
+export function isHorizontalRegime(ctx: DesignContext): boolean {
+  const r = ctx.regime?.toLowerCase() ?? '';
+  if (r.includes('horizontal') || r.includes('civil')) return true;
+  if (r.includes('vertical') || r.includes('architectural')) return false;
+  return (ctx.typology ?? '').toLowerCase().includes('single_family');
 }
 
 // ── Fetchers (all fail-soft: null on any error) ─────────────────────────────
