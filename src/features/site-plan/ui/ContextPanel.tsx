@@ -65,6 +65,8 @@ interface ContextPanelProps {
   onUseChange: (use: string) => void;
   /** Fires when a context loads so the workspace can ground solver defaults */
   onContext?: (ctx: DesignContext) => void;
+  /** Fires when the context fetch SETTLES (ctx or null) — used for plan routing */
+  onSettled?: (ctx: DesignContext | null) => void;
 }
 
 /**
@@ -72,7 +74,7 @@ interface ContextPanelProps {
  * selector, and local comps/pricing. Everything fails soft — if the context
  * engine is unreachable the panel says so and the planner keeps its defaults.
  */
-const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, onContext }) => {
+const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, onContext, onSettled }) => {
   const [context, setContext] = useState<DesignContext | null>(null);
   const [uses, setUses] = useState<string[]>([]);
   const [builtForm, setBuiltForm] = useState<unknown>(null);
@@ -94,6 +96,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
       setContext(ctx);
       setUses(normalizePermittedUses(usesRaw));
       if (ctx) onContext?.(ctx);
+      onSettled?.(ctx);
       setLoading(false);
 
       const [bf, pr] = await Promise.all([fetchLocalBuiltForm(ogcFid), fetchLocalPricing(ogcFid)]);

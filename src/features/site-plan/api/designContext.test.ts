@@ -3,6 +3,7 @@ import {
   normalizeDesignContext,
   contextToZoningPatch,
   normalizePermittedUses,
+  isHorizontalRegime,
 } from './designContext';
 
 describe('normalizeDesignContext', () => {
@@ -116,5 +117,24 @@ describe('normalizePermittedUses', () => {
     expect(normalizePermittedUses({ feasible_uses_as_of_right: [{ use: 'multifamily' }] })).toEqual(['multifamily']);
     expect(normalizePermittedUses(null)).toEqual([]);
     expect(normalizePermittedUses({ nope: 1 })).toEqual([]);
+  });
+});
+
+describe('isHorizontalRegime (HBU plan routing)', () => {
+  const ctx = (o: Record<string, unknown>) => normalizeDesignContext({ zoning_base: 'X', ...o })!;
+
+  it('routes civil/horizontal regimes to the lot generator', () => {
+    expect(isHorizontalRegime(ctx({ regime: 'civil_horizontal' }))).toBe(true);
+    expect(isHorizontalRegime(ctx({ regime: 'horizontal' }))).toBe(true);
+  });
+
+  it('routes architectural/vertical regimes to the massing engine', () => {
+    expect(isHorizontalRegime(ctx({ regime: 'architectural_vertical' }))).toBe(false);
+  });
+
+  it('falls back to the resolved typology when regime is absent', () => {
+    expect(isHorizontalRegime(ctx({ typology: 'single_family' }))).toBe(true);
+    expect(isHorizontalRegime(ctx({ typology: 'multifamily' }))).toBe(false);
+    expect(isHorizontalRegime(ctx({}))).toBe(false);
   });
 });

@@ -702,10 +702,12 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const initialBuildings: BuildingSpec[] = [...pinned];
   let buildingNum = 0;
 
-  // Constructive fast path: TestFit-style EDGE-HUGGING placement — bars laid
-  // flush along the buildable envelope's edges (longest frontage first)
-  // instead of a centered grid. The grid below remains the fallback filler.
-  if (maxIterations === 0) {
+  // EDGE-HUGGING seeding for ALL solves (constructive AND SA): bars laid flush
+  // along the buildable envelope's edges (longest frontage first) instead of a
+  // centered grid. On jagged real parcels the grid found no valid cells and
+  // collapsed to one shrunken fallback building; edge bars size themselves to
+  // each frontage. The grid below remains the fallback filler.
+  {
     const need = Math.max(0, effectiveNumBuildings - pinned.length);
     const edgeBars = placeBarsAlongEdges(envelope, {
       widthM: defaultWidthM,
@@ -751,11 +753,11 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     initialBuildings.push(spec);
   }
 
-  // ── Constructive mode (maxIterations === 0): size floors so the achieved FAR
-  // tracks the target. Without this the layout keeps the typology-default floor
-  // count, so the FAR slider would only change building count, not actual FAR.
-  // (SA leaves floors to mutation/typology; this only runs for the fast path.)
-  if (maxIterations === 0) {
+  // ── Size floors so the achieved FAR tracks the target (ALL paths). SA never
+  // mutates floor count, so seeding with sized floors is strictly better — and
+  // it makes the SA seed identical to the constructive solve, guaranteeing
+  // "Generate" can only improve on the auto-plan.
+  {
     const placedFootprintM2 = initialBuildings.reduce(
       (s, b) => s + correctedAreaM2(buildBuildingFootprint(b)), 0
     );
