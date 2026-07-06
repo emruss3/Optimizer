@@ -7,6 +7,7 @@ import {
   fetchPermittedUses,
   normalizeDesignContext,
   normalizePermittedUses,
+  pickDefaultUse,
 } from '../api/designContext';
 
 const CONF_STYLE: Record<Confidence, string> = {
@@ -67,6 +68,12 @@ interface ContextPanelProps {
   onContext?: (ctx: DesignContext) => void;
   /** Fires when the context fetch SETTLES (ctx or null) — used for plan routing */
   onSettled?: (ctx: DesignContext | null) => void;
+  /**
+   * Until the user picks a use manually, correct the initial use to the
+   * highest-intensity as-of-right use (zoning-grounded default). The wrong-use
+   * context is never settled — the corrected fetch settles instead.
+   */
+  autoSelectUse?: boolean;
 }
 
 /**
@@ -74,7 +81,14 @@ interface ContextPanelProps {
  * selector, and local comps/pricing. Everything fails soft — if the context
  * engine is unreachable the panel says so and the planner keeps its defaults.
  */
-const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, onContext, onSettled }) => {
+const ContextPanel: React.FC<ContextPanelProps> = ({
+  ogcFid,
+  use,
+  onUseChange,
+  onContext,
+  onSettled,
+  autoSelectUse = false,
+}) => {
   const [context, setContext] = useState<DesignContext | null>(null);
   const [uses, setUses] = useState<string[]>([]);
   const [builtForm, setBuiltForm] = useState<unknown>(null);
@@ -92,9 +106,23 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
         fetchPermittedUses(ogcFid),
       ]);
       if (cancelled) return;
+      const usesList = normalizePermittedUses(usesRaw);
+      setUses(usesList);
+
+      // Zoning-grounded default: if the initial use isn't what this parcel's
+      // zoning actually wants (e.g. hardcoded single_family on an RM40 lot),
+      // switch BEFORE settling — the effect re-runs with the corrected use and
+      // that context is the one that routes the auto-plan.
+      if (autoSelectUse) {
+        const preferred = pickDefaultUse(usesList);
+        if (preferred && preferred !== use) {
+          onUseChange(preferred);
+          return;
+        }
+      }
+
       const ctx = normalizeDesignContext(ctxRaw);
       setContext(ctx);
-      setUses(normalizePermittedUses(usesRaw));
       if (ctx) onContext?.(ctx);
       onSettled?.(ctx);
       setLoading(false);
@@ -112,10 +140,13 @@ const ContextPanel: React.FC<ContextPanelProps> = ({ ogcFid, use, onUseChange, o
 
   if (ogcFid == null) return null;
 
+  // regime describes the PARKING-STRUCTURE economics, not the building type
   const regime = context?.regime
-    ? context.regime.includes('civil') || context.regime.includes('horizontal')
-      ? 'Civil · Horizontal'
-      : 'Architectural · Vertical'
+    ? context.regime === 'vertical'
+      ? 'Structured parking regime'
+      : context.regime === 'horizontal_pending'
+        ? 'Surface parking · FAR unknown'
+        : 'Surface parking regime'
     : null;
 
   // Accessor paths verified against the LIVE payloads (parcel 667899):

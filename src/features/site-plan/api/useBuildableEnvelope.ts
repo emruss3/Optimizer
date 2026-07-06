@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { getEnvelope } from '../../../api/fetchEnvelope';
-import { fetchNearbyRoads } from '../../../api/fetchNearbyRoads';
 import type { SelectedParcel } from '../../../types/parcel';
 import type { Polygon } from 'geojson';
 import { normalizeToPolygon } from '../../../engine/geometry';
@@ -62,12 +61,12 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
     let cancelled = false;
     setStatus('loading');
 
-    // Fetch envelope AND nearby roads in parallel
-    Promise.all([
-      getEnvelope(parcelId),
-      fetchNearbyRoads(parcelId, 60), // 60m ≈ 200ft
-    ])
-      .then(([env, roads]) => {
+    // Road-grounded edge classification is a backend M1 deliverable — the
+    // roads corpus isn't loaded yet and get_parcel_front_edge_with_roads is a
+    // stub, so we don't call either (it was a guaranteed 404 + console noise).
+    // Until then edges classify by the longest-edge heuristic below.
+    getEnvelope(parcelId)
+      .then((env) => {
         if (cancelled) return;
 
         if (!env?.buildable_geom) {
@@ -100,30 +99,11 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
         }
 
         // Classify edges & apply variable setbacks if we have parcel geometry
+        // (longest-edge = street frontage heuristic until real road data)
         let improvedEnvelope: Polygon | null = null;
         let edgeClasses: EdgeClassification[] = [];
 
-        if (parcelPoly3857 && roads.length > 0) {
-          const roadGeoms = roads.map((r) => ({
-            geom: r.geom,
-            name: r.name ?? undefined,
-          }));
-
-          edgeClasses = classifyParcelEdges(parcelPoly3857, roadGeoms);
-
-          const setbacksM: SetbackValues = {
-            front: feetToMeters(setbacksFt.front),
-            side: feetToMeters(setbacksFt.side),
-            rear: feetToMeters(setbacksFt.rear),
-          };
-
-          improvedEnvelope = applyVariableSetbacks(
-            parcelPoly3857,
-            edgeClasses,
-            setbacksM
-          );
-        } else if (parcelPoly3857) {
-          // No roads found — still classify edges using longest-edge fallback
+        if (parcelPoly3857) {
           edgeClasses = classifyParcelEdges(parcelPoly3857, []);
 
           const setbacksM: SetbackValues = {

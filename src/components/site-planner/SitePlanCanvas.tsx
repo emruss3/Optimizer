@@ -359,15 +359,28 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 3) return;
 
-    // Find center of polygon
+    // Find center + extent of polygon
     let cx = 0, cy = 0;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const n = coords.length - 1; // exclude closing vertex
     for (let i = 0; i < n; i++) {
       cx += coords[i][0];
       cy += coords[i][1];
+      minX = Math.min(minX, coords[i][0]);
+      minY = Math.min(minY, coords[i][1]);
+      maxX = Math.max(maxX, coords[i][0]);
+      maxY = Math.max(maxY, coords[i][1]);
     }
     cx /= n;
     cy /= n;
+
+    // Declutter by ON-SCREEN size: a label larger than its building buries
+    // the plan (small SF footprints, zoomed-out views). Tiny → no label;
+    // modest → name-only badge; roomy → full two-line tag.
+    const screenW = (maxX - minX) * zoom;
+    const screenH = (maxY - minY) * zoom;
+    if (Math.min(screenW, screenH) < 18 || Math.max(screenW, screenH) < 40) return;
+    const roomForDetail = screenW >= 90 && screenH >= 42;
 
     const fontSize = Math.max(10, 14 / zoom);
 
@@ -389,9 +402,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       )
     );
     // Floors + total GFA reads like a TestFit tag; footprint SF alone undersells it
-    const areaText = area
-      ? `${floors} fl · ${Math.round(area * floors).toLocaleString()} SF`
-      : `${floors} fl`;
+    const areaText = !roomForDetail
+      ? ''
+      : area
+        ? `${floors} fl · ${Math.round(area * floors).toLocaleString()} SF`
+        : `${floors} fl`;
 
     // Background pill
     const textWidth = Math.max(ctx.measureText(name).width, areaText ? ctx.measureText(areaText).width : 0);
