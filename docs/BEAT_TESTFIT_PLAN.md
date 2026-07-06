@@ -27,12 +27,24 @@ Assets the UI has never touched:
 | `siteplanner_session` / `siteplanner_candidate` | schema complete, **0 rows** | A designed-but-unbuilt server-side generation loop: candidates carry `geometry_buildings/parking/drives` + `metrics` + `parent_candidate_id` (an evolution tree). Someone already architected the right system. |
 | `floorplans` (+rooms/walls/openings) | 4,989 | Unit-plan-level data for later fidelity |
 | `fn_local_built_form` / `fn_local_pricing` | live, full coverage | Comps distributions + $/SF — the money objective |
-| `get_parcel_front_edge_with_roads`, `fn_buildable_envelope_directional` | live | Road-aware access + per-edge setbacks, server-side |
+| `get_parcel_front_edge_with_roads` | live but a **stub** | Returns the whole parcel as the "front edge", hardcoded `total_edges: 4`; roads table has ~68 rows. Real road-grounded access is M1 backend work, not a rename. |
+| `fn_buildable_envelope_directional` | live | Per-edge setbacks, server-side |
 | `default_costs_by_use`, `zoning` (28 cols), `parcel_constraints` | live | Cost + regulation grounding |
 
-**Cheap wiring bugs found:** the UI calls `get_roads_near_parcel` (doesn't exist —
-`get_parcel_front_edge_with_roads` does) and table `site_plans` (doesn't exist —
-`site_plan_models` does). Two 404s in every console are name mismatches.
+**Wiring bugs found (audited):** the UI called `get_roads_near_parcel` (doesn't
+exist) and table `site_plans` (doesn't exist). Neither is a mere rename:
+`get_parcel_front_edge_with_roads` is a placeholder implementation, and
+`site_plan_models` is a massing-summary table whose schema has nothing in common
+with the saved-plans feature. Client now fails soft on both (no 404 spam, honest
+fallbacks); the real capabilities land in M1 (road-grounded access) and M2 (plan
+persistence via `siteplanner_candidate`).
+
+**Contract clarification (audited from `fn_resolve_design_context` source):**
+`regime` is the PARKING-STRUCTURE axis — `vertical` (FAR ≥
+structured_parking_threshold_far → structured parking), `horizontal` (surface),
+`horizontal_pending` (vertical-capable typology, zoning FAR unknown). It must
+never route SF-vs-MF; the resolved `typology` does that. The client once routed
+on `regime` and tiled an RM40 multifamily parcel with house pads.
 
 ## 3. What TestFit actually does well (the bar, stated precisely)
 
@@ -71,12 +83,16 @@ primary generator.
 
 ## 5. Milestones (each one a visible league-jump, with acceptance criteria)
 
-**M0 — Rewire what exists (days).**
-Fix the two name mismatches (front-edge fn, `site_plan_models`); retire
-`hbuAnalysis.ts`'s hardcoded zoning map onto `fn_resolve_permitted_uses`; seed
-`typology_spec` for the core archetypes (garden bar, townhome row, wrap, podium).
-*Accept: zero 404s in console; HBU panel agrees with the context engine; saved
-plans persist.*
+**M0 — Rewire what exists (days).** *(client half shipped in the planner-audit PR)*
+Silence the two 404s with honest fallbacks (roads → longest-edge heuristic until
+M1; saved plans → hidden until M2); route SF-vs-MF by resolved typology, never
+`regime`; zoning-grounded default use via `fn_resolve_permitted_uses` (both in
+the planner and in `hbuAnalysis.ts`, retiring its hardcoded zoning map); bridge
+the vocabulary gap (`multi_family` ↔ `multifamily`); ground solver parking spec
+in `typology_spec` numbers. Backend half: seed `typology_spec` for the core
+archetypes (garden bar, townhome row, wrap, podium) and a `two_family` row.
+*Accept: zero 404s in console; an RM40 parcel auto-plans as multifamily; HBU
+panel agrees with the context engine.*
 
 **M1 — Site skeleton (the "driveways make no sense" killer).**
 Server-side: access point from `get_parcel_front_edge_with_roads` → drive network

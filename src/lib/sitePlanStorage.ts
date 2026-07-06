@@ -32,11 +32,32 @@ export type SaveSitePlanInput = {
 // ─── Storage functions ────────────────────────────────────────────────────────
 
 /**
+ * The saved-plans table is not provisioned yet — plan persistence arrives
+ * with siteplanner_session/siteplanner_candidate (Beat-TestFit plan, M2).
+ * Until then: detect "table missing" once, stop re-querying (no 404 spam),
+ * and fail with a message that says what's actually going on.
+ */
+let tableKnownMissing = false;
+
+function isMissingTableError(e: unknown): boolean {
+  const err = e as { code?: string; message?: string } | null;
+  const msg = err?.message ?? '';
+  return (
+    err?.code === 'PGRST205' ||
+    /relation .* does not exist|could not find the table|schema cache/i.test(msg)
+  );
+}
+
+const NOT_PROVISIONED_MSG =
+  'Saved plans are not available yet — plan persistence ships with candidate sessions (M2).';
+
+/**
  * Save a site plan to the database.
  * Returns the newly created plan.
  */
 export async function saveSitePlan(input: SaveSitePlanInput): Promise<SavedSitePlan> {
   if (!supabase) throw new Error('Supabase client not initialised');
+  if (tableKnownMissing) throw new Error(NOT_PROVISIONED_MSG);
 
   const userId = (await supabase.auth.getUser()).data?.user?.id ?? null;
 
@@ -55,7 +76,13 @@ export async function saveSitePlan(input: SaveSitePlanInput): Promise<SavedSiteP
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error)) {
+      tableKnownMissing = true;
+      throw new Error(NOT_PROVISIONED_MSG);
+    }
+    throw error;
+  }
   return data as SavedSitePlan;
 }
 
@@ -77,9 +104,12 @@ export async function loadSitePlan(id: string): Promise<SavedSitePlan> {
 
 /**
  * List all saved plans for a parcel, newest first.
+ * Missing table → empty list (not an error): the UI shows "no saved plans"
+ * instead of a red console and a broken panel.
  */
 export async function listSitePlans(parcelId: string): Promise<SavedSitePlan[]> {
   if (!supabase) throw new Error('Supabase client not initialised');
+  if (tableKnownMissing) return [];
 
   const { data, error } = await supabase
     .from('site_plans')
@@ -87,7 +117,14 @@ export async function listSitePlans(parcelId: string): Promise<SavedSitePlan[]> 
     .eq('parcel_id', parcelId)
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error)) {
+      tableKnownMissing = true;
+      console.info('[sitePlanStorage] saved-plans table not provisioned yet; hiding saved plans.');
+      return [];
+    }
+    throw error;
+  }
   return (data ?? []) as SavedSitePlan[];
 }
 

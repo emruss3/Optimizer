@@ -12,8 +12,9 @@ export interface ViewportState {
 export interface UseViewportReturn {
   viewport: ViewportState;
   setViewport: (viewport: ViewportState | ((prev: ViewportState) => ViewportState)) => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
+  zoomIn: (centerX?: number, centerY?: number) => void;
+  zoomOut: (centerX?: number, centerY?: number) => void;
+  zoomBy: (factor: number, centerX?: number, centerY?: number) => void;
   zoomTo: (zoom: number, centerX?: number, centerY?: number) => void;
   pan: (deltaX: number, deltaY: number) => void;
   fitToBounds: (bounds: { minX: number; minY: number; maxX: number; maxY: number }, canvasWidth: number, canvasHeight: number) => void;
@@ -27,13 +28,33 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
     panY: initialPanY
   });
 
-  const zoomIn = useCallback(() => {
-    setViewport(prev => ({ ...prev, zoom: Math.min(10, prev.zoom * 1.1) }));
+  // Zoom MUST be anchored: world coordinates here are EPSG:3857 metres
+  // (magnitude ~10^7), so scaling without re-anchoring pan slides the content
+  // millions of pixels off-screen. Callers pass the screen point to hold
+  // fixed (usually the canvas centre or the cursor).
+  const zoomBy = useCallback((factor: number, centerX?: number, centerY?: number) => {
+    setViewport(prev => {
+      const newZoom = Math.max(0.1, Math.min(10, prev.zoom * factor));
+      if (centerX !== undefined && centerY !== undefined) {
+        const worldX = (centerX - prev.panX) / prev.zoom;
+        const worldY = -(centerY - prev.panY) / prev.zoom;
+        return {
+          zoom: newZoom,
+          panX: centerX - worldX * newZoom,
+          panY: centerY + worldY * newZoom
+        };
+      }
+      return { ...prev, zoom: newZoom };
+    });
   }, []);
 
-  const zoomOut = useCallback(() => {
-    setViewport(prev => ({ ...prev, zoom: Math.max(0.1, prev.zoom * 0.9) }));
-  }, []);
+  const zoomIn = useCallback((centerX?: number, centerY?: number) => {
+    zoomBy(1.1, centerX, centerY);
+  }, [zoomBy]);
+
+  const zoomOut = useCallback((centerX?: number, centerY?: number) => {
+    zoomBy(0.9, centerX, centerY);
+  }, [zoomBy]);
 
   const zoomTo = useCallback((zoom: number, centerX?: number, centerY?: number) => {
     setViewport(prev => {
@@ -93,6 +114,7 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
     setViewport,
     zoomIn,
     zoomOut,
+    zoomBy,
     zoomTo,
     pan,
     fitToBounds,

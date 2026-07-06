@@ -22,8 +22,8 @@ import ResultsPanel from './ui/ResultsPanel';
 import Massing3D from './ui/Massing3D';
 import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
-import { contextToZoningPatch, isHorizontalRegime, type DesignContext } from './api/designContext';
-import { generateSfSitePlan, sfPlanToElements } from './api/generateSfPlan';
+import { contextToZoningPatch, contextToParkingPatch, routesToLotFit, type DesignContext } from './api/designContext';
+import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 
@@ -57,7 +57,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const n = Number(parcel.ogc_fid);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [parcel.ogc_fid]);
+  // Initial use is a placeholder — ContextPanel corrects it to the parcel's
+  // highest-intensity as-of-right use (autoSelectUse) unless the user picked.
   const [contextUse, setContextUse] = useState('single_family');
+  const userPickedUseRef = useRef(false);
+  const handleUseChange = useCallback((use: string) => {
+    userPickedUseRef.current = true;
+    setContextUse(use);
+  }, []);
   const appliedContextRef = useRef<string | null>(null);
 
   // ── SF lot generator (brief Phase 2) ─────────────────────────────────────
@@ -441,6 +448,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     void applyBuildingSet(remaining);
   }, [applyBuildingSet, pushHistory]);
 
+  /** Paste: clone buildings through the worker so the copies are real
+   *  (solver-tracked, undoable) — a local canvas copy would vanish on the
+   *  next re-solve. Clones land slightly offset and position-locked. */
+  const handleCloneBuildings = useCallback((ids: string[]) => {
+    const current = currentBuildingsRef.current;
+    const toClone = current.filter(b => ids.includes(b.id));
+    if (toClone.length === 0) return;
+    pushHistory();
+    const stamp = Date.now().toString(36);
+    const clones = toClone.map((b, i) => {
+      const clone = structuredClone(b);
+      clone.id = `${b.id}-copy-${stamp}${i > 0 ? `-${i}` : ''}`;
+      clone.anchor = {
+        x: b.anchor.x + (b.widthM ?? 20) * 0.25 + 3,
+        y: b.anchor.y - (b.depthM ?? 15) * 0.5 - 3,
+      };
+      clone.locked = { position: true, rotation: true, dimensions: true };
+      return clone;
+    });
+    void applyBuildingSet([...current, ...clones]);
+  }, [applyBuildingSet, pushHistory]);
+
   // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -469,11 +498,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const key = `${contextOgcFid}:${contextUse}`;
       if (appliedContextRef.current === key) return;
       appliedContextRef.current = key;
-      const patch = contextToZoningPatch(ctx);
-      if (Object.keys(patch).length === 0) return;
-      updateConfig({ zoning: { ...config.zoning, ...patch } });
+      const zoningPatch = contextToZoningPatch(ctx);
+      // typology_spec's stall/aisle/ratio numbers ground how parking sits —
+      // not just how big the envelope is.
+      const parkingPatch = contextToParkingPatch(ctx);
+      if (Object.keys(zoningPatch).length === 0 && Object.keys(parkingPatch).length === 0) return;
+      updateConfig({
+        zoning: { ...config.zoning, ...zoningPatch },
+        designParameters: {
+          ...config.designParameters,
+          parking: { ...config.designParameters.parking, ...parkingPatch },
+        },
+      });
     },
-    [contextOgcFid, contextUse, config.zoning, updateConfig]
+    [contextOgcFid, contextUse, config.zoning, config.designParameters, updateConfig]
   );
 
   /** Brief Phase 2: market-grounded SF lot fit, appended to the plan. */
@@ -495,8 +533,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         setLotFitSummary('Generator returned no drawable lots for this parcel.');
         return;
       }
-      // Additive per the brief: generated lots/footprints join the existing plan
-      setPlanOutput([...elements, ...generated], metrics);
+      // Additive per the brief — but idempotent: a re-generate REPLACES the
+      // previous lot fit (matching id prefixes) instead of stacking a second
+      // subdivision on top of the first.
+      const base = elements.filter(el => !isSfPlanElement(el));
+      setPlanOutput([...base, ...generated], metrics);
       const flagsNote = summary.flags.length > 0 ? ` · ⚠ ${summary.flags.join(', ')}` : '';
       setLotFitSummary(
         `${summary.lots} lots · lot target ${summary.targetLotSqft?.toLocaleString() ?? '—'} SF, ` +
@@ -649,6 +690,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setSolverReady(false);
       planModeRef.current = null;
       ctxSettledRef.current = 'pending';
+      userPickedUseRef.current = false;
       setPlanBasis(null);
     }
   }, [parcel.ogc_fid, parcel.id]);
@@ -662,15 +704,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [handleGenerate]);
 
   /**
-   * HBU-routed auto-plan: the context engine's regime decides WHAT gets
-   * planned. civil/horizontal (single-family zoning) → market-grounded lot
-   * fit, no multifamily parking apparatus; architectural/vertical → massing
-   * engine (instant constructive solve; SA stays on the Generate button).
+   * HBU-routed auto-plan: the resolved USE/TYPOLOGY decides WHAT gets planned
+   * (single/two-family → market-grounded lot fit; multifamily → massing
+   * engine). The context's `regime` deliberately does NOT route here — it
+   * describes parking structure (surface vs structured), and reading it as
+   * "SF vs MF" is how an RM40 parcel once got tiled with house pads.
    */
   const autoPlan = useCallback((ctx: DesignContext | null) => {
     if (hasAutoGeneratedRef.current || !envelopeMeters || !hasValidGeometry) return;
     hasAutoGeneratedRef.current = true;
-    if (ctx && isHorizontalRegime(ctx)) {
+    if (ctx && routesToLotFit(ctx)) {
       planModeRef.current = 'sf';
       setPlanBasis(
         `Single-family lot fit — ${ctx.zoningBase ?? 'zoning'} as-of-right · lots sized from local comps`
@@ -772,9 +815,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <ContextPanel
             ogcFid={contextOgcFid}
             use={contextUse}
-            onUseChange={setContextUse}
+            onUseChange={handleUseChange}
             onContext={applyContextDefaults}
             onSettled={handleContextSettled}
+            autoSelectUse={!userPickedUseRef.current}
           />
           <ParametersPanel
             parcel={parcel}
@@ -829,6 +873,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 onBuildingUpdate={handleBuildingUpdate}
                 onAddBuilding={handleAddBuilding}
                 onDeleteBuildings={handleDeleteBuildings}
+                onCloneBuildings={handleCloneBuildings}
                 envelopeStatus={status}
                 envelopeError={envelopeError}
                 usingFallbackEnvelope={usingFallbackEnvelope}

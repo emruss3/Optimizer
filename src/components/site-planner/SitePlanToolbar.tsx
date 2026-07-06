@@ -27,6 +27,8 @@ interface SitePlanToolbarProps {
   canPaste: boolean;
   canDelete: boolean;
   canAlign?: boolean;
+  /** Vertex editing needs exactly one selected element */
+  canVertexEdit?: boolean;
   isVertexEditing?: boolean;
   gridEnabled?: boolean;
   snapToGridEnabled?: boolean;
@@ -49,6 +51,7 @@ export const SitePlanToolbar: React.FC<SitePlanToolbarProps> = ({
   canPaste,
   canDelete,
   canAlign = false,
+  canVertexEdit = false,
   isVertexEditing = false,
   gridEnabled = false,
   snapToGridEnabled = false
@@ -132,8 +135,9 @@ export const SitePlanToolbar: React.FC<SitePlanToolbarProps> = ({
         <>
           <button
             onClick={onToggleVertexEdit}
-            className={`p-2 rounded ${isVertexEditing ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
-            title="Edit Vertices"
+            disabled={!canVertexEdit}
+            className={`p-2 rounded ${isVertexEditing ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:text-gray-900'} disabled:opacity-30 disabled:cursor-not-allowed`}
+            title={canVertexEdit ? 'Edit Vertices' : 'Edit Vertices (select one element first)'}
           >
             <Edit className="w-5 h-5" />
           </button>

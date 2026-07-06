@@ -46,6 +46,14 @@ export interface SfPlanSummary {
   flags: string[];
 }
 
+/**
+ * Lot-fit elements are identified by id prefix so a re-generate REPLACES the
+ * previous fit instead of stacking a duplicate subdivision on the canvas.
+ */
+export function isSfPlanElement(el: Pick<Element, 'id'>): boolean {
+  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-');
+}
+
 /** Parse a geom that may arrive as an object or a JSON string; 4326 → 3857. */
 function toCanvasPolygon(geom: unknown): Polygon | null {
   try {

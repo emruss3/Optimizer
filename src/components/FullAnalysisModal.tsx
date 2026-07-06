@@ -74,8 +74,15 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
           })}
         </div>
 
-        {/* Content */}
+        {/* Content — the Site Plan tab needs the full height with no scroll
+            wrapper: the planner manages its own layout, and a content-sized
+            scroll host is exactly what left the canvas fit stranded. */}
         <div className="flex-1 overflow-hidden">
+          {activeTab === 'site' ? (
+            <div className="h-full overflow-hidden">
+              <SiteWorkspace parcel={p} />
+            </div>
+          ) : (
           <div className="h-full overflow-y-auto p-6">
             {activeTab === 'overview' && (
               <div className="space-y-6">
@@ -169,12 +176,6 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
               </div>
             )}
 
-            {activeTab === 'site' && (
-              <div className="space-y-6">
-                <SiteWorkspace parcel={p} />
-              </div>
-            )}
-
             {activeTab === 'financial' && (
               <div className="space-y-6">
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -186,6 +187,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>

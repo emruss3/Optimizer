@@ -19,10 +19,25 @@ export interface ContextValue {
   confidence: Confidence;
 }
 
+/** Parking geometry/ratio defaults from typology_spec (how parking sits). */
+export interface ContextParking {
+  ratio?: number;
+  basis?: string;
+  stallWidthFt?: number;
+  stallDepthFt?: number;
+  aisleWidthFt?: number;
+}
+
 export interface DesignContext {
   zoningBase?: string;
   zoningSubtype?: string;
-  /** 'civil_horizontal' (lots/streets) vs 'architectural_vertical' (massing) */
+  /**
+   * PARKING-STRUCTURE regime, not building type: 'vertical' = FAR high enough
+   * for structured parking, 'horizontal' = surface parking, and
+   * 'horizontal_pending' = vertical-capable typology but zoning FAR unknown
+   * (defaulted to surface FOR NOW). Never use this to route SF vs MF — that's
+   * what `typology` is for (see routesToLotFit).
+   */
   regime?: string;
   /** Backend-resolved typology for the selected use, e.g. 'single_family' */
   typology?: string;
@@ -34,8 +49,10 @@ export interface DesignContext {
   maxHeightFt?: ContextValue;
   maxDensityDuAc?: ContextValue;
   maxCoveragePct?: ContextValue;
-  /** e.g. 'surface' | 'tuck_under' — display-only for now */
+  /** e.g. 'surface' | 'structured' — derived from the regime */
   parkingStrategy?: string;
+  /** Stall/aisle geometry + ratio from typology_spec */
+  parking?: ContextParking;
   /** Backend warning flags (flood zone, review triggers, …) → warning chips */
   flags: string[];
   /** As-of-right uses embedded in the context payload (newer backend shape) */
@@ -100,6 +117,7 @@ export function normalizeDesignContext(json: unknown): DesignContext | null {
     maxDensityDuAc: cv(pick(o, 'density_max_du_ac', 'density_du_ac', 'max_density_du_per_acre', 'density')),
     maxCoveragePct: cv(pick(o, 'coverage_pct', 'max_coverage_pct', 'max_impervious_coverage_pct')),
     parkingStrategy: (pick(o, 'parking_strategy', 'parkingStrategy') as string) ?? undefined,
+    parking: normalizeParking(pick(o, 'parking')),
     flags: normalizeFlags(pick(o, 'flags', 'warnings')),
     permittedUses: normalizePermittedUses(pick(o, 'permitted_uses', 'permittedUses')),
     raw: o,
@@ -140,17 +158,81 @@ export function contextToZoningPatch(ctx: DesignContext): Record<string, number>
   return patch;
 }
 
+const numOrUndef = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
+
+/** Tolerant reader for the typology_spec parking block. */
+export function normalizeParking(json: unknown): ContextParking | undefined {
+  if (json == null || typeof json !== 'object') return undefined;
+  const o = json as Record<string, unknown>;
+  const parking: ContextParking = {
+    ratio: numOrUndef(pick(o, 'ratio', 'surface_parking_ratio', 'target_ratio')),
+    basis: (pick(o, 'basis', 'parking_basis') as string) ?? undefined,
+    stallWidthFt: numOrUndef(pick(o, 'stall_w_ft', 'stall_width_ft')),
+    stallDepthFt: numOrUndef(pick(o, 'stall_d_ft', 'stall_depth_ft')),
+    aisleWidthFt: numOrUndef(pick(o, 'drive_aisle_ft', 'aisle_width_ft')),
+  };
+  return Object.values(parking).some(v => v != null) ? parking : undefined;
+}
+
 /**
- * Civil/horizontal regime (single-family lots + driveways) vs
- * architectural/vertical (multifamily massing + parking fields). This is the
- * routing switch: horizontal parcels get the market-grounded lot generator;
- * vertical parcels get the massing engine. HBU-by-zoning, in one predicate.
+ * Ground the solver's parking spec in typology_spec (via the context payload):
+ * stall geometry + target ratio come from the backend's per-typology numbers
+ * instead of hardcoded defaults. Only returns keys the context actually knows.
  */
-export function isHorizontalRegime(ctx: DesignContext): boolean {
-  const r = ctx.regime?.toLowerCase() ?? '';
-  if (r.includes('horizontal') || r.includes('civil')) return true;
-  if (r.includes('vertical') || r.includes('architectural')) return false;
-  return (ctx.typology ?? '').toLowerCase().includes('single_family');
+export function contextToParkingPatch(ctx: DesignContext): Record<string, number> {
+  const patch: Record<string, number> = {};
+  const p = ctx.parking;
+  if (!p) return patch;
+  if (p.ratio != null) patch.targetRatio = p.ratio;
+  if (p.stallWidthFt != null) patch.stallWidthFt = p.stallWidthFt;
+  if (p.stallDepthFt != null) patch.stallDepthFt = p.stallDepthFt;
+  if (p.aisleWidthFt != null) patch.aisleWidthFt = p.aisleWidthFt;
+  return patch;
+}
+
+/**
+ * Uses that plan as a lot subdivision (houses on lots) rather than building
+ * massing. This — the USE/TYPOLOGY — is the SF-vs-MF routing switch.
+ *
+ * The context `regime` must NOT route this decision: it describes the parking
+ * structure (surface vs structured), and 'horizontal_pending' merely means
+ * "vertical-capable typology, zoning FAR unknown". Routing on it is how an
+ * RM40 multifamily parcel once got tiled with 14 house pads.
+ */
+const LOT_FIT_USES = new Set(['single_family', 'two_family', 'sf', 'duplex']);
+
+export function routesToLotFit(ctx: DesignContext | null, selectedUse?: string): boolean {
+  const t = (ctx?.typology ?? selectedUse ?? '').toLowerCase();
+  return LOT_FIT_USES.has(t);
+}
+
+/**
+ * permitted-uses vocabulary → typology_spec vocabulary. The two backend
+ * functions disagree ('multi_family' vs 'multifamily'), and typology_spec has
+ * no two_family row yet, so duplex-family uses fall back to the SF spec.
+ */
+export function toContextTypology(use: string): string {
+  const u = use.toLowerCase().trim();
+  if (u === 'multi_family' || u === 'multifamily' || u === 'mf') return 'multifamily';
+  if (u === 'two_family' || u === 'duplex') return 'single_family';
+  if (u === 'single_family' || u === 'sf') return 'single_family';
+  return u;
+}
+
+/**
+ * Zoning-grounded default use: the highest-intensity residential use that is
+ * permitted AS OF RIGHT. This is what stops an RM40 parcel from defaulting to
+ * a single-family plan just because 'single_family' was the hardcoded initial.
+ */
+const USE_PRIORITY = ['multi_family', 'multifamily', 'two_family', 'single_family'];
+
+export function pickDefaultUse(uses: string[]): string | null {
+  if (uses.length === 0) return null;
+  for (const u of USE_PRIORITY) {
+    if (uses.includes(u)) return u;
+  }
+  return uses[0];
 }
 
 // ── Fetchers (all fail-soft: null on any error) ─────────────────────────────
@@ -170,8 +252,10 @@ async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Prom
   }
 }
 
-export function fetchDesignContext(ogcFid: number, typology: string) {
-  return rpc('fn_resolve_design_context', { p_ogc_fid: ogcFid, p_typology: typology });
+export function fetchDesignContext(ogcFid: number, use: string) {
+  // The RPC's p_typology must be a typology_spec row — map from whatever
+  // vocabulary the use came in as (permitted-uses list, UI selector, …).
+  return rpc('fn_resolve_design_context', { p_ogc_fid: ogcFid, p_typology: toContextTypology(use) });
 }
 
 export function fetchPermittedUses(ogcFid: number) {

@@ -89,6 +89,11 @@ interface EnterpriseSitePlannerProps {
    * building is cosmetic — it reappears on the next re-solve.
    */
   onDeleteBuildings?: (ids: string[]) => void;
+  /**
+   * Duplicate buildings worker-side (paste). Same reasoning as delete: a
+   * locally-cloned building would vanish on the next re-solve.
+   */
+  onCloneBuildings?: (ids: string[]) => void;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -107,7 +112,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   onRetryEnvelope,
   onBuildingUpdate,
   onAddBuilding,
-  onDeleteBuildings
+  onDeleteBuildings,
+  onCloneBuildings
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
   // run unconditionally on every render. The `!parcel` guard lives just before
@@ -247,15 +253,31 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     }
   }, [parcel?.geometry]);
 
+  // Once the user pans/zooms manually we stop auto-fitting on resize; the
+  // Fit button (and the '0' key) re-arm it. Until then the parcel stays
+  // centred through modal layout settles, devtools opens, window resizes.
+  const userMovedViewRef = useRef(false);
+
   // Fit viewport to parcel
   const fitViewToParcel = useCallback(() => {
     const canvas = canvasContainerRef.current;
     if (!canvas || !processedGeometry) return;
 
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     viewport.fitToBounds(processedGeometry.bounds, rect.width, rect.height);
     setHasInitializedView(true);
   }, [processedGeometry, viewport]);
+
+  // Latest fit fn for the ResizeObserver (whose lifetime is the container's)
+  const fitViewRef = useRef(fitViewToParcel);
+  fitViewRef.current = fitViewToParcel;
+
+  /** User asked for a fit: do it now and resume auto-fit on future resizes. */
+  const requestFit = useCallback(() => {
+    userMovedViewRef.current = false;
+    fitViewToParcel();
+  }, [fitViewToParcel]);
 
   // Initialize viewport when geometry loads
   useEffect(() => {
@@ -277,6 +299,37 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     }
   }, [processedGeometry, hasInitializedView, fitViewToParcel]);
 
+  // Re-fit whenever the canvas container changes size (modal layout settling,
+  // window resize, devtools) — the fit computed at mount is stale the moment
+  // the host resizes, which is how the parcel ends up stranded in a corner.
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (!userMovedViewRef.current) fitViewRef.current();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /** Screen-centre of the canvas — the anchor for button/keyboard zoom. */
+  const canvasCenter = useCallback((): { x: number; y: number } | null => {
+    const rect = canvasContainerRef.current?.getBoundingClientRect();
+    return rect ? { x: rect.width / 2, y: rect.height / 2 } : null;
+  }, []);
+
+  const zoomInCentered = useCallback(() => {
+    userMovedViewRef.current = true;
+    const c = canvasCenter();
+    if (c) viewport.zoomIn(c.x, c.y); else viewport.zoomIn();
+  }, [canvasCenter, viewport]);
+
+  const zoomOutCentered = useCallback(() => {
+    userMovedViewRef.current = true;
+    const c = canvasCenter();
+    if (c) viewport.zoomOut(c.x, c.y); else viewport.zoomOut();
+  }, [canvasCenter, viewport]);
+
   // Handle mouse down
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasContainerRef.current;
@@ -285,6 +338,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     // Panning (middle mouse or Alt+drag). Alt is used instead of Ctrl so that
     // Ctrl/Cmd+click remains available for multi-select below.
     if (event.button === 1 || (event.button === 0 && event.altKey)) {
+      userMovedViewRef.current = true;
       setIsPanning(true);
       setLastPanPoint({ x: event.clientX, y: event.clientY });
       return;
@@ -628,12 +682,14 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     activeManipulationRef.current = null;
   }, [drag, elements, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate, rotation]);
 
-  // Handle wheel zoom
+  // Handle wheel zoom (attached by SitePlanCanvas as a NON-passive native
+  // listener, so preventDefault actually stops the page/modal from scrolling)
   const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault();
     const canvas = canvasContainerRef.current;
     if (!canvas) return;
 
+    userMovedViewRef.current = true;
     const rect = canvas.getBoundingClientRect();
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
@@ -685,10 +741,22 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   const handlePaste = useCallback(() => {
     if (copiedElements.length === 0) return;
-    const newElements = ElementService.copyElements(elements, new Set(copiedElements.map(el => el.id)));
+    // Buildings clone worker-side (a locally-pasted building would vanish on
+    // the next re-solve); everything else is a local annotation copy.
+    const buildingIds = copiedElements
+      .filter(el => el.type === 'building')
+      .map(el => el.id);
+    if (buildingIds.length > 0 && onCloneBuildings) {
+      onCloneBuildings(buildingIds);
+    }
+    const localIds = copiedElements
+      .filter(el => el.type !== 'building' || !onCloneBuildings)
+      .map(el => el.id);
+    if (localIds.length === 0) return;
+    const newElements = ElementService.copyElements(elements, new Set(localIds));
     setElements(prev => [...prev, ...newElements]);
     selection.selectAll(newElements.map(el => el.id));
-  }, [copiedElements, elements, selection.selectAll]);
+  }, [copiedElements, elements, selection.selectAll, onCloneBuildings]);
 
   // Update elements from props (merge-preserving, same as the primary sync)
   useEffect(() => {
@@ -719,23 +787,23 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
       if (e.key === '0') {
         e.preventDefault();
-        fitViewToParcel();
+        requestFit();
       }
 
       if (e.key === '+' || e.key === '=') {
         e.preventDefault();
-        viewport.zoomIn();
+        zoomInCentered();
       }
 
       if (e.key === '-') {
         e.preventDefault();
-        viewport.zoomOut();
+        zoomOutCentered();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection.selectedCount, copiedElements.length, handleDelete, handleCopy, handlePaste, fitViewToParcel, viewport]);
+  }, [selection.selectedCount, copiedElements.length, handleDelete, handleCopy, handlePaste, requestFit, zoomInCentered, zoomOutCentered]);
 
   // Guard placed AFTER all hooks so hook order stays stable across renders.
   if (!parcel) {
@@ -840,9 +908,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           onCopy={handleCopy}
           onPaste={handlePaste}
           onDelete={handleDelete}
-          onFitToParcel={fitViewToParcel}
-          onZoomIn={viewport.zoomIn}
-          onZoomOut={viewport.zoomOut}
+          onFitToParcel={requestFit}
+          onZoomIn={zoomInCentered}
+          onZoomOut={zoomOutCentered}
           onAlign={handleAlign}
           onToggleVertexEdit={() => {
             if (vertexEditing.isVertexEditing) {
@@ -858,6 +926,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           canPaste={copiedElements.length > 0}
           canDelete={selection.selectedCount > 0}
           canAlign={selection.selectedCount >= 2}
+          canVertexEdit={vertexEditing.isVertexEditing || selection.selectedCount === 1}
           isVertexEditing={vertexEditing.isVertexEditing}
           gridEnabled={grid.gridState.enabled}
           snapToGridEnabled={grid.gridState.snapToGrid}
@@ -889,6 +958,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
+            onWheel={handleWheel}
           />
           
         </div>

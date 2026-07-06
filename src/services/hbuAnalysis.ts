@@ -1,6 +1,7 @@
 // Highest and Best Use Analysis Service
 import { RegridZoningData } from '../types/zoning';
 import { SelectedParcel } from '../types/parcel';
+import { supabase } from '../lib/supabase';
 
 export interface HBUAlternative {
   use: string;
@@ -128,10 +129,15 @@ export class HBUAnalyzer {
       zoningData.zoning_type = 'Residential'; // Default fallback
     }
 
-    // 1. Identify feasible uses based on zoning
-    const feasibleUses = this.identifyFeasibleUses(zoningData);
-    console.log('Feasible uses identified:', feasibleUses);
-    
+    // 1. Identify feasible uses — the zoning engine (fn_resolve_permitted_uses)
+    // is the source of truth; the hardcoded zoning-type maps only run as a
+    // fallback when the RPC is unreachable. (The old maps keyed off Regrid's
+    // zoning_type, which is often undefined — that's how an RM40 multifamily
+    // parcel used to "analyze" as Single Family.)
+    const rpcUses = await this.fetchPermittedUsesFromZoningEngine(parcel);
+    const feasibleUses = rpcUses ?? this.identifyFeasibleUses(zoningData);
+    console.log('Feasible uses identified:', feasibleUses, rpcUses ? '(zoning engine)' : '(fallback maps)');
+
     // Ensure we have at least one feasible use
     if (feasibleUses.length === 0) {
       console.warn('No feasible uses found, adding default residential use');
@@ -165,6 +171,36 @@ export class HBUAnalyzer {
       analysisDate: new Date(),
       analyst: 'System'
     };
+  }
+
+  /**
+   * As-of-right uses from the zoning engine, mapped to this analyzer's use
+   * vocabulary. Returns null when the RPC is unreachable (fail-soft → the
+   * hardcoded fallback maps run instead). Conditional uses are deliberately
+   * excluded: HBU alternatives should price what's buildable BY RIGHT.
+   */
+  private async fetchPermittedUsesFromZoningEngine(parcel: SelectedParcel): Promise<string[] | null> {
+    const ogcFid = Number(parcel.ogc_fid);
+    if (!supabase || !Number.isFinite(ogcFid) || ogcFid <= 0) return null;
+    try {
+      const { data, error } = await supabase.rpc('fn_resolve_permitted_uses', { p_ogc_fid: ogcFid });
+      if (error || data == null) return null;
+      const asOfRight = (data as { feasible_uses_as_of_right?: unknown }).feasible_uses_as_of_right;
+      if (!Array.isArray(asOfRight)) return null;
+      const vocab: Record<string, string[]> = {
+        single_family: ['Single Family'],
+        two_family: ['Townhouse'], // nearest modeled alternative to a duplex
+        multi_family: ['Multi-Family', 'Apartment'],
+        commercial: ['Retail', 'Office'],
+        industrial: ['Warehouse'],
+      };
+      const uses = asOfRight
+        .filter((u): u is string => typeof u === 'string')
+        .flatMap(u => vocab[u] ?? []);
+      return uses.length > 0 ? [...new Set(uses)] : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
