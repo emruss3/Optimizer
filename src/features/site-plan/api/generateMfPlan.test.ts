@@ -92,3 +92,23 @@ describe('mfPlanToElements', () => {
     expect(r.elements).toHaveLength(0);
   });
 });
+
+// Crash regression: the KPI strip must survive server-shaped metrics.
+import { render } from '@testing-library/react';
+import React from 'react';
+import KpiStrip from '../ui/KpiStrip';
+
+describe('KpiStrip with server-generated metrics (crash regression)', () => {
+  it('renders the mapped metrics without violations/zoningCompliant crashing it', () => {
+    const { metrics } = mfPlanToElements(RESP);
+    const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
+    expect(getByText('Compliant')).toBeTruthy();
+    expect(getByText('52 / 113')).toBeTruthy();
+  });
+
+  it('tolerates metrics missing optional fields entirely', () => {
+    const bare = { totalBuiltSF: 1000, achievedFAR: 0.5 } as never;
+    const { getByText } = render(React.createElement(KpiStrip, { metrics: bare, investment: null }));
+    expect(getByText('Compliant')).toBeTruthy();
+  });
+});

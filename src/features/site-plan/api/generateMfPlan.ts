@@ -163,6 +163,11 @@ export function mfPlanToElements(resp: MfPlanResponse): {
         totalUnits: mNum(m.units_est),
         stallsProvided: mNum(m.stalls),
         stallsRequired: mNum(m.stalls_required),
+        // Server plans are constructed inside the setback envelope; parking
+        // shortfall is surfaced via stalls (red) + plan-basis flag, not as a
+        // zoning violation. Consumers (KpiStrip) need these present.
+        violations: [],
+        zoningCompliant: true,
       } as SiteMetrics)
     : null;
 
