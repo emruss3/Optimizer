@@ -148,6 +148,18 @@ describe('routesToLotFit (HBU plan routing)', () => {
     expect(routesToLotFit(null, 'multi_family')).toBe(false);
     expect(routesToLotFit(null)).toBe(false);
   });
+
+  it('REGRESSION: multifamily zoning codes never route to lot fit, even when the context echoes single_family', () => {
+    // The failure mode: default-use auto-correction couldn't run (permitted-
+    // uses RPC hiccup) → the context was fetched for 'single_family' and its
+    // typology just echoes that back on RM40 land.
+    expect(routesToLotFit(ctx({ zoning_base: 'RM40', typology: 'single_family' }))).toBe(false);
+    expect(routesToLotFit(ctx({ zoning_base: 'MF2', typology: 'single_family' }))).toBe(false);
+    expect(routesToLotFit(ctx({ zoning_base: 'RX10', typology: 'two_family' }))).toBe(false);
+    // …while genuinely single-family zoning still routes to lots
+    expect(routesToLotFit(ctx({ zoning_base: 'RS10', typology: 'single_family' }))).toBe(true);
+    expect(routesToLotFit(ctx({ zoning_base: 'R8', typology: 'single_family' }))).toBe(true);
+  });
 });
 
 describe('toContextTypology (vocabulary bridge)', () => {
