@@ -55,7 +55,7 @@ export function isSfPlanElement(el: Pick<Element, 'id'>): boolean {
 }
 
 /** Parse a geom that may arrive as an object or a JSON string; 4326 → 3857. */
-function toCanvasPolygon(geom: unknown): Polygon | null {
+export function toCanvasPolygon(geom: unknown): Polygon | null {
   try {
     const g = typeof geom === 'string' ? JSON.parse(geom) : geom;
     if (!g || typeof g !== 'object') return null;
