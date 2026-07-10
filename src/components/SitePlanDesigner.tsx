@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, X } from 'lucide-react';
 import type { SelectedParcel } from '../types/parcel';
 import { SiteWorkspace } from '../features/site-plan';
+import { BUILD_STAMP } from '../lib/buildInfo';
 
 interface SitePlanDesignerProps {
   parcel: SelectedParcel;
@@ -17,6 +18,10 @@ interface SitePlanDesignerProps {
  * viewport; Esc or the X returns to the map.
  */
 const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({ parcel, onClose }) => {
+  useEffect(() => {
+    console.info(`[planner] build ${BUILD_STAMP}`);
+  }, []);
+
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => {
@@ -55,6 +60,9 @@ const SitePlanDesigner: React.FC<SitePlanDesignerProps> = ({ parcel, onClose }) 
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
+          <span className="hidden lg:inline text-[10px] text-gray-300 font-mono" title="Build (commit · UTC time)">
+            {BUILD_STAMP}
+          </span>
           <span className="hidden md:inline text-[11px] text-gray-400">Esc to close</span>
           {onClose && (
             <button

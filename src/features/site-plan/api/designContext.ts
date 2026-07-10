@@ -202,7 +202,16 @@ export function contextToParkingPatch(ctx: DesignContext): Record<string, number
  */
 const LOT_FIT_USES = new Set(['single_family', 'two_family', 'sf', 'duplex']);
 
+/** Multifamily zoning code prefixes (Nashville: RM20/RM40/…, MF, RX mixed) */
+const MF_ZONING = /^(RM|MF|RX)/i;
+
 export function routesToLotFit(ctx: DesignContext | null, selectedUse?: string): boolean {
+  // Belt-and-braces: ctx.typology merely ECHOES the typology the context was
+  // fetched for. If the default-use auto-correction couldn't run (permitted-
+  // uses RPC hiccup), that echo says 'single_family' on multifamily land —
+  // the zoning code itself is the tiebreaker that keeps RM/MF parcels on the
+  // massing path.
+  if (ctx?.zoningBase && MF_ZONING.test(ctx.zoningBase)) return false;
   const t = (ctx?.typology ?? selectedUse ?? '').toLowerCase();
   return LOT_FIT_USES.has(t);
 }

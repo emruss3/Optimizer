@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Building, TrendingUp, Map, DollarSign } from 'lucide-react';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
 import { SelectedParcel, isValidParcel } from '../types/parcel';
-import { SiteWorkspace } from '../features/site-plan';
+import SitePlanDesigner from './SitePlanDesigner';
 import { useParcelDetail } from '../hooks/useParcelDetail';
 
 interface FullAnalysisModalProps {
@@ -74,14 +74,12 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
           })}
         </div>
 
-        {/* Content — the Site Plan tab needs the full height with no scroll
-            wrapper: the planner manages its own layout, and a content-sized
-            scroll host is exactly what left the canvas fit stranded. */}
+        {/* Content — the Site Plan tab IS the full-screen designer (portal
+            over the modal): a 1240px modal column cramps the planner into a
+            scrolling card, and full screen must never cost an extra click. */}
         <div className="flex-1 overflow-hidden">
           {activeTab === 'site' ? (
-            <div className="h-full overflow-hidden">
-              <SiteWorkspace parcel={p} />
-            </div>
+            <SitePlanDesigner parcel={p} onClose={() => setActiveTab('overview')} />
           ) : (
           <div className="h-full overflow-y-auto p-6">
             {activeTab === 'overview' && (
