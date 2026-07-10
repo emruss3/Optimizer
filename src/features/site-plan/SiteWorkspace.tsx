@@ -24,6 +24,7 @@ import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { contextToZoningPatch, contextToParkingPatch, routesToLotFit, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
+import { generateMfSitePlan, mfPlanToElements, isMfPlanElement } from './api/generateMfPlan';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 
@@ -74,9 +75,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // ── HBU / regime plan routing ─────────────────────────────────────────────
   // What we planned and WHY, shown under the KPI bar ("Plan basis: …").
   const [planBasis, setPlanBasis] = useState<string | null>(null);
-  // 'sf' = lot generator drives the plan; 'mf' = massing engine. Guards the
-  // live re-solver from painting multifamily apparatus over an SF lot fit.
-  const planModeRef = useRef<'sf' | 'mf' | null>(null);
+  // 'sf' = lot generator; 'mf' = client massing engine (fallback);
+  // 'mf-server' = server-generated site system (bars + drives + parking +
+  // courts from fn_generate_mf_site_plan). Static modes ('sf', 'mf-server')
+  // guard the live re-solver and drag pump — those plans vary by
+  // REGENERATION (candidate tree), not by local re-packing.
+  const planModeRef = useRef<'sf' | 'mf' | 'mf-server' | null>(null);
+  const mfSeedRef = useRef(1);
   const ctxSettledRef = useRef<DesignContext | null | 'pending'>('pending');
 
   // ── Undo / redo ───────────────────────────────────────────────────────────
@@ -220,8 +225,41 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Elements and envelope stay in EPSG:3857 meters — no feet conversion.
   // The canvas viewport fits to processedGeometry (also EPSG:3857 meters).
 
+  /**
+   * Beat-TestFit M2: server-generated site system. The backend plans the
+   * whole site — entry drive off the primary frontage, bar rows, parking
+   * streets, green courts, amenity — with EPSG:2274-true areas, and persists
+   * a siteplanner_candidate. Returns false when unreachable or the parcel
+   * defeats the generator, so the client engine can take over.
+   */
+  const runServerMfPlan = useCallback(async (seed: number): Promise<boolean> => {
+    if (contextOgcFid == null) return false;
+    const resp = await generateMfSitePlan(contextOgcFid, seed);
+    if (!resp || !resp.buildings || resp.buildings.length === 0) return false;
+    const { elements: generated, metrics: serverMetrics, basis, flags } = mfPlanToElements(resp);
+    if (generated.length === 0) return false;
+    planModeRef.current = 'mf-server';
+    mfSeedRef.current = seed;
+    const base = elements.filter(el => !isMfPlanElement(el));
+    setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
+    setViolations([]);
+    const parkingNote = flags.includes('parking_below_ratio') ? ' · ⚠ parking below target ratio' : '';
+    setPlanBasis(`${basis ?? 'Server-generated site plan'} · candidate persisted${parkingNote}`);
+    return true;
+  }, [contextOgcFid, elements, metrics, setPlanOutput]);
+
   const handleGenerate = useCallback(async (iterations?: unknown) => {
     if (!envelopeMeters) return;
+    // Server plans vary by regeneration (a new candidate), not local SA.
+    if (planModeRef.current === 'mf-server') {
+      setIsGenerating(true);
+      try {
+        await runServerMfPlan(mfSeedRef.current + 1);
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
     // Guard: button handlers pass the click event — only numbers count.
     const iters = typeof iterations === 'number' ? iterations : 50;
     planModeRef.current = 'mf';
@@ -301,14 +339,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGenerating(false);
     }
-  }, [config, envelopeMeters, setPlanOutput, applyAlternatives, pushHistory, trackBuildings]);
+  }, [config, envelopeMeters, setPlanOutput, applyAlternatives, pushHistory, trackBuildings, runServerMfPlan]);
 
   // Live re-solve: a fast, deterministic constructive solve (no annealing) run
   // when the user nudges parameter sliders, so the plan updates without clicking
   // "Generate". Quietly no-ops on failure — it's a preview, not a commit.
   const liveResolve = useCallback(async () => {
     if (!envelopeMeters) return;
-    if (planModeRef.current === 'sf') return; // SF lot fits aren't massing-resolved
+    // Static plans (SF lot fit, server-generated site system) aren't
+    // massing-resolved — they change by regeneration.
+    if (planModeRef.current === 'sf' || planModeRef.current === 'mf-server') return;
     try {
       const parkingSpec = {
         stallW: feetToMeters(config.designParameters.parking.stallWidthFt),
@@ -396,6 +436,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const handleBuildingUpdate = useCallback(
     (update: BuildingUpdate, options?: { final?: boolean }) => {
       if (!envelopeMeters) return;
+      // Static plans have no worker session — a drag would pump updates for
+      // ids the solver doesn't know. Editing arrives with candidate re-generation.
+      if (planModeRef.current === 'sf' || planModeRef.current === 'mf-server') return;
       // Snapshot once at the START of each gesture (first update after idle)
       // so a whole drag/rotate undoes in one step.
       if (!options?.final && !gestureActiveRef.current) {
@@ -442,16 +485,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [applyBuildingSet]);
 
   const handleDeleteBuildings = useCallback((ids: string[]) => {
+    // Static server/SF plans: deletion is a local element removal (no worker
+    // session exists); the KPIs keep the generated metrics until regeneration.
+    if (planModeRef.current === 'sf' || planModeRef.current === 'mf-server') {
+      setPlanOutput(elements.filter(el => !ids.includes(el.id)), metrics);
+      return;
+    }
     const remaining = currentBuildingsRef.current.filter(b => !ids.includes(b.id));
     if (remaining.length === currentBuildingsRef.current.length) return;
     pushHistory();
     void applyBuildingSet(remaining);
-  }, [applyBuildingSet, pushHistory]);
+  }, [applyBuildingSet, pushHistory, elements, metrics, setPlanOutput]);
 
   /** Paste: clone buildings through the worker so the copies are real
    *  (solver-tracked, undoable) — a local canvas copy would vanish on the
    *  next re-solve. Clones land slightly offset and position-locked. */
   const handleCloneBuildings = useCallback((ids: string[]) => {
+    if (planModeRef.current === 'sf' || planModeRef.current === 'mf-server') return;
     const current = currentBuildingsRef.current;
     const toClone = current.filter(b => ids.includes(b.id));
     if (toClone.length === 0) return;
@@ -555,6 +605,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         code: 'envelope',
         message: 'Buildable envelope not available. Please wait for envelope to load.',
         severity: 'error'
+      }]);
+      return;
+    }
+    if (planModeRef.current === 'mf-server') {
+      setViolations([{
+        code: 'plan-mode',
+        message: 'This plan was generated server-side as one system. Use Generate for a new variation — per-building editing arrives with candidate sessions.',
+        severity: 'warning'
       }]);
       return;
     }
@@ -689,19 +747,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       hasAutoGeneratedRef.current = false;
       setSolverReady(false);
       planModeRef.current = null;
+      mfSeedRef.current = 1;
       ctxSettledRef.current = 'pending';
       userPickedUseRef.current = false;
       setPlanBasis(null);
     }
   }, [parcel.ogc_fid, parcel.id]);
 
-  /** MF branch of the auto-plan (constructive, instant). */
+  /** MF branch of the auto-plan: server site-system first (M2), client
+   *  constructive massing as the fail-soft fallback. */
   const autoPlanMf = useCallback((ctx: DesignContext | null) => {
     planModeRef.current = 'mf';
-    handleGenerate(0).catch(() => undefined);
-    // handleGenerate sets the basis label from the settled context
+    void (async () => {
+      const ok = await runServerMfPlan(1).catch(() => false);
+      if (!ok) {
+        // handleGenerate sets the basis label from the settled context
+        handleGenerate(0).catch(() => undefined);
+      }
+    })();
     void ctx;
-  }, [handleGenerate]);
+  }, [handleGenerate, runServerMfPlan]);
 
   /**
    * HBU-routed auto-plan: the resolved USE/TYPOLOGY decides WHAT gets planned
