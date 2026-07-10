@@ -10,7 +10,7 @@ import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
 import type { EdgeClassification } from '../../engine/setbacks';
 import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2, buffer, intersection, polygons, areaM2 } from '../../engine/geometry';
-import { feature4326To3857 } from '../../utils/reproject';
+import { feature4326To3857, feature3857To4326 } from '../../utils/reproject';
 import { feetToMeters } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount, type BuildingSpec } from '../../engine/model';
 import { placeBarsAlongEdges } from '../../engine/edgePlacement';
@@ -24,7 +24,8 @@ import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { contextToZoningPatch, contextToParkingPatch, routesToLotFit, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
-import { generateMfSitePlan, mfPlanToElements, isMfPlanElement } from './api/generateMfPlan';
+import { generateMfSitePlan, mfPlanToElements, isMfPlanElement, listMfCandidates, type MfCandidate, type MfPin } from './api/generateMfPlan';
+import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 
@@ -82,6 +83,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // REGENERATION (candidate tree), not by local re-packing.
   const planModeRef = useRef<'sf' | 'mf' | 'mf-server' | null>(null);
   const mfSeedRef = useRef(1);
+  // A2 edit-as-regeneration state: current pins + the candidate the next
+  // variation descends from; A1 rail data.
+  const mfPinsRef = useRef<MfPin[]>([]);
+  const mfRegenInFlightRef = useRef(false);
+  const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
+  const [mfCandidates, setMfCandidates] = useState<MfCandidate[]>([]);
   const ctxSettledRef = useRef<DesignContext | null | 'pending'>('pending');
 
   // ── Undo / redo ───────────────────────────────────────────────────────────
@@ -232,29 +239,52 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    * a siteplanner_candidate. Returns false when unreachable or the parcel
    * defeats the generator, so the client engine can take over.
    */
-  const runServerMfPlan = useCallback(async (seed: number): Promise<boolean> => {
+  const refreshCandidates = useCallback(() => {
+    if (contextOgcFid == null) return;
+    listMfCandidates(contextOgcFid).then(setMfCandidates).catch(() => undefined);
+  }, [contextOgcFid]);
+
+  const runServerMfPlan = useCallback(async (opts: {
+    seed: number;
+    pins?: MfPin[];
+    parentId?: string | null;
+    persist?: boolean;
+  }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
-    const resp = await generateMfSitePlan(contextOgcFid, seed);
+    const resp = await generateMfSitePlan(contextOgcFid, {
+      seed: opts.seed,
+      pins: opts.pins,
+      parentId: opts.parentId,
+      persist: opts.persist,
+    });
     if (!resp || !resp.buildings || resp.buildings.length === 0) return false;
     const { elements: generated, metrics: serverMetrics, basis, flags } = mfPlanToElements(resp);
     if (generated.length === 0) return false;
     planModeRef.current = 'mf-server';
-    mfSeedRef.current = seed;
+    mfSeedRef.current = opts.seed;
+    mfPinsRef.current = resp.pins ?? [];
+    if (resp.candidate_id) setActiveCandidateId(resp.candidate_id);
     const base = elements.filter(el => !isMfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
     setViolations([]);
     const parkingNote = flags.includes('parking_below_ratio') ? ' · ⚠ parking below target ratio' : '';
-    setPlanBasis(`${basis ?? 'Server-generated site plan'} · candidate persisted${parkingNote}`);
+    setPlanBasis(`${basis ?? 'Server-generated site plan'}${parkingNote}`);
+    if (opts.persist !== false) refreshCandidates();
     return true;
-  }, [contextOgcFid, elements, metrics, setPlanOutput]);
+  }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates]);
 
   const handleGenerate = useCallback(async (iterations?: unknown) => {
     if (!envelopeMeters) return;
     // Server plans vary by regeneration (a new candidate), not local SA.
+    // Pins carry through: your placed buildings survive every variation.
     if (planModeRef.current === 'mf-server') {
       setIsGenerating(true);
       try {
-        await runServerMfPlan(mfSeedRef.current + 1);
+        await runServerMfPlan({
+          seed: mfSeedRef.current + 1,
+          pins: mfPinsRef.current,
+          parentId: activeCandidateId,
+        });
       } finally {
         setIsGenerating(false);
       }
@@ -436,9 +466,45 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const handleBuildingUpdate = useCallback(
     (update: BuildingUpdate, options?: { final?: boolean }) => {
       if (!envelopeMeters) return;
-      // Static plans have no worker session — a drag would pump updates for
-      // ids the solver doesn't know. Editing arrives with candidate re-generation.
-      if (planModeRef.current === 'sf' || planModeRef.current === 'mf-server') return;
+      if (planModeRef.current === 'sf') return;
+      // A2 edit-as-regeneration: on a server plan, releasing a dragged bar
+      // PINS it (its new footprint becomes a constraint) and the whole site
+      // re-solves around it server-side, persisting a child candidate.
+      // Mid-drag updates are ignored — the Shell moves the bar locally.
+      if (planModeRef.current === 'mf-server') {
+        if (!options?.final || !update.id.startsWith('mfgen-bldg-')) return;
+        if (mfRegenInFlightRef.current) return;
+        const el = elements.find(e => e.id === update.id);
+        const fp3857 = buildBuildingFootprint({
+          id: update.id,
+          anchor: update.anchor,
+          widthM: update.widthFt,   // Shell field names are legacy — meters
+          depthM: update.depthFt,
+          rotationRad: update.rotationRad,
+          floors: update.floors ?? 3,
+        } as BuildingSpec);
+        const newPin: MfPin = {
+          geom: feature3857To4326(fp3857),
+          floors: Math.max(1, Math.round(update.floors ?? (el?.properties?.floors as number) ?? 3)),
+        };
+        // Re-dragging an already-pinned bar replaces its pin
+        const pinIndex = el?.properties?.pinIndex as number | undefined;
+        const pins = [...mfPinsRef.current];
+        if (pinIndex != null && pinIndex >= 0 && pinIndex < pins.length) {
+          pins[pinIndex] = newPin;
+        } else {
+          pins.push(newPin);
+        }
+        mfRegenInFlightRef.current = true;
+        setIsGenerating(true);
+        runServerMfPlan({ seed: mfSeedRef.current, pins, parentId: activeCandidateId })
+          .catch(() => undefined)
+          .finally(() => {
+            mfRegenInFlightRef.current = false;
+            setIsGenerating(false);
+          });
+        return;
+      }
       // Snapshot once at the START of each gesture (first update after idle)
       // so a whole drag/rotate undoes in one step.
       if (!options?.final && !gestureActiveRef.current) {
@@ -452,7 +518,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       pendingUpdateRef.current = update; // latest-wins (the final release update is always last)
       pumpBuildingUpdates();
     },
-    [envelopeMeters, pumpBuildingUpdates, pushHistory]
+    [envelopeMeters, pumpBuildingUpdates, pushHistory, elements, runServerMfPlan, activeCandidateId]
   );
 
   /** Undo/redo restore + real deletes: replay a building set through the worker. */
@@ -748,6 +814,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setSolverReady(false);
       planModeRef.current = null;
       mfSeedRef.current = 1;
+      mfPinsRef.current = [];
+      setActiveCandidateId(null);
+      setMfCandidates([]);
       ctxSettledRef.current = 'pending';
       userPickedUseRef.current = false;
       setPlanBasis(null);
@@ -759,7 +828,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const autoPlanMf = useCallback((ctx: DesignContext | null) => {
     planModeRef.current = 'mf';
     void (async () => {
-      const ok = await runServerMfPlan(1).catch(() => false);
+      const ok = await runServerMfPlan({ seed: 1 }).catch(() => false);
       if (!ok) {
         // handleGenerate sets the basis label from the settled context
         handleGenerate(0).catch(() => undefined);
@@ -793,6 +862,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     ctxSettledRef.current = ctx;
     autoPlan(ctx);
   }, [autoPlan]);
+
+  // A1: load the parcel's scheme history on entry
+  useEffect(() => {
+    refreshCandidates();
+  }, [refreshCandidates]);
+
+  /** View a saved scheme: deterministic re-render from its seed + pins (no
+   *  new candidate row); future variations descend from the viewed scheme. */
+  const handleViewCandidate = useCallback((c: MfCandidate) => {
+    if (mfRegenInFlightRef.current) return;
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: c.seed, pins: c.pins, parentId: c.parentId, persist: false })
+      .then(ok => {
+        if (ok) setActiveCandidateId(c.id);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan]);
 
   // Fallback: if the context engine hasn't settled ~2.5s after the envelope is
   // ready, don't block the user — plan with whatever we have (MF default).
@@ -953,6 +1044,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
 
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto">
+          <SchemesRail
+            candidates={mfCandidates}
+            activeId={activeCandidateId}
+            onView={handleViewCandidate}
+            busy={isGenerating || isGeneratingLots}
+          />
           <ResultsPanel
             metrics={metrics}
             investmentAnalysis={investmentAnalysis}

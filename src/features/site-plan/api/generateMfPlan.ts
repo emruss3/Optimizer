@@ -23,6 +23,15 @@ interface MfBuilding extends MfGeom {
   i: number;
   footprint_sqft?: number;
   floors?: number;
+  /** User-pinned bar (edit-as-regeneration): kept verbatim by the generator */
+  pinned?: boolean;
+  pin_index?: number;
+}
+
+/** A pinned bar constraint: 4326 polygon + floors, echoed by the generator. */
+export interface MfPin {
+  geom: unknown;
+  floors?: number;
 }
 interface MfParking extends MfGeom {
   stalls?: number;
@@ -39,6 +48,8 @@ export interface MfPlanResponse {
   parcel_ogc_fid?: number;
   typology?: string;
   seed?: number;
+  pins?: MfPin[];
+  parent_candidate_id?: string | null;
   plan_basis?: string;
   session_id?: string;
   candidate_id?: string;
@@ -93,7 +104,9 @@ export function mfPlanToElements(resp: MfPlanResponse): {
         stories: floors,
         unitMix: generateUnitMixForCount(unitsForBar),
         use: 'residential',
-        color: '#3B82F6',
+        color: b.pinned ? '#2563EB' : '#3B82F6',
+        pinned: b.pinned ?? false,
+        pinIndex: b.pin_index,
       },
       metadata: meta,
     });
@@ -181,18 +194,31 @@ export function mfPlanToElements(resp: MfPlanResponse): {
   };
 }
 
+export interface MfGenerateOptions {
+  seed?: number;
+  typology?: string;
+  /** Edit-as-regeneration: bars the generator must keep verbatim */
+  pins?: MfPin[];
+  /** Candidate this variation descends from (lineage) */
+  parentId?: string | null;
+  /** false = view-only re-render (no new candidate row) */
+  persist?: boolean;
+}
+
 /** Fail-soft RPC call: null (with a console warning) on any failure. */
 export async function generateMfSitePlan(
   ogcFid: number,
-  seed: number = 1,
-  typology: string = 'multifamily'
+  opts: MfGenerateOptions = {}
 ): Promise<MfPlanResponse | null> {
   try {
     if (!supabase) return null;
     const { data, error } = await supabase.rpc('fn_generate_mf_site_plan', {
       p_ogc_fid: ogcFid,
-      p_typology: typology,
-      p_seed: seed,
+      p_typology: opts.typology ?? 'multifamily',
+      p_seed: opts.seed ?? 1,
+      p_pins: opts.pins && opts.pins.length > 0 ? opts.pins : null,
+      p_parent: opts.parentId ?? null,
+      p_persist: opts.persist ?? true,
     });
     if (error) {
       console.warn('[generateMfPlan] RPC failed:', error.message ?? error);
@@ -208,5 +234,37 @@ export async function generateMfSitePlan(
   } catch (err) {
     console.warn('[generateMfPlan] RPC threw:', err);
     return null;
+  }
+}
+
+/** One persisted scheme (candidate) in a parcel's design history. */
+export interface MfCandidate {
+  id: string;
+  createdAt: string;
+  seed: number;
+  pins: MfPin[];
+  parentId: string | null;
+  metrics: Record<string, number | string | null>;
+}
+
+/** A1 schemes rail: list a parcel's persisted candidates, newest first. */
+export async function listMfCandidates(ogcFid: number, limit = 20): Promise<MfCandidate[]> {
+  try {
+    if (!supabase) return [];
+    const { data, error } = await supabase.rpc('fn_list_mf_candidates', {
+      p_ogc_fid: ogcFid,
+      p_limit: limit,
+    });
+    if (error || !Array.isArray(data)) return [];
+    return (data as Record<string, unknown>[]).map(r => ({
+      id: String(r.id),
+      createdAt: String(r.created_at ?? ''),
+      seed: Number(r.seed) || 1,
+      pins: Array.isArray(r.pins) ? (r.pins as MfPin[]) : [],
+      parentId: (r.parent_candidate_id as string | null) ?? null,
+      metrics: (r.metrics as Record<string, number | string | null>) ?? {},
+    }));
+  } catch {
+    return [];
   }
 }
