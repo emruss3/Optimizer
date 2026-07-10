@@ -1,8 +1,159 @@
-# Beat TestFit — Product Plan (v1)
+# Best on the Market — Product Plan (v2)
 
-*Status: adopted plan. Supersedes incremental patching of the client massing engine.*
+*Status: adopted plan (v2, 2026-07-10). v1 ("Beat TestFit") is preserved below as
+history; v2 extends it with the full market bar, a scored audit of the current
+product, and phases A–D. One rule carried forward: no more polishing symptoms —
+every milestone moves the generation core, the money loop, or the deal surface.*
 
-## 1. Honest diagnosis: why we're 2/10 despite months of green CI
+## 0. Audit scorecard (current main, 2026-07-10)
+
+Scored against "what a deal-maker pays for", 0–10, with the market leader in
+each dimension as the bar:
+
+| Dimension | Score | Bar (leader) | Gap in one line |
+|---|---|---|---|
+| Site generation quality | 4 | TestFit (8) | v1 grammar is real (rows/streets/courts/spine/amenity) but rigid: one archetype, no perimeter-following on odd parcels, no townhome/wrap/podium, no garages, entry = longest-edge guess, constraints (flood/slope/easements/FAR caps) not enforced |
+| Interactivity / tool feel | 4 | TestFit (9) | Client plans drag/undo well; server plans are static (v1 trade-off); tools exist but lack affordance (disabled states unexplained, zoom semantics vary by device); UI polish uneven |
+| Financial truth | 5 | Deepblocks (6) | One debt-aware pro forma engine (good bones) but revenue/cost assumptions are defaults — `fn_local_pricing` is displayed, not yet piped into the pro forma or the generator's objective |
+| Data moat | 9 asset / 3 exploited | nobody | 359k parcels + 28-col zoning + **328k built footprints** + 4,989 floorplans + local pricing + flood/slope — no competitor has this depth locally; the product barely uses it |
+| Trust & provenance | 6 | nobody | Provenance badges, honest flags, deterministic solver, build stamp — differentiated; needs to extend to every number on screen |
+| Output / deliverables | 2 | TestFit (7) | No PDF board, no DXF/GeoJSON export, 3D is basic; deal-makers buy exports |
+| Speed to first plan | 7 | TestFit (8) | Auto-plan on open, generator ~1.5s; keep p95 < 2s |
+| Collaboration / persistence | 2 | Giraffe (7) | Candidates now persist (first rows 2026-07-10) but no schemes UI, no share links, no multi-user (RLS pending) |
+| Coverage | n/a | — | Nashville-depth only; expansion is a data-ops pipeline, not product code |
+| Product coherence | 4 | — | 4 planner components still shipped (5,331-line legacy monolith included); one true surface needed |
+
+**Verdict: "rudimentary" is accurate for what a user can *touch* today, while the
+foundations (generator core, candidate persistence, context engine, data moat)
+are now genuinely differentiated. v2 is about converting foundations into felt
+product.**
+
+## 1. The market bar (who we have to beat, and where they can't follow)
+
+- **TestFit** — the generation/iteration bar: real-time site solving, strong
+  parking + unit engines, co-creation feel. *Cannot follow us on:* market
+  evidence (no parcel DB, no comps, no local pricing — you bring your own site
+  and your own numbers).
+- **Autodesk Forma (ex-Spacemaker)** — early-design environment analyses (sun,
+  wind), Autodesk gravity. *Weak on:* underwriting, US parcel/zoning ground truth.
+- **Deepblocks** — parcel + zoning + quick feasibility. *Weak on:* generation
+  quality (boxes), depth of local evidence.
+- **Giraffe** — map-native collaboration + app ecosystem. *Weak on:* generation
+  and money.
+- **Land-intel tools (Regrid/LandVision/CityBldr)** — parcels and scores, no design.
+
+**The open lane (ours):** *parcel-click → evidence-grounded scheme → local-priced
+pro forma → lender-ready export, in one loop.* Nobody owns that end-to-end. The
+sentence no competitor can say stays the north star:
+
+> "This plan is a 3-story garden-bar cluster because that is what the last 40
+> projects within a mile actually built — and at local pricing it yields 6.4%
+> on cost."
+
+## 2. Shipped since v1 (the foundation is real)
+
+- **M0 (client half)**: typology-based SF/MF routing (+ RM/MF zoning-code guard),
+  zoning-grounded default use via `fn_resolve_permitted_uses` (planner + HBU),
+  vocabulary bridge, honest 404 fallbacks, parking spec grounded from
+  `typology_spec`, viewport rebuilt (anchored zoom, wheel wiring, auto-fit,
+  on-canvas zoom cluster), full-screen planner without friction, build stamp.
+- **M1+M2 v1**: `fn_generate_mf_site_plan` — entry drive from primary frontage,
+  spine, oriented bar rows, alternating double-loaded parking streets and green
+  courts, amenity pad, adaptive on tight sites, EPSG:2274 truth, **first-ever
+  rows persisted to `siteplanner_session` / `siteplanner_candidate`**.
+
+## 3. Phases (each converts a foundation into felt product)
+
+### Phase A — Close the loop that exists (the "no longer rudimentary" phase)
+- **A1. Schemes rail (candidate tree UI).** Every Generate already persists a
+  candidate; show them: thumbnails, KPI compare, restore, "variation of"
+  lineage via `parent_candidate_id`. Generate stops being a slot machine and
+  becomes an explorable design space. *Accept: flip between 5 schemes on one
+  parcel in <1s each; KPIs visibly differ; survives reload.*
+- **A2. Edit-as-regeneration.** Dragging a bar on a server plan becomes a
+  constraint (`p_pins`) and the site re-solves around it server-side (parking
+  streets re-flow, courts re-shape), persisting a child candidate. Restores
+  full interactivity on server plans — the v1 trade-off erased, the TestFit
+  feel achieved *with* persistence. *Accept: drag a bar → coherent re-plan
+  <1.5s → child candidate in the rail.*
+- **A3. Money objective in the loop.** Pipe `fn_local_pricing` +
+  `default_costs_by_use` into the pro forma AND the generator: K seeds ranked
+  by yield-on-cost, best returned, all persisted. Plan basis cites evidence:
+  "$X/SF from N local sales". *Accept: two parcels with different local
+  pricing produce differently-shaped winners, and the pro forma shows local
+  numbers with provenance badges.*
+- **A4. Tool feel.** Every control works or explains why it's disabled;
+  cursor states per tool; hover highlights; measure with live readout;
+  trackpad pinch + smooth exponential zoom (shipped); delete/copy/paste
+  coherent in every plan mode. *Accept: a first-time user can zoom, pan, fit,
+  measure, select, and duplicate without instructions.*
+
+### Phase B — Evidence moat (the unmatchable phase)
+- **B1. Plan-from-precedent.** Archetype + bar depth/length/stories chosen
+  from the `buildings` corpus around the parcel (p25–p75 envelopes), with an
+  evidence card ("what the last 40 projects within a mile built") next to the
+  plan. This is the differentiator sentence, live.
+- **B2. Typology expansion.** Seed `typology_spec` (townhome, two_family,
+  wrap, podium); townhome-row generator (unit ticks + garage stubs — the
+  reference-image grammar); SF subdivision v2 (streets + culs-de-sac, not
+  bbox slices).
+- **B3. Constraint truth.** Flood/slope developable mask from
+  `fn_resolve_physical_context` respected by the generator and drawn on
+  canvas; easement upload (schema exists: `uploaded_easements`); FAR/density/
+  coverage enforced with floors-vs-parking auto-balance (structured parking
+  when `structured_parking_threshold_far` trips).
+- **B4. Real road edges.** Ingest the county road network (OSM/TIGER) →
+  `get_parcel_front_edge_with_roads` becomes real → entries from actual
+  streets, corner parcels get corner treatments.
+
+### Phase C — Deal surface (the "buy it" phase)
+- **C1. One-click board export.** PDF: plan graphic + KPIs + pro forma +
+  evidence citations + provenance. This is what gets shown to capital.
+  DXF/GeoJSON out for the architect handoff.
+- **C2. 3D + sun.** Massing with shadows (deck.gl), one toggle. Cheap wow,
+  real utility for height conversations.
+- **C3. Share links.** RLS on, read-only scheme pages (candidate + KPIs) —
+  the collaboration wedge without building multiplayer.
+- **C4. Presentation-grade canvas.** Landscape garnish, hatching, line
+  weights tuned to the reference plans; the plan should look like the
+  marketing site plans users pinned as the bar.
+
+### Phase D — Platform
+- **D1. One planner surface.** Delete the legacy monolith + duplicates
+  (5,331 + 568 + 401 lines); `EnterpriseSitePlannerShell` + `SiteWorkspace`
+  is the only planner.
+- **D2. County onboarding pipeline.** Parcels/zoning/buildings/pricing as a
+  repeatable data-ops recipe — coverage becomes sales-driven, not eng-driven.
+- **D3. Assemblage.** Multi-parcel selection → merged envelope → same loop
+  (`optimize_assemblage_massing` exists as a starting point).
+
+**Sequence: A1 → A2 → A3 → A4, then B, then C, then D — except C1 (export)
+may pull forward if a sales conversation needs it.**
+
+## 4. Kill list (unchanged + additions)
+
+- Client SA as primary generator (edit-refiner only, then retire behind A2).
+- Any further polish on the legacy planner components (delete in D1).
+- Numbers without provenance — if a value can't say where it came from, it
+  doesn't ship.
+- Silent fallbacks — every degraded mode says so on screen (pattern: the
+  fallback-envelope banner, `parking_below_ratio`, build stamp).
+
+## 5. Operating rules
+
+1. Every PR moves generation, money, or deliverables — or deletes debt.
+2. Live parcels are the test suite: 669046, 667899, 293030, 554963, 554959 +
+   one large greenfield; a milestone isn't done until they all render sanely.
+3. The DB is ahead of the repo: functions apply live via MCP, then commit the
+   migration with an "already applied" header.
+4. Deploy state is checkable at a glance: the build stamp in the planner
+   header is authoritative — debug code only when the stamp matches main.
+
+---
+
+# Appendix: v1 plan (2026-07-05, superseded but preserved)
+
+## v1.1 Honest diagnosis: why we're 2/10 despite months of green CI
 
 Everything shipped so far — live drag re-solve, pins, undo, floorplates, KPIs,
 context panel — is **frame around the generator**. The generator itself (client-side
@@ -15,135 +166,30 @@ fix improves the *symptom* while the generation core stays a toy.
 `fn_generate_sf_site_plan` — lives in PostGIS next to the data, returns
 market-grounded, canvas-ready plans in ~350ms. The MF path should work the same way.
 
-## 2. What the backend audit found (2026-07-05, project okxrvetbzpoazrybhcqj)
-
-Assets the UI has never touched:
+## v1.2 What the backend audit found (2026-07-05, project okxrvetbzpoazrybhcqj)
 
 | Asset | Scale | What it means |
 |---|---|---|
-| `buildings` (+ `building_parcel_join`) | **328,158 real building footprints** (geom, footprint SF, stories, heights, volume), 357k parcel joins | Nashville's entire built environment as queryable precedent — the raw material for "plan from what actually gets built here" |
-| `typology_spec` | schema complete, **only 2 rows seeded** | A parametric archetype library: setbacks, coverage, parking ratios, stall/aisle dims, floorplate depth, **structured_parking_threshold_far, podium_levels** — the archetype system already designed, waiting for rows |
-| `typology_built_form` | 12 rows | Per-typology empirical form stats |
-| `siteplanner_session` / `siteplanner_candidate` | schema complete, **0 rows** | A designed-but-unbuilt server-side generation loop: candidates carry `geometry_buildings/parking/drives` + `metrics` + `parent_candidate_id` (an evolution tree). Someone already architected the right system. |
+| `buildings` (+ `building_parcel_join`) | **328,158 real building footprints**, 357k parcel joins | The built environment as queryable precedent |
+| `typology_spec` | schema complete, 2 rows seeded | Parametric archetype library incl. structured-parking threshold, podium levels |
+| `siteplanner_session` / `siteplanner_candidate` | schema complete — **now in use (2026-07-10)** | The server-side generation loop with candidate lineage |
 | `floorplans` (+rooms/walls/openings) | 4,989 | Unit-plan-level data for later fidelity |
 | `fn_local_built_form` / `fn_local_pricing` | live, full coverage | Comps distributions + $/SF — the money objective |
-| `get_parcel_front_edge_with_roads` | live but a **stub** | Returns the whole parcel as the "front edge", hardcoded `total_edges: 4`; roads table has ~68 rows. Real road-grounded access is M1 backend work, not a rename. |
-| `fn_buildable_envelope_directional` | live | Per-edge setbacks, server-side |
+| `get_parcel_front_edge_with_roads` | live but a **stub**; roads ~68 rows | Real road-grounded access is B4 data work, not a rename |
 | `default_costs_by_use`, `zoning` (28 cols), `parcel_constraints` | live | Cost + regulation grounding |
 
-**Wiring bugs found (audited):** the UI called `get_roads_near_parcel` (doesn't
-exist) and table `site_plans` (doesn't exist). Neither is a mere rename:
-`get_parcel_front_edge_with_roads` is a placeholder implementation, and
-`site_plan_models` is a massing-summary table whose schema has nothing in common
-with the saved-plans feature. Client now fails soft on both (no 404 spam, honest
-fallbacks); the real capabilities land in M1 (road-grounded access) and M2 (plan
-persistence via `siteplanner_candidate`).
-
 **Contract clarification (audited from `fn_resolve_design_context` source):**
-`regime` is the PARKING-STRUCTURE axis — `vertical` (FAR ≥
-structured_parking_threshold_far → structured parking), `horizontal` (surface),
-`horizontal_pending` (vertical-capable typology, zoning FAR unknown). It must
-never route SF-vs-MF; the resolved `typology` does that. The client once routed
-on `regime` and tiled an RM40 multifamily parcel with house pads.
+`regime` is the PARKING-STRUCTURE axis (`vertical` / `horizontal` /
+`horizontal_pending` = FAR unknown). It must never route SF-vs-MF; the resolved
+`typology` does that (and RM/MF/RX zoning codes are the tiebreaker).
 
-## 3. What TestFit actually does well (the bar, stated precisely)
+## v1.3 Milestones M0–M5 (dispositions)
 
-1. **Layouts read as intentional architecture**: buildings wrap parking garages
-   (donut/wrap), podiums carry bars, cores and corridors are placed, units face out.
-   Every object exists in *relation* to the others.
-2. **Site systems first**: access from the real street, drive loops that work,
-   garages fed by ramps, amenity placed — the skeleton comes before massing.
-3. **Parking as a solved system**: surface/tuck-under/structured chosen by ratio and
-   FAR pressure, with real stall/ramp/bay geometry.
-4. **Real-time parametric co-creation** on top of all that (we have the loop; theirs
-   moves *good* plans).
-5. Instant scheme iteration, 3D, exports.
-
-What TestFit **cannot** do: it knows nothing about the specific market. No comps, no
-local pricing, no "what's actually being built within a mile," no parcel data, no
-web collaboration. Its plans are rule-plausible, not evidence-grounded.
-
-## 4. Strategy: don't imitate the rule engine — outflank it with evidence
-
-**One generation core, server-side, candidate-based, grounded in 328k real
-buildings.** The SF generator proved the pattern. We extend it to MF using the
-architecture that already exists in the schema (`siteplanner_candidate`), the
-archetype specs (`typology_spec`), and precedent (`buildings`).
-
-The differentiated sentence we're building toward:
-> "This plan is a 3-story garden-bar cluster because that is what the last 40
-> projects within a mile of this parcel actually built — and at local pricing it
-> yields 6.4% on cost."
-
-TestFit structurally cannot say that sentence.
-
-The client planner's role changes: **editor and viewer of server-generated plans**
-(pins, drag re-solve, floorplates, KPIs all stay — they're good), no longer the
-primary generator.
-
-## 5. Milestones (each one a visible league-jump, with acceptance criteria)
-
-**M0 — Rewire what exists (days).** *(client half shipped in the planner-audit PR)*
-Silence the two 404s with honest fallbacks (roads → longest-edge heuristic until
-M1; saved plans → hidden until M2); route SF-vs-MF by resolved typology, never
-`regime`; zoning-grounded default use via `fn_resolve_permitted_uses` (both in
-the planner and in `hbuAnalysis.ts`, retiring its hardcoded zoning map); bridge
-the vocabulary gap (`multi_family` ↔ `multifamily`); ground solver parking spec
-in `typology_spec` numbers. Backend half: seed `typology_spec` for the core
-archetypes (garden bar, townhome row, wrap, podium) and a `two_family` row.
-*Accept: zero 404s in console; an RM40 parcel auto-plans as multifamily; HBU
-panel agrees with the context engine.*
-
-**M1 — Site skeleton (the "driveways make no sense" killer).**
-Server-side: access point from `get_parcel_front_edge_with_roads` → drive network
-(loop or dead-end + hammerhead per fire code) → developable pads. Returned in
-`canvas_frame`. *Accept: on the 5 test parcels, a reviewer can't tell the drive
-network from a civil engineer's first sketch; drives always connect to the actual
-street.*
-
-**M2 — `fn_generate_mf_site_plan` v1 (garden-bar archetype).**
-Mirror the SF generator: bars along pads from M1, surface parking courts *between*
-bars (not strips against the bbox), sized by `typology_spec` ratios; persists
-candidates to `siteplanner_candidate`; returns `canvas_frame`. Client renders it
-exactly like the SF plan; drag/pin editing still works on top. *Accept: parcel
-554963 (CF) produces a plan a multifamily developer would screenshot, in <1s.*
-
-**M3 — Plan from precedent (the moat).**
-Archetype + dimensions selected from the `buildings` evidence: query the built
-form actually surrounding the parcel (stories, floorplate depth, coverage,
-building count per acre) and instantiate the archetype that matches the local
-pattern at the p75 underwrite target. Plan-basis line cites it: "…because 40
-nearby projects built this." *Accept: switching between two different Nashville
-submarkets visibly changes the archetype chosen for identical-sized parcels.*
-
-**M4 — Structured parking + wrap/podium.**
-Garage as a placeable building (ramp module, bay dims from spec); wrap the donut;
-podium via `structured_parking_threshold_far` and `podium_levels`. *Accept: crank
-target FAR past the threshold on a test parcel and watch the plan switch from
-surface courts to a wrapped garage.*
-
-**M5 — Money as the objective.**
-Candidates ranked by yield-on-cost computed from `fn_local_pricing` +
-`default_costs_by_use` (not an abstract score). Candidate tree in the scheme cards
-(parent_candidate_id → explore/refine lineage). *Accept: the top-ranked scheme is
-the one with the best defensible YoC, and the card says the number.*
-
-**Throughout:** golden acceptance snapshots on the 5 brief parcels; every milestone
-demo'd on parcel 669046 (the sliver) and 554963 (CF).
-
-## 6. Kill list (stop spending here)
-
-- Client-side SA as the primary generator (keep only as interactive refine until M2
-  replaces it; delete after).
-- `hbuAnalysis.ts`'s internal zoning mapping (M0 retires it).
-- Any further polish on the client MF generator's parking/drives (M1/M2 replace).
-- Remaining dead legacy components (delete opportunistically with M0).
-
-## 7. Division of labor
-
-- **Backend (SQL/PostGIS)**: M1/M2/M3 generator functions — same idiom as
-  `fn_generate_sf_site_plan`. Can be developed as repo migrations and applied via
-  the existing process (DB is currently ahead of repo; migrations are records).
-- **Client (this repo)**: render + edit `canvas_frame` plans (mostly exists),
-  candidate tree UI, M0 rewiring.
-- The client engine remains for interactive edits between server solves.
+- **M0 Rewire** — client half SHIPPED (PR #24); backend half (typology_spec
+  seeding) folded into B2.
+- **M1 Site skeleton / M2 Server MF generator** — v1 SHIPPED (PR #25); depth
+  continues in A2/B1–B4.
+- **M3 Plan-from-precedent** — now B1.
+- **M4 Structured parking / podium** — now B3.
+- **M5 Money objective + candidate tree** — now A1 + A3 (pulled earlier: it is
+  the differentiator and the persistence already exists).
