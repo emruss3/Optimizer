@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Grid, Building } from 'lucide-react';
+import { Grid, Building, Maximize2 } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -694,7 +694,11 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
 
-    const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
+    // Exponential scaling reads the device: mouse wheels send big deltas
+    // (~100/notch), trackpad pans small ones, pinch (ctrlKey) smaller still —
+    // a fixed step feels jumpy on one and sluggish on another.
+    const sensitivity = event.ctrlKey ? 0.01 : 0.002;
+    const zoomFactor = Math.exp(-event.deltaY * sensitivity);
     const newZoom = Math.max(0.1, Math.min(10, viewport.viewport.zoom * zoomFactor));
     viewport.zoomTo(newZoom, mouseX, mouseY);
   }, [viewport]);
@@ -940,6 +944,34 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
               onClose={() => setShowTemplates(false)}
             />
           )}
+          {/* On-canvas zoom cluster — always visible, works on any input
+              device, and (unlike wheel semantics) needs no discovery. */}
+          <div className="absolute bottom-4 right-4 z-10 flex flex-col rounded-lg shadow-md border border-gray-200 bg-white overflow-hidden">
+            <button
+              onClick={zoomInCentered}
+              className="w-9 h-9 flex items-center justify-center text-gray-700 hover:bg-gray-50 text-lg font-semibold"
+              title="Zoom in (+)"
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+            <button
+              onClick={zoomOutCentered}
+              className="w-9 h-9 flex items-center justify-center text-gray-700 hover:bg-gray-50 border-t border-gray-100 text-lg font-semibold"
+              title="Zoom out (−)"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <button
+              onClick={requestFit}
+              className="w-9 h-9 flex items-center justify-center text-gray-700 hover:bg-gray-50 border-t border-gray-100"
+              title="Fit to parcel (0)"
+              aria-label="Fit to parcel"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          </div>
           <SitePlanCanvas
             elements={elements}
             selectedElements={selection.selectedElements}
