@@ -284,6 +284,24 @@ export interface MfCandidate {
   pins: MfPin[];
   parentId: string | null;
   metrics: Record<string, number | string | null>;
+  /** Local-sales margin on cost (A3 ranking) — enriched client-side */
+  marginOnCost?: number | null;
+}
+
+/** Enrich candidates with their local-sales margin so the rail can rank. */
+export async function enrichCandidatesWithMoney(
+  ogcFid: number,
+  candidates: MfCandidate[]
+): Promise<MfCandidate[]> {
+  return Promise.all(
+    candidates.map(async c => {
+      const gfa = Number(c.metrics.gfa_sqft);
+      const units = Number(c.metrics.units_est);
+      if (!Number.isFinite(gfa) || gfa <= 0) return c;
+      const m = await fetchMfMoney(ogcFid, gfa, Number.isFinite(units) ? units : undefined);
+      return { ...c, marginOnCost: m?.available ? m.margin_on_cost ?? null : null };
+    })
+  );
 }
 
 /** A1 schemes rail: list a parcel's persisted candidates, newest first. */

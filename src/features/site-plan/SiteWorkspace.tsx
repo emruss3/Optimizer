@@ -24,7 +24,7 @@ import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { contextToZoningPatch, contextToParkingPatch, routesToLotFit, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
-import { generateMfSitePlan, mfPlanToElements, isMfPlanElement, listMfCandidates, fetchMfMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { generateMfSitePlan, mfPlanToElements, isMfPlanElement, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -256,7 +256,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    */
   const refreshCandidates = useCallback(() => {
     if (contextOgcFid == null) return;
-    listMfCandidates(contextOgcFid).then(setMfCandidates).catch(() => undefined);
+    const fid = contextOgcFid;
+    listMfCandidates(fid)
+      .then(cands => {
+        setMfCandidates(cands); // show immediately…
+        return enrichCandidatesWithMoney(fid, cands); // …then rank by market margin
+      })
+      .then(setMfCandidates)
+      .catch(() => undefined);
   }, [contextOgcFid]);
 
   const runServerMfPlan = useCallback(async (opts: {
