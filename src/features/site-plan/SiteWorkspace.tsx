@@ -87,6 +87,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // variation descends from; A1 rail data.
   const mfPinsRef = useRef<MfPin[]>([]);
   const mfRegenInFlightRef = useRef(false);
+  // Live-drag pump (dynamic site plans): drag events coalesce latest-wins
+  // into preview solves (persist=false); the release commits the candidate.
+  const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
+  const dragPinRef = useRef<{ elementId: string; pinIndex: number } | null>(null);
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
   const [mfCandidates, setMfCandidates] = useState<MfCandidate[]>([]);
   const ctxSettledRef = useRef<DesignContext | null | 'pending'>('pending');
@@ -249,6 +253,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     pins?: MfPin[];
     parentId?: string | null;
     persist?: boolean;
+    /** Live-drag: omit this pin's bar from the render — the user's hand
+     *  (the Shell's locally-dragged element) is the source of truth for it */
+    dropPinIndex?: number | null;
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     const resp = await generateMfSitePlan(contextOgcFid, {
@@ -258,7 +265,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       persist: opts.persist,
     });
     if (!resp || !resp.buildings || resp.buildings.length === 0) return false;
-    const { elements: generated, metrics: serverMetrics, basis, flags } = mfPlanToElements(resp);
+    const mapped = mfPlanToElements(resp);
+    const { metrics: serverMetrics, basis, flags } = mapped;
+    let generated = mapped.elements;
+    if (opts.dropPinIndex != null) {
+      generated = generated.filter(
+        el => !(el.properties?.pinned && el.properties?.pinIndex === opts.dropPinIndex)
+      );
+    }
     if (generated.length === 0) return false;
     planModeRef.current = 'mf-server';
     mfSeedRef.current = opts.seed;
@@ -272,6 +286,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (opts.persist !== false) refreshCandidates();
     return true;
   }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates]);
+
+  /** Drain the live-drag queue: exactly one solve in flight, latest wins.
+   *  Preview solves render silently; the final (release) solve persists the
+   *  candidate and shows the generating state. */
+  const pumpMfRegen = useCallback(() => {
+    if (mfRegenInFlightRef.current) return;
+    const pending = pendingMfRegenRef.current;
+    if (!pending) return;
+    pendingMfRegenRef.current = null;
+    mfRegenInFlightRef.current = true;
+    if (pending.final) setIsGenerating(true);
+    runServerMfPlan({
+      seed: mfSeedRef.current,
+      pins: pending.pins,
+      parentId: activeCandidateId,
+      persist: pending.final,
+      dropPinIndex: pending.dropPinIndex,
+    })
+      .catch(() => undefined)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        if (pending.final) setIsGenerating(false);
+        pumpMfRegen(); // drain whatever arrived while solving
+      });
+  }, [runServerMfPlan, activeCandidateId]);
 
   const handleGenerate = useCallback(async (iterations?: unknown) => {
     if (!envelopeMeters) return;
@@ -467,13 +506,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     (update: BuildingUpdate, options?: { final?: boolean }) => {
       if (!envelopeMeters) return;
       if (planModeRef.current === 'sf') return;
-      // A2 edit-as-regeneration: on a server plan, releasing a dragged bar
-      // PINS it (its new footprint becomes a constraint) and the whole site
-      // re-solves around it server-side, persisting a child candidate.
-      // Mid-drag updates are ignored — the Shell moves the bar locally.
+      // DYNAMIC site plans (A2+): every drag event streams the bar's live
+      // footprint as a pin. Mid-drag events coalesce (latest-wins) into
+      // preview solves — parking streets, courts, and drives re-flow around
+      // the bar in your hand at solver speed — and the release commits the
+      // real candidate. Same pump pattern as the client engine, pointed at
+      // the server generator.
       if (planModeRef.current === 'mf-server') {
-        if (!options?.final || !update.id.startsWith('mfgen-bldg-')) return;
-        if (mfRegenInFlightRef.current) return;
+        if (!update.id.startsWith('mfgen-bldg-') && !update.id.startsWith('mfgen-pin-')) return;
         const el = elements.find(e => e.id === update.id);
         const fp3857 = buildBuildingFootprint({
           id: update.id,
@@ -487,22 +527,30 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           geom: feature3857To4326(fp3857),
           floors: Math.max(1, Math.round(update.floors ?? (el?.properties?.floors as number) ?? 3)),
         };
-        // Re-dragging an already-pinned bar replaces its pin
-        const pinIndex = el?.properties?.pinIndex as number | undefined;
+        // One pin slot per gesture: first event claims it (an already-pinned
+        // bar reuses its slot), every later event overwrites it. Without the
+        // gesture ref, each mousemove would append another pin.
         const pins = [...mfPinsRef.current];
-        if (pinIndex != null && pinIndex >= 0 && pinIndex < pins.length) {
-          pins[pinIndex] = newPin;
+        let pinIndex: number;
+        if (dragPinRef.current?.elementId === update.id) {
+          pinIndex = dragPinRef.current.pinIndex;
         } else {
-          pins.push(newPin);
+          const existing = el?.properties?.pinIndex as number | undefined;
+          pinIndex = existing != null && existing >= 0 && existing < pins.length ? existing : pins.length;
+          dragPinRef.current = { elementId: update.id, pinIndex };
         }
-        mfRegenInFlightRef.current = true;
-        setIsGenerating(true);
-        runServerMfPlan({ seed: mfSeedRef.current, pins, parentId: activeCandidateId })
-          .catch(() => undefined)
-          .finally(() => {
-            mfRegenInFlightRef.current = false;
-            setIsGenerating(false);
-          });
+        if (pinIndex < pins.length) pins[pinIndex] = newPin;
+        else pins.push(newPin);
+
+        pendingMfRegenRef.current = {
+          pins,
+          final: !!options?.final,
+          // Mid-drag: the Shell's locally-dragged element IS this pin's bar —
+          // drop the server's copy so it doesn't ghost behind the cursor.
+          dropPinIndex: options?.final ? null : pinIndex,
+        };
+        if (options?.final) dragPinRef.current = null;
+        pumpMfRegen();
         return;
       }
       // Snapshot once at the START of each gesture (first update after idle)
@@ -518,7 +566,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       pendingUpdateRef.current = update; // latest-wins (the final release update is always last)
       pumpBuildingUpdates();
     },
-    [envelopeMeters, pumpBuildingUpdates, pushHistory, elements, runServerMfPlan, activeCandidateId]
+    [envelopeMeters, pumpBuildingUpdates, pushHistory, elements, pumpMfRegen]
   );
 
   /** Undo/redo restore + real deletes: replay a building set through the worker. */
@@ -551,9 +599,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [applyBuildingSet]);
 
   const handleDeleteBuildings = useCallback((ids: string[]) => {
-    // Static server/SF plans: deletion is a local element removal (no worker
-    // session exists); the KPIs keep the generated metrics until regeneration.
-    if (planModeRef.current === 'sf' || planModeRef.current === 'mf-server') {
+    // Server plans: deleting a PINNED bar releases its pin and re-solves the
+    // site (delete is an edit); anything else is a local element removal.
+    if (planModeRef.current === 'mf-server') {
+      const pinIdxs = elements
+        .filter(el => ids.includes(el.id) && el.properties?.pinned)
+        .map(el => el.properties?.pinIndex as number)
+        .filter(i => i != null && i >= 0);
+      if (pinIdxs.length > 0) {
+        const pins = mfPinsRef.current.filter((_, i) => !pinIdxs.includes(i));
+        pendingMfRegenRef.current = { pins, final: true, dropPinIndex: null };
+        pumpMfRegen();
+        return;
+      }
+      setPlanOutput(elements.filter(el => !ids.includes(el.id)), metrics);
+      return;
+    }
+    if (planModeRef.current === 'sf') {
       setPlanOutput(elements.filter(el => !ids.includes(el.id)), metrics);
       return;
     }
@@ -561,7 +623,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (remaining.length === currentBuildingsRef.current.length) return;
     pushHistory();
     void applyBuildingSet(remaining);
-  }, [applyBuildingSet, pushHistory, elements, metrics, setPlanOutput]);
+  }, [applyBuildingSet, pushHistory, elements, metrics, setPlanOutput, pumpMfRegen]);
 
   /** Paste: clone buildings through the worker so the copies are real
    *  (solver-tracked, undoable) — a local canvas copy would vanish on the
