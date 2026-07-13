@@ -239,6 +239,43 @@ export async function generateMfSitePlan(
   }
 }
 
+/** A3: the money block — local-sales revenue vs cost, with provenance. */
+export interface MfMoney {
+  available: boolean;
+  gdv?: number;
+  total_cost?: number;
+  land?: number;
+  hard_cost_psf?: number;
+  cost_source?: string;
+  price_psf_p50?: number;
+  n_sales?: number;
+  pricing_confidence?: string;
+  margin_on_cost?: number;
+  basis?: string;
+  flags?: string[];
+  reason?: string;
+}
+
+/** Value a scheme against LOCAL pricing. Fail-soft: null when unreachable. */
+export async function fetchMfMoney(
+  ogcFid: number,
+  gfaSqft: number,
+  units?: number
+): Promise<MfMoney | null> {
+  try {
+    if (!supabase || !gfaSqft) return null;
+    const { data, error } = await supabase.rpc('fn_mf_money', {
+      p_ogc_fid: ogcFid,
+      p_gfa_sqft: gfaSqft,
+      p_units: units ?? null,
+    });
+    if (error || !data) return null;
+    return data as MfMoney;
+  } catch {
+    return null;
+  }
+}
+
 /** One persisted scheme (candidate) in a parcel's design history. */
 export interface MfCandidate {
   id: string;

@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle, XCircle } from 'lucide-react';
 import type { SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
+import type { MfMoney } from '../api/generateMfPlan';
 
 const Stat: React.FC<{ label: string; value: string; alert?: boolean }> = ({ label, value, alert }) => (
   <div className="flex flex-col items-start min-w-[64px]">
@@ -20,7 +21,9 @@ const Stat: React.FC<{ label: string; value: string; alert?: boolean }> = ({ lab
 const KpiStrip: React.FC<{
   metrics: SiteMetrics | null;
   investment: InvestmentAnalysis | null;
-}> = ({ metrics, investment }) => {
+  /** A3: local-sales valuation of the current scheme (server-computed) */
+  money?: MfMoney | null;
+}> = ({ metrics, investment, money }) => {
   if (!metrics) {
     return (
       <div className="text-sm text-gray-500">Generating plan…</div>
@@ -48,6 +51,15 @@ const KpiStrip: React.FC<{
       <Stat label="Open" value={`${(metrics.openSpacePct ?? 0).toFixed(0)}%`} />
       {investment && (
         <Stat label="Yield on Cost" value={`${(investment.yieldOnCost * 100).toFixed(2)}%`} />
+      )}
+      {money?.available && typeof money.margin_on_cost === 'number' && (
+        <span title={money.basis ?? 'Local-sales valuation'} className="flex items-center">
+          <Stat
+            label={`Margin · mkt${money.n_sales != null ? ` (${money.n_sales} sales)` : ''}`}
+            value={`${(money.margin_on_cost * 100).toFixed(1)}%`}
+            alert={money.margin_on_cost < 0}
+          />
+        </span>
       )}
       <div
         className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${

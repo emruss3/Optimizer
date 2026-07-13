@@ -24,7 +24,7 @@ import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { contextToZoningPatch, contextToParkingPatch, routesToLotFit, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
-import { generateMfSitePlan, mfPlanToElements, isMfPlanElement, listMfCandidates, type MfCandidate, type MfPin } from './api/generateMfPlan';
+import { generateMfSitePlan, mfPlanToElements, isMfPlanElement, listMfCandidates, fetchMfMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -91,6 +91,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // into preview solves (persist=false); the release commits the candidate.
   const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
   const dragPinRef = useRef<{ elementId: string; pinIndex: number } | null>(null);
+  // A3: local-sales valuation of the CURRENT scheme — ticks during drags
+  const [serverMoney, setServerMoney] = useState<MfMoney | null>(null);
+  const moneyInFlightRef = useRef(false);
+  const loadMoney = useCallback((gfaSqft?: number, units?: number) => {
+    if (contextOgcFid == null || !gfaSqft || moneyInFlightRef.current) return;
+    moneyInFlightRef.current = true;
+    fetchMfMoney(contextOgcFid, gfaSqft, units)
+      .then(m => { if (m) setServerMoney(m); })
+      .catch(() => undefined)
+      .finally(() => { moneyInFlightRef.current = false; });
+  }, [contextOgcFid]);
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
   const [mfCandidates, setMfCandidates] = useState<MfCandidate[]>([]);
   const ctxSettledRef = useRef<DesignContext | null | 'pending'>('pending');
@@ -283,9 +294,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setViolations([]);
     const parkingNote = flags.includes('parking_below_ratio') ? ' · ⚠ parking below target ratio' : '';
     setPlanBasis(`${basis ?? 'Server-generated site plan'}${parkingNote}`);
+    // A3: value the scheme against local sales — the margin ticks live
+    loadMoney(serverMetrics?.totalBuiltSF, serverMetrics?.totalUnits);
     if (opts.persist !== false) refreshCandidates();
     return true;
-  }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates]);
+  }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates, loadMoney]);
 
   /** Drain the live-drag queue: exactly one solve in flight, latest wins.
    *  Preview solves render silently; the final (release) solve persists the
@@ -881,6 +894,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setMfCandidates([]);
       ctxSettledRef.current = 'pending';
       userPickedUseRef.current = false;
+      setServerMoney(null);
       setPlanBasis(null);
     }
   }, [parcel.ogc_fid, parcel.id]);
@@ -985,7 +999,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     <div className="h-full min-h-0 flex flex-col bg-gray-100">
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
       <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
-        <KpiStrip metrics={metrics} investment={investmentAnalysis} />
+        <KpiStrip metrics={metrics} investment={investmentAnalysis} money={serverMoney} />
         <div className="flex items-center gap-2 flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
