@@ -93,14 +93,16 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const getElementStyle = useCallback((element: Element): { color: string; opacity: number; stroke: boolean; strokeColor?: string } => {
     switch (element.type) {
       case 'greenspace':
-        return { color: '#BBF7D0', opacity: 0.25, stroke: false };
+        return { color: '#BBF7D0', opacity: 0.5, stroke: false };
       case 'parking-aisle':
-        return { color: '#CBD5E1', opacity: 0.45, stroke: false };
+        return { color: '#C7D2DE', opacity: 0.65, stroke: false };
       case 'circulation':
-        return { color: '#C4CFDA', opacity: 0.6, stroke: false };
+        return { color: '#B8C4D0', opacity: 0.85, stroke: false };
       case 'parking':
       case 'parking-bay':
-        return { color: '#E2E8F0', opacity: 0.5, stroke: false };
+        // Must read as pavement against the white envelope — the old
+        // near-white 0.5-alpha fill was invisible ("parking is not rendered")
+        return { color: '#D3DCE7', opacity: 0.9, stroke: true, strokeColor: '#9AA8B8' };
       case 'building':
         return { color: '#BFDBFE', opacity: 0.95, stroke: true };
       case 'other':
