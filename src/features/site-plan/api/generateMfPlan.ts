@@ -94,7 +94,9 @@ export function mfPlanToElements(resp: MfPlanResponse): {
     const floors = Math.max(1, Math.round(b.floors ?? 3));
     const unitsForBar = Math.max(1, Math.round(((b.footprint_sqft ?? 0) * floors) / AVG_UNIT_SF));
     elements.push({
-      id: `mfgen-bldg-${b.i}`,
+      // Pinned bars keep a STABLE id across regenerations (index-based ids
+      // renumber every solve, which would break live-drag element identity)
+      id: b.pinned ? `mfgen-pin-${b.pin_index ?? 0}` : `mfgen-bldg-${b.i}`,
       type: 'building',
       name: `Building ${b.i}`,
       geometry: poly,
