@@ -6,7 +6,7 @@ import type { Element } from '../../engine/types';
 import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
 import { feetToMeters, metersToFeet } from '../../engine/units';
-import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt } from './planRendering';
+import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle } from './planRendering';
 import { computeFloorplate, UNIT_COLORS } from './unitLayout';
 import type { EdgeClassification } from '../../engine/setbacks';
 
@@ -307,17 +307,46 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, []);
 
-  // Render stall dividers inside a parking bay, angled per the solver's layout.
+  // Draw INDIVIDUAL stall dividers, the professional-plan look. Every parking
+  // band (server court or worker bay) is one stall row deep by construction,
+  // so perpendicular ticks along the band's LONG AXIS are the stalls — not
+  // decorative hatching across the whole polygon.
   const renderParkingStripes = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     if (element.type !== 'parking' && element.type !== 'parking-bay') return;
     if (!parkingViz) return;
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 3) return;
 
+    const stallWidth = feetToMeters(parkingViz.stallWidthFt);
+    if (stallWidth <= 0) return;
+
+    // Band frame: long axis from the polygon's longest edge
+    const angle = longestEdgeAngle(coords);
+    const cos = Math.cos(-angle);
+    const sin = Math.sin(-angle);
+    const bounds = ElementService.getElementBounds(element);
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+
+    // Local bbox in the band frame
+    let lminX = Infinity, lmaxX = -Infinity, lminY = Infinity, lmaxY = -Infinity;
+    for (const [px, py] of coords) {
+      const dx = px - centerX;
+      const dy = py - centerY;
+      const lx = dx * cos - dy * sin;
+      const ly = dx * sin + dy * cos;
+      if (lx < lminX) lminX = lx;
+      if (lx > lmaxX) lmaxX = lx;
+      if (ly < lminY) lminY = ly;
+      if (ly > lmaxY) lmaxY = ly;
+    }
+
+    // Declutter: skip when a stall would be under ~5px on screen
+    if (stallWidth * zoom < 5) return;
+
     ctx.save();
 
-    // Clip to the bay polygon in WORLD space first — clipping after rotating
-    // would rotate the clip region away from where the bay is actually drawn.
+    // Clip to the band polygon in WORLD space (before rotating the frame)
     ctx.beginPath();
     ctx.moveTo(coords[0][0], coords[0][1]);
     for (let i = 1; i < coords.length; i++) {
@@ -326,31 +355,19 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.closePath();
     ctx.clip();
 
-    // Then rotate the stripe direction around the bay centre.
-    const bounds = ElementService.getElementBounds(element);
-    const centerX = (bounds.minX + bounds.maxX) / 2;
-    const centerY = (bounds.minY + bounds.maxY) / 2;
     ctx.translate(centerX, centerY);
-    ctx.rotate((parkingViz.angleDeg * Math.PI) / 180);
+    ctx.rotate(angle);
 
-    // World units are metres; the stall width arrives in feet.
-    const stallWidth = feetToMeters(parkingViz.stallWidthFt);
-    if (stallWidth <= 0) {
-      ctx.restore();
-      return;
-    }
+    // Stall dividers: dark-on-pavement like a striped lot
+    ctx.strokeStyle = '#8494A6';
+    ctx.lineWidth = Math.max(0.75 / zoom, 0.3);
+    ctx.globalAlpha = 0.9;
 
-    // Span the bay's diagonal so rotated stripes always cover the clip region.
-    const halfDiag = Math.hypot(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY) / 2;
-
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 1 / zoom;
-    ctx.globalAlpha = 0.8;
-
-    for (let x = -halfDiag + stallWidth; x < halfDiag; x += stallWidth) {
+    const startX = Math.ceil(lminX / stallWidth) * stallWidth;
+    for (let x = startX; x < lmaxX; x += stallWidth) {
       ctx.beginPath();
-      ctx.moveTo(x, -halfDiag);
-      ctx.lineTo(x, halfDiag);
+      ctx.moveTo(x, lminY);
+      ctx.lineTo(x, lmaxY);
       ctx.stroke();
     }
 
