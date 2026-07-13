@@ -453,6 +453,12 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           selection.clearSelection();
           vertexEditing.disableVertexEditing();
         }
+        // Empty canvas: left-drag pans — the map convention, and the only
+        // discoverable way to move around the site. (Alt+drag and middle
+        // mouse still pan from anywhere, including over elements.)
+        userMovedViewRef.current = true;
+        setIsPanning(true);
+        setLastPanPoint({ x: event.clientX, y: event.clientY });
       }
     }
   }, [elements, viewport.viewport, drawingTools, selection, drag, grid, measurement, vertexEditing, rotation]);
@@ -991,6 +997,15 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onWheel={handleWheel}
+            cursor={
+              isPanning
+                ? 'grabbing'
+                : drawingTools.activeTool === 'measure'
+                  ? 'crosshair'
+                  : hoveredElement
+                    ? 'move'
+                    : 'grab'
+            }
           />
           
         </div>
