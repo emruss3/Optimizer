@@ -30,6 +30,8 @@ type SiteEngineState = {
     aisleW: number;
     anglesDeg: number[];
   };
+  /** Solver-safe planner context: same values as the server generator */
+  solverBrief?: import('../engine/optimizer').WorkerSolverBrief;
 };
 
 class SiteEngineWorker {
@@ -45,7 +47,8 @@ class SiteEngineWorker {
     zoning: PlannerConfig['zoning'],
     initialBuildingSpec?: BuildingSpec,
     parkingSpec?: SiteEngineState['parkingSpec'],
-    buildingType?: BuildingType
+    buildingType?: BuildingType,
+    solverBrief?: SiteEngineState['solverBrief']
   ): Promise<void> {
     const envelope = normalizeToPolygon(envelope3857);
     const bounds = envelope.coordinates[0].reduce(
@@ -77,6 +80,7 @@ class SiteEngineWorker {
       envelope,
       zoning,
       buildings: [fallbackBuilding],
+      solverBrief,
       parkingSpec: parkingSpec ?? {
         stallW: 2.7432,
         stallD: 5.4864,
@@ -461,8 +465,8 @@ self.onmessage = async (e) => {
 
   try {
     if (type === 'INIT_SITE') {
-      const { envelope3857, zoning, initialBuildingSpec, parkingSpec, buildingType } = data;
-      await worker.initSite(envelope3857, zoning, initialBuildingSpec, parkingSpec, buildingType);
+      const { envelope3857, zoning, initialBuildingSpec, parkingSpec, buildingType, solverBrief } = data;
+      await worker.initSite(envelope3857, zoning, initialBuildingSpec, parkingSpec, buildingType, solverBrief);
       const result = await worker.solvePlan();
       (self as any).postMessage({
         type: 'PLAN_UPDATED',
@@ -499,7 +503,7 @@ self.onmessage = async (e) => {
         ...result,
       });
     } else if (type === 'OPTIMIZE') {
-      const { envelope3857, zoning, designParams, parkingSpec, maxIterations } = data;
+      const { envelope3857, zoning, designParams, parkingSpec, maxIterations, solverBrief } = data;
       const envelope = normalizeToPolygon(envelope3857);
 
       // User-pinned buildings survive re-solves and Generate: the optimizer
@@ -514,6 +518,7 @@ self.onmessage = async (e) => {
         designParams,
         parkingSpec,
         pinnedBuildings,
+        solverBrief: solverBrief ?? worker.siteState?.solverBrief,
         maxIterations: maxIterations ?? 200,
         onProgress: (iteration, score) => {
           (self as any).postMessage({
@@ -532,6 +537,7 @@ self.onmessage = async (e) => {
         envelope,
         zoning,
         buildings: result.bestBuildings ?? [],
+        solverBrief: solverBrief ?? worker.siteState?.solverBrief,
         parkingSpec: parkingSpec ?? {
           stallW: 2.7432,
           stallD: 5.4864,

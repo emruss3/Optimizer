@@ -40,6 +40,28 @@ export interface OptimizeInput {
    * from a previously selected parcel).
    */
   pinnedBuildings?: BuildingSpec[];
+  /**
+   * Solver-safe planner context (planner_context_v1). The fallback engine and
+   * the server generator may use different algorithms, but they read the SAME
+   * context values: hard constraints already arrive via `zoning`/`designParams`
+   * patches; this adds precedent form priors and the generation gate.
+   */
+  solverBrief?: WorkerSolverBrief;
+}
+
+/** Worker-facing subset of the planner solver brief (all values optional). */
+export interface WorkerSolverBrief {
+  generationAllowed?: boolean;
+  precedent?: {
+    storiesP50?: number | null;
+    storiesP75?: number | null;
+    footprintP90SqFt?: number | null;
+    sampleSize?: number | null;
+  };
+  programPrior?: {
+    averageUnitSqft?: number | null;
+  };
+  objectiveWeights?: Record<string, number>;
 }
 
 export interface OptimizeResult {
@@ -593,6 +615,34 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     seed = DEFAULT_SEED,
   } = input;
 
+  // Context gate: not-permitted is a REJECTION, not a low score. The worker
+  // must never lay out a use the compiled context says is not as-of-right.
+  if (input.solverBrief?.generationAllowed === false) {
+    return {
+      bestElements: [],
+      bestMetrics: {
+        totalBuiltSF: 0,
+        siteCoveragePct: 0,
+        achievedFAR: 0,
+        parkingRatio: 0,
+        openSpacePct: 100,
+        stallsProvided: 0,
+        stallsRequired: 0,
+        zoningCompliant: false,
+        violations: [],
+      } as unknown as OptimizeResult['bestMetrics'],
+      bestViolations: [{
+        code: 'context',
+        message: 'Generation blocked: the selected use is not permitted as-of-right for this parcel.',
+        severity: 'error',
+      }],
+      bestBuildings: [],
+      top3Alternatives: [],
+      iterations: 0,
+      finalScore: 0,
+    };
+  }
+
   // Seeded RNG → deterministic, reproducible layouts for the same inputs.
   const rng = makeRng(seed);
 
@@ -640,9 +690,17 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   // Align building rotation to the longest edge
   const edgeAngleRad = Math.atan2(edge.dir[1], edge.dir[0]);
 
-  // Calculate how many buildings can actually fit physically
-  const defaultWidthM = 200 * 0.3048; // ~61m
+  // Calculate how many buildings can actually fit physically.
+  // Precedent prior (when the compiled context carries a local sample): bar
+  // length targets the p90 underwrite footprint at the default depth, clamped
+  // to constructability — the same prior the server generator uses.
+  const prec = input.solverBrief?.precedent;
   const defaultDepthM = 60 * 0.3048;  // ~18m
+  let defaultWidthFt = 200;
+  if (prec?.footprintP90SqFt != null && (prec.sampleSize ?? 0) >= 5) {
+    defaultWidthFt = Math.min(300, Math.max(90, Math.round(prec.footprintP90SqFt / 60)));
+  }
+  const defaultWidthM = defaultWidthFt * 0.3048;
   const buildingFootprintArea = defaultWidthM * defaultDepthM;
   const envelopeCorrectedArea = correctedAreaM2(envelope);
   // Buildings should use at most ~40% of envelope area (rest for parking, open space, circulation)
@@ -773,10 +831,23 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       const maxFloorsByFar = zoning.maxFar != null
         ? Math.max(1, Math.floor(zoning.maxFar / coverage + 1e-9))
         : Infinity;
+      // Precedent stories prior (same rule as the server generator): p50–p75
+      // midpoint, min 2 for MF viability — a CAP on the legal/FAR-driven
+      // count, never a way to exceed it.
+      let precedentFloorsCap = Infinity;
+      const precStories = input.solverBrief?.precedent;
+      if (
+        precStories?.storiesP50 != null &&
+        precStories?.storiesP75 != null &&
+        (precStories.sampleSize ?? 0) >= 5
+      ) {
+        precedentFloorsCap = Math.max(2, Math.round((precStories.storiesP50 + precStories.storiesP75) / 2));
+      }
       const floors = Math.max(1, Math.min(
         maxFloorsByHeight,
         maxFloorsByFar,
-        Math.round(targetFAR / coverage)
+        Math.round(targetFAR / coverage),
+        precedentFloorsCap
       ));
       // Pinned buildings keep their own floor count (dimensions are sovereign).
       for (const b of initialBuildings) {

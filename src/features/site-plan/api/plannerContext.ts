@@ -298,3 +298,107 @@ export async function getPlannerSolverBrief(
 export function __clearPlannerContextCache(): void {
   compileCache.clear();
 }
+
+// ── Adapters: compiled context → existing display/solver shapes ─────────────
+
+import type { DesignContext } from './designContext';
+
+/**
+ * Project the compiled context onto the ContextPanel's display shape so the
+ * panel renders the SAME snapshot the solver uses (no competing fetches).
+ */
+export function plannerContextToDesignContext(resp: PlannerContextResponse): DesignContext {
+  const legal = resp.context.legal ?? ({} as PlannerContext['legal']);
+  const asCv = (v?: SourcedValue | null) =>
+    v && v.value != null
+      ? { value: v.value, source: v.source ?? 'unknown', confidence: (v.confidence ?? 'medium') as never }
+      : undefined;
+  const pk = resp.solver_brief.parking;
+  return {
+    zoningBase: legal.zoning_base ?? undefined,
+    zoningSubtype: legal.zoning_subtype ?? undefined,
+    regime: undefined,
+    typology: resp.context.typology,
+    confidence: (legal.confidence ?? undefined) as never,
+    setbackFrontFt: asCv(legal.setbacks?.front),
+    setbackSideFt: asCv(legal.setbacks?.side),
+    setbackRearFt: asCv(legal.setbacks?.rear),
+    maxFar: asCv(legal.max_far),
+    maxHeightFt: asCv(legal.max_height_ft),
+    maxDensityDuAc: asCv(legal.max_density_du_acre),
+    maxCoveragePct: asCv(legal.max_coverage_pct),
+    parkingStrategy: pk.strategy ?? resp.context.parking_strategy ?? undefined,
+    parking: {
+      ratio: pk.ratio ?? undefined,
+      basis: pk.basis ?? undefined,
+      stallWidthFt: pk.stall_width_ft ?? undefined,
+      stallDepthFt: pk.stall_depth_ft ?? undefined,
+      aisleWidthFt: pk.aisle_width_ft ?? undefined,
+    },
+    flags: resp.context.flags ?? [],
+    permittedUses: [],
+    raw: resp.context as unknown as Record<string, unknown>,
+  };
+}
+
+/** Hard constraints → the planner's zoning config patch. */
+export function briefToZoningPatch(brief: SolverBrief): Record<string, number> {
+  const hc = brief.hard_constraints;
+  const patch: Record<string, number> = {};
+  if (hc.front_setback_ft != null) patch.frontSetbackFt = hc.front_setback_ft;
+  if (hc.side_setback_ft != null) patch.sideSetbackFt = hc.side_setback_ft;
+  if (hc.rear_setback_ft != null) patch.rearSetbackFt = hc.rear_setback_ft;
+  if (hc.max_far != null && hc.max_far > 0) patch.maxFar = hc.max_far;
+  if (hc.max_height_ft != null && hc.max_height_ft > 0) patch.maxHeightFt = hc.max_height_ft;
+  if (hc.max_density_du_acre != null && hc.max_density_du_acre > 0) patch.maxDensityDuPerAcre = hc.max_density_du_acre;
+  if (hc.max_coverage_pct != null && hc.max_coverage_pct > 0) patch.maxCoveragePct = hc.max_coverage_pct;
+  return patch;
+}
+
+/** Brief parking → the solver's parking design-parameter patch. */
+export function briefToParkingPatch(brief: SolverBrief): Record<string, number> {
+  const pk = brief.parking;
+  const patch: Record<string, number> = {};
+  if (pk.ratio != null && pk.ratio > 0) patch.targetRatio = pk.ratio;
+  if (pk.stall_width_ft != null && pk.stall_width_ft > 0) patch.stallWidthFt = pk.stall_width_ft;
+  if (pk.stall_depth_ft != null && pk.stall_depth_ft > 0) patch.stallDepthFt = pk.stall_depth_ft;
+  if (pk.aisle_width_ft != null && pk.aisle_width_ft > 0) patch.aisleWidthFt = pk.aisle_width_ft;
+  return patch;
+}
+
+/** Solver-safe subset for the client worker fallback — the worker and the
+ *  server generator may use different algorithms, but they read the SAME
+ *  context values (hard constraints/parking travel via the config patches;
+ *  this carries the precedent priors and the generation gate). */
+export function briefToWorkerBrief(resp: PlannerContextResponse): import('../../../engine/optimizer').WorkerSolverBrief {
+  const pri = resp.solver_brief.precedent_priors;
+  return {
+    generationAllowed: resp.generation_allowed,
+    precedent: {
+      storiesP50: pri.stories?.p50 ?? null,
+      storiesP75: pri.stories?.p75 ?? null,
+      footprintP90SqFt:
+        pri.underwrite_target?.footprint_sqft_p90 ?? pri.footprint_sqft?.p90 ?? null,
+      sampleSize: pri.sample_size ?? null,
+    },
+    programPrior: {
+      averageUnitSqft: (resp.solver_brief.program_prior?.average_unit_sqft?.value as number | null) ?? null,
+    },
+    objectiveWeights: resp.solver_brief.objective_profile?.weights,
+  };
+}
+
+/** One-line context summary for the plan-basis strip. */
+export function plannerContextSummary(resp: PlannerContextResponse): string {
+  const b = resp.solver_brief;
+  const prec = b.precedent_priors;
+  const legalConf = resp.context.legal?.confidence ?? 'unknown';
+  const parts = [
+    `Context ${resp.context_version.replace('planner_context_', '')}`,
+    `${prec.sample_size ?? 0} precedents (${prec.confidence ?? 'unknown'})`,
+    `prior ${b.program_prior_version ?? 'none'}`,
+    `zoning ${legalConf}`,
+    b.geometry.front_edge_is_placeholder ? 'frontage heuristic pending road upgrade' : `access ${b.geometry.access_method ?? 'road'}`,
+  ];
+  return parts.join(' · ');
+}

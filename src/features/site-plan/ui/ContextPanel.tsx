@@ -1,14 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import type { Confidence, ContextValue, DesignContext } from '../api/designContext';
-import {
-  fetchDesignContext,
-  fetchLocalBuiltForm,
-  fetchLocalPricing,
-  fetchPermittedUses,
-  normalizeDesignContext,
-  normalizePermittedUses,
-  pickDefaultUse,
-} from '../api/designContext';
 
 const CONF_STYLE: Record<Confidence, string> = {
   high: 'bg-green-100 text-green-700',
@@ -18,7 +9,7 @@ const CONF_STYLE: Record<Confidence, string> = {
 };
 
 const ConfidencePill: React.FC<{ confidence?: Confidence }> = ({ confidence }) =>
-  confidence ? (
+  confidence && CONF_STYLE[confidence] ? (
     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CONF_STYLE[confidence]}`}>
       {confidence.replace('_', ' ')}
     </span>
@@ -27,20 +18,20 @@ const ConfidencePill: React.FC<{ confidence?: Confidence }> = ({ confidence }) =
 /** A zoning value row with the provenance badge — the product differentiator. */
 const Row: React.FC<{ label: string; v?: ContextValue; unit?: string }> = ({ label, v, unit }) => {
   if (!v || v.value == null) return null;
-  const estimated = v.source !== 'zoning';
+  const estimated = v.source !== 'zoning' && v.source !== 'ordinance';
   return (
     <div className="flex items-center justify-between text-sm py-0.5">
       <span className="text-gray-600">{label}</span>
       <span className="flex items-center gap-1.5 font-medium text-gray-900">
         {v.value}{unit ? ` ${unit}` : ''}
-        {estimated && (
-          <span
-            title={`Source: ${v.source} (${v.confidence})`}
-            className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700"
-          >
-            est.
-          </span>
-        )}
+        <span
+          title={`Source: ${v.source}${v.confidence ? ` (${v.confidence})` : ''}`}
+          className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+            estimated ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'
+          }`}
+        >
+          {estimated ? 'est.' : v.source}
+        </span>
       </span>
     </div>
   );
@@ -60,132 +51,56 @@ const fmtUsd = (v: unknown): string | null =>
   typeof v === 'number' && Number.isFinite(v) ? `$${v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(2)}` : null;
 
 interface ContextPanelProps {
-  ogcFid: number | null;
-  /** Selected use (drives the context RPC), e.g. 'single_family' */
+  /** DISPLAY-ONLY projection of the one compiled planner context */
+  context: DesignContext | null;
+  /** context.precedent from the compiled snapshot (built-form comps) */
+  builtForm?: unknown;
+  /** context.market from the compiled snapshot (pricing comps) */
+  pricing?: unknown;
+  /** One-line snapshot identity (version · precedents · prior · access) */
+  contextSummary?: string | null;
+  loading: boolean;
+  /** As-of-right uses for the selector (workspace-fetched, once per parcel) */
+  uses: string[];
   use: string;
   onUseChange: (use: string) => void;
-  /** Fires when a context loads so the workspace can ground solver defaults */
-  onContext?: (ctx: DesignContext) => void;
-  /** Fires when the context fetch SETTLES (ctx or null) — used for plan routing */
-  onSettled?: (ctx: DesignContext | null) => void;
-  /**
-   * Until the user picks a use manually, correct the initial use to the
-   * highest-intensity as-of-right use (zoning-grounded default). The wrong-use
-   * context is never settled — the corrected fetch settles instead.
-   */
-  autoSelectUse?: boolean;
+  /** Compile said this use is not permitted as-of-right */
+  generationBlocked?: boolean;
 }
 
 /**
- * Design Context panel (brief Phase 1): zoning + provenance, legal-use
- * selector, and local comps/pricing. Everything fails soft — if the context
- * engine is unreachable the panel says so and the planner keeps its defaults.
+ * Design Context panel — renders the SAME compiled snapshot the solver uses.
+ * This component fetches nothing; SiteWorkspace owns the context (single
+ * source of truth per the planner contract).
  */
 const ContextPanel: React.FC<ContextPanelProps> = ({
-  ogcFid,
+  context,
+  builtForm,
+  pricing,
+  contextSummary,
+  loading,
+  uses,
   use,
   onUseChange,
-  onContext,
-  onSettled,
-  autoSelectUse = false,
+  generationBlocked,
 }) => {
-  const [context, setContext] = useState<DesignContext | null>(null);
-  const [uses, setUses] = useState<string[]>([]);
-  const [builtForm, setBuiltForm] = useState<unknown>(null);
-  const [pricing, setPricing] = useState<unknown>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (ogcFid == null || !Number.isFinite(ogcFid)) return;
-    let cancelled = false;
-    setLoading(true);
-    (async () => {
-      // Context first (fast); comps in parallel (backend currently ~2s)
-      const [ctxRaw, usesRaw] = await Promise.all([
-        fetchDesignContext(ogcFid, use),
-        fetchPermittedUses(ogcFid),
-      ]);
-      if (cancelled) return;
-      const usesList = normalizePermittedUses(usesRaw);
-      setUses(usesList);
-
-      // Zoning-grounded default: if the initial use isn't what this parcel's
-      // zoning actually wants (e.g. hardcoded single_family on an RM40 lot),
-      // switch BEFORE settling — the effect re-runs with the corrected use and
-      // that context is the one that routes the auto-plan.
-      if (autoSelectUse) {
-        const preferred = pickDefaultUse(usesList);
-        if (preferred && preferred !== use) {
-          onUseChange(preferred);
-          return;
-        }
-      }
-
-      const ctx = normalizeDesignContext(ctxRaw);
-      setContext(ctx);
-      if (ctx) onContext?.(ctx);
-      onSettled?.(ctx);
-      setLoading(false);
-
-      const [bf, pr] = await Promise.all([fetchLocalBuiltForm(ogcFid), fetchLocalPricing(ogcFid)]);
-      if (cancelled) return;
-      setBuiltForm(bf);
-      setPricing(pr);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ogcFid, use]);
-
-  if (ogcFid == null) return null;
-
-  // regime describes the PARKING-STRUCTURE economics, not the building type
-  const regime = context?.regime
-    ? context.regime === 'vertical'
-      ? 'Structured parking regime'
-      : context.regime === 'horizontal_pending'
-        ? 'Surface parking · FAR unknown'
-        : 'Surface parking regime'
-    : null;
-
-  // Accessor paths verified against the LIVE payloads (parcel 667899):
-  // built form nests stats under `distribution`, the underwrite target is
-  // `underwrite_target.footprint_sqft_p75`, and prices are p-distributions.
+  // Live accessor paths (fn_local_built_form / fn_local_pricing shapes)
   const nComps = fmtNum(p(builtForm, 'n_comps'));
   const targetFootprint = fmtNum(
     p(builtForm, 'underwrite_target', 'footprint_sqft_p75') ??
-    p(builtForm, 'underwrite_target', 'footprint_sqft') ??
-    p(builtForm, 'underwrite_target_footprint_sqft')
+    p(builtForm, 'underwrite_target', 'footprint_sqft')
   );
-  const distFp = (q: string) =>
-    fmtNum(
-      p(builtForm, 'distribution', 'footprint_sqft', q) ??
-      p(builtForm, 'footprint_sqft', q) ??
-      p(builtForm, `${q}_footprint_sqft`)
-    );
+  const distFp = (q: string) => fmtNum(p(builtForm, 'distribution', 'footprint_sqft', q));
   const p25Footprint = distFp('p25');
   const medianFootprint = distFp('p50');
   const p75Footprint = distFp('p75');
   const p90Footprint = distFp('p90');
-  const stories = fmtNum(
-    p(builtForm, 'distribution', 'stories', 'p50') ??
-    p(builtForm, 'stories', 'p50') ??
-    p(builtForm, 'p50_stories')
-  );
-  const priceBldgSf = fmtUsd(
-    p(pricing, 'price_per_building_sf', 'p50') ??
-    p(pricing, 'price_per_bldg_sqft') ??
-    p(pricing, 'usd_per_bldg_sf')
-  );
-  const priceLotSf = fmtUsd(
-    p(pricing, 'price_per_lot_sf', 'p50') ??
-    p(pricing, 'price_per_lot_sqft') ??
-    p(pricing, 'usd_per_lot_sf')
-  );
-  const saleP50 = fmtUsd(p(pricing, 'sale_price', 'p50') ?? p(pricing, 'p50_sale_price'));
-  const saleP25 = fmtUsd(p(pricing, 'sale_price', 'p25') ?? p(pricing, 'p25_sale_price'));
-  const saleP75 = fmtUsd(p(pricing, 'sale_price', 'p75') ?? p(pricing, 'p75_sale_price'));
+  const stories = fmtNum(p(builtForm, 'distribution', 'stories', 'p50'));
+  const priceBldgSf = fmtUsd(p(pricing, 'price_per_building_sf', 'p50'));
+  const priceLotSf = fmtUsd(p(pricing, 'price_per_lot_sf', 'p50'));
+  const saleP50 = fmtUsd(p(pricing, 'sale_price', 'p50'));
+  const saleP25 = fmtUsd(p(pricing, 'sale_price', 'p25'));
+  const saleP75 = fmtUsd(p(pricing, 'sale_price', 'p75'));
   const hasComps = nComps || targetFootprint || medianFootprint || priceBldgSf || saleP50;
 
   return (
@@ -194,6 +109,10 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
         <h3 className="text-sm font-semibold text-gray-900">Design Context</h3>
         <ConfidencePill confidence={context?.confidence} />
       </div>
+
+      {contextSummary && (
+        <p className="text-[11px] text-gray-500 mb-2 leading-snug">{contextSummary}</p>
+      )}
 
       {loading && !context && (
         <div className="space-y-2 animate-pulse">
@@ -218,12 +137,19 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
                 {context.zoningSubtype ? ` · ${context.zoningSubtype}` : ''}
               </span>
             )}
-            {regime && (
+            {context.parkingStrategy && (
               <span className="text-[10px] text-gray-500 border border-gray-200 px-1.5 py-0.5 rounded">
-                {regime}
+                {context.parkingStrategy.replace(/_/g, ' ')} parking
               </span>
             )}
           </div>
+
+          {generationBlocked && (
+            <div className="mb-2 text-xs font-medium px-2 py-1.5 rounded bg-red-50 text-red-700 border border-red-200">
+              This use is not permitted as-of-right — generation is blocked.
+              Pick a permitted use below.
+            </div>
+          )}
 
           <Row label="Front setback" v={context.setbackFrontFt} unit="ft" />
           <Row label="Side setback" v={context.setbackSideFt} unit="ft" />
@@ -232,12 +158,6 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
           <Row label="Max height" v={context.maxHeightFt} unit="ft" />
           <Row label="Max density" v={context.maxDensityDuAc} unit="DU/ac" />
           <Row label="Max coverage" v={context.maxCoveragePct} unit="%" />
-          {context.parkingStrategy && (
-            <div className="flex items-center justify-between text-sm py-0.5">
-              <span className="text-gray-600">Parking strategy</span>
-              <span className="font-medium text-gray-900">{context.parkingStrategy.replace(/_/g, ' ')}</span>
-            </div>
-          )}
           {context.flags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {context.flags.map(flag => (
@@ -253,31 +173,25 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
         </>
       )}
 
-      {(() => {
-        // Newer backend embeds permitted uses in the context payload; the
-        // standalone RPC remains as fallback. Either way: legal uses only.
-        const allUses = uses.length > 0 ? uses : context?.permittedUses ?? [];
-        if (allUses.length === 0) return null;
-        return (
-          <div className="mt-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Use (as-of-right only)
-            </label>
-            <select
-              value={use}
-              onChange={e => onUseChange(e.target.value)}
-              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white"
-            >
-              {!allUses.includes(use) && <option value={use}>{use.replace(/_/g, ' ')}</option>}
-              {allUses.map(u => (
-                <option key={u} value={u}>
-                  {u.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-          </div>
-        );
-      })()}
+      {uses.length > 0 && (
+        <div className="mt-3">
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Use (as-of-right only)
+          </label>
+          <select
+            value={use}
+            onChange={e => onUseChange(e.target.value)}
+            className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white"
+          >
+            {!uses.includes(use) && <option value={use}>{use.replace(/_/g, ' ')}</option>}
+            {uses.map(u => (
+              <option key={u} value={u}>
+                {u.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {hasComps && (
         <div className="mt-3 pt-3 border-t border-gray-100">
