@@ -30,6 +30,8 @@ interface SitePlanCanvasProps {
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseUp?: (event: React.MouseEvent<HTMLCanvasElement>) => void;
   onWheel?: (event: React.WheelEvent<HTMLCanvasElement>) => void;
+  /** CSS cursor reflecting the current interaction (grab/grabbing/move/…) */
+  cursor?: string;
 }
 
 export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
@@ -51,7 +53,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   onMouseDown,
   onMouseMove,
   onMouseUp,
-  onWheel
+  onWheel,
+  cursor
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -1023,7 +1026,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   return (
     <canvas
       ref={canvasRef}
-      className="w-full h-full cursor-crosshair absolute inset-0"
+      className="w-full h-full absolute inset-0"
+      style={{ cursor: cursor ?? 'crosshair' }}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
