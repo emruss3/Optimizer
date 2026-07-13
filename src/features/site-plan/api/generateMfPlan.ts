@@ -135,7 +135,8 @@ export function mfPlanToElements(resp: MfPlanResponse): {
       type: 'parking',
       name: p.stalls ? `Parking · ${p.stalls} stalls` : 'Parking',
       geometry: poly,
-      properties: { stalls: p.stalls, color: '#CBD5E1' },
+      // parkingSpaces is the canvas's stall-count vocabulary (bay labels)
+      properties: { stalls: p.stalls, parkingSpaces: p.stalls, color: '#CBD5E1' },
       metadata: meta,
     });
   });
