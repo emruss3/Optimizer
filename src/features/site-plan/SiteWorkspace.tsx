@@ -22,9 +22,19 @@ import ResultsPanel from './ui/ResultsPanel';
 import Massing3D from './ui/Massing3D';
 import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
-import { contextToZoningPatch, contextToParkingPatch, routesToLotFit, type DesignContext } from './api/designContext';
+import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
-import { generateMfSitePlan, mfPlanToElements, isMfPlanElement, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { generateMfSitePlan, generateMfSitePlanV2, mfPlanToElements, isMfPlanElement, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import {
+  compilePlannerContext,
+  plannerContextToDesignContext,
+  plannerContextSummary,
+  briefToZoningPatch,
+  briefToParkingPatch,
+  briefToWorkerBrief,
+  type PlannerContextResponse,
+} from './api/plannerContext';
+import { recordPlannerFeedback } from './api/plannerFeedback';
 import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -59,8 +69,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const n = Number(parcel.ogc_fid);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [parcel.ogc_fid]);
-  // Initial use is a placeholder — ContextPanel corrects it to the parcel's
-  // highest-intensity as-of-right use (autoSelectUse) unless the user picked.
+  // Initial use is a placeholder — the workspace corrects it to the parcel's
+  // highest-intensity as-of-right use unless the user picked one.
   const [contextUse, setContextUse] = useState('single_family');
   const userPickedUseRef = useRef(false);
   const handleUseChange = useCallback((use: string) => {
@@ -68,6 +78,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setContextUse(use);
   }, []);
   const appliedContextRef = useRef<string | null>(null);
+
+  // ── ONE compiled planner context (planner_context_v1) drives everything ──
+  // ContextPanel display, server generation (v2), worker grounding, and the
+  // plan-basis line all read this snapshot. Nothing else fetches context.
+  const [plannerCtx, setPlannerCtx] = useState<PlannerContextResponse | null>(null);
+  const plannerCtxRef = useRef<PlannerContextResponse | null>(null);
+  const [plannerLoading, setPlannerLoading] = useState(false);
+  const [permittedUses, setPermittedUses] = useState<string[]>([]);
+  const [generationBlocked, setGenerationBlocked] = useState(false);
+  const generationBlockedRef = useRef(false);
 
   // ── SF lot generator (brief Phase 2) ─────────────────────────────────────
   const [isGeneratingLots, setIsGeneratingLots] = useState(false);
@@ -153,8 +173,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         violations,
         investment: investmentAnalysis,
       });
+      void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_saved', activeCandidateId, { name });
     },
-    [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis]
+    [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis, activeCandidateId]
   );
 
   const handleLoadPlan = useCallback(
@@ -276,12 +297,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     dropPinIndex?: number | null;
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
-    const resp = await generateMfSitePlan(contextOgcFid, {
-      seed: opts.seed,
-      pins: opts.pins,
-      parentId: opts.parentId,
-      persist: opts.persist,
-    });
+    const snapshot = plannerCtxRef.current;
+    let resp = snapshot?.context_id
+      ? await generateMfSitePlanV2(contextOgcFid, snapshot.context_id, {
+          seed: opts.seed,
+          pins: opts.pins,
+          parentId: opts.parentId,
+          persist: opts.persist,
+          typology: snapshot.context.typology,
+        })
+      : null;
+    if (resp?.error === 'planner_generation_not_allowed') {
+      generationBlockedRef.current = true;
+      setGenerationBlocked(true);
+      setPlanBasis(`Generation blocked — selected use not permitted as-of-right${snapshot ? ` · ${plannerContextSummary(snapshot)}` : ''}`);
+      return true; // handled: a rejection, not a fallback case
+    }
+    if (!resp || resp.error) {
+      // No context or stale/mismatched snapshot → v1 keeps working (migration rule)
+      resp = await generateMfSitePlan(contextOgcFid, {
+        seed: opts.seed,
+        pins: opts.pins,
+        parentId: opts.parentId,
+        persist: opts.persist,
+      });
+    }
     if (!resp || !resp.buildings || resp.buildings.length === 0) return false;
     const mapped = mfPlanToElements(resp);
     const { metrics: serverMetrics, basis, flags } = mapped;
@@ -300,10 +340,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
     setViolations([]);
     const parkingNote = flags.includes('parking_below_ratio') ? ' · ⚠ parking below target ratio' : '';
-    setPlanBasis(`${basis ?? 'Server-generated site plan'}${parkingNote}`);
+    const clampCount = flags.filter(f => f.includes('clamp')).length;
+    const clampNote = clampCount > 0 ? ` · ${clampCount} clamp${clampCount === 1 ? '' : 's'}` : '';
+    const scoreNote = typeof resp.score_total === 'number' ? ` · score ${resp.score_total}` : '';
+    setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}`);
     // A3: value the scheme against local sales — the margin ticks live
     loadMoney(serverMetrics?.totalBuiltSF, serverMetrics?.totalUnits);
-    if (opts.persist !== false) refreshCandidates();
+    if (opts.persist !== false) {
+      refreshCandidates();
+      if (resp.candidate_id) {
+        void recordPlannerFeedback(resp.context_id ?? plannerCtxRef.current?.context_id, 'candidate_generated', resp.candidate_id, { seed: opts.seed, pins: opts.pins?.length ?? 0 });
+      }
+    }
     return true;
   }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates, loadMoney]);
 
@@ -413,7 +461,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           stallD: feetToMeters(config.designParameters.parking.stallDepthFt),
           aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
           anglesDeg: [0, 60, 90]
-        }, typologyToBuildingType(config.designParameters.buildingTypology));
+        }, typologyToBuildingType(config.designParameters.buildingTypology),
+        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current) : undefined);
         setPlanOutput(fallbackResult.elements || [], fallbackResult.metrics || null);
         setViolations(fallbackResult.violations || []);
         setSolverReady(true);
@@ -569,7 +618,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           // drop the server's copy so it doesn't ghost behind the cursor.
           dropPinIndex: options?.final ? null : pinIndex,
         };
-        if (options?.final) dragPinRef.current = null;
+        if (options?.final) {
+          dragPinRef.current = null;
+          void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'building_moved', activeCandidateId, {
+            pin_index: pinIndex,
+            element_id: update.id,
+          });
+        }
         pumpMfRegen();
         return;
       }
@@ -629,6 +684,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (pinIdxs.length > 0) {
         const pins = mfPinsRef.current.filter((_, i) => !pinIdxs.includes(i));
         pendingMfRegenRef.current = { pins, final: true, dropPinIndex: null };
+        void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'building_deleted', activeCandidateId, {
+          pin_indexes: pinIdxs,
+        });
         pumpMfRegen();
         return;
       }
@@ -691,15 +749,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    * parcel+use): the FIRST auto-solve then runs on real setbacks/FAR/height
    * instead of hardcoded defaults. Fail-soft: no context → defaults stand.
    */
-  const applyContextDefaults = useCallback(
-    (ctx: DesignContext) => {
-      const key = `${contextOgcFid}:${contextUse}`;
-      if (appliedContextRef.current === key) return;
-      appliedContextRef.current = key;
-      const zoningPatch = contextToZoningPatch(ctx);
-      // typology_spec's stall/aisle/ratio numbers ground how parking sits —
-      // not just how big the envelope is.
-      const parkingPatch = contextToParkingPatch(ctx);
+  /** Ground the solver config in the compiled solver brief (once per snapshot):
+   *  hard constraints → zoning, brief parking → stall/aisle/ratio. The client
+   *  fallback engine then runs on the SAME values as the server generator. */
+  const applyBriefDefaults = useCallback(
+    (resp: PlannerContextResponse) => {
+      if (appliedContextRef.current === resp.context_hash) return;
+      appliedContextRef.current = resp.context_hash;
+      const zoningPatch = briefToZoningPatch(resp.solver_brief);
+      const parkingPatch = briefToParkingPatch(resp.solver_brief);
       if (Object.keys(zoningPatch).length === 0 && Object.keys(parkingPatch).length === 0) return;
       updateConfig({
         zoning: { ...config.zoning, ...zoningPatch },
@@ -709,7 +767,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         },
       });
     },
-    [contextOgcFid, contextUse, config.zoning, config.designParameters, updateConfig]
+    [config.zoning, config.designParameters, updateConfig]
   );
 
   /** Brief Phase 2: market-grounded SF lot fit, appended to the plan. */
@@ -774,7 +832,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
           anglesDeg: [0, 60, 90] as number[]
         };
-        const init = await workerManager.initSite(envelopeMeters, config.zoning, undefined, parkingSpec);
+        const init = await workerManager.initSite(
+          envelopeMeters, config.zoning, undefined, parkingSpec, undefined,
+          plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current) : undefined
+        );
         setPlanOutput(init.elements || [], init.metrics || null);
         trackBuildings(init.buildings);
         setViolations(init.violations || []);
@@ -902,6 +963,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ctxSettledRef.current = 'pending';
       userPickedUseRef.current = false;
       setServerMoney(null);
+      plannerCtxRef.current = null;
+      setPlannerCtx(null);
+      setPermittedUses([]);
+      generationBlockedRef.current = false;
+      setGenerationBlocked(false);
+      appliedContextRef.current = null;
       setPlanBasis(null);
     }
   }, [parcel.ogc_fid, parcel.id]);
@@ -941,10 +1008,74 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
   }, [envelopeMeters, hasValidGeometry, handleGenerateLots, autoPlanMf]);
 
-  const handleContextSettled = useCallback((ctx: DesignContext | null) => {
+  /** Compile settle → grounding + routing. generation_allowed=false BLOCKS
+   *  generation (a rejection, not a fallback); a later allowed compile
+   *  (use switch) re-arms the auto-plan. */
+  const handleCompileSettled = useCallback((resp: PlannerContextResponse | null) => {
+    const ctx = resp ? plannerContextToDesignContext(resp) : null;
     ctxSettledRef.current = ctx;
+    if (resp && !resp.generation_allowed) {
+      generationBlockedRef.current = true;
+      setGenerationBlocked(true);
+      hasAutoGeneratedRef.current = true; // suppress auto-plan while blocked
+      planModeRef.current = null;
+      setPlanBasis(`Generation blocked — selected use not permitted as-of-right · ${plannerContextSummary(resp)}`);
+      return;
+    }
+    if (generationBlockedRef.current) {
+      // blocked → allowed transition (user picked a permitted use): re-arm
+      generationBlockedRef.current = false;
+      setGenerationBlocked(false);
+      hasAutoGeneratedRef.current = false;
+    }
     autoPlan(ctx);
   }, [autoPlan]);
+
+  // Resolve the parcel's as-of-right uses once; correct the default use
+  // BEFORE compiling so the first snapshot is for the right use.
+  useEffect(() => {
+    if (contextOgcFid == null) return;
+    let cancelled = false;
+    (async () => {
+      const raw = await fetchPermittedUses(contextOgcFid);
+      if (cancelled) return;
+      const list = normalizePermittedUses(raw);
+      setPermittedUses(list);
+      if (!userPickedUseRef.current) {
+        const preferred = pickDefaultUse(list);
+        if (preferred && preferred !== contextUse) setContextUse(preferred);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextOgcFid]);
+
+  // Compile the planner context (cached per parcel+use); the first auto-solve
+  // waits for this settle or the existing fail-soft timeout below.
+  useEffect(() => {
+    if (contextOgcFid == null) return;
+    let cancelled = false;
+    setPlannerLoading(true);
+    compilePlannerContext(contextOgcFid, contextUse)
+      .then(resp => {
+        if (cancelled) return;
+        plannerCtxRef.current = resp;
+        setPlannerCtx(resp);
+        setPlannerLoading(false);
+        if (resp) {
+          applyBriefDefaults(resp);
+          void recordPlannerFeedback(resp.context_id, 'context_loaded');
+        }
+        handleCompileSettled(resp);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlannerLoading(false);
+        handleCompileSettled(null);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextOgcFid, contextUse]);
 
   // A1: load the parcel's scheme history on entry
   useEffect(() => {
@@ -957,9 +1088,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (mfRegenInFlightRef.current) return;
     mfRegenInFlightRef.current = true;
     setIsGenerating(true);
+    void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_viewed', c.id);
     runServerMfPlan({ seed: c.seed, pins: c.pins, parentId: c.parentId, persist: false })
       .then(ok => {
-        if (ok) setActiveCandidateId(c.id);
+        if (ok) {
+          setActiveCandidateId(c.id);
+          void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_selected', c.id);
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -987,7 +1122,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   useEffect(() => {
     if (!solverReady || !envelopeMeters) return;
     if (liveResolveTimer.current) window.clearTimeout(liveResolveTimer.current);
-    liveResolveTimer.current = window.setTimeout(() => { liveResolve(); }, 350);
+    liveResolveTimer.current = window.setTimeout(() => {
+      liveResolve();
+      void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'parameter_changed');
+    }, 350);
     return () => {
       if (liveResolveTimer.current) window.clearTimeout(liveResolveTimer.current);
     };
@@ -1052,12 +1190,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
           <ContextPanel
-            ogcFid={contextOgcFid}
+            context={plannerCtx ? plannerContextToDesignContext(plannerCtx) : null}
+            builtForm={plannerCtx?.context.precedent}
+            pricing={plannerCtx?.context.market}
+            contextSummary={plannerCtx ? plannerContextSummary(plannerCtx) : null}
+            loading={plannerLoading}
+            uses={permittedUses}
             use={contextUse}
             onUseChange={handleUseChange}
-            onContext={applyContextDefaults}
-            onSettled={handleContextSettled}
-            autoSelectUse={!userPickedUseRef.current}
+            generationBlocked={generationBlocked}
           />
           <ParametersPanel
             parcel={parcel}

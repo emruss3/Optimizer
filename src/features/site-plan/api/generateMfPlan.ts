@@ -54,6 +54,14 @@ export interface MfPlanResponse {
   session_id?: string;
   candidate_id?: string;
   persisted?: boolean;
+  /** Context-contract fields (generator_version mf_context_v2) */
+  context_id?: string;
+  context_version?: string;
+  context_hash?: string;
+  generator_version?: string;
+  score_version?: string;
+  score_total?: number;
+  score_components?: Record<string, number>;
   buildings?: MfBuilding[];
   parking?: MfParking[];
   drives?: MfGeom[];
@@ -236,6 +244,39 @@ export async function generateMfSitePlan(
     return resp;
   } catch (err) {
     console.warn('[generateMfPlan] RPC threw:', err);
+    return null;
+  }
+}
+
+/**
+ * Context-driven generation (mf_context_v2): all planning values come from
+ * the verified solver brief behind p_context_id. Contract errors surface in
+ * the response's `error` (planner_generation_not_allowed,
+ * planner_context_parcel_mismatch, …); transport failures return null.
+ */
+export async function generateMfSitePlanV2(
+  ogcFid: number,
+  contextId: string,
+  opts: MfGenerateOptions = {}
+): Promise<MfPlanResponse | null> {
+  try {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc('fn_generate_mf_site_plan_v2', {
+      p_ogc_fid: ogcFid,
+      p_typology: opts.typology ?? 'multifamily',
+      p_seed: opts.seed ?? 1,
+      p_pins: opts.pins && opts.pins.length > 0 ? opts.pins : null,
+      p_parent: opts.parentId ?? null,
+      p_persist: opts.persist ?? true,
+      p_context_id: contextId,
+    });
+    if (error) {
+      console.warn('[generateMfPlan] v2 RPC failed:', error.message ?? error);
+      return null;
+    }
+    return (data as MfPlanResponse) ?? null;
+  } catch (err) {
+    console.warn('[generateMfPlan] v2 RPC threw:', err);
     return null;
   }
 }

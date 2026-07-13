@@ -17,6 +17,9 @@ export interface PlanUpdateResult {
 }
 
 export class PlannerWorkerManager {
+  /** Solver-safe planner context, attached to every solve (set by initSite) */
+  private lastSolverBrief: import('../engine/optimizer').WorkerSolverBrief | undefined;
+
   private worker: Worker | null = null;
 
   constructor() {
@@ -58,11 +61,13 @@ export class PlannerWorkerManager {
       aisleW: number;
       anglesDeg: number[];
     },
-    buildingType?: BuildingType
+    buildingType?: BuildingType,
+    solverBrief?: import('../engine/optimizer').WorkerSolverBrief
   ): Promise<PlanUpdateResult> {
     if (!this.worker) {
       throw new Error('Worker not available');
     }
+    this.lastSolverBrief = solverBrief ?? this.lastSolverBrief;
 
     const id = ++nextId;
     this.worker.postMessage({
@@ -73,6 +78,7 @@ export class PlannerWorkerManager {
       initialBuildingSpec,
       parkingSpec,
       buildingType,
+      solverBrief: this.lastSolverBrief,
     });
 
     return this.waitForPlanUpdate(id);
@@ -203,6 +209,7 @@ export class PlannerWorkerManager {
       designParams,
       parkingSpec,
       maxIterations,
+      solverBrief: this.lastSolverBrief,
     });
 
     return new Promise((resolve, reject) => {
