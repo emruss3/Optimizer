@@ -18,6 +18,11 @@ const SchemesRail: React.FC<{
 }> = ({ candidates, activeId, onView, busy }) => {
   if (candidates.length === 0) return null;
 
+  // A3 ranking: best market margin gets the badge (order stays chronological
+  // so lineage still reads top-down)
+  const margins = candidates.map(c => c.marginOnCost).filter((m): m is number => typeof m === 'number');
+  const bestMargin = margins.length > 0 ? Math.max(...margins) : null;
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
       <div className="flex items-center justify-between mb-2">
@@ -30,6 +35,8 @@ const SchemesRail: React.FC<{
           const stalls = n(c.metrics.stalls);
           const far = n(c.metrics.far);
           const active = c.id === activeId;
+          const margin = typeof c.marginOnCost === 'number' ? c.marginOnCost : null;
+          const isBest = bestMargin != null && margin === bestMargin && margins.length > 1;
           const time = c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
           return (
             <button
@@ -48,6 +55,17 @@ const SchemesRail: React.FC<{
               </span>
               <span className="text-gray-500 tabular-nums">{stalls != null ? `${stalls} st` : ''}</span>
               <span className="text-gray-500 tabular-nums">{far != null ? `FAR ${far.toFixed(2)}` : ''}</span>
+              {margin != null && (
+                <span
+                  className={`tabular-nums font-medium ${
+                    isBest ? 'text-green-700' : margin < 0 ? 'text-red-600' : 'text-gray-600'
+                  }`}
+                  title="Margin on cost at local pricing"
+                >
+                  {isBest ? '★ ' : ''}
+                  {(margin * 100).toFixed(1)}%
+                </span>
+              )}
               <span className="ml-auto flex items-center gap-1 text-gray-400 flex-shrink-0">
                 {c.pins.length > 0 && (
                   <span className="flex items-center gap-0.5" title={`${c.pins.length} pinned building${c.pins.length === 1 ? '' : 's'}`}>
