@@ -45,8 +45,12 @@ jobs:
             echo "(The Playwright suite needs Mapbox/Supabase secrets and a running app;"
             echo " several specs also target routes/test-ids that don't exist yet.)"
           fi
-        
-      - name: SQL smoke tests
+
+      # Never expose a database URL to code from a pull-request ref. The same
+      # checks are run manually against staging before merge and automatically
+      # from the trusted main branch after merge.
+      - name: SQL smoke tests (trusted main push)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
@@ -55,6 +59,10 @@ jobs:
           else
             echo "Skipping SQL smoke tests - add the SUPABASE_DB_URL Actions secret to enable them"
           fi
+
+      - name: SQL smoke tests (pull-request policy)
+        if: github.event_name == 'pull_request'
+        run: echo "Database smoke tests are intentionally excluded from PR jobs so unmerged code cannot access database credentials."
         
       - name: Security audit (advisory)
         # The previous step ran `npx @google/osv-scanner`, but OSV-Scanner is a Go
