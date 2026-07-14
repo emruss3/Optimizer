@@ -52,11 +52,22 @@ begin
     raise exception 'training.invoke_ingestion_job(uuid) is missing';
   end if;
 
+  if to_regprocedure('training.enforce_ingestion_enabled()') is null then
+    raise exception 'training.enforce_ingestion_enabled() is missing';
+  end if;
+
   select count(*) into v_count
   from pg_trigger
   where tgname='raw_documents_license_gate' and not tgisinternal;
   if v_count <> 1 then
     raise exception 'raw_documents license gate trigger count is %, expected 1', v_count;
+  end if;
+
+  select count(*) into v_count
+  from pg_trigger
+  where tgname='ingestion_jobs_enabled_gate' and not tgisinternal;
+  if v_count <> 1 then
+    raise exception 'ingestion enablement trigger count is %, expected 1', v_count;
   end if;
 
   select count(*) into v_count
@@ -175,6 +186,14 @@ begin
     raise exception 'training.runtime_config edge_base_url is not configured';
   end if;
 
+  select count(*) into v_count
+  from training.runtime_config
+  where key='ingestion_enabled'
+    and lower(btrim(value)) in ('1','true','yes','on');
+  if v_count <> 1 then
+    raise exception 'training ingestion is not explicitly enabled for this environment';
+  end if;
+
   select pg_get_functiondef('training.invoke_ingestion_job(uuid)'::regprocedure)
   into v_definition;
   if position('training.runtime_config' in v_definition)=0 then
@@ -190,8 +209,10 @@ begin
   end if;
 
   if has_function_privilege('anon','training.invoke_ingestion_job(uuid)','EXECUTE')
-     or has_function_privilege('authenticated','training.invoke_ingestion_job(uuid)','EXECUTE') then
-    raise exception 'anon/authenticated unexpectedly can invoke ingestion jobs';
+     or has_function_privilege('authenticated','training.invoke_ingestion_job(uuid)','EXECUTE')
+     or has_function_privilege('anon','training.enforce_ingestion_enabled()','EXECUTE')
+     or has_function_privilege('authenticated','training.enforce_ingestion_enabled()','EXECUTE') then
+    raise exception 'anon/authenticated unexpectedly can control or invoke ingestion jobs';
   end if;
 end
 $smoke$;
