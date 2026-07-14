@@ -139,7 +139,7 @@ npm run db:smoke:all
 
 `db:smoke:all` runs the existing application RPC smoke suite and `tests/sql/training_corpus_smoke.sql`. The corpus suite verifies the license trigger, explicit ingestion enablement gate, required schema objects, the minimum eligible-example baseline, OpenStudio normalization coverage, draft-only generation status, parser-fixture isolation, owner-controlled rights gates, release statuses, environment-specific runtime routing, and denial of anonymous ingestion access.
 
-GitHub Actions runs the same command when the repository has an Actions secret named `SUPABASE_DB_URL`. Pull requests without that secret still run type checking, linting, and unit tests, but the workflow clearly reports that database checks were skipped. Point this secret at staging or a Supabase development branch rather than production whenever possible.
+For credential safety, pull-request workflows never receive `SUPABASE_DB_URL`. Run the database suite manually against staging or a Supabase development branch before merge. GitHub Actions runs the same command automatically only from a trusted push to `main`, when the repository has a `SUPABASE_DB_URL` secret. Prefer a staging or read-limited verification database rather than production.
 
 ## Verification
 
