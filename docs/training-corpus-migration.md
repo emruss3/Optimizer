@@ -118,6 +118,19 @@ Temporary diagnostic functions from the original extraction are deliberately not
 - `private-pdf-range-probe`
 - `edge-capabilities`
 
+## Automated smoke tests
+
+The database checks are fail-fast and use `psql` with `ON_ERROR_STOP=1`:
+
+```bash
+export SUPABASE_DB_URL='postgresql://...'
+npm run db:smoke:all
+```
+
+`db:smoke:all` runs the existing application RPC smoke suite and `tests/sql/training_corpus_smoke.sql`. The corpus suite verifies the license trigger, required schema objects, the minimum eligible-example baseline, OpenStudio normalization coverage, draft-only generation status, parser-fixture isolation, owner-controlled rights gates, release statuses, runtime routing, and denial of anonymous ingestion access.
+
+GitHub Actions runs the same command when the repository has an Actions secret named `SUPABASE_DB_URL`. Pull requests without that secret still run type checking, linting, and unit tests, but the workflow clearly reports that database checks were skipped.
+
 ## Verification
 
 ### Dataset rights
