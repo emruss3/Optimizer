@@ -19,8 +19,8 @@ Private PDFs, CAD/BIM files, extracted private page text, temporary access capab
 
 ## Restore order
 
-1. Apply migrations in timestamp order.
-2. Set the environment-specific Edge Function base URL:
+1. Apply migrations in timestamp order. The final migration creates an ingestion enablement gate whose safe default is `false`.
+2. Set the environment-specific Edge Function base URL, but do not enable ingestion yet:
 
 ```sql
 insert into training.runtime_config(key,value)
@@ -40,7 +40,15 @@ supabase functions deploy private-pdf-page-text --no-verify-jwt
 supabase functions deploy private-pdf-slice-text --no-verify-jwt
 ```
 
-5. Run ProcTHOR ingestion jobs:
+5. After verifying the URL and deployed workers belong to this environment, explicitly enable ingestion:
+
+```sql
+insert into training.runtime_config(key,value)
+values('ingestion_enabled','true')
+on conflict(key) do update set value=excluded.value,updated_at=now();
+```
+
+6. Run ProcTHOR ingestion jobs:
 
 ```sql
 select training.invoke_ingestion_job(id)
@@ -48,7 +56,7 @@ from training.ingestion_jobs
 where job_type='jsonl_gzip_to_raw' and status in ('queued','failed','partial');
 ```
 
-6. Run OpenStudio/IFC ingestion jobs:
+7. Run OpenStudio/IFC ingestion jobs:
 
 ```sql
 select training.invoke_ingestion_job(id)
@@ -56,14 +64,16 @@ from training.ingestion_jobs
 where job_type='ifc_to_bim' and status in ('queued','failed','partial');
 ```
 
-7. Refresh the normalized commercial corpus after model ingestion finishes:
+8. Refresh the normalized commercial corpus after model ingestion finishes:
 
 ```sql
 select training.refresh_us_commercial_corpus();
 ```
 
-8. Restore owner-controlled rows from the encrypted backup/private object store.
-9. Run the verification queries below.
+9. Restore owner-controlled rows from the encrypted backup/private object store.
+10. Run the verification queries below.
+
+To stop all new ingestion dispatches without removing workers, set `training.runtime_config.ingestion_enabled` back to `false`. Existing HTTP requests already claimed by an Edge Function are not cancelled by that setting.
 
 ## Dataset roles
 
@@ -127,9 +137,9 @@ export SUPABASE_DB_URL='postgresql://...'
 npm run db:smoke:all
 ```
 
-`db:smoke:all` runs the existing application RPC smoke suite and `tests/sql/training_corpus_smoke.sql`. The corpus suite verifies the license trigger, required schema objects, the minimum eligible-example baseline, OpenStudio normalization coverage, draft-only generation status, parser-fixture isolation, owner-controlled rights gates, release statuses, runtime routing, and denial of anonymous ingestion access.
+`db:smoke:all` runs the existing application RPC smoke suite and `tests/sql/training_corpus_smoke.sql`. The corpus suite verifies the license trigger, explicit ingestion enablement gate, required schema objects, the minimum eligible-example baseline, OpenStudio normalization coverage, draft-only generation status, parser-fixture isolation, owner-controlled rights gates, release statuses, environment-specific runtime routing, and denial of anonymous ingestion access.
 
-GitHub Actions runs the same command when the repository has an Actions secret named `SUPABASE_DB_URL`. Pull requests without that secret still run type checking, linting, and unit tests, but the workflow clearly reports that database checks were skipped.
+GitHub Actions runs the same command when the repository has an Actions secret named `SUPABASE_DB_URL`. Pull requests without that secret still run type checking, linting, and unit tests, but the workflow clearly reports that database checks were skipped. Point this secret at staging or a Supabase development branch rather than production whenever possible.
 
 ## Verification
 
@@ -169,6 +179,17 @@ order by name, version;
 ```sql
 select training.refresh_us_commercial_corpus();
 ```
+
+### Runtime dispatch safety
+
+```sql
+select key,value,updated_at
+from training.runtime_config
+where key in ('edge_base_url','ingestion_enabled')
+order by key;
+```
+
+Expected: the URL points to the current environment and `ingestion_enabled` is `true` only after the workers and secret have been configured.
 
 ### Private safety check
 
