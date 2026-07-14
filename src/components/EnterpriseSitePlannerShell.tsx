@@ -695,9 +695,15 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     activeManipulationRef.current = null;
   }, [drag, elements, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate, rotation]);
 
-  // Handle wheel zoom (attached by SitePlanCanvas as a NON-passive native
-  // listener, so preventDefault actually stops the page/modal from scrolling)
+  // Handle wheel zoom. Below the xl breakpoint the planner panels stack and
+  // the outer workspace must remain vertically scrollable; plain wheel input
+  // scrolls that workspace, while Ctrl/Cmd+wheel and the zoom buttons still
+  // zoom the plan. In the desktop three-column layout, wheel zoom remains the
+  // direct map-style interaction.
   const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
+    const stackedLayout = window.innerWidth < 1280;
+    if (stackedLayout && !event.ctrlKey && !event.metaKey) return;
+
     event.preventDefault();
     const canvas = canvasContainerRef.current;
     if (!canvas) return;
@@ -905,7 +911,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Modular Toolbar */}
         <SitePlanToolbar
           activeTool={drawingTools.activeTool}
@@ -944,7 +950,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         />
 
         {/* Modular Canvas */}
-        <div ref={canvasContainerRef} className="flex-1 relative min-h-[400px] bg-gray-100">
+        <div ref={canvasContainerRef} className="flex-1 relative min-h-0 bg-gray-100">
           {showTemplates && (
             <TemplateSelector
               onSelectTemplate={handleApplyTemplate}
