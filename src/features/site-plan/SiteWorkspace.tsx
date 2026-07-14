@@ -341,7 +341,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     mfSeedRef.current = opts.seed;
     mfPinsRef.current = resp.pins ?? [];
     if (resp.candidate_id) setActiveCandidateId(resp.candidate_id);
-    const base = elements.filter(el => !isMfPlanElement(el));
+    const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
     setViolations([]);
     const parkingNote = flags.includes('parking_below_ratio') ? ' · ⚠ parking below target ratio' : '';
@@ -797,7 +797,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // Additive per the brief — but idempotent: a re-generate REPLACES the
       // previous lot fit (matching id prefixes) instead of stacking a second
       // subdivision on top of the first.
-      const base = elements.filter(el => !isSfPlanElement(el));
+      // A generated plan replaces the generated plan — of EITHER family.
+      // (SF pads once stacked on top of MF bars: Elements 43.)
+      const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
       setPlanOutput([...base, ...generated], metrics);
       const flagsNote = summary.flags.length > 0 ? ` · ⚠ ${summary.flags.join(', ')}` : '';
       setLotFitSummary(
@@ -1157,7 +1159,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <button
             onClick={undo}
             disabled={!canUndo}
-            title="Undo (Ctrl+Z)"
+            title={canUndo ? 'Undo (Ctrl+Z)' : 'Undo (Ctrl+Z) — applies to local-engine edits; server schemes have their history in the rail'}
             className="px-2.5 py-1.5 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Undo2 className="w-4 h-4" />
@@ -1216,9 +1218,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             isGenerating={isGenerating}
             onGenerate={handleGenerate}
             onGenerateAlternatives={handleGenerate}
-            onGenerateLots={handleGenerateLots}
+            onGenerateLots={plannerCtx?.context.typology === 'multifamily' ? undefined : handleGenerateLots}
             isGeneratingLots={isGeneratingLots}
             lotFitSummary={lotFitSummary}
+            staticPlan={planModeRef.current === 'sf' || planModeRef.current === 'mf-server'}
+            resolvedTypology={plannerCtx?.context.typology ?? null}
             alternatives={alternatives}
             alternativeScores={solveScores}
             selectedSolveIndex={selectedSolveIndex}
@@ -1261,6 +1265,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 onAddBuilding={handleAddBuilding}
                 onDeleteBuildings={handleDeleteBuildings}
                 onCloneBuildings={handleCloneBuildings}
+                staticPlan={planModeRef.current === 'sf' || planModeRef.current === 'mf-server'}
                 envelopeStatus={status}
                 envelopeError={envelopeError}
                 usingFallbackEnvelope={usingFallbackEnvelope}

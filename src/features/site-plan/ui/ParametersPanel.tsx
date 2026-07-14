@@ -39,6 +39,11 @@ type ParametersPanelProps = {
   onDeletePlan: (id: string) => void;
   onToggleFavorite: (id: string, isFavorite: boolean) => void;
 
+  /** Server/SF-generated plan: parameters come from the compiled context */
+  staticPlan?: boolean;
+  /** Compiled-context typology — gates which generator buttons make sense */
+  resolvedTypology?: string | null;
+
   // Current plan data for snapshot (used by save)
   currentElements: Element[];
   currentMetrics: SiteMetrics | null;
@@ -69,6 +74,8 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
   onLoadPlan,
   onDeletePlan,
   onToggleFavorite,
+  staticPlan = false,
+  resolvedTypology,
 }) => {
   const [saveName, setSaveName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -97,7 +104,15 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
         </div>
       </div>
 
+      {staticPlan && (
+        <p className="mt-4 text-[11px] leading-snug text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
+          This plan is generated from the compiled context — setbacks, FAR,
+          height, density and parking come from ordinance + precedent. Use
+          Generate for a new variation; sliders apply to the local engine only.
+        </p>
+      )}
       <div className="mt-6 space-y-6">
+        <fieldset disabled={staticPlan} className={`m-0 p-0 border-0 space-y-6 ${staticPlan ? 'opacity-50' : ''}`}>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Target FAR: {config.designParameters.targetFAR}
@@ -227,6 +242,7 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
             <span>5</span>
           </div>
         </div>
+        </fieldset>
 
         {rpcMetrics && (
           <div className="p-3 bg-gray-50 rounded-lg">

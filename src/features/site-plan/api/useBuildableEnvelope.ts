@@ -46,16 +46,10 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
       return;
     }
 
-    if (import.meta.env.DEV) {
-      if (didRunRef.current && ogcFidRef.current === parcelId) {
-        return;
-      }
-      didRunRef.current = true;
-    }
-
-    if (ogcFidRef.current === parcelId) {
-      return;
-    }
+    // NOTE: no run-once guard. StrictMode mounts run the effect twice; the
+    // old didRunRef guard made the SECOND run bail while the FIRST run's
+    // cleanup had already cancelled its setState — leaving status stuck on
+    // 'loading' forever in dev. The cancelled flag alone is correct.
     ogcFidRef.current = parcelId;
 
     let cancelled = false;
