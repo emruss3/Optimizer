@@ -299,23 +299,56 @@ export interface MfMoney {
 }
 
 /** Value a scheme against LOCAL pricing. Fail-soft: null when unreachable. */
-export async function fetchMfMoney(
+// Fail-QUIET, not just fail-soft: when the endpoint is broken (404/405/…),
+// stop asking for the rest of the session instead of flooding the console —
+// the rail enriches many candidates per refresh. Identical inputs share one
+// in-flight/settled promise (same parcel+GFA ⇒ same margin).
+let moneyConsecutiveFailures = 0;
+let moneyUnavailable = false;
+const moneyCache = new Map<string, Promise<MfMoney | null>>();
+
+export function fetchMfMoney(
   ogcFid: number,
   gfaSqft: number,
   units?: number
 ): Promise<MfMoney | null> {
-  try {
-    if (!supabase || !gfaSqft) return null;
-    const { data, error } = await supabase.rpc('fn_mf_money', {
-      p_ogc_fid: ogcFid,
-      p_gfa_sqft: gfaSqft,
-      p_units: units ?? null,
-    });
-    if (error || !data) return null;
-    return data as MfMoney;
-  } catch {
-    return null;
-  }
+  if (!supabase || !gfaSqft || moneyUnavailable) return Promise.resolve(null);
+  const key = `${ogcFid}|${Math.round(gfaSqft)}`;
+  const hit = moneyCache.get(key);
+  if (hit) return hit;
+
+  const p = (async (): Promise<MfMoney | null> => {
+    try {
+      const { data, error } = await supabase!.rpc('fn_mf_money', {
+        p_ogc_fid: ogcFid,
+        p_gfa_sqft: gfaSqft,
+        p_units: units ?? null,
+      });
+      if (error || !data) {
+        moneyConsecutiveFailures += 1;
+        if (moneyConsecutiveFailures >= 2 && !moneyUnavailable) {
+          moneyUnavailable = true;
+          console.info('[generateMfPlan] fn_mf_money unavailable — market margin hidden for this session:', error?.message ?? 'no data');
+        }
+        moneyCache.delete(key);
+        return null;
+      }
+      moneyConsecutiveFailures = 0;
+      return data as MfMoney;
+    } catch {
+      moneyCache.delete(key);
+      return null;
+    }
+  })();
+  moneyCache.set(key, p);
+  return p;
+}
+
+/** Test hook. */
+export function __resetMfMoneyAvailability(): void {
+  moneyConsecutiveFailures = 0;
+  moneyUnavailable = false;
+  moneyCache.clear();
 }
 
 /** One persisted scheme (candidate) in a parcel's design history. */
