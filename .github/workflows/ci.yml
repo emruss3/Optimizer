@@ -47,11 +47,13 @@ jobs:
           fi
         
       - name: SQL smoke tests
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           if [ -n "$SUPABASE_DB_URL" ]; then
-            npm run db:smoke
+            npm run db:smoke:all
           else
-            echo "Skipping SQL smoke tests - no database URL provided"
+            echo "Skipping SQL smoke tests - add the SUPABASE_DB_URL Actions secret to enable them"
           fi
         
       - name: Security audit (advisory)
