@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Grid, Building, Maximize2 } from 'lucide-react';
+import { Building, Maximize2 } from 'lucide-react';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -94,6 +94,13 @@ interface EnterpriseSitePlannerProps {
    * locally-cloned building would vanish on the next re-solve.
    */
   onCloneBuildings?: (ids: string[]) => void;
+  /**
+   * The plan is a server/SF-generated system (no local worker session).
+   * Local-only edits (paste, align, vertex edit) would be wiped by the next
+   * regeneration, so those tools disable with an explanation; deleting is
+   * limited to pinned buildings (a real edit → regeneration).
+   */
+  staticPlan?: boolean;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -113,7 +120,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   onBuildingUpdate,
   onAddBuilding,
   onDeleteBuildings,
-  onCloneBuildings
+  onCloneBuildings,
+  staticPlan = false
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
   // run unconditionally on every render. The `!parcel` guard lives just before
@@ -125,7 +133,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // State
   const [elements, setElements] = useState<Element[]>(initialElements);
-  const [showLayers, setShowLayers] = useState(true);
   const [copiedElements, setCopiedElements] = useState<Element[]>([]);
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
@@ -830,7 +837,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   return (
     <div className="flex flex-col h-full bg-gray-50 min-h-[400px]">
       {/* Envelope Status Banner */}
-      {(envelopeStatus || usingFallbackEnvelope) && (
+      {((envelopeStatus && envelopeStatus !== 'ready') || usingFallbackEnvelope) && (
         <div className={`px-4 py-2 border-b ${
           usingFallbackEnvelope
             ? 'bg-yellow-50 border-yellow-200'
@@ -895,18 +902,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             </button>
           )}
           {/* Templates disabled until solver-backed */}
-          {/* <button
-            onClick={() => setShowTemplates(!showTemplates)}
-            className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-          >
-            Templates
-          </button> */}
-          <button
-            onClick={() => setShowLayers(!showLayers)}
-            className="p-2 text-gray-600 hover:text-gray-900"
-          >
-            <Grid className="w-5 h-5" />
-          </button>
         </div>
       </div>
 
@@ -932,11 +927,17 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           }}
           onToggleGrid={grid.toggleGrid}
           onToggleSnapToGrid={grid.toggleSnapToGrid}
-          canCopy={selection.selectedCount > 0}
-          canPaste={copiedElements.length > 0}
-          canDelete={selection.selectedCount > 0}
-          canAlign={selection.selectedCount >= 2}
-          canVertexEdit={vertexEditing.isVertexEditing || selection.selectedCount === 1}
+          canCopy={selection.selectedCount > 0 && !staticPlan}
+          canPaste={copiedElements.length > 0 && !staticPlan}
+          canDelete={
+            selection.selectedCount > 0 &&
+            (!staticPlan ||
+              elements
+                .filter(el => selection.selectedElements.has(el.id) && el.type === 'building')
+                .every(el => el.properties?.pinned))
+          }
+          canAlign={selection.selectedCount >= 2 && !staticPlan}
+          canVertexEdit={!staticPlan && (vertexEditing.isVertexEditing || selection.selectedCount === 1)}
           isVertexEditing={vertexEditing.isVertexEditing}
           gridEnabled={grid.gridState.enabled}
           snapToGridEnabled={grid.gridState.snapToGrid}
