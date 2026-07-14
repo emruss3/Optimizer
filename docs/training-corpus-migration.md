@@ -1,13 +1,13 @@
 # Training corpus migration runbook
 
-This repository now contains the Supabase schema and ingestion code for the open-source training corpus and the private owner-controlled precedent pipeline.
+This repository contains the Supabase schema and ingestion code for the open-source training corpus and the private owner-controlled precedent pipeline.
 
 ## Included in source control
 
 - The private `training` schema and its license, artifact, ingestion, interior, precedent, release, and training-interface tables.
 - ProcTHOR geometry helpers and normalizer.
 - Pinned manifests for ProcTHOR, OpenStudio U.S. commercial archetypes, buildingSMART PCERT samples, and BIM Whale IFC fixtures.
-- The license gate that requires approved commercial use, zero license fee, and model-training permission.
+- The license gate requiring approved commercial use, zero license fee, and model-training permission.
 - `training-ingest` and `training-model-ingest` Edge Functions.
 - `training.refresh_us_commercial_corpus()` for repeatable U.S. commercial classification, metrics, templates, and release manifests.
 - Private PDF metadata, range, and text-extraction functions.
@@ -15,23 +15,55 @@ This repository now contains the Supabase schema and ingestion code for the open
 
 ## Excluded from this public repository
 
-Private PDFs, CAD/BIM files, extracted private page text, temporary access capabilities, private source URLs, and unapproved private geometry are not committed. The public migrations recreate the registry and rights contract, while private rows must be restored through the project's secure backup process.
+Private PDFs, CAD/BIM files, extracted private page text, temporary access capabilities, private source URLs, and unapproved private geometry are not committed. The public migrations recreate the registry and rights contract; private rows must be restored through the project's encrypted backup/private-object-store process.
 
 ## Restore order
 
 1. Apply migrations in timestamp order.
-2. Configure the database connection secret required by the server-side ingestion functions.
-3. Deploy `training-ingest` and `training-model-ingest` with their one-time database capability checks intact.
-4. Run the ProcTHOR ingestion jobs.
-5. Run the OpenStudio and IFC ingestion jobs.
-6. Refresh the normalized commercial corpus:
+2. Set the environment-specific Edge Function base URL:
+
+```sql
+insert into training.runtime_config(key,value)
+values('edge_base_url','https://YOUR_PROJECT_REF.supabase.co')
+on conflict(key) do update set value=excluded.value,updated_at=now();
+```
+
+3. Configure `SUPABASE_DB_URL` as an Edge Function secret. Never expose this value to browser code.
+4. Deploy the capability-protected workers. They intentionally use custom one-time database nonces or short-lived document capabilities rather than Supabase JWT verification:
+
+```bash
+supabase functions deploy training-ingest --no-verify-jwt
+supabase functions deploy training-model-ingest --no-verify-jwt
+supabase functions deploy private-pdf-metadata --no-verify-jwt
+supabase functions deploy private-pdf-proxy --no-verify-jwt
+supabase functions deploy private-pdf-page-text --no-verify-jwt
+supabase functions deploy private-pdf-slice-text --no-verify-jwt
+```
+
+5. Run ProcTHOR ingestion jobs:
+
+```sql
+select training.invoke_ingestion_job(id)
+from training.ingestion_jobs
+where job_type='jsonl_gzip_to_raw' and status in ('queued','failed','partial');
+```
+
+6. Run OpenStudio/IFC ingestion jobs:
+
+```sql
+select training.invoke_ingestion_job(id)
+from training.ingestion_jobs
+where job_type='ifc_to_bim' and status in ('queued','failed','partial');
+```
+
+7. Refresh the normalized commercial corpus after model ingestion finishes:
 
 ```sql
 select training.refresh_us_commercial_corpus();
 ```
 
-7. Restore the owner-controlled rows from the secure backup.
-8. Run the verification queries below.
+8. Restore owner-controlled rows from the encrypted backup/private object store.
+9. Run the verification queries below.
 
 ## Dataset roles
 
@@ -53,6 +85,24 @@ The migrations reconcile these registry slugs without publishing their documents
 - `owned_townhome_cd_20260311`
 
 Their policy allows internal commercial model training, program extraction, context selection, and derived outputs. Public redistribution is disabled. Geometry training and direct generation remain gated by rendered-sheet and dimensional QA.
+
+The secure restore should include rows tied to those slugs from:
+
+```text
+training.dataset_artifacts
+training.pdf_page_extract
+training.raw_documents
+training.site_precedents
+training.precedent_units
+training.building_interiors
+training.interior_spaces
+training.interior_connections
+training.interior_elements
+training.program_templates
+training.training_release_datasets
+```
+
+Do not restore expired viewer capabilities. Generate a new short-lived token only during an active private-document extraction session and revoke it afterward.
 
 ## Source-controlled private PDF functions
 
@@ -110,13 +160,20 @@ select training.refresh_us_commercial_corpus();
 ### Private safety check
 
 ```sql
-select slug, redistribution_allowed,
-       metadata->>'source_confidentiality' as confidentiality
-from training.dataset_registry
-where slug like 'owned_%';
+select d.slug,
+       d.redistribution_allowed,
+       d.metadata->>'source_confidentiality' as confidentiality,
+       count(*) filter (
+         where a.metadata ? 'viewer_token'
+           and nullif(a.metadata->>'viewer_expires_at','')::timestamptz > now()
+       ) as active_viewer_tokens
+from training.dataset_registry d
+left join training.dataset_artifacts a on a.dataset_id=d.id
+where d.slug like 'owned_%'
+group by d.slug,d.redistribution_allowed,d.metadata;
 ```
 
-Expected: private confidentiality metadata and `redistribution_allowed = false`.
+Expected: private confidentiality metadata, `redistribution_allowed = false`, and zero active viewer tokens outside an active extraction session.
 
 ## Release rules
 
