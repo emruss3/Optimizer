@@ -58,13 +58,13 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Add non-passive wheel event listener to allow preventDefault
+  // Add a non-passive wheel listener so the parent can prevent page scrolling
+  // when it intentionally handles the gesture as canvas zoom.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !onWheel) return;
 
     const wheelHandler = (event: WheelEvent) => {
-      event.preventDefault();
       // Create synthetic React event for compatibility
       const syntheticEvent = {
         ...event,
@@ -78,7 +78,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         deltaY: event.deltaY,
         deltaX: event.deltaX,
         deltaZ: event.deltaZ,
-        deltaMode: event.deltaMode
+        deltaMode: event.deltaMode,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
       } as React.WheelEvent<HTMLCanvasElement>;
       onWheel(syntheticEvent);
     };
@@ -863,9 +867,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       return;
     }
 
-    // Clear canvas
+    // Draw in CSS pixels while retaining a sharp high-DPI backing store.
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#F9FAFB';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Apply view transformations
     ctx.save();
@@ -967,7 +974,6 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
 
     // Screen-space chrome (after the world transform is popped)
-    const dpr = window.devicePixelRatio || 1;
     renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
     renderLegend(ctx, canvas.height / dpr, elements.some(e => e.type === 'other'));
   }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
@@ -1001,43 +1007,33 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     onElementClick(clickedElement || null, event);
   }, [elements, viewport, onElementClick]);
 
-  // Initialize canvas size
+  // Render when dependencies change
+  useEffect(() => {
+    render();
+  }, [render]);
+
+  // Keep the backing store synchronized with every CSS layout change, not
+  // only window resizes. The planner changes height when its responsive
+  // columns stack, and fitting against the new container while drawing into
+  // the old canvas size clips long parcels.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const resizeCanvas = () => {
       const rect = canvas.getBoundingClientRect();
-      const width = rect.width || 800;
-      const height = rect.height || 600;
-      
-      canvas.width = width * window.devicePixelRatio;
-      canvas.height = height * window.devicePixelRatio;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.round(rect.width * dpr));
+      const height = Math.max(1, Math.round(rect.height * dpr));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
       }
+      render();
     };
 
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-    return () => window.removeEventListener('resize', resizeCanvas);
-  }, []);
-
-  // Render when dependencies change
-  useEffect(() => {
-    render();
-  }, [render]);
-
-  // Also trigger render on mount and when canvas size changes
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const observer = new ResizeObserver(() => {
-      render();
-    });
-    
+    const observer = new ResizeObserver(resizeCanvas);
     observer.observe(canvas);
     return () => observer.disconnect();
   }, [render]);
@@ -1052,7 +1048,6 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseUp}
       onClick={handleClick}
-      style={{ display: 'block' }}
     />
   );
 };
