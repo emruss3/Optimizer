@@ -1,0 +1,127 @@
+# Training corpus migration runbook
+
+This repository now contains the Supabase schema and ingestion code for the open-source training corpus and the private owner-controlled precedent pipeline.
+
+## Included in source control
+
+- The private `training` schema and its license, artifact, ingestion, interior, precedent, release, and training-interface tables.
+- ProcTHOR geometry helpers and normalizer.
+- Pinned manifests for ProcTHOR, OpenStudio U.S. commercial archetypes, buildingSMART PCERT samples, and BIM Whale IFC fixtures.
+- The license gate that requires approved commercial use, zero license fee, and model-training permission.
+- `training-ingest` and `training-model-ingest` Edge Functions.
+- `training.refresh_us_commercial_corpus()` for repeatable U.S. commercial classification, metrics, templates, and release manifests.
+- Private PDF metadata, range, and text-extraction functions.
+- Registry and release policies for the two owner-controlled U.S. precedent datasets.
+
+## Excluded from this public repository
+
+Private PDFs, CAD/BIM files, extracted private page text, temporary access capabilities, private source URLs, and unapproved private geometry are not committed. The public migrations recreate the registry and rights contract, while private rows must be restored through the project's secure backup process.
+
+## Restore order
+
+1. Apply migrations in timestamp order.
+2. Configure the database connection secret required by the server-side ingestion functions.
+3. Deploy `training-ingest` and `training-model-ingest` with their one-time database capability checks intact.
+4. Run the ProcTHOR ingestion jobs.
+5. Run the OpenStudio and IFC ingestion jobs.
+6. Refresh the normalized commercial corpus:
+
+```sql
+select training.refresh_us_commercial_corpus();
+```
+
+7. Restore the owner-controlled rows from the secure backup.
+8. Run the verification queries below.
+
+## Dataset roles
+
+| Dataset | Role | Production precedent weight |
+|---|---|---:|
+| `procthor_10k` | Synthetic residential topology and object semantics | Context-dependent |
+| `openstudio_us_commercial_archetypes` | U.S. program and space-archetype seeds | Program prior only |
+| `buildingsmart_pcert_ifc_samples` | IFC parser and semantic fixtures | 0 |
+| `bim_whale_ifc_samples` | IFC hierarchy and element fixtures | 0 |
+| `swiss_dwellings` | Licensed foreign reference corpus | 0 for U.S. production priors |
+
+OpenStudio templates remain drafts until architectural review. IFC fixtures must never be used as U.S. layout precedents.
+
+## Private owner-controlled datasets
+
+The migrations reconcile these registry slugs without publishing their documents:
+
+- `owned_1300_4th_ave_multifamily_cd`
+- `owned_townhome_cd_20260311`
+
+Their policy allows internal commercial model training, program extraction, context selection, and derived outputs. Public redistribution is disabled. Geometry training and direct generation remain gated by rendered-sheet and dimensional QA.
+
+## Source-controlled private PDF functions
+
+- `private-pdf-metadata`
+- `private-pdf-proxy`
+- `private-pdf-page-text`
+- `private-pdf-slice-text`
+
+Temporary diagnostic functions from the original extraction are deliberately not part of the portable deployment package:
+
+- `private-pdf-stage`
+- `private-pdf-extract`
+- `private-pdf-range-probe`
+- `edge-capabilities`
+
+## Verification
+
+### Dataset rights
+
+```sql
+select slug,
+       training_use_status,
+       commercial_use_allowed,
+       license_fee_required,
+       model_training_allowed,
+       output_generation_allowed,
+       redistribution_allowed
+from training.dataset_registry
+order by slug;
+```
+
+### Eligible examples
+
+```sql
+select dataset_slug, split, count(*)
+from training.v_training_examples
+group by dataset_slug, split
+order by dataset_slug, split;
+```
+
+### Release manifests
+
+```sql
+select name, version, status, manifest
+from training.training_releases
+order by name, version;
+```
+
+### U.S. commercial refresh
+
+```sql
+select training.refresh_us_commercial_corpus();
+```
+
+### Private safety check
+
+```sql
+select slug, redistribution_allowed,
+       metadata->>'source_confidentiality' as confidentiality
+from training.dataset_registry
+where slug like 'owned_%';
+```
+
+Expected: private confidentiality metadata and `redistribution_allowed = false`.
+
+## Release rules
+
+- Frozen releases are immutable baselines.
+- Draft releases may be regenerated as parsers improve.
+- Parser fixtures always have precedent weight `0`.
+- Rights approval and geometry-quality approval are separate gates.
+- No template is approved for direct generation solely because its source is licensed or owner-controlled.
