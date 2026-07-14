@@ -86,6 +86,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const plannerCtxRef = useRef<PlannerContextResponse | null>(null);
   const [plannerLoading, setPlannerLoading] = useState(false);
   const [permittedUses, setPermittedUses] = useState<string[]>([]);
+  // The first compile must be for the FINAL default use — compiling while the
+  // as-of-right correction is still in flight routed plans off a
+  // wrong-use context (seen live: single_family compile racing multi_family
+  // correction on an RM40 parcel).
+  const [useResolved, setUseResolved] = useState(false);
   const [generationBlocked, setGenerationBlocked] = useState(false);
   const generationBlockedRef = useRef(false);
 
@@ -1036,6 +1041,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   useEffect(() => {
     if (contextOgcFid == null) return;
     let cancelled = false;
+    setUseResolved(false);
     (async () => {
       const raw = await fetchPermittedUses(contextOgcFid);
       if (cancelled) return;
@@ -1045,6 +1051,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         const preferred = pickDefaultUse(list);
         if (preferred && preferred !== contextUse) setContextUse(preferred);
       }
+      setUseResolved(true);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1053,7 +1060,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Compile the planner context (cached per parcel+use); the first auto-solve
   // waits for this settle or the existing fail-soft timeout below.
   useEffect(() => {
-    if (contextOgcFid == null) return;
+    if (contextOgcFid == null || !useResolved) return;
     let cancelled = false;
     setPlannerLoading(true);
     compilePlannerContext(contextOgcFid, contextUse)
@@ -1075,7 +1082,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextOgcFid, contextUse]);
+  }, [contextOgcFid, contextUse, useResolved]);
 
   // A1: load the parcel's scheme history on entry
   useEffect(() => {
