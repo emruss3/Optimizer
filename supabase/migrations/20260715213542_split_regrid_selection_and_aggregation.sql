@@ -1,0 +1,6 @@
+-- Applied to project okxrvetbzpoazrybhcqj on 2026-07-15 during iterative
+-- performance tuning of fn_local_built_form_v2.
+--
+-- Superseded by the consolidated portable definition in
+-- 20260715213803_use_regrid_parcel_zoning_subtype_directly.sql.
+-- This no-op preserves production migration-ledger parity.
