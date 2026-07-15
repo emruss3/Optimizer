@@ -70,7 +70,7 @@ where job_type='ifc_to_bim' and status in ('queued','failed','partial');
 select training.refresh_us_commercial_corpus();
 ```
 
-9. Restore owner-controlled rows from the encrypted backup/private object store.
+9. Restore owner-controlled rows from the encrypted backup (see "Private encrypted backup and restore" below).
 10. Run the verification queries below.
 
 To stop all new ingestion dispatches without removing workers, set `training.runtime_config.ingestion_enabled` back to `false`. Existing HTTP requests already claimed by an Edge Function are not cancelled by that setting.
@@ -114,6 +114,47 @@ training.training_release_datasets
 
 Do not restore expired viewer capabilities. Generate a new short-lived token only during an active private-document extraction session and revoke it afterward.
 
+## Private encrypted backup and restore
+
+The dependency closure, baseline counts, and security requirements are defined in `docs/private-training-backup-scope.md`. The tools live in `scripts/` and never print row contents, private URLs, or tokens; plaintext exists only inside a `0700` temp directory that is removed on exit.
+
+### Export
+
+```bash
+export SUPABASE_DB_URL='postgresql://...'            # source environment
+export TRAINING_BACKUP_AGE_RECIPIENT='age1...'       # encryption recipient (public key)
+export TRAINING_BACKUP_SOURCE_LABEL='production'     # recorded in the manifest
+scripts/training-private-export.sh                   # writes private-backups/ by default
+```
+
+The export produces `training-private-backup-<UTC>.tar.age` plus a `.sha256` sidecar. The archive contains one JSONL file per closure table and a manifest with the format version, creation time, source label, required latest migration version, root slugs, per-table row counts, per-file SHA-256 checksums, and the exporter git commit. Viewer capability fields (`viewer_token`, `viewer_expires_at`, `viewer_issued_at`) are stripped during export. Geometry is exported as SRID-preserving EWKB hex. There is no plaintext output mode, and `private-backups/` plus `*.tar.age` are git-ignored.
+
+### Restore
+
+```bash
+export SUPABASE_DB_URL='postgresql://...'                          # target environment
+export TRAINING_BACKUP_AGE_IDENTITY_FILE=/secure/path/key.txt      # age identity; never committed
+scripts/training-private-restore.sh --input private-backups/training-private-backup-<UTC>.tar.age --dry-run
+scripts/training-private-restore.sh --input private-backups/training-private-backup-<UTC>.tar.age
+```
+
+The restore refuses: unencrypted input, a missing or mismatched archive checksum sidecar, any per-file checksum mismatch against the manifest, a target whose `supabase_migrations` ledger is older than the manifest's required version, and a target missing the source-controlled `parcelmap_owned_us_precedents` release (releases are recreated by migrations, never by the restore). It runs as a single transaction that atomically replaces the existing closure for the two root slugs (idempotent re-restores), aborts if out-of-closure rows (`ingestion_runs`, `ingestion_jobs`, `parcel_plan_pairs`) reference the root datasets, preserves UUID keys, re-sequences bigint identity keys while remapping `interior_connections` → `interior_spaces` references, verifies restored counts against the manifest before commit, never recreates viewer capabilities, and leaves `training.runtime_config.ingestion_enabled` unchanged. `--dry-run` performs every validation and the full staged restore, then rolls back.
+
+After a restore:
+
+```bash
+npm run db:smoke:training
+npm run db:smoke:private
+```
+
+### Local disposable test suite
+
+```bash
+npm run test:training-backup
+```
+
+`tests/private-backup/run-local-tests.sh` stands up a throwaway PostgreSQL 16 cluster (unix socket, temp dir), applies the committed training migrations, seeds baseline-shaped SYNTHETIC fixtures (no real private data anywhere in the repository), and runs the full matrix: export integrity, dry-run, restore to an empty target, idempotent re-restore, wrong-identity rejection before writes, tamper/corruption detection, old-ledger refusal, missing-release refusal, viewer-field absence, manifest count matching, rights/geometry gates, the SQL-verifiable ingestion-gate assertions (`tests/private-backup/training_gates_test.sql`), and `db:smoke:training` against a corpus-shaped local target. Requirements: PostgreSQL 16 server binaries with PostGIS, `age`, `jq`, `npm`; `pg_net` is stubbed locally with a no-network extension. This suite never touches a remote environment.
+
 ## Source-controlled private PDF functions
 
 - `private-pdf-metadata`
@@ -137,7 +178,7 @@ export SUPABASE_DB_URL='postgresql://...'
 npm run db:smoke:all
 ```
 
-`db:smoke:all` runs the existing application RPC smoke suite and `tests/sql/training_corpus_smoke.sql`. The corpus suite verifies the license trigger, explicit ingestion enablement gate, required schema objects, the minimum eligible-example baseline, OpenStudio normalization coverage, draft-only generation status, parser-fixture isolation, owner-controlled rights gates, release statuses, environment-specific runtime routing, and denial of anonymous ingestion access.
+`db:smoke:all` runs the existing application RPC smoke suite and `tests/sql/training_corpus_smoke.sql`. `npm run db:smoke:private` runs `tests/sql/private_training_restore_smoke.sql`, which verifies the post-restore invariants of the owner-controlled corpus (rights contract, viewer-capability absence, raw-document linkage, release links, generation gates) without selecting private row contents. The corpus suite verifies the license trigger, explicit ingestion enablement gate, required schema objects, the minimum eligible-example baseline, OpenStudio normalization coverage, draft-only generation status, parser-fixture isolation, owner-controlled rights gates, release statuses, environment-specific runtime routing, and denial of anonymous ingestion access.
 
 For credential safety, pull-request workflows never receive `SUPABASE_DB_URL`. Run the database suite manually against staging or a Supabase development branch before merge. GitHub Actions runs the same command automatically only from a trusted push to `main`, when the repository has a `SUPABASE_DB_URL` secret. Prefer a staging or read-limited verification database rather than production.
 

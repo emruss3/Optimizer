@@ -65,7 +65,7 @@ A backup must record actual row counts in its manifest and a restore must compar
 - Write SHA-256 checksums for every exported table file and for the final encrypted archive.
 - Remove short-lived capability fields such as `viewer_token`, `viewer_expires_at`, and related issuance metadata during export. Restores must not recreate viewer capabilities.
 - Keep private source URLs and extracted page text only inside the encrypted archive. Never print row contents, URLs, or text previews to logs.
-- Preserve UUID and identity values so foreign keys remain stable.
+- Preserve UUID values so foreign keys remain stable. Bigint identity keys are re-sequenced by the restore target (verbatim values can collide with unrelated corpus rows the target already owns); the only in-closure reference to an identity key (`interior_connections` → `interior_spaces`) is remapped so every relationship survives intact.
 - Run restore in a transaction and make it idempotent with explicit conflict handling.
 - Refuse to restore into an environment whose migrations are older than the manifest's required migration version.
 
