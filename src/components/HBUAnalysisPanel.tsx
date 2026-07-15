@@ -9,7 +9,8 @@ import {
   BarChart3,
   Shield,
   Clock,
-  Percent
+  Percent,
+  ArrowRight
 } from 'lucide-react';
 import { useHBUAnalysis } from '../hooks/useHBUAnalysis';
 import { SelectedParcel } from '../types/parcel';
@@ -17,9 +18,11 @@ import { SelectedParcel } from '../types/parcel';
 interface HBUAnalysisPanelProps {
   parcel: SelectedParcel;
   onClose?: () => void;
+  /** When provided, the recommendation card offers a direct jump into the site planner. */
+  onDesignSitePlan?: () => void;
 }
 
-const HBUAnalysisPanel = React.memo(function HBUAnalysisPanel({ parcel, onClose }: HBUAnalysisPanelProps) {
+const HBUAnalysisPanel = React.memo(function HBUAnalysisPanel({ parcel, onClose, onDesignSitePlan }: HBUAnalysisPanelProps) {
   const {
     analysis,
     loading,
@@ -159,6 +162,16 @@ const HBUAnalysisPanel = React.memo(function HBUAnalysisPanel({ parcel, onClose 
           <div className="mt-2 text-sm text-blue-700">
             {recommended.use} • {formatCurrency(recommended.estimatedValue)} estimated value
           </div>
+        )}
+        {onDesignSitePlan && (
+          <button
+            onClick={onDesignSitePlan}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Building className="w-4 h-4" />
+            Design this in the Site Planner
+            <ArrowRight className="w-4 h-4" />
+          </button>
         )}
       </div>
 

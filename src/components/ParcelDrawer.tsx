@@ -19,6 +19,8 @@ import { SelectedParcel } from '../types/parcel';
 import ParcelUnderwritingPanel from './ParcelUnderwritingPanel';
 import FullAnalysisModal from './FullAnalysisModal';
 import MultiParcelAnalysis from './MultiParcelAnalysis';
+import SitePlanDesigner from './SitePlanDesigner';
+import { useParcelDetail } from '../hooks/useParcelDetail';
 
 interface ParcelDrawerProps {
   parcel: SelectedParcel;
@@ -32,7 +34,12 @@ interface ParcelDrawerProps {
 const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose, onAddToProject, hasActiveProject, onCreateProjectFromParcel }: ParcelDrawerProps) {
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
   const [showMultiParcelAnalysis, setShowMultiParcelAnalysis] = useState(false);
+  const [showSitePlanner, setShowSitePlanner] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'underwriting'>('overview');
+
+  // Hydrate the full parcel record (geometry + zoning constraints) for the
+  // planner; the drawer's map-click payload can be thin.
+  const { parcelDetail } = useParcelDetail(showSitePlanner ? parcel?.ogc_fid : null);
 
   if (!isOpen || !parcel) return null;
 
@@ -209,8 +216,16 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
               {/* Action Buttons */}
               <div className="space-y-3">
                 <button
-                  onClick={() => setShowFullAnalysis(true)}
+                  onClick={() => setShowSitePlanner(true)}
                   className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Building className="w-4 h-4" />
+                  <span>Site Planner</span>
+                </button>
+
+                <button
+                  onClick={() => setShowFullAnalysis(true)}
+                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
                 >
                   <BarChart3 className="w-4 h-4" />
                   <span>Full Analysis</span>
@@ -271,6 +286,20 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
         isOpen={showMultiParcelAnalysis}
         onClose={() => setShowMultiParcelAnalysis(false)}
       />
+
+      {/* Direct site planner — one click from the parcel, no modal detour.
+          SitePlanDesigner portals to <body> full-screen; closing it lands
+          back here on the map. */}
+      {showSitePlanner && (
+        <SitePlanDesigner
+          parcel={parcelDetail ?? {
+            ...parcel,
+            ogc_fid: String(parcel.ogc_fid),
+            geometry: parcel.geometry
+          }}
+          onClose={() => setShowSitePlanner(false)}
+        />
+      )}
     </>
   );
 });

@@ -79,7 +79,9 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
             scrolling card, and full screen must never cost an extra click. */}
         <div className="flex-1 overflow-hidden">
           {activeTab === 'site' ? (
-            <SitePlanDesigner parcel={p} onClose={() => setActiveTab('overview')} />
+            // "Back to map" must mean the map: close the whole modal stack,
+            // not bounce the user to the modal's Overview tab.
+            <SitePlanDesigner parcel={p} onClose={onClose} />
           ) : (
           <div className="h-full overflow-y-auto p-6">
             {activeTab === 'overview' && (
@@ -169,7 +171,9 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
               <div className="space-y-6">
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
                   <h2 className="text-xl font-semibold text-gray-900 mb-4">Highest & Best Use Analysis</h2>
-                  <HBUAnalysisPanel parcel={p} />
+                  {/* The recommendation is a starting point, not a dead end:
+                      hand the user straight to the planner tab from here. */}
+                  <HBUAnalysisPanel parcel={p} onDesignSitePlan={() => setActiveTab('site')} />
                 </div>
               </div>
             )}

@@ -27,7 +27,8 @@ import { useUIStore } from '../store/ui';
 import { SelectedParcel } from '../types/parcel';
 import { useHBUAnalysis } from '../hooks/useHBUAnalysis';
 import { useUnderwriting } from '../hooks/useUnderwriting';
-import { AIDrivenSitePlanGenerator, EnhancedSitePlanner } from './adapters/SitePlannerAdapters';
+import { useParcelDetail } from '../hooks/useParcelDetail';
+import SitePlanDesigner from './SitePlanDesigner';
 
 interface RealUnderwritingWorkflowProps {
   isOpen: boolean;
@@ -50,12 +51,16 @@ export function RealUnderwritingWorkflow({
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [showUnderwritingPanel, setShowUnderwritingPanel] = useState(false);
   const [showScenarioComparison, setShowScenarioComparison] = useState(false);
-  const [showAISitePlanGenerator, setShowAISitePlanGenerator] = useState(false);
-  const [showEnhancedSitePlanner, setShowEnhancedSitePlanner] = useState(false);
-  const [savedSitePlan, setSavedSitePlan] = useState<any>(null);
+  const [showSitePlanner, setShowSitePlanner] = useState(false);
   
   const { activeProjectId, activeProjectName, parcelIds: selectedParcelIds, addParcel, set: setActiveProject } = useActiveProject();
   const { setDrawer } = useUIStore();
+
+  // Hydrate full parcel geometry + zoning for the planner; the workflow's
+  // selected parcel payload can be thin.
+  const { parcelDetail: plannerParcel } = useParcelDetail(
+    showSitePlanner ? selectedParcel?.ogc_fid : null
+  );
   
   // Real analysis hooks
   const { 
@@ -167,22 +172,8 @@ export function RealUnderwritingWorkflow({
     }
   };
 
-  const handleOpenAISitePlanGenerator = () => {
-    setShowAISitePlanGenerator(true);
-  };
-
-  const handleOpenEnhancedSitePlanner = () => {
-    setShowEnhancedSitePlanner(true);
-  };
-
-  const handleSitePlanSaved = (sitePlan: any) => {
-    setSavedSitePlan(sitePlan);
-    setCurrentStep('scenarios');
-  };
-
-  const handleContinueToUnderwriting = (sitePlan: any) => {
-    setSavedSitePlan(sitePlan);
-    setCurrentStep('scenarios');
+  const handleOpenSitePlanner = () => {
+    setShowSitePlanner(true);
   };
 
   const handleCreateScenario = () => {
@@ -429,27 +420,14 @@ export function RealUnderwritingWorkflow({
                   </button>
                   
                   <button 
-                    onClick={handleOpenAISitePlanGenerator}
+                    onClick={handleOpenSitePlanner}
                     className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
                   >
                     <div className="flex items-center space-x-3">
                       <Building2 className="w-8 h-8 text-purple-600" />
                       <div>
-                        <div className="font-medium">Generate AI Site Plan</div>
-                        <div className="text-sm text-gray-600">AI creates site plan from HBU analysis</div>
-                      </div>
-                    </div>
-                  </button>
-                  
-                  <button 
-                    onClick={handleOpenEnhancedSitePlanner}
-                    className="w-full p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <Building2 className="w-8 h-8 text-purple-600" />
-                      <div>
-                        <div className="font-medium">Enhanced Site Planner</div>
-                        <div className="text-sm text-gray-600">Pre-populated design with save functionality</div>
+                        <div className="font-medium">Open Site Planner</div>
+                        <div className="text-sm text-gray-600">Design and optimize the site plan for this parcel</div>
                       </div>
                     </div>
                   </button>
@@ -497,32 +475,6 @@ export function RealUnderwritingWorkflow({
                   Create and compare multiple development strategies to optimize your investment 
                   returns and minimize risk.
                 </p>
-                
-                {savedSitePlan && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-6 max-w-2xl mx-auto mb-6">
-                    <div className="flex items-center space-x-3 mb-4">
-                      <CheckCircle className="w-6 h-6 text-green-600" />
-                      <div>
-                        <h4 className="font-semibold text-green-900">Site Plan Ready</h4>
-                        <p className="text-sm text-green-700">{savedSitePlan.name}</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4 text-center">
-                      <div>
-                        <div className="text-2xl font-bold text-green-600">{savedSitePlan.elements?.length || 0}</div>
-                        <div className="text-sm text-green-700">Elements</div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-green-600">{savedSitePlan.financial?.totalUnits || 0}</div>
-                        <div className="text-sm text-green-700">Units</div>
-                      </div>
-                      <div>
-                        <div className="text-2xl font-bold text-green-600">{savedSitePlan.compliance?.score || 0}%</div>
-                        <div className="text-sm text-green-700">Compliance</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 
                 <div className="space-y-4 max-w-md mx-auto">
                   <button 
@@ -767,30 +719,14 @@ export function RealUnderwritingWorkflow({
         </div>
       )}
 
-      {/* AI-Driven Site Plan Generator */}
-      <AIDrivenSitePlanGenerator
-        isOpen={showAISitePlanGenerator}
-        onClose={() => setShowAISitePlanGenerator(false)}
-        selectedParcel={selectedParcel}
-        hbuAnalysis={analysis}
-        onAnalysisComplete={(analysis) => {
-          console.log('HBU analysis completed:', analysis);
-        }}
-        onSitePlanGenerated={(sitePlan) => {
-          console.log('AI site plan generated:', sitePlan);
-          setCurrentStep('scenarios');
-        }}
-      />
-
-      {/* Enhanced Site Planner */}
-      <EnhancedSitePlanner
-        isOpen={showEnhancedSitePlanner}
-        onClose={() => setShowEnhancedSitePlanner(false)}
-        selectedParcel={selectedParcel}
-        hbuAnalysis={analysis}
-        onSitePlanSaved={handleSitePlanSaved}
-        onContinueToUnderwriting={handleContinueToUnderwriting}
-      />
+      {/* Canonical site planner — same full-screen designer as everywhere
+          else in the app; the legacy AI/Enhanced planner modals are retired. */}
+      {showSitePlanner && selectedParcel && (
+        <SitePlanDesigner
+          parcel={plannerParcel ?? selectedParcel}
+          onClose={() => setShowSitePlanner(false)}
+        />
+      )}
     </div>
   );
 }
