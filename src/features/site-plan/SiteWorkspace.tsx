@@ -24,7 +24,7 @@ import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
-import { generateMfSitePlan, generateMfSitePlanV2, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import {
   compilePlannerContext,
   plannerContextToDesignContext,
@@ -120,6 +120,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // REGENERATION (candidate tree), not by local re-packing.
   const planModeRef = useRef<'sf' | 'mf' | 'mf-server' | null>(null);
   const mfSeedRef = useRef(1);
+  // Product within the multifamily legal basis: stacked apartments (mf
+  // generator) or attached townhomes (th generator, attached-dwelling
+  // ordinance standards). Both route through the same compiled context.
+  const [product, setProduct] = useState<'apartments' | 'townhomes'>('apartments');
+  const productRef = useRef<'apartments' | 'townhomes'>('apartments');
   // A2 edit-as-regeneration state: current pins + the candidate the next
   // variation descends from; A1 rail data.
   const mfPinsRef = useRef<MfPin[]>([]);
@@ -317,21 +322,35 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
      *  predates the context contract — today's context must not silently
      *  rewrite what it meant). */
     contextId?: string | null;
+    /** Explicit product override (candidate replays); defaults to the
+     *  active product selection. */
+    product?: 'apartments' | 'townhomes';
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     const snapshot = plannerCtxRef.current;
     const effectiveContextId = opts.contextId !== undefined
       ? opts.contextId
       : snapshot?.context_id ?? null;
+    const effectiveProduct = opts.product ?? productRef.current;
     let resp = effectiveContextId
-      ? await generateMfSitePlanV2(contextOgcFid, effectiveContextId, {
-          seed: opts.seed,
-          pins: opts.pins,
-          parentId: opts.parentId,
-          persist: opts.persist,
-          typology: snapshot?.context.typology,
-        })
+      ? effectiveProduct === 'townhomes'
+        ? await generateThSitePlan(contextOgcFid, effectiveContextId, {
+            seed: opts.seed,
+            pins: opts.pins,
+            parentId: opts.parentId,
+            persist: opts.persist,
+          })
+        : await generateMfSitePlanV2(contextOgcFid, effectiveContextId, {
+            seed: opts.seed,
+            pins: opts.pins,
+            parentId: opts.parentId,
+            persist: opts.persist,
+            typology: snapshot?.context.typology,
+          })
       : null;
+    // Townhomes have no legacy fallback: silently rendering apartments in
+    // their place would misrepresent the selected product.
+    if (!resp && effectiveProduct === 'townhomes') return false;
     if (resp?.error === 'planner_generation_not_allowed') {
       generationBlockedRef.current = true;
       setGenerationBlocked(true);
@@ -437,6 +456,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         if (pending.final) setIsGenerating(false);
         pumpMfRegen(); // drain whatever arrived while solving
       });
+  }, [runServerMfPlan, activeCandidateId]);
+
+  /** Product switch within the multifamily basis: re-solve the site as
+   *  apartments or townhomes. Pins don't carry across products — an
+   *  apartment bar is not a townhome row. */
+  const handleProductChange = useCallback((next: 'apartments' | 'townhomes') => {
+    if (productRef.current === next) return;
+    productRef.current = next;
+    setProduct(next);
+    mfPinsRef.current = [];
+    mfSeedRef.current = 1;
+    void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'parameter_changed', activeCandidateId, { product: next });
+    if (generationBlockedRef.current) return;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: 1, pins: [], product: next })
+      .catch(() => undefined)
+      .finally(() => setIsGenerating(false));
   }, [runServerMfPlan, activeCandidateId]);
 
   const handleGenerate = useCallback(async (iterations?: unknown) => {
@@ -1085,6 +1121,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       planModeRef.current = null;
       mfSeedRef.current = 1;
       mfPinsRef.current = [];
+      productRef.current = 'apartments';
+      setProduct('apartments');
       setActiveCandidateId(null);
       setMfCandidates([]);
       ctxSettledRef.current = 'pending';
@@ -1244,12 +1282,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     mfRegenInFlightRef.current = true;
     setIsGenerating(true);
     void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_viewed', c.id);
+    // Townhome candidates are recognized by their unit-form metrics (only
+    // th_context_v1 writes unit_w_ft) so a replay re-runs the SAME product,
+    // and later edits stay in that product.
+    const candidateProduct: 'apartments' | 'townhomes' =
+      c.metrics.unit_w_ft != null ? 'townhomes' : 'apartments';
+    if (productRef.current !== candidateProduct) {
+      productRef.current = candidateProduct;
+      setProduct(candidateProduct);
+    }
     runServerMfPlan({
       seed: c.seed,
       pins: c.pins,
       parentId: c.parentId,
       persist: false,
       contextId: c.contextId ?? null,
+      product: candidateProduct,
     })
       .then(ok => {
         if (ok) {
@@ -1271,7 +1319,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (mfRegenInFlightRef.current) return;
     mfRegenInFlightRef.current = true;
     setIsGenerating(true);
-    runServerMfPlan({ seed: c.seed, pins: c.pins, parentId: c.id, persist: true })
+    runServerMfPlan({
+      seed: c.seed,
+      pins: c.pins,
+      parentId: c.id,
+      persist: true,
+      product: c.metrics.unit_w_ft != null ? 'townhomes' : 'apartments',
+    })
       .catch(() => undefined)
       .finally(() => {
         mfRegenInFlightRef.current = false;
@@ -1406,6 +1460,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             lotFitSummary={lotFitSummary}
             staticPlan={planModeRef.current === 'sf' || planModeRef.current === 'mf-server'}
             resolvedTypology={plannerCtx?.context.typology ?? null}
+            product={product}
+            onProductChange={plannerCtx?.context.typology === 'multifamily' ? handleProductChange : undefined}
             alternatives={alternatives}
             alternativeScores={solveScores}
             selectedSolveIndex={selectedSolveIndex}

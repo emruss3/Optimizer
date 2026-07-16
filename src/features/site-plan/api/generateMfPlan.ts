@@ -23,6 +23,8 @@ interface MfBuilding extends MfGeom {
   i: number;
   footprint_sqft?: number;
   floors?: number;
+  /** Townhome rows: unit count the server placed (th_context_v1) */
+  units?: number;
   /** User-pinned bar (edit-as-regeneration): kept verbatim by the generator */
   pinned?: boolean;
   pin_index?: number;
@@ -99,17 +101,23 @@ export function mfPlanToElements(resp: MfPlanResponse): {
   const elements: Element[] = [];
   const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
 
+  const isTownhome = resp.typology === 'townhome';
   for (const b of resp.buildings ?? []) {
     const poly = toCanvasPolygon(b.geom);
     if (!poly) continue;
     const floors = Math.max(1, Math.round(b.floors ?? 3));
-    const unitsForBar = Math.max(1, Math.round(((b.footprint_sqft ?? 0) * floors) / AVG_UNIT_SF));
+    // Townhome rows carry their real unit count; apartment bars estimate
+    // from GFA at the server's average-unit assumption.
+    const unitsForBar = Math.max(
+      1,
+      Math.round(b.units ?? ((b.footprint_sqft ?? 0) * floors) / AVG_UNIT_SF)
+    );
     elements.push({
       // Pinned bars keep a STABLE id across regenerations (index-based ids
       // renumber every solve, which would break live-drag element identity)
       id: b.pinned ? `mfgen-pin-${b.pin_index ?? 0}` : `mfgen-bldg-${b.i}`,
       type: 'building',
-      name: `Building ${b.i}`,
+      name: isTownhome && b.units ? `Townhomes ${b.i} · ${b.units}u` : `Building ${b.i}`,
       geometry: poly,
       properties: {
         areaSqFt: b.footprint_sqft,
@@ -303,6 +311,38 @@ export async function generateMfSitePlanV2(
     return (data as MfPlanResponse) ?? null;
   } catch (err) {
     console.warn('[generateMfPlan] v2 RPC threw:', err);
+    return null;
+  }
+}
+
+/**
+ * Townhome product (th_context_v1): same context gate and response shape as
+ * the MF generator, but a row/motor-court grammar with attached-dwelling
+ * ordinance standards and townhome-typology Regrid unit form. Reuses the
+ * MfPlanResponse pipeline (mapper, pins, rail, money) end to end.
+ */
+export async function generateThSitePlan(
+  ogcFid: number,
+  contextId: string,
+  opts: Omit<MfGenerateOptions, 'typology'> = {}
+): Promise<MfPlanResponse | null> {
+  try {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc('fn_generate_th_site_plan', {
+      p_ogc_fid: ogcFid,
+      p_seed: opts.seed ?? 1,
+      p_pins: opts.pins && opts.pins.length > 0 ? opts.pins : null,
+      p_parent: opts.parentId ?? null,
+      p_persist: opts.persist ?? true,
+      p_context_id: contextId,
+    });
+    if (error) {
+      console.warn('[generateThPlan] RPC failed:', error.message ?? error);
+      return null;
+    }
+    return (data as MfPlanResponse) ?? null;
+  } catch (err) {
+    console.warn('[generateThPlan] RPC threw:', err);
     return null;
   }
 }

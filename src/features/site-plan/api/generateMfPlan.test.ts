@@ -5,6 +5,7 @@ import {
   isContextContractError,
   listMfCandidates,
   generateMfSitePlanV2,
+  generateThSitePlan,
   type MfPlanResponse,
 } from './generateMfPlan';
 
@@ -106,6 +107,66 @@ describe('mfPlanToElements', () => {
     // garbage geometry is skipped, not thrown
     const r = mfPlanToElements({ buildings: [{ i: 1, geom: 'not-json' }], metrics: { gfa_sqft: 100 } });
     expect(r.elements).toHaveLength(0);
+  });
+});
+
+describe('townhome plans (th_context_v1) ride the same pipeline', () => {
+  const TH_RESP: MfPlanResponse = {
+    parcel_ogc_fid: 669046,
+    typology: 'townhome',
+    seed: 1,
+    plan_basis: 'Townhomes on planner_context_v2 · 41 TH comps (medium) · 10 bldgs / 52 units × 2 fl',
+    persisted: true,
+    buildings: [
+      { i: 1, units: 6, footprint_sqft: 4206, floors: 2, geom: square(-86.81, 36.14) },
+      { i: 2, units: 4, footprint_sqft: 2804, floors: 2, geom: square(-86.809, 36.14) },
+    ],
+    parking: [{ stalls: 30, geom: square(-86.811, 36.141) }],
+    drives: [{ geom: square(-86.8112, 36.1405) }],
+    greens: [{ area_sqft: 3200, geom: square(-86.8095, 36.1408) }],
+    amenity: [],
+    metrics: {
+      buildings: 2, bars: 2, floors: 2, footprint_sqft: 7010, gfa_sqft: 14020,
+      units_est: 10, unit_cap: 68, unit_w_ft: 19, unit_d_ft: 36.9,
+      stalls: 20, stalls_required: 15, parking_ratio_provided: 2,
+      coverage_pct: 6.8, far: 0.14, parcel_sqft: 103101, open_space_pct: 80.1,
+    },
+    flags: ['townhome_on_multifamily_legal_basis', 'attached_ordinance_standards_applied'],
+  };
+
+  it('maps townhome rows with their real unit counts (not the GFA estimate)', () => {
+    const { elements, metrics } = mfPlanToElements(TH_RESP);
+    const rows = elements.filter(e => e.type === 'building');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].name).toBe('Townhomes 1 · 6u');
+    // unitMix reflects the server's placed units for the row, not GFA/950
+    const mix = rows[0].properties?.unitMix as { count: number }[] | undefined;
+    const totalUnits = (mix ?? []).reduce((s, u) => s + u.count, 0);
+    expect(totalUnits).toBe(6);
+    expect(metrics?.totalUnits).toBe(10);
+    // mfgen ids: pins/strip/regenerate logic treats products identically
+    expect(rows.every(isMfPlanElement)).toBe(true);
+  });
+
+  it('generateThSitePlan hits the townhome RPC with the context id', async () => {
+    rpcMock.mockResolvedValueOnce({ data: TH_RESP, error: null });
+    const resp = await generateThSitePlan(669046, 'ctx-th-1', { seed: 3, persist: false });
+    expect(rpcMock).toHaveBeenCalledWith('fn_generate_th_site_plan', expect.objectContaining({
+      p_ogc_fid: 669046,
+      p_context_id: 'ctx-th-1',
+      p_seed: 3,
+      p_persist: false,
+    }));
+    expect(resp?.typology).toBe('townhome');
+  });
+
+  it('contract rejections surface as responses; transport failures as null', async () => {
+    rpcMock.mockResolvedValueOnce({ data: { error: 'planner_generation_not_allowed' }, error: null });
+    const rejected = await generateThSitePlan(669046, 'ctx-th-1');
+    expect(rejected?.error).toBe('planner_generation_not_allowed');
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'network' } });
+    const failed = await generateThSitePlan(669046, 'ctx-th-1');
+    expect(failed).toBeNull();
   });
 });
 

@@ -43,6 +43,10 @@ type ParametersPanelProps = {
   staticPlan?: boolean;
   /** Compiled-context typology — gates which generator buttons make sense */
   resolvedTypology?: string | null;
+  /** Product within the multifamily basis (apartments vs attached townhomes) */
+  product?: 'apartments' | 'townhomes';
+  /** Present only when the compiled context supports a product choice */
+  onProductChange?: (product: 'apartments' | 'townhomes') => void;
 
   // Current plan data for snapshot (used by save)
   currentElements: Element[];
@@ -105,6 +109,8 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
   onToggleFavorite,
   staticPlan = false,
   resolvedTypology,
+  product = 'apartments',
+  onProductChange,
 }) => {
   const [saveName, setSaveName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -128,6 +134,39 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
       <div className="text-xs text-gray-600 truncate mb-3" title={parcel.address}>
         {parcel.address}
       </div>
+
+      {onProductChange && (
+        <div className="mb-3">
+          <div className="text-[11px] font-medium text-gray-500 mb-1">Product</div>
+          <div className="grid grid-cols-2 gap-1 p-0.5 bg-gray-100 rounded-md" role="radiogroup" aria-label="Product type">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={product === 'apartments'}
+              onClick={() => onProductChange('apartments')}
+              className={`px-2 py-1.5 text-xs rounded ${product === 'apartments' ? 'bg-white shadow-sm font-semibold text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Apartments
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={product === 'townhomes'}
+              onClick={() => onProductChange('townhomes')}
+              className={`px-2 py-1.5 text-xs rounded ${product === 'townhomes' ? 'bg-white shadow-sm font-semibold text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Townhomes
+            </button>
+          </div>
+          {product === 'townhomes' && (
+            <p className="mt-1 text-[10px] leading-snug text-gray-500">
+              Attached-dwelling standards (party-wall setbacks, min lot/unit,
+              stories cap) from the ordinance; unit form from local townhome
+              comps.
+            </p>
+          )}
+        </div>
+      )}
 
       {staticPlan && (
         <p className="mb-3 text-[11px] leading-snug text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
