@@ -40,6 +40,8 @@ const SchemesRail: React.FC<{
           const units = n(c.metrics.units_est);
           const stalls = n(c.metrics.stalls);
           const far = n(c.metrics.far);
+          // Only th_context_v1 writes unit-form metrics — the product tag
+          const isTownhome = c.metrics.unit_w_ft != null;
           const active = c.id === activeId;
           const margin = typeof c.marginOnCost === 'number' ? c.marginOnCost : null;
           const isBest = bestMargin != null && margin === bestMargin && margins.length > 1;
@@ -63,6 +65,14 @@ const SchemesRail: React.FC<{
                 className="w-full text-left px-2 py-1.5 flex items-center gap-2 disabled:opacity-50"
               >
                 <span className="font-mono text-[10px] text-gray-400 flex-shrink-0">{time}</span>
+                {isTownhome && (
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1 flex-shrink-0"
+                    title="Townhome scheme (attached-dwelling standards)"
+                  >
+                    TH
+                  </span>
+                )}
                 <span className="font-medium text-gray-900 tabular-nums">
                   {units != null ? `${units} u` : '—'}
                 </span>
