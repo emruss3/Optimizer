@@ -1,0 +1,10 @@
+-- Applied to project okxrvetbzpoazrybhcqj on 2026-07-15 during iterative
+-- performance tuning of fn_local_built_form_v2.
+--
+-- This intermediate live definition is intentionally consolidated into the
+-- portable final definition in:
+--   20260715213803_use_regrid_parcel_zoning_subtype_directly.sql
+--
+-- Retaining this versioned no-op keeps the repository migration ledger aligned
+-- with production without replaying a superseded, slower implementation in new
+-- environments.
