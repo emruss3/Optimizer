@@ -19,6 +19,7 @@ import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
 import { normalizeToPolygon } from '../engine/geometry';
+import { feetToMeters, metersToFeet } from '../engine/units';
 
 // Modular hooks
 import { useViewport } from '../hooks/useViewport';
@@ -150,6 +151,26 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   // Last delta actually applied to the dragged element (incl. magnetic snap),
   // so mouse-up commits exactly what the user saw.
   const lastDragDeltaRef = useRef<{ dx: number; dy: number } | null>(null);
+  // Corner-drag resize (buildings): the grabbed corner follows the mouse
+  // while the opposite corner stays fixed. Everything is derived in the
+  // building's own frame so rotated bars resize along their real axes.
+  const resizeRef = useRef<{
+    elementId: string;
+    fixed: { x: number; y: number };
+    fixedIndex: number;
+    u: { x: number; y: number }; // unit vector fixed → adjacent (width axis)
+    v: { x: number; y: number }; // unit vector fixed → other adjacent (depth axis)
+    floors?: number;
+  } | null>(null);
+  const lastResizeUpdateRef = useRef<{
+    id: string;
+    anchor: { x: number; y: number };
+    rotationRad: number;
+    widthFt: number;
+    depthFt: number;
+    floors?: number;
+  } | null>(null);
+  const [hoveringResizeCorner, setHoveringResizeCorner] = useState(false);
   
   // Merge solver results in WITHOUT touching the element being manipulated —
   // this is what lets parking re-pack live under a drag with no fighting.
@@ -218,6 +239,45 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const edge1 = Math.hypot(x2 - x1, y2 - y1);
     const edge2 = Math.hypot(x3 - x2, y3 - y2);
     return { widthFt: edge1, depthFt: edge2 };
+  }, []);
+
+  /** Nearest rectangle corner of a building footprint within tolerance, or null.
+   *  Only 4-corner rings resize parametrically (L/U shapes are solver-owned). */
+  const findBuildingCorner = useCallback((element: Element, worldX: number, worldY: number, tol: number): number | null => {
+    if (element.type !== 'building') return null;
+    const coords = element.geometry.coordinates[0];
+    if (coords.length !== 5) return null; // 4 corners + closing vertex
+    let best: number | null = null;
+    let bestDist = tol;
+    for (let i = 0; i < 4; i++) {
+      const d = Math.hypot(coords[i][0] - worldX, coords[i][1] - worldY);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }, []);
+
+  /** Begin a corner resize: the corner opposite the grabbed one stays fixed. */
+  const startCornerResize = useCallback((element: Element, cornerIndex: number) => {
+    const coords = element.geometry.coordinates[0];
+    const fixedIndex = (cornerIndex + 2) % 4;
+    const fixed = { x: coords[fixedIndex][0], y: coords[fixedIndex][1] };
+    const a = coords[(fixedIndex + 1) % 4];
+    const b = coords[(fixedIndex + 3) % 4];
+    const uLen = Math.hypot(a[0] - fixed.x, a[1] - fixed.y) || 1;
+    const vLen = Math.hypot(b[0] - fixed.x, b[1] - fixed.y) || 1;
+    resizeRef.current = {
+      elementId: element.id,
+      fixed,
+      fixedIndex,
+      u: { x: (a[0] - fixed.x) / uLen, y: (a[1] - fixed.y) / uLen },
+      v: { x: (b[0] - fixed.x) / vLen, y: (b[1] - fixed.y) / vLen },
+      floors: (element.properties?.stories as number) || (element.properties?.floors as number),
+    };
+    lastResizeUpdateRef.current = null;
+    activeManipulationRef.current = element.id;
   }, []);
 
   const getElementRotationRad = useCallback((element: Element) => {
@@ -408,6 +468,17 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             return;
           }
 
+          // Corner grab on a selected building = parametric resize (width/depth
+          // through the solver), NOT local vertex editing — a locally-reshaped
+          // building would be wiped by the next re-solve.
+          if (selectedElement.type === 'building' && onBuildingUpdate) {
+            const corner = findBuildingCorner(selectedElement, worldX, worldY, 12 / viewport.viewport.zoom);
+            if (corner != null) {
+              startCornerResize(selectedElement, corner);
+              return;
+            }
+          }
+
           // Check for vertex editing
           if (vertexEditing.isVertexEditing) {
             const nearest = ElementService.findNearestVertex(selectedElement, worldX, worldY, 15 / viewport.viewport.zoom);
@@ -421,9 +492,10 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         }
       }
 
-      // Check for vertex near click (for enabling vertex editing)
+      // Check for vertex near click (for enabling vertex editing).
+      // Buildings are excluded: their corners resize parametrically above.
       const clickedElement = ElementService.findElementAtPoint(elements, worldX, worldY);
-      if (clickedElement && selection.isSelected(clickedElement.id)) {
+      if (clickedElement && clickedElement.type !== 'building' && selection.isSelected(clickedElement.id)) {
         const nearest = ElementService.findNearestVertex(clickedElement, worldX, worldY, 15 / viewport.viewport.zoom);
         if (nearest) {
           vertexEditing.enableVertexEditing(clickedElement.id, nearest.vertexIndex);
@@ -468,7 +540,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         setLastPanPoint({ x: event.clientX, y: event.clientY });
       }
     }
-  }, [elements, viewport.viewport, drawingTools, selection, drag, grid, measurement, vertexEditing, rotation]);
+  }, [elements, viewport.viewport, drawingTools, selection, drag, grid, measurement, vertexEditing, rotation, onBuildingUpdate, findBuildingCorner, startCornerResize]);
 
   // Handle mouse move
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -481,6 +553,75 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const worldY = -(event.clientY - rect.top - viewport.viewport.panY) / viewport.viewport.zoom;
     const hovered = ElementService.findElementAtPoint(elements, worldX, worldY);
     setHoveredElement(hovered?.id || null);
+
+    // Corner resize in progress: rebuild the rectangle from the fixed corner
+    // toward the mouse, stream it through the same pipe as drags.
+    const resize = resizeRef.current;
+    if (resize) {
+      const el = elements.find(e => e.id === resize.elementId);
+      if (el) {
+        const MIN_M = 3; // never collapse below ~10ft
+        const dx = worldX - resize.fixed.x;
+        const dy = worldY - resize.fixed.y;
+        let w = dx * resize.u.x + dy * resize.u.y;
+        let h = dx * resize.v.x + dy * resize.v.y;
+        if (grid.gridState.snapToGrid) {
+          const g = feetToMeters(grid.gridState.size);
+          w = Math.round(w / g) * g;
+          h = Math.round(h / g) * g;
+        }
+        w = Math.max(MIN_M, w);
+        h = Math.max(MIN_M, h);
+
+        const { fixed, fixedIndex, u, v } = resize;
+        const corners: number[][] = new Array(4);
+        corners[fixedIndex] = [fixed.x, fixed.y];
+        corners[(fixedIndex + 1) % 4] = [fixed.x + u.x * w, fixed.y + u.y * w];
+        corners[(fixedIndex + 2) % 4] = [fixed.x + u.x * w + v.x * h, fixed.y + u.y * w + v.y * h];
+        corners[(fixedIndex + 3) % 4] = [fixed.x + v.x * h, fixed.y + v.y * h];
+        const ring = [...corners, [...corners[0]]];
+
+        setElements(prev => prev.map(e =>
+          e.id === resize.elementId
+            ? {
+                ...e,
+                geometry: { ...e.geometry, coordinates: [ring] },
+                metadata: { ...e.metadata, updatedAt: new Date().toISOString() },
+              }
+            : e
+        ));
+
+        // Spec update in the Shell's canonical frame: width along c0→c1,
+        // depth along c1→c2, rotation from c0→c1 (matches getElementDimensions).
+        const widthM = Math.hypot(ring[1][0] - ring[0][0], ring[1][1] - ring[0][1]);
+        const depthM = Math.hypot(ring[2][0] - ring[1][0], ring[2][1] - ring[1][1]);
+        const rotationRad = Math.atan2(ring[1][1] - ring[0][1], ring[1][0] - ring[0][0]);
+        const anchor = ringCentroid(ring);
+        const update = {
+          id: resize.elementId,
+          anchor,
+          rotationRad,
+          widthFt: widthM, // Shell field names are legacy — meters
+          depthFt: depthM,
+          floors: resize.floors,
+        };
+        lastResizeUpdateRef.current = update;
+        queueBuildingUpdate(update);
+      }
+      return;
+    }
+
+    // Hover feedback: resize cursor over a selected building's corners
+    if (!drag.dragState.isDragging && !rotation.rotationState.isRotating && selection.selectedCount === 1 && onBuildingUpdate) {
+      const selectedId = Array.from(selection.selectedElements)[0];
+      const sel = elements.find(e => e.id === selectedId);
+      const overCorner = sel && sel.type === 'building'
+        ? findBuildingCorner(sel, worldX, worldY, 12 / viewport.viewport.zoom) != null
+        : false;
+      setHoveringResizeCorner(prev => (prev === overCorner ? prev : overCorner));
+    } else if (hoveringResizeCorner) {
+      setHoveringResizeCorner(false);
+    }
 
     // Panning
     if (isPanning) {
@@ -660,10 +801,22 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         ));
       }
     }
-  }, [isPanning, lastPanPoint, viewport.viewport.zoom, viewport.viewport.panX, viewport.viewport.panY, viewport.pan, drag.dragState, drag.updateDrag, drag.getDragDelta, selection.selectedElements, elements, measurement.measurementState, measurement.updateMeasurement, grid.snapPoint, drawingTools.activeTool, vertexEditing.isVertexEditing, vertexEditing.selectedVertex, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate, buildableEnvelope]);
+  }, [isPanning, lastPanPoint, viewport.viewport.zoom, viewport.viewport.panX, viewport.viewport.panY, viewport.pan, drag.dragState, drag.updateDrag, drag.getDragDelta, selection.selectedElements, selection.selectedCount, elements, measurement.measurementState, measurement.updateMeasurement, grid.snapPoint, grid.gridState.snapToGrid, grid.gridState.size, drawingTools.activeTool, vertexEditing.isVertexEditing, vertexEditing.selectedVertex, getElementDimensions, getElementRotationRad, onBuildingUpdate, queueBuildingUpdate, buildableEnvelope, rotation.rotationState, findBuildingCorner, hoveringResizeCorner]);
 
   // Handle mouse up
   const handleMouseUp = useCallback(() => {
+    // Commit a corner resize: the last streamed geometry becomes authoritative.
+    if (resizeRef.current) {
+      const finalUpdate = lastResizeUpdateRef.current;
+      if (finalUpdate) {
+        queueBuildingUpdate(finalUpdate, { final: true });
+      }
+      resizeRef.current = null;
+      lastResizeUpdateRef.current = null;
+      activeManipulationRef.current = null;
+      return;
+    }
+
     if (drag.dragState.isDragging && drag.dragState.elementId) {
       const draggedElement = elements.find(el => el.id === drag.dragState.elementId);
       const origCoords = drag.dragState.originalVertices?.find(
@@ -721,6 +874,45 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const newZoom = Math.max(0.1, Math.min(10, viewport.viewport.zoom * zoomFactor));
     viewport.zoomTo(newZoom, mouseX, mouseY);
   }, [viewport]);
+
+  // Selected building (single selection) — drives the floating inspector.
+  const selectedBuilding = useMemo(() => {
+    if (selection.selectedCount !== 1) return null;
+    const id = Array.from(selection.selectedElements)[0];
+    const el = elements.find(e => e.id === id);
+    return el && el.type === 'building' ? el : null;
+  }, [selection.selectedCount, selection.selectedElements, elements]);
+
+  /** Manual floors change: same authoritative pipe as drag/resize. */
+  const handleFloorsChange = useCallback((delta: number) => {
+    if (!selectedBuilding || !onBuildingUpdate) return;
+    const current = Math.max(
+      1,
+      Math.round(
+        (selectedBuilding.properties?.stories as number) ||
+        (selectedBuilding.properties?.floors as number) || 1
+      )
+    );
+    const next = Math.min(30, Math.max(1, current + delta));
+    if (next === current) return;
+    const coords = selectedBuilding.geometry.coordinates[0];
+    const { widthFt, depthFt } = getElementDimensions(selectedBuilding);
+    queueBuildingUpdate({
+      id: selectedBuilding.id,
+      anchor: ringCentroid(coords),
+      rotationRad: getElementRotationRad(selectedBuilding),
+      widthFt,
+      depthFt,
+      floors: next,
+    }, { final: true });
+    // Optimistic floors so the label/inspector tick immediately while the
+    // solver round-trips.
+    setElements(prev => prev.map(el =>
+      el.id === selectedBuilding.id
+        ? { ...el, properties: { ...el.properties, floors: next, stories: next } }
+        : el
+    ));
+  }, [selectedBuilding, onBuildingUpdate, getElementDimensions, getElementRotationRad, queueBuildingUpdate]);
 
   // Alignment tools
   const handleAlign = useCallback((alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
@@ -957,6 +1149,53 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
               onClose={() => setShowTemplates(false)}
             />
           )}
+          {/* Selected-building inspector: read the bar, change floors by hand.
+              Width/depth change by corner-drag; floors have no gesture, so
+              they get buttons. */}
+          {selectedBuilding && onBuildingUpdate && (() => {
+            const { widthFt: wM, depthFt: dM } = getElementDimensions(selectedBuilding);
+            const floors = Math.max(
+              1,
+              Math.round(
+                (selectedBuilding.properties?.stories as number) ||
+                (selectedBuilding.properties?.floors as number) || 1
+              )
+            );
+            const wFt = Math.round(metersToFeet(wM));
+            const dFt = Math.round(metersToFeet(dM));
+            const areaSqFt = (selectedBuilding.properties?.areaSqFt as number) || Math.round(wFt * dFt);
+            return (
+              <div className="absolute top-3 left-3 z-10 bg-white rounded-lg shadow-md border border-gray-200 px-3 py-2 text-sm flex items-center gap-3">
+                <div className="min-w-0">
+                  <div className="font-semibold text-gray-900 truncate">
+                    {selectedBuilding.name || selectedBuilding.id}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {wFt} × {dFt} ft · {Math.round(areaSqFt * floors).toLocaleString()} SF GFA
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 border-l border-gray-200 pl-3">
+                  <span className="text-xs text-gray-500">Floors</span>
+                  <button
+                    onClick={() => handleFloorsChange(-1)}
+                    disabled={floors <= 1}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Remove a floor"
+                  >
+                    −
+                  </button>
+                  <span className="w-6 text-center font-semibold text-gray-900">{floors}</span>
+                  <button
+                    onClick={() => handleFloorsChange(1)}
+                    className="w-6 h-6 flex items-center justify-center rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    aria-label="Add a floor"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           {/* On-canvas zoom cluster — always visible, works on any input
               device, and (unlike wheel semantics) needs no discovery. */}
           <div className="absolute bottom-4 right-4 z-10 flex flex-col rounded-lg shadow-md border border-gray-200 bg-white overflow-hidden">
@@ -1009,9 +1248,11 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
                 ? 'grabbing'
                 : drawingTools.activeTool === 'measure'
                   ? 'crosshair'
-                  : hoveredElement
-                    ? 'move'
-                    : 'grab'
+                  : hoveringResizeCorner
+                    ? 'nwse-resize'
+                    : hoveredElement
+                      ? 'move'
+                      : 'grab'
             }
           />
           

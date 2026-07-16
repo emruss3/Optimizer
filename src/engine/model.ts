@@ -15,22 +15,27 @@ export interface UnitMixEntry {
 
 /**
  * Standard unit type definitions.
- * Studio: 450sf, 10%, $1500/mo
- * 1BR: 650sf, 40%, $1800/mo
- * 2BR: 900sf, 35%, $2200/mo
- * 3BR: 1200sf, 15%, $2800/mo
+ * Studio: 550sf, 10%, $1500/mo
+ * 1BR: 700sf, 40%, $1800/mo
+ * 2BR: 1100sf, 35%, $2200/mo
+ * 3BR: 1600sf, 15%, $2800/mo
  */
-const UNIT_TYPE_DEFS: Array<{
+export const UNIT_TYPE_DEFS: Array<{
   type: UnitMixEntry['type'];
   avgSqft: number;
   pct: number;
   rentPerMonth: number;
 }> = [
-  { type: 'studio', avgSqft: 450, pct: 0.10, rentPerMonth: 1500 },
-  { type: '1br',    avgSqft: 650, pct: 0.40, rentPerMonth: 1800 },
-  { type: '2br',    avgSqft: 900, pct: 0.35, rentPerMonth: 2200 },
-  { type: '3br',    avgSqft: 1200, pct: 0.15, rentPerMonth: 2800 },
+  { type: 'studio', avgSqft: 550, pct: 0.10, rentPerMonth: 1500 },
+  { type: '1br',    avgSqft: 700, pct: 0.40, rentPerMonth: 1800 },
+  { type: '2br',    avgSqft: 1100, pct: 0.35, rentPerMonth: 2200 },
+  { type: '3br',    avgSqft: 1600, pct: 0.15, rentPerMonth: 2800 },
 ];
+
+/** Mix-weighted average unit size (sqft) — single source for unit-count estimates. */
+export const WEIGHTED_AVG_UNIT_SQFT = UNIT_TYPE_DEFS.reduce(
+  (sum, d) => sum + d.avgSqft * d.pct, 0
+);
 
 /** Double-loaded-corridor width (5 ft) and core (stairs/elevators/lobby) loss. */
 const CORRIDOR_WIDTH_M = 1.524;
@@ -76,10 +81,7 @@ export function generateUnitMixForCount(totalUnits: number): UnitMixEntry[] {
  * count. Total units = floor(GFA * efficiency / weightedAvgSqft).
  */
 export function generateDefaultUnitMix(gfaSqft: number, efficiency = 0.85): UnitMixEntry[] {
-  const weightedAvgSqft = UNIT_TYPE_DEFS.reduce(
-    (sum, d) => sum + d.avgSqft * d.pct, 0
-  );
-  const totalUnits = Math.max(1, Math.floor(gfaSqft * efficiency / weightedAvgSqft));
+  const totalUnits = Math.max(1, Math.floor(gfaSqft * efficiency / WEIGHTED_AVG_UNIT_SQFT));
   return generateUnitMixForCount(totalUnits);
 }
 

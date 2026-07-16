@@ -54,14 +54,17 @@ export interface MfPlanResponse {
   session_id?: string;
   candidate_id?: string;
   persisted?: boolean;
-  /** Context-contract fields (generator_version mf_context_v2) */
+  /** Context-contract fields (generator_version mf_context_v2*) */
   context_id?: string;
   context_version?: string;
   context_hash?: string;
   generator_version?: string;
   score_version?: string;
+  program_prior_version?: string;
   score_total?: number;
   score_components?: Record<string, number>;
+  /** How the Regrid precedent set was selected (planner_context_v2) */
+  regrid_precedent_selection?: Record<string, unknown>;
   buildings?: MfBuilding[];
   parking?: MfParking[];
   drives?: MfGeom[];
@@ -249,6 +252,29 @@ export async function generateMfSitePlan(
 }
 
 /**
+ * Context-contract errors: the v2 generator REJECTED the request because the
+ * context snapshot is wrong (missing, stale, for another parcel/use) or
+ * generation is legally blocked. These must surface to the user — silently
+ * regenerating on the legacy six-argument path would produce a plan that
+ * ignores the compiled context while the UI still claims one exists.
+ * The legacy generator remains ONLY the compatibility path for when the v2
+ * RPC itself is unreachable (transport failure / not yet deployed).
+ */
+export const CONTEXT_CONTRACT_ERRORS = new Set([
+  'planner_context_required',
+  'planner_context_not_found',
+  'planner_context_parcel_mismatch',
+  'planner_context_use_mismatch',
+  'planner_generation_not_allowed',
+  'planner_solver_brief_invalid',
+  'context_id and expected parcel are required',
+]);
+
+export function isContextContractError(err: string | null | undefined): boolean {
+  return err != null && (CONTEXT_CONTRACT_ERRORS.has(err) || err.startsWith('planner_'));
+}
+
+/**
  * Context-driven generation (mf_context_v2): all planning values come from
  * the verified solver brief behind p_context_id. Contract errors surface in
  * the response's `error` (planner_generation_not_allowed,
@@ -359,6 +385,11 @@ export interface MfCandidate {
   pins: MfPin[];
   parentId: string | null;
   metrics: Record<string, number | string | null>;
+  /** Context snapshot the candidate was generated from (v2 candidates only).
+   *  A saved scheme stays explainable from the context that PRODUCED it — a
+   *  view re-render must use this id, never today's context. */
+  contextId: string | null;
+  contextHash: string | null;
   /** Local-sales margin on cost (A3 ranking) — enriched client-side */
   marginOnCost?: number | null;
 }
@@ -388,14 +419,23 @@ export async function listMfCandidates(ogcFid: number, limit = 20): Promise<MfCa
       p_limit: limit,
     });
     if (error || !Array.isArray(data)) return [];
-    return (data as Record<string, unknown>[]).map(r => ({
-      id: String(r.id),
-      createdAt: String(r.created_at ?? ''),
-      seed: Number(r.seed) || 1,
-      pins: Array.isArray(r.pins) ? (r.pins as MfPin[]) : [],
-      parentId: (r.parent_candidate_id as string | null) ?? null,
-      metrics: (r.metrics as Record<string, number | string | null>) ?? {},
-    }));
+    return (data as Record<string, unknown>[]).map(r => {
+      const metrics = (r.metrics as Record<string, number | string | null>) ?? {};
+      // Context lineage reads tolerantly: v2 candidates persist context_hash
+      // (and, on newer list RPCs, context_id) in/next to their metrics;
+      // v1 candidates have neither and stay null.
+      const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
+      return {
+        id: String(r.id),
+        createdAt: String(r.created_at ?? ''),
+        seed: Number(r.seed) || 1,
+        pins: Array.isArray(r.pins) ? (r.pins as MfPin[]) : [],
+        parentId: (r.parent_candidate_id as string | null) ?? null,
+        metrics,
+        contextId: str(r.context_id) ?? str(metrics.context_id),
+        contextHash: str(r.context_hash) ?? str(metrics.context_hash),
+      };
+    });
   } catch {
     return [];
   }

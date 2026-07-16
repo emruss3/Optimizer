@@ -1,34 +1,13 @@
 import React from 'react';
 import type { FeasibilityViolation, SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
-import type { EdgeClassification } from '../../../engine/setbacks';
-import { metersToFeet } from '../../../engine/units';
 
 type ResultsPanelProps = {
   metrics: SiteMetrics | null;
   investmentAnalysis: InvestmentAnalysis | null;
   isGenerating: boolean;
   violations: FeasibilityViolation[];
-  edgeClassifications?: EdgeClassification[];
-  setbacks?: { front?: number; side?: number; rear?: number };
 };
-
-/** Human-readable label for an edge type with optional road name */
-function edgeLabel(edge: EdgeClassification, setbacks?: { front?: number; side?: number; rear?: number }): string {
-  const setbackFt =
-    edge.type === 'front'
-      ? (setbacks?.front ?? 20)
-      : edge.type === 'rear'
-        ? (setbacks?.rear ?? 20)
-        : (setbacks?.side ?? 10);
-
-  const roadSuffix = edge.roadName ? `: ${edge.roadName}` : '';
-  return `${capitalize(edge.type)}${roadSuffix} (${setbackFt}ft setback)`;
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 /** Format a number as USD with no decimal places */
 const fmtUSD = (value: number | null | undefined): string => {
@@ -40,18 +19,11 @@ const fmtUSD = (value: number | null | undefined): string => {
   }).format(value);
 };
 
-/** Format edge length in feet */
-function edgeLengthFt(edge: EdgeClassification): string {
-  return `${metersToFeet(edge.length).toFixed(0)}ft`;
-}
-
 const ResultsPanel: React.FC<ResultsPanelProps> = ({
   metrics,
   investmentAnalysis,
   isGenerating,
   violations,
-  edgeClassifications,
-  setbacks,
 }) => {
   return (
     <div className="w-full xl:w-80 bg-white border border-gray-200 rounded-lg p-4">
@@ -123,29 +95,6 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
             <span className="text-gray-600">Open Space</span>
             <span className="font-medium">{metrics.openSpacePct.toFixed(1)}%</span>
           </div>
-        </div>
-      )}
-
-      {/* Edge Classifications / Setbacks */}
-      {edgeClassifications && edgeClassifications.length > 0 && (
-        <div className="mb-6">
-          <h4 className="text-sm font-semibold text-gray-900 mb-2">Edge Setbacks</h4>
-          <ul className="space-y-1.5 text-xs">
-            {edgeClassifications.map((edge, idx) => {
-              const colorClass =
-                edge.type === 'front'
-                  ? 'text-blue-700 bg-blue-50'
-                  : edge.type === 'rear'
-                    ? 'text-amber-700 bg-amber-50'
-                    : 'text-gray-700 bg-gray-50';
-              return (
-                <li key={idx} className={`flex justify-between items-center px-2 py-1 rounded ${colorClass}`}>
-                  <span className="font-medium">{edgeLabel(edge, setbacks)}</span>
-                  <span className="text-[10px] opacity-70">{edgeLengthFt(edge)}</span>
-                </li>
-              );
-            })}
-          </ul>
         </div>
       )}
 

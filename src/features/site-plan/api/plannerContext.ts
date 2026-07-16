@@ -66,15 +66,60 @@ export interface Percentiles {
   p90?: number;
 }
 
+/**
+ * How the typology-aware Regrid resolver (fn_local_built_form_v2) chose the
+ * comparison set. Records the tier it settled on, so the UI can say honestly
+ * whether the precedents are exact-use/same-zoning or a relaxed fallback.
+ */
+export interface RegridPrecedentSelection {
+  mode:
+    | 'exact_same_zoning'
+    | 'exact_any_zoning'
+    | 'compatible_same_zoning'
+    | 'compatible_any_zoning'
+    | 'zoning_only'
+    | 'all_nearby';
+  requested_typology: string;
+  match_mode: 'exact' | 'compatible' | 'any';
+  same_zoning_required: boolean;
+  lot_band: string;
+  sample_size: number;
+  available_count?: number;
+  sample_cap?: number;
+  confidence: 'high' | 'medium' | 'low' | 'insufficient';
+}
+
+/**
+ * Local built-form priors (planner_context_v2). Everything beyond
+ * sample_size/confidence is optional so planner_context_v1 snapshots —
+ * which only carry footprint/stories — keep parsing during rollout.
+ */
 export interface PrecedentPriors {
   sample_size: number | null;
   confidence: string | null;
+
+  selection?: RegridPrecedentSelection | null;
+  type_mix?: Record<string, number> | null;
+  precedent_parcel_ids?: number[] | null;
+
   footprint_sqft?: Percentiles | null;
+  total_footprint_sqft?: Percentiles | null;
+  building_count?: Percentiles | null;
+  coverage_pct?: Percentiles | null;
   stories?: Percentiles | null;
+  length_ft?: Percentiles | null;
+  depth_ft?: Percentiles | null;
+  aspect_ratio?: Percentiles | null;
+  compactness?: Percentiles | null;
+
   underwrite_target?: {
     footprint_sqft_p75?: number;
     footprint_sqft_p90?: number;
     stories_p75?: number;
+    length_ft_p75?: number;
+    depth_ft_p50?: number;
+    coverage_pct_p75?: number;
+    building_count_p50?: number;
   } | null;
 }
 
@@ -207,10 +252,24 @@ export function isPlannerContextResponse(x: unknown): x is PlannerContextRespons
 
 const compileCache = new Map<string, Promise<PlannerContextResponse | null>>();
 
-/** Stable cache key: parcel + use + normalized (key-sorted) intent. */
+/**
+ * Recursive canonical JSON: object keys sorted at EVERY depth. The old
+ * top-level-only key sort collided on nested objective profiles
+ * ({weights:{a,b}} vs {weights:{b,a}} serialized differently), which made
+ * "identical" intents miss the cache — or worse, distinct intents share it.
+ */
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const o = value as Record<string, unknown>;
+  const keys = Object.keys(o).filter(k => o[k] !== undefined).sort();
+  return `{${keys.map(k => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(',')}}`;
+}
+
+/** Stable cache key: parcel + use + canonical (deep key-sorted) intent. */
 export function compileCacheKey(ogcFid: number, use: string, intent?: Record<string, unknown>): string {
   const normalized = intent && Object.keys(intent).length > 0
-    ? JSON.stringify(intent, Object.keys(intent).sort())
+    ? canonicalJson(intent)
     : '{}';
   return `${ogcFid}|${use.toLowerCase().trim()}|${normalized}`;
 }
@@ -369,23 +428,89 @@ export function briefToParkingPatch(brief: SolverBrief): Record<string, number> 
 /** Solver-safe subset for the client worker fallback — the worker and the
  *  server generator may use different algorithms, but they read the SAME
  *  context values (hard constraints/parking travel via the config patches;
- *  this carries the precedent priors and the generation gate). */
+ *  this carries the Regrid built-form priors and the generation gate). */
 export function briefToWorkerBrief(resp: PlannerContextResponse): import('../../../engine/optimizer').WorkerSolverBrief {
   const pri = resp.solver_brief.precedent_priors;
+  const ut = pri.underwrite_target;
   return {
     generationAllowed: resp.generation_allowed,
     precedent: {
       storiesP50: pri.stories?.p50 ?? null,
-      storiesP75: pri.stories?.p75 ?? null,
-      footprintP90SqFt:
-        pri.underwrite_target?.footprint_sqft_p90 ?? pri.footprint_sqft?.p90 ?? null,
+      storiesP75: ut?.stories_p75 ?? pri.stories?.p75 ?? null,
+      footprintP75SqFt: ut?.footprint_sqft_p75 ?? pri.footprint_sqft?.p75 ?? null,
+      footprintP90SqFt: ut?.footprint_sqft_p90 ?? pri.footprint_sqft?.p90 ?? null,
+      depthP50Ft: ut?.depth_ft_p50 ?? pri.depth_ft?.p50 ?? null,
+      lengthP75Ft: ut?.length_ft_p75 ?? pri.length_ft?.p75 ?? null,
+      coverageP75Pct: ut?.coverage_pct_p75 ?? pri.coverage_pct?.p75 ?? null,
+      buildingCountP50: ut?.building_count_p50 ?? pri.building_count?.p50 ?? null,
       sampleSize: pri.sample_size ?? null,
+      confidence: pri.confidence ?? null,
+      selectionMode: pri.selection?.mode ?? null,
+      precedentParcelIds: pri.precedent_parcel_ids ?? undefined,
     },
     programPrior: {
       averageUnitSqft: (resp.solver_brief.program_prior?.average_unit_sqft?.value as number | null) ?? null,
     },
     objectiveWeights: resp.solver_brief.objective_profile?.weights,
   };
+}
+
+// ── Context lineage vocabulary (current server implementation) ──────────────
+
+export const CONTEXT_VERSION_V2 = 'planner_context_v2';
+
+/** Generator versions that provably consumed a compiled context snapshot. */
+const CONTEXT_AWARE_GENERATORS = new Set([
+  'mf_context_v2',
+  'mf_context_v2_regrid_typology_v1',
+]);
+
+export function isContextAwareGeneratorVersion(v: string | null | undefined): boolean {
+  return v != null && CONTEXT_AWARE_GENERATORS.has(v);
+}
+
+/**
+ * "Context applied" is earned, not assumed: the plan must carry the ACTIVE
+ * snapshot's id, a v2 context version, and a context-aware generator version.
+ * Anything less is a fallback state and must say so.
+ */
+export function planUsedActiveContext(
+  plan: { context_id?: string | null; context_version?: string | null; generator_version?: string | null },
+  activeContextId: string | null | undefined
+): boolean {
+  return (
+    !!activeContextId &&
+    plan.context_id === activeContextId &&
+    plan.context_version === CONTEXT_VERSION_V2 &&
+    isContextAwareGeneratorVersion(plan.generator_version)
+  );
+}
+
+// ── Flag translations (technical flag → user-readable sentence) ─────────────
+
+const FLAG_TEXT: Record<string, string> = {
+  regrid_typology_selection_exact_same_zoning: 'Matched the selected use and zoning subtype.',
+  regrid_typology_selection_exact_any_zoning: 'Matched the selected use across nearby zoning districts.',
+  regrid_typology_selection_compatible_same_zoning: 'Used compatible building uses within the same zoning subtype.',
+  regrid_typology_selection_compatible_any_zoning: 'Used compatible building uses across nearby zoning districts.',
+  regrid_typology_selection_zoning_only: 'No reliable use match — compared against the zoning subtype only.',
+  regrid_typology_selection_all_nearby: 'No reliable use or zoning match — compared against all nearby buildings.',
+  regrid_zoning_filter_relaxed: "Expanded beyond the parcel's zoning subtype due to limited local examples.",
+  regrid_compatible_use_classes_used: 'Included compatible building uses due to limited exact matches.',
+  regrid_lot_band_relaxed_any: 'Included precedents on lots of any size due to limited local examples.',
+  regrid_typology_filter_insufficient: 'Too few precedents of the selected use — the comparison set is a broad fallback.',
+  regrid_sample_capped_100: 'Analyzed the 100 closest and most lot-comparable precedents.',
+  bar_depth_from_regrid_geometry_p50: 'Building depth initialized from the local median.',
+  bar_length_target_from_regrid_geometry_p75: 'Building length initialized from the local 75th percentile.',
+  stories_from_precedent_p50_p75: 'Story count initialized from the local built-form range.',
+  frontage_geometry_is_placeholder_until_road_edge_upgrade:
+    'Access remains based on a frontage heuristic, not a verified road edge.',
+  parking_below_ratio: 'Parking provided is below the target ratio.',
+};
+
+/** Translate a technical flag into UI text; unknown flags are humanized. */
+export function describeContextFlag(flag: string): string {
+  return FLAG_TEXT[flag] ?? flag.replace(/_/g, ' ');
 }
 
 /** One-line context summary for the plan-basis strip. */

@@ -7,47 +7,47 @@ exports[`golden parcels — deterministic KPI regression > SA solve (30 iteratio
   "builtSF": 86300,
   "compliant": true,
   "coveragePct": 20.8,
-  "evStalls": 10,
+  "evStalls": 9,
   "far": 1.25,
-  "openSpacePct": 39.5,
-  "score": 0.717,
-  "stalls": 100,
-  "stallsRequired": 90,
-  "units": 90,
+  "openSpacePct": 54.3,
+  "score": 0.699,
+  "stalls": 83,
+  "stallsRequired": 75,
+  "units": 75,
 }
 `;
 
 exports[`golden parcels — deterministic KPI regression > SA solve (30 iterations) is stable: large-block-220x160 1`] = `
 {
-  "adaStalls": 20,
-  "buildings": 8,
-  "builtSF": 337800,
+  "adaStalls": 18,
+  "buildings": 9,
+  "builtSF": 361000,
   "compliant": true,
-  "coveragePct": 22.8,
-  "evStalls": 39,
-  "far": 1.37,
-  "openSpacePct": 40.9,
-  "score": 0.559,
-  "stalls": 386,
-  "stallsRequired": 350,
-  "units": 350,
+  "coveragePct": 25.9,
+  "evStalls": 35,
+  "far": 1.46,
+  "openSpacePct": 40.3,
+  "score": 0.582,
+  "stalls": 343,
+  "stallsRequired": 311,
+  "units": 311,
 }
 `;
 
 exports[`golden parcels — deterministic KPI regression > SA solve (30 iterations) is stable: mid-rect-80x60 1`] = `
 {
-  "adaStalls": 2,
+  "adaStalls": 3,
   "buildings": 1,
-  "builtSF": 29600,
+  "builtSF": 47000,
   "compliant": true,
-  "coveragePct": 14.6,
-  "evStalls": 4,
-  "far": 0.88,
-  "openSpacePct": 47.7,
-  "score": 0.649,
-  "stalls": 33,
-  "stallsRequired": 30,
-  "units": 30,
+  "coveragePct": 23.2,
+  "evStalls": 5,
+  "far": 1.39,
+  "openSpacePct": 30.4,
+  "score": 0.724,
+  "stalls": 46,
+  "stallsRequired": 41,
+  "units": 41,
 }
 `;
 
@@ -58,30 +58,30 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "builtSF": 86300,
   "compliant": true,
   "coveragePct": 20.8,
-  "evStalls": 10,
+  "evStalls": 9,
   "far": 1.25,
-  "openSpacePct": 39.5,
-  "score": 0.717,
-  "stalls": 100,
-  "stallsRequired": 90,
-  "units": 90,
+  "openSpacePct": 54.3,
+  "score": 0.699,
+  "stalls": 83,
+  "stallsRequired": 75,
+  "units": 75,
 }
 `;
 
 exports[`golden parcels — deterministic KPI regression > constructive solve is stable: large-block-220x160 1`] = `
 {
-  "adaStalls": 22,
+  "adaStalls": 19,
   "buildings": 8,
   "builtSF": 375600,
   "compliant": true,
   "coveragePct": 25.3,
-  "evStalls": 44,
+  "evStalls": 37,
   "far": 1.52,
-  "openSpacePct": 31.6,
-  "score": 0.537,
-  "stalls": 432,
-  "stallsRequired": 392,
-  "units": 392,
+  "openSpacePct": 41.7,
+  "score": 0.577,
+  "stalls": 361,
+  "stallsRequired": 328,
+  "units": 328,
 }
 `;
 
@@ -92,13 +92,13 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "builtSF": 47000,
   "compliant": true,
   "coveragePct": 23.2,
-  "evStalls": 6,
+  "evStalls": 5,
   "far": 1.39,
   "openSpacePct": 30.4,
-  "score": 0.553,
-  "stalls": 54,
-  "stallsRequired": 49,
-  "units": 49,
+  "score": 0.724,
+  "stalls": 46,
+  "stallsRequired": 41,
+  "units": 41,
 }
 `;
 
@@ -109,13 +109,13 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "builtSF": 47000,
   "compliant": true,
   "coveragePct": 19.9,
-  "evStalls": 6,
+  "evStalls": 5,
   "far": 1.19,
-  "openSpacePct": 13.3,
-  "score": 0.708,
-  "stalls": 54,
-  "stallsRequired": 49,
-  "units": 49,
+  "openSpacePct": 51.2,
+  "score": 0.691,
+  "stalls": 46,
+  "stallsRequired": 41,
+  "units": 41,
 }
 `;
 
@@ -129,27 +129,27 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "evStalls": 2,
   "far": 1.72,
   "openSpacePct": 17.6,
-  "score": 0.441,
-  "stalls": 15,
-  "stallsRequired": 13,
-  "units": 13,
+  "score": 0.418,
+  "stalls": 13,
+  "stallsRequired": 11,
+  "units": 11,
 }
 `;
 
 exports[`golden parcels — deterministic KPI regression > constructive solve is stable: trapezoid-140 1`] = `
 {
-  "adaStalls": 6,
+  "adaStalls": 5,
   "buildings": 2,
   "builtSF": 93900,
   "compliant": true,
   "coveragePct": 22,
-  "evStalls": 11,
+  "evStalls": 10,
   "far": 1.32,
   "openSpacePct": 44.3,
-  "score": 0.564,
-  "stalls": 108,
-  "stallsRequired": 98,
-  "units": 98,
+  "score": 0.712,
+  "stalls": 91,
+  "stallsRequired": 82,
+  "units": 82,
 }
 `;
 
@@ -160,12 +160,12 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "builtSF": 47000,
   "compliant": true,
   "coveragePct": 17.4,
-  "evStalls": 6,
+  "evStalls": 5,
   "far": 1.05,
   "openSpacePct": 51.6,
-  "score": 0.68,
-  "stalls": 54,
-  "stallsRequired": 49,
-  "units": 49,
+  "score": 0.665,
+  "stalls": 46,
+  "stallsRequired": 41,
+  "units": 41,
 }
 `;

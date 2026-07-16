@@ -3,7 +3,7 @@ import type { Polygon, MultiPolygon } from 'geojson';
 import { normalizeToPolygon, areaM2, correctedAreaM2, intersection, difference, polygons } from '../engine/geometry';
 import { buildBuildingFootprint, clampBuildingToEnvelope } from '../engine/buildingGeometry';
 import type { BuildingSpec, BuildingType, UnitMixEntry } from '../engine/model';
-import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix, corridorEfficiency } from '../engine/model';
+import { createBuildingSpec, typologyToBuildingType, generateDefaultUnitMix, totalUnitsFromMix, corridorEfficiency, WEIGHTED_AVG_UNIT_SQFT } from '../engine/model';
 import { solveParkingBayPacking } from '../engine/parkingBaySolver';
 import { computeFeasibility } from '../engine/feasibility';
 import { optimize } from '../engine/optimizer';
@@ -203,13 +203,12 @@ class SiteEngineWorker {
     });
 
     // Compute target stalls so the parking solver doesn't fill the entire envelope
-    // Calculate units from totalGFA using weighted average unit size (750 sqft) with 85% efficiency
+    // Calculate units from totalGFA using the mix-weighted average unit size with 85% efficiency
     const totalGFA = buildingFootprints.reduce(
       (sum, b) => sum + correctedAreaM2(b.footprint) * SQM_TO_SQFT * Math.max(1, b.floors), 0
     );
     const usableGFA = totalGFA * 0.85; // 85% efficiency
-    const weightedAvgUnitSqft = 0.10 * 450 + 0.40 * 650 + 0.35 * 900 + 0.15 * 1200; // 750 sqft
-    const units = Math.max(1, Math.floor(usableGFA / weightedAvgUnitSqft));
+    const units = Math.max(1, Math.floor(usableGFA / WEIGHTED_AVG_UNIT_SQFT));
     const targetParkingRatio = zoning.minParkingRatio ?? 1.5;
     const maxStalls = Math.ceil(units * targetParkingRatio * 1.15); // 15% buffer
 
@@ -512,13 +511,15 @@ self.onmessage = async (e) => {
       // against stale state from a previously selected parcel.)
       const pinnedBuildings = worker.siteState?.buildings.filter(b => b.locked?.position) ?? [];
 
+      // The brief is ONLY what this message carries — never a retained
+      // siteState brief, which could belong to the previous parcel/use.
       const result = optimize({
         envelope,
         zoning,
         designParams,
         parkingSpec,
         pinnedBuildings,
-        solverBrief: solverBrief ?? worker.siteState?.solverBrief,
+        solverBrief,
         maxIterations: maxIterations ?? 200,
         onProgress: (iteration, score) => {
           (self as any).postMessage({
@@ -537,7 +538,7 @@ self.onmessage = async (e) => {
         envelope,
         zoning,
         buildings: result.bestBuildings ?? [],
-        solverBrief: solverBrief ?? worker.siteState?.solverBrief,
+        solverBrief,
         parkingSpec: parkingSpec ?? {
           stallW: 2.7432,
           stallD: 5.4864,

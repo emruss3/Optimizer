@@ -2,7 +2,12 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ContextPanel from './ContextPanel';
-import { plannerContextToDesignContext, plannerContextSummary, type PlannerContextResponse } from '../api/plannerContext';
+import {
+  plannerContextToDesignContext,
+  plannerContextSummary,
+  type PlannerContextResponse,
+  type PrecedentPriors,
+} from '../api/plannerContext';
 
 // Live-shaped compiled snapshot (structure captured from
 // fn_compile_planner_context(669046, 'multifamily') on 2026-07-13).
@@ -86,12 +91,61 @@ const RESP = {
   },
 } as unknown as PlannerContextResponse;
 
+// planner_context_v2 priors for the SAME parcel (669046) — the verified
+// decision-sensitivity pair from the Regrid context v2 rollout: the same
+// location produces different precedent sets for different requested uses.
+const MF_PRIORS_V2: PrecedentPriors = {
+  sample_size: 5,
+  confidence: 'high',
+  selection: {
+    mode: 'exact_same_zoning',
+    requested_typology: 'multifamily',
+    match_mode: 'exact',
+    same_zoning_required: true,
+    lot_band: '+/-50%',
+    sample_size: 5,
+    available_count: 5,
+    sample_cap: 100,
+    confidence: 'high',
+  },
+  type_mix: { multifamily: 5 },
+  footprint_sqft: { p50: 7536 },
+  depth_ft: { p50: 99.8 },
+  length_ft: { p75: 163.7 },
+  stories: { p50: 2, p75: 2 },
+  coverage_pct: { p75: 31 },
+  building_count: { p50: 6 },
+};
+
+const SF_PRIORS_V2: PrecedentPriors = {
+  sample_size: 67,
+  confidence: 'high',
+  selection: {
+    mode: 'exact_same_zoning',
+    requested_typology: 'single_family',
+    match_mode: 'exact',
+    same_zoning_required: true,
+    lot_band: '+/-50%',
+    sample_size: 67,
+    available_count: 210,
+    sample_cap: 100,
+    confidence: 'high',
+  },
+  type_mix: { single_family: 67 },
+  footprint_sqft: { p50: 1435 },
+  depth_ft: { p50: 31.1 },
+  length_ft: { p75: 62.2 },
+  stories: { p50: 1, p75: 1 },
+  coverage_pct: { p75: 18 },
+  building_count: { p50: 1 },
+};
+
 describe('ContextPanel (display-only, one compiled context)', () => {
-  it('renders the compiled snapshot: ordinance provenance, hard values, comps', () => {
+  it('renders the compiled snapshot: ordinance provenance, hard values, precedent basis', () => {
     render(
       <ContextPanel
         context={plannerContextToDesignContext(RESP)}
-        builtForm={RESP.context.precedent}
+        precedent={RESP.solver_brief.precedent_priors}
         pricing={RESP.context.market}
         contextSummary={plannerContextSummary(RESP)}
         loading={false}
@@ -105,8 +159,10 @@ describe('ContextPanel (display-only, one compiled context)', () => {
     expect(screen.getAllByText('ordinance').length).toBeGreaterThanOrEqual(4);
     expect(screen.getByText('45 ft')).toBeTruthy(); // max height (ordinance!)
     expect(screen.getByText('40 DU/ac')).toBeTruthy();
-    // comps from the SAME snapshot (no independent fetch)
-    expect(screen.getByText(/64 comps/)).toBeTruthy();
+    // precedent basis from the SAME snapshot (no independent fetch)
+    expect(screen.getByText('Local precedent basis')).toBeTruthy();
+    expect(screen.getByText(/64 precedents · medium confidence/)).toBeTruthy();
+    expect(screen.getByText(/1,513 SF/)).toBeTruthy(); // footprint median
     expect(screen.getByText('$256')).toBeTruthy();
     // snapshot identity line
     expect(screen.getByText(/64 precedents \(medium\)/)).toBeTruthy();
@@ -135,7 +191,87 @@ describe('ContextPanel (display-only, one compiled context)', () => {
     render(
       <ContextPanel context={null} loading={false} uses={[]} use="multifamily" onUseChange={() => undefined} />
     );
-    expect(screen.getByText(/Context engine unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Context unavailable — using standard defaults/)).toBeTruthy();
+  });
+
+  it('compiling state is explicit', () => {
+    render(
+      <ContextPanel context={null} loading uses={[]} use="multifamily" onUseChange={() => undefined} />
+    );
+    expect(screen.getByText(/Compiling local context/)).toBeTruthy();
+  });
+});
+
+describe('Local precedent basis (planner_context_v2)', () => {
+  const renderWithPriors = (precedent: PrecedentPriors, typology: string) =>
+    render(
+      <ContextPanel
+        context={{ ...plannerContextToDesignContext(RESP), typology }}
+        precedent={precedent}
+        loading={false}
+        uses={['single_family', 'multi_family']}
+        use={typology}
+        onUseChange={() => undefined}
+      />
+    );
+
+  it('single-family and multifamily on the same parcel display DIFFERENT samples and dimensions', () => {
+    const mf = renderWithPriors(MF_PRIORS_V2, 'multifamily');
+    expect(screen.getByText(/Multifamily · 5 exact-use RM40 precedents · high confidence/)).toBeTruthy();
+    expect(screen.getByText(/7,536 SF/)).toBeTruthy();
+    expect(screen.getByText(/99\.8 ft/)).toBeTruthy();
+    expect(screen.getByText(/163\.7 ft/)).toBeTruthy();
+    expect(screen.getByText('6')).toBeTruthy(); // buildings per site (median)
+    mf.unmount();
+
+    renderWithPriors(SF_PRIORS_V2, 'single_family');
+    expect(screen.getByText(/Single family · 67 exact-use RM40 precedents · high confidence/)).toBeTruthy();
+    expect(screen.getByText(/1,435 SF/)).toBeTruthy();
+    expect(screen.getByText(/31\.1 ft/)).toBeTruthy();
+    expect(screen.getByText(/62\.2 ft/)).toBeTruthy();
+    expect(screen.queryByText(/7,536 SF/)).toBeNull(); // no MF bleed-through
+  });
+
+  it('an exact same-zoning selection shows NO relaxation warning', () => {
+    renderWithPriors(MF_PRIORS_V2, 'multifamily');
+    expect(screen.queryByText(/expanded/i)).toBeNull();
+  });
+
+  it('a relaxed selection mode produces a visible warning', () => {
+    renderWithPriors(
+      {
+        ...MF_PRIORS_V2,
+        selection: {
+          ...MF_PRIORS_V2.selection!,
+          mode: 'compatible_any_zoning',
+          match_mode: 'compatible',
+          same_zoning_required: false,
+          confidence: 'low',
+        },
+        confidence: 'low',
+      },
+      'multifamily'
+    );
+    expect(
+      screen.getByText(/Only a few exact local precedents were available — the context was expanded to compatible uses across nearby zoning districts\./)
+    ).toBeTruthy();
+  });
+
+  it('planner_context_v1 priors (no selection/geometry) still render without crashing', () => {
+    renderWithPriors(
+      { sample_size: 64, confidence: 'medium', footprint_sqft: { p50: 1513 }, stories: { p50: 1, p75: 2 } },
+      'multifamily'
+    );
+    expect(screen.getByText('Local precedent basis')).toBeTruthy();
+    expect(screen.getByText(/64 precedents · medium confidence/)).toBeTruthy();
+    expect(screen.getByText(/1,513 SF/)).toBeTruthy();
+    expect(screen.getByText(/1–2/)).toBeTruthy(); // stories p50–p75 range
+  });
+
+  it('does not expose raw context JSON', () => {
+    renderWithPriors(MF_PRIORS_V2, 'multifamily');
+    expect(screen.queryByText(/precedent_parcel_ids/)).toBeNull();
+    expect(screen.queryByText(/\{/)).toBeNull();
   });
 });
 

@@ -49,14 +49,25 @@ export interface OptimizeInput {
   solverBrief?: WorkerSolverBrief;
 }
 
-/** Worker-facing subset of the planner solver brief (all values optional). */
+/** Worker-facing subset of the planner solver brief (all values optional).
+ *  planner_context_v2 adds typology-aware Regrid geometry priors — depth,
+ *  length, coverage, building count — which seed the layout as SOFT priors.
+ *  Legal constraints stay hard limits; priors never exceed them. */
 export interface WorkerSolverBrief {
   generationAllowed?: boolean;
   precedent?: {
     storiesP50?: number | null;
     storiesP75?: number | null;
+    footprintP75SqFt?: number | null;
     footprintP90SqFt?: number | null;
+    depthP50Ft?: number | null;
+    lengthP75Ft?: number | null;
+    coverageP75Pct?: number | null;
+    buildingCountP50?: number | null;
     sampleSize?: number | null;
+    confidence?: string | null;
+    selectionMode?: string | null;
+    precedentParcelIds?: number[];
   };
   programPrior?: {
     averageUnitSqft?: number | null;
@@ -90,12 +101,81 @@ const WEIGHTS = {
   openSpace: 0.05,
   noViolations: 0.15,
   yieldOnCost: 0.10,
+  /** Similarity to the local Regrid built form — 0 unless the context sets it */
+  precedentFit: 0,
 };
+
+export type ScoreWeights = typeof WEIGHTS;
+
+/**
+ * Objective weights from the compiled context override the hardcoded
+ * defaults. The context vocabulary (financial_return, precedent_fit, …) maps
+ * onto the worker's score components; unmapped worker terms (coverage
+ * compliance, no-violations) keep their defaults, then everything
+ * renormalizes to sum 1 so scores stay comparable across runs.
+ */
+export function resolveScoreWeights(brief?: WorkerSolverBrief): ScoreWeights {
+  const resolved: ScoreWeights = { ...WEIGHTS };
+  const w = brief?.objectiveWeights;
+  if (!w) return resolved;
+  const map: Array<[string, keyof ScoreWeights]> = [
+    ['financial_return', 'yieldOnCost'],
+    ['unit_or_program_yield', 'unitCount'],
+    ['parking_compliance', 'parkingCompliance'],
+    ['zoning_utilization', 'farUtilization'],
+    ['open_space_quality', 'openSpace'],
+    ['precedent_fit', 'precedentFit'],
+  ];
+  let mappedAny = false;
+  for (const [contextKey, workerKey] of map) {
+    const v = w[contextKey];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) {
+      resolved[workerKey] = v;
+      mappedAny = true;
+    }
+  }
+  if (!mappedAny) return { ...WEIGHTS };
+  const sum = Object.values(resolved).reduce((s, v) => s + v, 0);
+  if (sum > 0) {
+    for (const k of Object.keys(resolved) as Array<keyof ScoreWeights>) {
+      resolved[k] = resolved[k] / sum;
+    }
+  }
+  return resolved;
+}
+
+/** Bounded similarity: 1 = identical, → 0 as the values diverge. */
+const similarity = (a: number | null | undefined, b: number | null | undefined): number =>
+  a != null && b != null && a > 0 && b > 0 ? Math.min(a, b) / Math.max(a, b) : 0.5;
+
+/**
+ * Precedent-fit component (mirrors the server's context_score_v2 blend):
+ * 50% footprint similarity to the local p75, 25% coverage similarity to the
+ * local p75, 25% story similarity to the local p75.
+ */
+function scorePrecedentFit(
+  precedent: WorkerSolverBrief['precedent'],
+  avgBarFootprintSqft: number,
+  coveragePct: number,
+  avgFloors: number
+): number {
+  if (!precedent) return 0.5;
+  return (
+    0.5 * similarity(avgBarFootprintSqft, precedent.footprintP75SqFt) +
+    0.25 * similarity(coveragePct, precedent.coverageP75Pct) +
+    0.25 * similarity(avgFloors, precedent.storiesP75)
+  );
+}
 
 const SQM_TO_SQFT = 10.7639;
 
 /** Default RNG seed — keeps optimizer output reproducible across runs. */
 const DEFAULT_SEED = 0x9e3779b9;
+
+/** The UI slider default. A target equal to this is treated as "not user-set",
+ *  so the local coverage prior may seed it; any other value is a deliberate
+ *  user preference and overrides the soft prior. */
+const DEFAULT_TARGET_COVERAGE_PCT = 50;
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -157,7 +237,9 @@ function scoreOnly(
   parkingSpec: { stallW: number; stallD: number; aisleW: number; anglesDeg: number[] },
   zoningLimits: { maxFar?: number; maxCoveragePct?: number; parkingRatio?: number },
   /** Pre-computed values to avoid recalculation every iteration */
-  cached: { siteAreaM2: number; siteAreaSqft: number; maxReasonableUnits: number }
+  cached: { siteAreaM2: number; siteAreaSqft: number; maxReasonableUnits: number },
+  weights: ScoreWeights = WEIGHTS,
+  precedent?: WorkerSolverBrief['precedent']
 ): { score: number; clampedBuildings: BuildingSpec[] } {
   // Clamp all buildings (skip expensive overlap checks during SA)
   const clamped: BuildingSpec[] = [];
@@ -239,14 +321,29 @@ function scoreOnly(
   // 7. Yield on cost — cheap proxy during SA (full pro forma only for final results)
   const yieldOnCostScore = farScore * 0.5 + unitScore * 0.5;
 
+  // 8. Precedent fit — similarity to the local Regrid built form (only scored
+  // when the context's objective weights ask for it)
+  let precedentFitScore = 0;
+  if (weights.precedentFit > 0) {
+    const avgBarFpSqft = clamped.length > 0
+      ? (buildingFootprintTotal / clamped.length) * SQM_TO_SQFT
+      : 0;
+    const coveragePct = cached.siteAreaM2 > 0 ? (100 * buildingFootprintTotal) / cached.siteAreaM2 : 0;
+    const avgFloors = clamped.length > 0
+      ? clamped.reduce((s, b) => s + Math.max(1, b.floors), 0) / clamped.length
+      : 0;
+    precedentFitScore = scorePrecedentFit(precedent, avgBarFpSqft, coveragePct, avgFloors);
+  }
+
   const totalScore =
-    WEIGHTS.unitCount * unitScore +
-    WEIGHTS.parkingCompliance * parkingScore +
-    WEIGHTS.farUtilization * farScore +
-    WEIGHTS.coverageCompliance * coverageScore +
-    WEIGHTS.openSpace * openSpaceScore +
-    WEIGHTS.noViolations * noViolationsScore +
-    WEIGHTS.yieldOnCost * yieldOnCostScore;
+    weights.unitCount * unitScore +
+    weights.parkingCompliance * parkingScore +
+    weights.farUtilization * farScore +
+    weights.coverageCompliance * coverageScore +
+    weights.openSpace * openSpaceScore +
+    weights.noViolations * noViolationsScore +
+    weights.yieldOnCost * yieldOnCostScore +
+    weights.precedentFit * precedentFitScore;
 
   // Apply containment penalty
   const finalScore = containmentPenalty > 0 ? totalScore * Math.max(0, 1 - containmentPenalty) : totalScore;
@@ -262,7 +359,9 @@ function computeFullResult(
   buildings: BuildingSpec[],
   parkingSpec: { stallW: number; stallD: number; aisleW: number; anglesDeg: number[] },
   zoningLimits: { maxFar?: number; maxCoveragePct?: number; parkingRatio?: number },
-  quotas: { adaPct: number; evPct: number }
+  quotas: { adaPct: number; evPct: number },
+  weights: ScoreWeights = WEIGHTS,
+  precedent?: WorkerSolverBrief['precedent']
 ): {
   score: number;
   elements: Element[];
@@ -359,14 +458,26 @@ function computeFullResult(
     yieldOnCostScore = 0;
   }
 
+  let precedentFitScore = 0;
+  if (weights.precedentFit > 0) {
+    const avgBarFpSqft = buildingFootprints.length > 0
+      ? (footprintAreaM2 / buildingFootprints.length) * SQM_TO_SQFT
+      : 0;
+    const avgFloors = buildingFootprints.length > 0
+      ? buildingFootprints.reduce((s, b) => s + Math.max(1, b.floors), 0) / buildingFootprints.length
+      : 0;
+    precedentFitScore = scorePrecedentFit(precedent, avgBarFpSqft, feasibility.coverage * 100, avgFloors);
+  }
+
   const totalScore =
-    WEIGHTS.unitCount * unitScore +
-    WEIGHTS.parkingCompliance * parkingScore +
-    WEIGHTS.farUtilization * farScore +
-    WEIGHTS.coverageCompliance * coverageScore +
-    WEIGHTS.openSpace * openSpaceScore +
-    WEIGHTS.noViolations * noViolationsScore +
-    WEIGHTS.yieldOnCost * yieldOnCostScore;
+    weights.unitCount * unitScore +
+    weights.parkingCompliance * parkingScore +
+    weights.farUtilization * farScore +
+    weights.coverageCompliance * coverageScore +
+    weights.openSpace * openSpaceScore +
+    weights.noViolations * noViolationsScore +
+    weights.yieldOnCost * yieldOnCostScore +
+    weights.precedentFit * precedentFitScore;
 
   // Build full elements (expensive — boolean ops for greenspace)
   const elements = buildElements(clamped, buildingFootprints, parkingSolution, feasibility, envelope);
@@ -691,14 +802,26 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const edgeAngleRad = Math.atan2(edge.dir[1], edge.dir[0]);
 
   // Calculate how many buildings can actually fit physically.
-  // Precedent prior (when the compiled context carries a local sample): bar
-  // length targets the p90 underwrite footprint at the default depth, clamped
-  // to constructability — the same prior the server generator uses.
+  // Regrid built-form priors (planner_context_v2, sample ≥ 5): local geometry
+  // seeds bar depth/length as SOFT priors, clamped to the multifamily
+  // constructable range — the same initialization rules the server generator
+  // uses. Legal constraints stay hard; priors never exceed them.
   const prec = input.solverBrief?.precedent;
-  const defaultDepthM = 60 * 0.3048;  // ~18m
+  const hasPrecedentPrior = (prec?.sampleSize ?? 0) >= 5;
+  // Depth: local median, clamped to the MF constructable range (45–72 ft —
+  // double-loaded corridor depths that can actually be built).
+  let defaultDepthFt = 60;
+  if (hasPrecedentPrior && prec?.depthP50Ft != null && prec.depthP50Ft > 0) {
+    defaultDepthFt = Math.min(72, Math.max(45, Math.round(prec.depthP50Ft)));
+  }
+  const defaultDepthM = defaultDepthFt * 0.3048;
+  // Length: local 75th percentile clamped to 90–300 ft; when v2 length data
+  // is absent, the v1 footprint-p90-at-depth heuristic remains the fallback.
   let defaultWidthFt = 200;
-  if (prec?.footprintP90SqFt != null && (prec.sampleSize ?? 0) >= 5) {
-    defaultWidthFt = Math.min(300, Math.max(90, Math.round(prec.footprintP90SqFt / 60)));
+  if (hasPrecedentPrior && prec?.lengthP75Ft != null && prec.lengthP75Ft > 0) {
+    defaultWidthFt = Math.min(300, Math.max(90, Math.round(prec.lengthP75Ft)));
+  } else if (hasPrecedentPrior && prec?.footprintP90SqFt != null) {
+    defaultWidthFt = Math.min(300, Math.max(90, Math.round(prec.footprintP90SqFt / defaultDepthFt)));
   }
   const defaultWidthM = defaultWidthFt * 0.3048;
   const buildingFootprintArea = defaultWidthM * defaultDepthM;
@@ -714,10 +837,26 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   // An explicitly requested numBuildings always wins over the coverage target.
   if (maxIterations === 0 && designParams.numBuildings == null) {
     const maxCov = (zoning.maxCoveragePct ?? 60) / 100;
-    const targetCov = Math.min((designParams.targetCoveragePct ?? 50) / 100, maxCov);
+    // Coverage: the local p75 seeds the target when the user hasn't moved the
+    // slider off its default — a user-set value overrides the soft prior, and
+    // the legal maximum caps both.
+    const userCovPct = designParams.targetCoveragePct;
+    const priorCovPct = hasPrecedentPrior && prec?.coverageP75Pct != null && prec.coverageP75Pct > 0
+      ? prec.coverageP75Pct
+      : null;
+    const covPct = userCovPct != null && userCovPct !== DEFAULT_TARGET_COVERAGE_PCT
+      ? userCovPct
+      : (priorCovPct ?? userCovPct ?? DEFAULT_TARGET_COVERAGE_PCT);
+    const targetCov = Math.min(covPct / 100, maxCov);
     const envRawM2 = areaM2(envelope);
-    const coverageDrivenCount = Math.round(targetCov * envRawM2 / buildingFootprintArea);
-    effectiveNumBuildings = Math.max(1, Math.min(maxPhysicalBuildings, coverageDrivenCount));
+    const coverageDrivenCount = Math.max(1, Math.round(targetCov * envRawM2 / buildingFootprintArea));
+    // Building count: the local median seeds the count, capped by physical
+    // fit and by what the (already prior-informed) coverage target supports.
+    const priorCount = hasPrecedentPrior && prec?.buildingCountP50 != null && prec.buildingCountP50 > 0
+      ? Math.round(prec.buildingCountP50)
+      : null;
+    const seedCount = priorCount != null ? Math.min(priorCount, coverageDrivenCount) : coverageDrivenCount;
+    effectiveNumBuildings = Math.max(1, Math.min(maxPhysicalBuildings, seedCount));
   }
 
   // Grid-within-envelope initial placement:
@@ -862,9 +1001,13 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const maxReasonableUnits = Math.max(1, Math.floor(siteAreaSqft * 3 * 0.85 / 720));
   const cached = { siteAreaM2: siteAreaM2, siteAreaSqft, maxReasonableUnits };
 
+  // Context objective weights (when compiled) replace the hardcoded constants
+  // for EVERY score in this run — SA acceptance, best tracking, and finals.
+  const weights = resolveScoreWeights(input.solverBrief);
+
   // ── 3. Simulated annealing loop (fast — score only, no element building) ─
   let currentBuildings = cloneBuildings(initialBuildings);
-  let { score: currentScore } = scoreOnly(envelope, currentBuildings, parkingSpec, zoningLimits, cached);
+  let { score: currentScore } = scoreOnly(envelope, currentBuildings, parkingSpec, zoningLimits, cached, weights, prec);
 
   let bestBuildings = cloneBuildings(currentBuildings);
   let bestScore = currentScore;
@@ -923,7 +1066,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
 
     // Fast score (no element building, no pro forma, no boolean ops)
     const { score: candidateScore } = scoreOnly(
-      envelope, candidateBuildings, parkingSpec, zoningLimits, cached
+      envelope, candidateBuildings, parkingSpec, zoningLimits, cached, weights, prec
     );
 
     // Accept/reject
@@ -959,13 +1102,13 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   }
 
   // ── 4. Build full results only for best + top 3 (expensive, but only ~4 calls) ─
-  const bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits, parkingQuotas);
+  const bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec);
 
   const top3Alternatives = topN
     .filter(a => Math.abs(a.score - bestScore) > 0.005)
     .slice(0, 3)
     .map(a => {
-      const full = computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits, parkingQuotas);
+      const full = computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec);
       return {
         elements: full.elements,
         metrics: full.metrics,

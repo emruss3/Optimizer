@@ -72,7 +72,8 @@ export interface PlannerConfig {
       layoutAngle?: number; // in degrees
     };
     buildingTypology: string; // e.g., 'bar', 'L-shape', 'podium'
-    numBuildings: number;
+    /** Explicit building count; unset = coverage/precedent-driven auto count */
+    numBuildings?: number;
   };
 }
 

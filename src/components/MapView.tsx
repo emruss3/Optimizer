@@ -66,6 +66,11 @@ const MapView = React.memo(function MapView({
       }
     });
 
+    // On-screen zoom buttons: parcels only render at zoom ≥ ~15, and without
+    // these the only way in is scroll-wheel — undiscoverable and unavailable
+    // on some devices.
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
     map.on("load", () => {
       if (!map.getSource("parcels")) {
         console.log("≡ƒù║∩╕Å Adding parcels source to map...");

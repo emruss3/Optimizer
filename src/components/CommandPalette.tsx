@@ -60,12 +60,20 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     const defaultItems = getDefaultItems();
     setItems(defaultItems);
     
-    // Load recent items from localStorage
+    // Load recent items from localStorage. Icons and actions don't survive
+    // JSON, so stored entries are rehydrated BY ID against the live command
+    // list; stale/malformed entries (which crashed the option renderer with
+    // null ids) are dropped.
     try {
       const stored = localStorage.getItem('command-palette-recent');
       if (stored) {
         const recent = JSON.parse(stored);
-        setRecentItems(recent.slice(0, 5));
+        if (Array.isArray(recent)) {
+          const rehydrated = recent
+            .map((r) => (r && typeof r.id === 'string' ? defaultItems.find((d) => d.id === r.id) : undefined))
+            .filter((d): d is CommandItem => !!d);
+          setRecentItems(rehydrated.slice(0, 5));
+        }
       }
     } catch (error) {
       console.warn('Failed to load recent items:', error);
@@ -193,13 +201,18 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   };
 
-  const executeItem = (item: CommandItem) => {
-    // Add to recent items
+  const executeItem = (item: CommandItem | null) => {
+    // Headless UI fires onChange(null) when the selection clears — ignore.
+    if (!item) return;
+    // Add to recent items (persist ids only — icons/actions don't serialize)
     const newRecent = [item, ...recentItems.filter(r => r.id !== item.id)].slice(0, 5);
     setRecentItems(newRecent);
     
     try {
-      localStorage.setItem('command-palette-recent', JSON.stringify(newRecent));
+      localStorage.setItem(
+        'command-palette-recent',
+        JSON.stringify(newRecent.map(({ id, title, category }) => ({ id, title, category })))
+      );
     } catch (error) {
       console.warn('Failed to save recent items:', error);
     }
@@ -346,6 +359,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
 
 // Command Item Component
 function CommandItem({ item }: { item: CommandItem }) {
+  if (!item) return null;
   return (
     <Combobox.Option
       key={item.id}

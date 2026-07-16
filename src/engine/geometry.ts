@@ -271,6 +271,52 @@ function checkConvexity(vertices: number[][]): boolean {
 }
 
 /**
+ * polygon-clipping occasionally throws "Unable to complete output ring" on
+ * exactly-degenerate float inputs (a known upstream robustness bug — e.g.
+ * whole-foot bar dimensions from context priors producing exactly-collinear
+ * strip/footprint edges). A boolean op must never crash a solve, so every op
+ * retries once with a deterministic sub-micrometer vertex jitter, then falls
+ * back conservatively.
+ */
+const JITTER_M = 1e-7; // 0.1 μm — far below any solver/rendering tolerance
+
+/** Deterministic per-point jitter: identical points move identically, so ring
+ *  closure and shared vertices stay consistent while exact collinearity breaks. */
+function jitterPoint([x, y]: [number, number]): [number, number] {
+  const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  const f = h - Math.floor(h); // [0, 1)
+  return [x + JITTER_M * (f - 0.5), y + JITTER_M * (0.5 - f)];
+}
+
+function jitterGeom(g: PcGeom): PcGeom {
+  const mapRing = (ring: PcRing): PcRing => ring.map(p => jitterPoint(p));
+  const parts = g as Array<PcRing | PcPolygon>;
+  return parts.map(part => {
+    const probe = (part as PcPolygon)[0]?.[0];
+    return Array.isArray(probe)
+      ? (part as PcPolygon).map(mapRing)
+      : mapRing(part as PcRing);
+  }) as PcGeom;
+}
+
+function pcOp(
+  op: (g: PcGeom, ...rest: PcGeom[]) => PcMultiPolygon,
+  inputs: PcGeom[],
+  fallback: () => Polygon | MultiPolygon
+): Polygon | MultiPolygon {
+  try {
+    return fromPc(op(inputs[0], ...inputs.slice(1)));
+  } catch {
+    try {
+      const jittered = inputs.map(jitterGeom);
+      return fromPc(op(jittered[0], ...jittered.slice(1)));
+    } catch {
+      return fallback();
+    }
+  }
+}
+
+/**
  * Union multiple polygons into one
  * Uses polygon-clipping library for robust boolean operations
  */
@@ -280,9 +326,11 @@ export function union(...polygons: Polygon[]): Polygon | MultiPolygon {
   if (valid.length === 1) return valid[0];
 
   const pcInputs = valid.map(p => toPc(p));
-  // union accepts (geom, ...moreGeoms)
-  const res = polyclip.union(pcInputs[0], ...pcInputs.slice(1)) as PcMultiPolygon;
-  return fromPc(res);
+  // Fallback: the un-dissolved parts (correct coverage, possibly overlapping)
+  return pcOp(polyclip.union, pcInputs, () => ({
+    type: 'MultiPolygon',
+    coordinates: valid.map(p => p.coordinates),
+  }));
 }
 
 /**
@@ -293,8 +341,8 @@ export function difference(a: Polygon, b: Polygon): Polygon | MultiPolygon {
   if (!a?.coordinates?.[0]?.length) return { type: 'Polygon', coordinates: [] };
   if (!b?.coordinates?.[0]?.length) return a;
 
-  const res = polyclip.difference(toPc(a), toPc(b)) as PcMultiPolygon;
-  return fromPc(res);
+  // Fallback: leave `a` unsubtracted (conservative — never invents area holes)
+  return pcOp(polyclip.difference, [toPc(a), toPc(b)], () => a);
 }
 
 /**
@@ -305,8 +353,11 @@ export function intersection(a: Polygon, b: Polygon): Polygon | MultiPolygon {
     return { type: 'Polygon', coordinates: [] };
   }
 
-  const res = polyclip.intersection(toPc(a), toPc(b)) as PcMultiPolygon;
-  return fromPc(res);
+  // Fallback: empty (conservative — never claims overlap that may not exist)
+  return pcOp(polyclip.intersection, [toPc(a), toPc(b)], () => ({
+    type: 'Polygon',
+    coordinates: [],
+  }));
 }
 
 /**

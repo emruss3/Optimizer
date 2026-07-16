@@ -288,6 +288,27 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, []);
 
+  // Square corner handles on selected buildings — the grab points for
+  // parametric resize (width/depth through the solver).
+  const renderResizeHandles = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length !== 5) return; // rectangles only
+
+    ctx.save();
+    const size = 8 / zoom;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = '#3B82F6';
+    ctx.lineWidth = 1.5 / zoom;
+    for (let i = 0; i < 4; i++) {
+      const [x, y] = coords[i];
+      ctx.beginPath();
+      ctx.rect(x - size / 2, y - size / 2, size, size);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }, []);
+
   // Render vertex handles
   const renderVertexHandles = useCallback((ctx: CanvasRenderingContext2D, element: Element, isSelected: boolean, isVertexEditing: boolean, selectedVertex: { elementId: string; vertexIndex: number } | null, zoom: number) => {
     if (!isSelected) return;
@@ -549,13 +570,26 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ctx.stroke();
         }
 
-        // Unit-type tags once units are ≥ ~14px wide on screen
+        // Unit-type tags ("Studio", "1 Bed", …) — full names are wider than
+        // the old letter codes, so each tag draws only when it fits inside
+        // its own unit on screen.
         if (feetToMeters(20) * zoom >= 14) {
           const fontSize = 9 / zoom;
           ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           for (const u of plate.units) {
+            // Screen-space bbox of the unit (text is axis-aligned)
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (const [x, y] of u.ring) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+            // measureText is in world units here (font size is world-scaled)
+            if (ctx.measureText(u.label).width > (maxX - minX) * 0.9) continue;
+            if (fontSize * 1.2 > (maxY - minY)) continue;
             ctx.save();
             ctx.translate(u.center[0], u.center[1]);
             ctx.scale(1, -1);
@@ -783,10 +817,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   // open space and drive aisles aren't "unidentified green areas / grey lines".
   const renderLegend = useCallback((ctx: CanvasRenderingContext2D, cssH: number, hasLots: boolean) => {
     const entries: Array<[string, string]> = [
-      ['Studio', UNIT_COLORS['studio']],
-      ['1 BR', UNIT_COLORS['1br']],
-      ['2 BR', UNIT_COLORS['2br']],
-      ['3 BR', UNIT_COLORS['3br']],
+      ['Studio · 550 SF', UNIT_COLORS['studio']],
+      ['1 Bed · 700 SF', UNIT_COLORS['1br']],
+      ['2 Bed · 1,100 SF', UNIT_COLORS['2br']],
+      ['3 Bed · 1,600 SF', UNIT_COLORS['3br']],
       ['Core / stairs', '#94A3B8'],
       ['Parking', '#E2E8F0'],
       ['Drive / aisle', '#CBD5E1'],
@@ -796,7 +830,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     const pad = 8;
     const rowH = 16;
-    const boxW = 120;
+    const boxW = 132;
     const boxH = entries.length * rowH + pad * 2 - 4;
     const x = 12;
     const y = cssH - boxH - 12;
@@ -933,8 +967,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         renderDimensions(ctx, element, viewport.zoom);
       }
 
-      // Render vertex handles if selected
-      if (isSelected) {
+      // Selected buildings get square resize handles; other shapes keep
+      // round vertex-editing handles.
+      if (isSelected && element.type === 'building') {
+        renderResizeHandles(ctx, element, viewport.zoom);
+      } else if (isSelected) {
         renderVertexHandles(ctx, element, isSelected, isVertexEditing, selectedVertex, viewport.zoom);
       }
 
@@ -976,7 +1013,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Screen-space chrome (after the world transform is popped)
     renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
     renderLegend(ctx, canvas.height / dpr, elements.some(e => e.type === 'other'));
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

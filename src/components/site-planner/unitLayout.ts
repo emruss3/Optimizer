@@ -3,9 +3,12 @@
  *
  * Slices a building footprint into a representative GROUND-FLOOR plate:
  * typed unit modules along a double-loaded corridor, with egress cores at the
- * bar ends. Driven by the building's engine-computed unit mix (never invents
- * counts) and its oriented geometry, so moving/resizing a building re-slices
- * its units live. Pure world-space geometry; the canvas just fills polygons.
+ * bar ends. The building's unit mix sets the TYPE PROPORTIONS and each type's
+ * fixed area (Studio 550 / 1 Bed 700 / 2 Bed 1,100 / 3 Bed 1,600 SF by
+ * default); the actual unit count re-derives from the current footprint, so
+ * moving/resizing a building re-fills the plate live — grow the bar and more
+ * units appear, shrink it and the excess drop off. Pure world-space geometry;
+ * the canvas just fills polygons.
  */
 import { longestEdgeAngle } from './planRendering';
 
@@ -14,7 +17,7 @@ export interface UnitPoly {
   ring: number[][];
   /** 'studio' | '1br' | '2br' | '3br' (matches the engine mix) */
   type: string;
-  /** TestFit-style tag: S / A / B / C */
+  /** Unit-type tag drawn on the plate: Studio / 1 Bed / 2 Bed / 3 Bed */
   label: string;
   /** Label anchor (unit centre) */
   center: [number, number];
@@ -33,10 +36,10 @@ export const UNIT_COLORS: Record<string, string> = {
 };
 
 const UNIT_LABELS: Record<string, string> = {
-  studio: 'S',
-  '1br': 'A',
-  '2br': 'B',
-  '3br': 'C',
+  studio: 'Studio',
+  '1br': '1 Bed',
+  '2br': '2 Bed',
+  '3br': '3 Bed',
 };
 
 const SQFT_PER_SQM = 10.7639;
@@ -53,8 +56,9 @@ interface Mix {
 /**
  * Compute the floorplate for one building.
  * @param coords footprint outer ring (world metres, closed)
- * @param unitMix building TOTAL unit mix (all floors)
- * @param floors floor count (per-floor mix = total / floors)
+ * @param unitMix building unit mix — sets type proportions and per-type areas;
+ *   the drawn count re-derives from the current footprint (dynamic re-fill)
+ * @param floors floor count (per-floor proportions = total / floors)
  */
 export function computeFloorplate(
   coords: number[][],
@@ -120,13 +124,15 @@ export function computeFloorplate(
   const usableX1 = minX + CORE_M;
   const usableX2 = maxX - CORE_M;
 
-  // Per-floor unit counts (largest-remainder so the total is consistent)
+  // The mix defines type PROPORTIONS + per-type areas; the plate re-derives
+  // the actual count from its current geometry, so a moved/resized building
+  // dynamically gains or loses units instead of freezing the original count.
   const perFloor: Mix[] = unitMix
-    .map(m => ({ ...m, count: Math.round(m.count / f) }))
-    .filter(m => m.count > 0 && m.avgSqft > 0);
+    .map(m => ({ ...m, count: Math.max(1, Math.round(m.count / f)) }))
+    .filter(m => m.avgSqft > 0 && m.count > 0);
   if (perFloor.length === 0) return { units: [], cores };
 
-  // Round-robin the types (mixed sequence, TestFit-style)
+  // One round-robin period in mix proportions (mixed sequence, TestFit-style)
   const queue: Mix[] = [];
   const remaining = perFloor.map(m => ({ ...m }));
   while (remaining.some(m => m.count > 0)) {
@@ -138,34 +144,15 @@ export function computeFloorplate(
     }
   }
 
-  // Fill banks, least-filled first, until the bar length is exhausted
+  // Fill banks, least-filled first, cycling the proportion sequence until the
+  // bar length is exhausted (cap is a safety net, not a design limit).
   const cursors = banks.map(() => usableX1);
   const units: UnitPoly[] = [];
-  for (const m of queue) {
-    const bankIdx = cursors.indexOf(Math.min(...cursors));
+  const MAX_UNITS = 400;
+  const widthIn = (m: Mix, bank: { y1: number; y2: number }) =>
+    Math.max(MIN_UNIT_W, (m.avgSqft / SQFT_PER_SQM) / (bank.y2 - bank.y1));
+  const place = (m: Mix, bankIdx: number, w: number) => {
     const bank = banks[bankIdx];
-    const bankDepth = bank.y2 - bank.y1;
-    const w = Math.max(MIN_UNIT_W, (m.avgSqft / SQFT_PER_SQM) / bankDepth);
-    if (cursors[bankIdx] + w > usableX2 + 0.25) {
-      // This bank is full; try the other one once, else stop.
-      const other = 1 - bankIdx;
-      if (
-        banks.length > 1 &&
-        cursors[other] + Math.max(MIN_UNIT_W, (m.avgSqft / SQFT_PER_SQM) / (banks[other].y2 - banks[other].y1)) <= usableX2 + 0.25
-      ) {
-        const ob = banks[other];
-        const ow = Math.max(MIN_UNIT_W, (m.avgSqft / SQFT_PER_SQM) / (ob.y2 - ob.y1));
-        units.push({
-          ring: rect(cursors[other], ob.y1, cursors[other] + ow, ob.y2),
-          type: m.type,
-          label: UNIT_LABELS[m.type] ?? '?',
-          center: centerOf(cursors[other], ob.y1, cursors[other] + ow, ob.y2),
-        });
-        cursors[other] += ow;
-        continue;
-      }
-      break;
-    }
     units.push({
       ring: rect(cursors[bankIdx], bank.y1, cursors[bankIdx] + w, bank.y2),
       type: m.type,
@@ -173,6 +160,31 @@ export function computeFloorplate(
       center: centerOf(cursors[bankIdx], bank.y1, cursors[bankIdx] + w, bank.y2),
     });
     cursors[bankIdx] += w;
+  };
+
+  // `misses` counts consecutive types that fit nowhere — a full cycle of
+  // misses means even the narrowest type is out of room.
+  let misses = 0;
+  for (let qi = 0; units.length < MAX_UNITS && misses < queue.length; qi++) {
+    const m = queue[qi % queue.length];
+    const bankIdx = cursors.indexOf(Math.min(...cursors));
+    const w = widthIn(m, banks[bankIdx]);
+    if (cursors[bankIdx] + w <= usableX2 + 0.25) {
+      place(m, bankIdx, w);
+      misses = 0;
+      continue;
+    }
+    // Least-filled bank is full for this type; try the other bank.
+    const other = 1 - bankIdx;
+    if (banks.length > 1) {
+      const ow = widthIn(m, banks[other]);
+      if (cursors[other] + ow <= usableX2 + 0.25) {
+        place(m, other, ow);
+        misses = 0;
+        continue;
+      }
+    }
+    misses++;
   }
 
   return { units, cores };

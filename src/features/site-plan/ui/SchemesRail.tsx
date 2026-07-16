@@ -1,5 +1,5 @@
 import React from 'react';
-import { GitBranch, Pin } from 'lucide-react';
+import { GitBranch, Pin, History, RefreshCw } from 'lucide-react';
 import type { MfCandidate } from '../api/generateMfPlan';
 
 const n = (v: unknown): number | null =>
@@ -8,14 +8,20 @@ const n = (v: unknown): number | null =>
 /**
  * A1 schemes rail: every generation persists a candidate — this makes the
  * design history browsable. Click a scheme to view it (deterministic
- * re-render from its seed + pins; no new candidate row).
+ * re-render from its seed + pins under its STORED context; no new candidate
+ * row). Candidates from an older/unknown context wear a badge and offer an
+ * explicit "Regenerate with current context" action instead of being
+ * silently re-planned on today's basis.
  */
 const SchemesRail: React.FC<{
   candidates: MfCandidate[];
   activeId: string | null;
   onView: (c: MfCandidate) => void;
   busy?: boolean;
-}> = ({ candidates, activeId, onView, busy }) => {
+  /** The workspace's ACTIVE compiled context id (null = none compiled) */
+  activeContextId?: string | null;
+  onRegenerateWithCurrentContext?: (c: MfCandidate) => void;
+}> = ({ candidates, activeId, onView, busy, activeContextId, onRegenerateWithCurrentContext }) => {
   if (candidates.length === 0) return null;
 
   // A3 ranking: best market margin gets the badge (order stays chronological
@@ -38,44 +44,72 @@ const SchemesRail: React.FC<{
           const margin = typeof c.marginOnCost === 'number' ? c.marginOnCost : null;
           const isBest = bestMargin != null && margin === bestMargin && margins.length > 1;
           const time = c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+          // Older context: the candidate was produced under a snapshot that is
+          // not the active one (or predates the context contract entirely).
+          const olderContext =
+            activeContextId != null && (c.contextId == null || c.contextId !== activeContextId);
           return (
-            <button
+            <div
               key={c.id}
-              onClick={() => onView(c)}
-              disabled={busy}
-              className={`w-full text-left px-2 py-1.5 rounded border text-xs flex items-center gap-2 disabled:opacity-50 ${
+              className={`w-full rounded border text-xs ${
                 active
                   ? 'border-blue-400 bg-blue-50'
                   : 'border-gray-100 hover:border-gray-300 hover:bg-gray-50'
               }`}
             >
-              <span className="font-mono text-[10px] text-gray-400 flex-shrink-0">{time}</span>
-              <span className="font-medium text-gray-900 tabular-nums">
-                {units != null ? `${units} u` : '—'}
-              </span>
-              <span className="text-gray-500 tabular-nums">{stalls != null ? `${stalls} st` : ''}</span>
-              <span className="text-gray-500 tabular-nums">{far != null ? `FAR ${far.toFixed(2)}` : ''}</span>
-              {margin != null && (
-                <span
-                  className={`tabular-nums font-medium ${
-                    isBest ? 'text-green-700' : margin < 0 ? 'text-red-600' : 'text-gray-600'
-                  }`}
-                  title="Margin on cost at local pricing"
-                >
-                  {isBest ? '★ ' : ''}
-                  {(margin * 100).toFixed(1)}%
+              <button
+                onClick={() => onView(c)}
+                disabled={busy}
+                className="w-full text-left px-2 py-1.5 flex items-center gap-2 disabled:opacity-50"
+              >
+                <span className="font-mono text-[10px] text-gray-400 flex-shrink-0">{time}</span>
+                <span className="font-medium text-gray-900 tabular-nums">
+                  {units != null ? `${units} u` : '—'}
                 </span>
-              )}
-              <span className="ml-auto flex items-center gap-1 text-gray-400 flex-shrink-0">
-                {c.pins.length > 0 && (
-                  <span className="flex items-center gap-0.5" title={`${c.pins.length} pinned building${c.pins.length === 1 ? '' : 's'}`}>
-                    <Pin className="w-3 h-3" />
-                    {c.pins.length}
+                <span className="text-gray-500 tabular-nums">{stalls != null ? `${stalls} st` : ''}</span>
+                <span className="text-gray-500 tabular-nums">{far != null ? `FAR ${far.toFixed(2)}` : ''}</span>
+                {margin != null && (
+                  <span
+                    className={`tabular-nums font-medium ${
+                      isBest ? 'text-green-700' : margin < 0 ? 'text-red-600' : 'text-gray-600'
+                    }`}
+                    title="Margin on cost at local pricing"
+                  >
+                    {isBest ? '★ ' : ''}
+                    {(margin * 100).toFixed(1)}%
                   </span>
                 )}
-                {c.parentId && <GitBranch className="w-3 h-3" aria-label="Variation of an earlier scheme" />}
-              </span>
-            </button>
+                <span className="ml-auto flex items-center gap-1 text-gray-400 flex-shrink-0">
+                  {olderContext && (
+                    <span
+                      className="flex items-center gap-0.5 text-amber-600"
+                      title={c.contextId == null
+                        ? 'Saved before the context contract — views use the legacy basis it was built on'
+                        : 'Saved under an older context version — views use its stored context'}
+                    >
+                      <History className="w-3 h-3" />
+                    </span>
+                  )}
+                  {c.pins.length > 0 && (
+                    <span className="flex items-center gap-0.5" title={`${c.pins.length} pinned building${c.pins.length === 1 ? '' : 's'}`}>
+                      <Pin className="w-3 h-3" />
+                      {c.pins.length}
+                    </span>
+                  )}
+                  {c.parentId && <GitBranch className="w-3 h-3" aria-label="Variation of an earlier scheme" />}
+                </span>
+              </button>
+              {olderContext && onRegenerateWithCurrentContext && (
+                <button
+                  onClick={() => onRegenerateWithCurrentContext(c)}
+                  disabled={busy}
+                  className="w-full text-left px-2 pb-1.5 -mt-0.5 flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  Regenerate with current context
+                </button>
+              )}
+            </div>
           );
         })}
       </div>

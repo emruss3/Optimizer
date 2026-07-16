@@ -24,7 +24,7 @@ import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
-import { generateMfSitePlan, generateMfSitePlanV2, mfPlanToElements, isMfPlanElement, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { generateMfSitePlan, generateMfSitePlanV2, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import {
   compilePlannerContext,
   plannerContextToDesignContext,
@@ -32,9 +32,11 @@ import {
   briefToZoningPatch,
   briefToParkingPatch,
   briefToWorkerBrief,
+  describeContextFlag,
   type PlannerContextResponse,
 } from './api/plannerContext';
 import { recordPlannerFeedback } from './api/plannerFeedback';
+import ContextLineage, { resolveContextApplication, type PlanLineage } from './ui/ContextLineage';
 import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -79,13 +81,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, []);
   const appliedContextRef = useRef<string | null>(null);
 
-  // ── ONE compiled planner context (planner_context_v1) drives everything ──
-  // ContextPanel display, server generation (v2), worker grounding, and the
-  // plan-basis line all read this snapshot. Nothing else fetches context.
+  // ── ONE compiled planner context (planner_context_v2) drives everything ──
+  // ContextPanel display, server generation (v2), worker grounding, plan
+  // lineage, and feedback events all read this snapshot. Nothing else fetches
+  // context. Exactly one snapshot is active per parcel + selected use +
+  // normalized intent; a use switch clears it before compiling the next one.
   const [plannerCtx, setPlannerCtx] = useState<PlannerContextResponse | null>(null);
   const plannerCtxRef = useRef<PlannerContextResponse | null>(null);
   const [plannerLoading, setPlannerLoading] = useState(false);
   const [permittedUses, setPermittedUses] = useState<string[]>([]);
+  // What the LAST generated plan said about its own basis (context id/version,
+  // generator/score lineage, result summary). Drives the honest "Context
+  // applied" strip — never inferred from the active context.
+  const [planLineage, setPlanLineage] = useState<PlanLineage | null>(null);
+  // Use/context changed after this plan was generated → it no longer reflects
+  // the active planning basis. Cleared by the next successful generation.
+  const [planStale, setPlanStale] = useState(false);
+  const lastCompiledUseRef = useRef<string | null>(null);
   // The first compile must be for the FINAL default use — compiling while the
   // as-of-right correction is still in flight routed plans off a
   // wrong-use context (seen live: single_family compile racing multi_family
@@ -300,16 +312,24 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     /** Live-drag: omit this pin's bar from the render — the user's hand
      *  (the Shell's locally-dragged element) is the source of truth for it */
     dropPinIndex?: number | null;
+    /** Saved-candidate view: undefined = active snapshot; a string = that
+     *  candidate's STORED context; null = force the legacy path (candidate
+     *  predates the context contract — today's context must not silently
+     *  rewrite what it meant). */
+    contextId?: string | null;
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     const snapshot = plannerCtxRef.current;
-    let resp = snapshot?.context_id
-      ? await generateMfSitePlanV2(contextOgcFid, snapshot.context_id, {
+    const effectiveContextId = opts.contextId !== undefined
+      ? opts.contextId
+      : snapshot?.context_id ?? null;
+    let resp = effectiveContextId
+      ? await generateMfSitePlanV2(contextOgcFid, effectiveContextId, {
           seed: opts.seed,
           pins: opts.pins,
           parentId: opts.parentId,
           persist: opts.persist,
-          typology: snapshot.context.typology,
+          typology: snapshot?.context.typology,
         })
       : null;
     if (resp?.error === 'planner_generation_not_allowed') {
@@ -318,8 +338,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setPlanBasis(`Generation blocked — selected use not permitted as-of-right${snapshot ? ` · ${plannerContextSummary(snapshot)}` : ''}`);
       return true; // handled: a rejection, not a fallback case
     }
-    if (!resp || resp.error) {
-      // No context or stale/mismatched snapshot → v1 keeps working (migration rule)
+    // Context-contract errors are surfaced, never papered over with the
+    // legacy generator: a v1 fallback here would render a plan that ignores
+    // the compiled context while the UI still displays one.
+    if (effectiveContextId && resp && isContextContractError(resp.error)) {
+      setViolations([{
+        code: 'context-contract',
+        message: `Context contract error (${resp.error}) — the plan was not regenerated. Re-select the use or reload to compile a fresh context.`,
+        severity: 'error',
+      }]);
+      setPlanBasis(`Context contract error — ${describeContextFlag(resp.error ?? '')}`);
+      return true; // handled: an explicit rejection, not a fallback case
+    }
+    if (!resp) {
+      // v2 RPC unreachable (transport failure / not yet deployed) → the
+      // deliberate deployment-compatibility window: the legacy six-argument
+      // generator. Lineage below records the plan as context-free.
       resp = await generateMfSitePlan(contextOgcFid, {
         seed: opts.seed,
         pins: opts.pins,
@@ -344,6 +378,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
     setViolations([]);
+    // Plan lineage — what THIS plan reports about its own basis. The
+    // "Context applied" strip compares these against the active snapshot.
+    const mNum = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) ? v : null;
+    setPlanLineage({
+      solvedBy: 'server',
+      contextId: resp.context_id ?? null,
+      contextVersion: resp.context_version ?? null,
+      contextHash: resp.context_hash ?? null,
+      generatorVersion: resp.generator_version ?? null,
+      scoreVersion: resp.score_version ?? null,
+      programPriorVersion: resp.program_prior_version ?? null,
+      scoreTotal: resp.score_total ?? null,
+      scoreComponents: resp.score_components ?? null,
+      flags,
+      buildings: mNum(resp.metrics?.bars),
+      floors: mNum(resp.metrics?.floors),
+      footprintSqft: mNum(resp.metrics?.footprint_sqft),
+    });
+    setPlanStale(false);
     const parkingNote = flags.includes('parking_below_ratio') ? ' · ⚠ parking below target ratio' : '';
     const clampCount = flags.filter(f => f.includes('clamp')).length;
     const clampNote = clampCount > 0 ? ` · ${clampCount} clamp${clampCount === 1 ? '' : 's'}` : '';
@@ -387,6 +441,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   const handleGenerate = useCallback(async (iterations?: unknown) => {
     if (!envelopeMeters) return;
+    // Generation gate: a blocked use is a REJECTION — neither the server nor
+    // the worker may lay it out. The use selector stays live to pick another.
+    if (generationBlockedRef.current) {
+      setViolations([{
+        code: 'context',
+        message: 'Generation blocked: the selected use is not permitted as-of-right. Pick a permitted use in the Design Context panel.',
+        severity: 'error',
+      }]);
+      return;
+    }
     // Server plans vary by regeneration (a new candidate), not local SA.
     // Pins carry through: your placed buildings survive every variation.
     if (planModeRef.current === 'mf-server') {
@@ -423,13 +487,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         anglesDeg: [0, 60, 90]
       };
 
+      // The ACTIVE snapshot's brief travels explicitly with the solve — the
+      // worker fallback grounds on the same Regrid priors, program prior,
+      // and objective weights as the server generator (worker parity).
+      const snapshot = plannerCtxRef.current;
+      const workerBrief = snapshot ? briefToWorkerBrief(snapshot) : undefined;
+
       // Use the optimizer for "Generate Plan" — it runs simulated annealing
       const result = await workerManager.optimizeSite(
         envelopeMeters,
         config.zoning,
         config.designParameters,
         parkingSpec,
-        iters // 0 = instant constructive solve; >0 = SA refinement
+        iters, // 0 = instant constructive solve; >0 = SA refinement
+        workerBrief
       );
 
       // Feed best result into the plan output (already in EPSG:3857 meters)
@@ -439,6 +510,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       );
       setViolations(result.bestViolations || []);
       trackBuildings(result.bestBuildings);
+      // Worker lineage: honest about whether the active context was in hand.
+      setPlanLineage({
+        solvedBy: 'worker',
+        contextId: snapshot?.context_id ?? null,
+        contextVersion: snapshot?.context_version ?? null,
+        contextHash: snapshot?.context_hash ?? null,
+        scoreTotal: result.finalScore ?? null,
+        workerUsedActiveContext: !!workerBrief,
+        buildings: result.bestBuildings?.length ?? null,
+        floors: result.bestBuildings?.length
+          ? Math.max(...result.bestBuildings.map(b => b.floors ?? 1))
+          : null,
+        footprintSqft: result.bestBuildings?.length
+          ? Math.round(result.bestBuildings.reduce((s, b) => s + (b.widthM ?? 0) * (b.depthM ?? 0), 0) * 10.7639)
+          : null,
+      });
+      setPlanStale(false);
 
       // Surface the optimizer's best + ranked alternatives in the solve table.
       // (Replaces the deprecated legacy-planner "generateAlternatives" path.)
@@ -489,6 +577,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // "Generate". Quietly no-ops on failure — it's a preview, not a commit.
   const liveResolve = useCallback(async () => {
     if (!envelopeMeters) return;
+    // The generation gate applies to previews too — a blocked use never lays out.
+    if (generationBlockedRef.current) return;
     // Static plans (SF lot fit, server-generated site system) aren't
     // massing-resolved — they change by regeneration.
     if (planModeRef.current === 'sf' || planModeRef.current === 'mf-server') return;
@@ -500,12 +590,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         anglesDeg: [0, 60, 90],
       };
       // 0 iterations → constructive solve: target-FAR layout + parking + metrics.
+      // The active snapshot's brief is passed explicitly, like every solve.
       const result = await workerManager.optimizeSite(
         envelopeMeters,
         config.zoning,
         config.designParameters,
         parkingSpec,
-        0
+        0,
+        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current) : undefined
       );
       setPlanOutput(result.bestElements || [], result.bestMetrics || null);
       setViolations(result.bestViolations || []);
@@ -821,12 +913,40 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }]);
       return;
     }
+    // Server plans: a manual add is an edit — pin a new bar at a legal open
+    // slot and regenerate. The generator keeps pins verbatim and re-flows
+    // drives/parking/courts around them.
     if (planModeRef.current === 'mf-server') {
-      setViolations([{
-        code: 'plan-mode',
-        message: 'This plan was generated server-side as one system. Use Generate for a new variation — per-building editing arrives with candidate sessions.',
-        severity: 'warning'
-      }]);
+      const avoid = elements
+        .filter(el => el.type === 'building')
+        .map(el => el.geometry as Polygon);
+      const slot = placeBarsAlongEdges(envelopeMeters, {
+        widthM: feetToMeters(100),
+        depthM: feetToMeters(60),
+        count: 1,
+        avoidFootprints: avoid,
+      })[0];
+      if (!slot) {
+        setViolations([{
+          code: 'plan-mode',
+          message: 'No open slot for another building — move or delete a bar first, or Generate a new variation.',
+          severity: 'warning'
+        }]);
+        return;
+      }
+      const newPin: MfPin = {
+        geom: feature3857To4326(buildBuildingFootprint(slot)),
+        floors: 3,
+      };
+      pendingMfRegenRef.current = {
+        pins: [...mfPinsRef.current, newPin],
+        final: true,
+        dropPinIndex: null,
+      };
+      void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'building_moved', activeCandidateId, {
+        action: 'building_added',
+      });
+      pumpMfRegen();
       return;
     }
 
@@ -896,7 +1016,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       depthFt: defaultDepthM,   // actually meters — Shell field name is legacy
       floors: defaultFloors
     }, { final: true });
-  }, [envelopeMeters, elements, handleBuildingUpdate, solverReady, config, setPlanOutput]);
+  }, [envelopeMeters, elements, handleBuildingUpdate, solverReady, config, setPlanOutput, pumpMfRegen, activeCandidateId]);
 
   const derivedInvestmentAnalysis = useMemo<InvestmentAnalysis | null>(() => {
     if (!metrics) return null;
@@ -977,6 +1097,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setGenerationBlocked(false);
       appliedContextRef.current = null;
       setPlanBasis(null);
+      setPlanLineage(null);
+      setPlanStale(false);
+      lastCompiledUseRef.current = null;
     }
   }, [parcel.ogc_fid, parcel.id]);
 
@@ -985,7 +1108,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const autoPlanMf = useCallback((ctx: DesignContext | null) => {
     planModeRef.current = 'mf';
     void (async () => {
-      const ok = await runServerMfPlan({ seed: 1 }).catch(() => false);
+      // User pins carry through a re-plan (use switch, context refresh) —
+      // same parcel, so they remain valid until geometry says otherwise.
+      const ok = await runServerMfPlan({ seed: 1, pins: mfPinsRef.current }).catch(() => false);
       if (!ok) {
         // handleGenerate sets the basis label from the settled context
         handleGenerate(0).catch(() => undefined);
@@ -1059,14 +1184,32 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextOgcFid]);
 
-  // Compile the planner context (cached per parcel+use); the first auto-solve
-  // waits for this settle or the existing fail-soft timeout below.
+  // Compile the planner context (cached per parcel+use+intent); the first
+  // auto-solve waits for this settle or the existing fail-soft timeout below.
   useEffect(() => {
     if (contextOgcFid == null || !useResolved) return;
     let cancelled = false;
+    // Selected-use TRANSITION: the old snapshot must not ground any solve for
+    // the new use (an SF context on an MF solve, or vice versa). Clear it,
+    // invalidate the applied-config marker, mark the on-canvas plan stale,
+    // and re-arm generation so the plan regenerates only after the NEW
+    // compile settles. User pins survive — same parcel, and both generators
+    // drop pins that no longer fit the envelope.
+    const isUseTransition =
+      lastCompiledUseRef.current != null && lastCompiledUseRef.current !== contextUse;
+    lastCompiledUseRef.current = contextUse;
+    if (isUseTransition) {
+      plannerCtxRef.current = null;
+      setPlannerCtx(null);
+      appliedContextRef.current = null;
+      if (planModeRef.current != null) setPlanStale(true);
+      hasAutoGeneratedRef.current = false;
+    }
     setPlannerLoading(true);
     compilePlannerContext(contextOgcFid, contextUse)
       .then(resp => {
+        // `cancelled` = a newer selected use owns the active-context slot;
+        // this stale compile response must not overwrite it.
         if (cancelled) return;
         plannerCtxRef.current = resp;
         setPlannerCtx(resp);
@@ -1092,19 +1235,43 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [refreshCandidates]);
 
   /** View a saved scheme: deterministic re-render from its seed + pins (no
-   *  new candidate row); future variations descend from the viewed scheme. */
+   *  new candidate row); future variations descend from the viewed scheme.
+   *  The render uses the candidate's STORED context id (or the legacy path
+   *  when it predates the contract) — never silently today's context, so the
+   *  scheme stays explainable from the context that produced it. */
   const handleViewCandidate = useCallback((c: MfCandidate) => {
     if (mfRegenInFlightRef.current) return;
     mfRegenInFlightRef.current = true;
     setIsGenerating(true);
     void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_viewed', c.id);
-    runServerMfPlan({ seed: c.seed, pins: c.pins, parentId: c.parentId, persist: false })
+    runServerMfPlan({
+      seed: c.seed,
+      pins: c.pins,
+      parentId: c.parentId,
+      persist: false,
+      contextId: c.contextId ?? null,
+    })
       .then(ok => {
         if (ok) {
           setActiveCandidateId(c.id);
           void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_selected', c.id);
         }
       })
+      .catch(() => undefined)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan]);
+
+  /** Explicit "Regenerate with current context": a NEW candidate descended
+   *  from the saved one, planned on the ACTIVE snapshot. The saved scheme
+   *  itself is never silently rewritten. */
+  const handleRegenerateCandidate = useCallback((c: MfCandidate) => {
+    if (mfRegenInFlightRef.current) return;
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: c.seed, pins: c.pins, parentId: c.id, persist: true })
       .catch(() => undefined)
       .finally(() => {
         mfRegenInFlightRef.current = false;
@@ -1190,9 +1357,25 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       </div>
 
-      {planBasis && (
-        <div className="px-4 py-1.5 bg-white border-b border-gray-100 text-xs text-gray-600 flex-shrink-0">
-          <span className="font-medium text-gray-700">Plan basis:</span> {planBasis}
+      {(planBasis || plannerCtx || plannerLoading || planStale || generationBlocked) && (
+        <div className="px-4 py-1.5 bg-white border-b border-gray-100 flex-shrink-0 space-y-1">
+          {planBasis && (
+            <div className="text-xs text-gray-600">
+              <span className="font-medium text-gray-700">Plan basis:</span> {planBasis}
+            </div>
+          )}
+          <ContextLineage
+            state={resolveContextApplication({
+              compiling: plannerLoading,
+              blocked: generationBlocked,
+              planStale,
+              activeContext: plannerCtx,
+              lineage: planLineage,
+            })}
+            activeContext={plannerCtx}
+            lineage={planLineage}
+            blockedReason={`"${contextUse.replace(/_/g, ' ')}" is not permitted as-of-right on this parcel. Pick a permitted use in the Design Context panel.`}
+          />
         </div>
       )}
 
@@ -1200,7 +1383,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
           <ContextPanel
             context={plannerCtx ? plannerContextToDesignContext(plannerCtx) : null}
-            builtForm={plannerCtx?.context.precedent}
+            precedent={plannerCtx?.solver_brief.precedent_priors}
             pricing={plannerCtx?.context.market}
             contextSummary={plannerCtx ? plannerContextSummary(plannerCtx) : null}
             loading={plannerLoading}
@@ -1285,14 +1468,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             activeId={activeCandidateId}
             onView={handleViewCandidate}
             busy={isGenerating || isGeneratingLots}
+            activeContextId={plannerCtx?.context_id ?? null}
+            onRegenerateWithCurrentContext={handleRegenerateCandidate}
           />
           <ResultsPanel
             metrics={metrics}
             investmentAnalysis={investmentAnalysis}
             isGenerating={isGenerating}
             violations={violations}
-            edgeClassifications={edgeClassifications}
-            setbacks={rpcMetrics?.setbacks}
           />
         </div>
       </div>

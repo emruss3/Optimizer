@@ -2,7 +2,7 @@ import type { Polygon } from 'geojson';
 import { areaM2, correctedAreaM2, intersection, polygons } from './geometry';
 import type { FeasibilityViolation } from './types';
 import type { UnitMixEntry } from './model';
-import { totalUnitsFromMix } from './model';
+import { totalUnitsFromMix, WEIGHTED_AVG_UNIT_SQFT } from './model';
 
 type BuildingFootprint = {
   id: string;
@@ -74,7 +74,7 @@ export function computeFeasibility({
 
   // ── Unit count from actual unit mixes (no more /800 assumption) ──────────
   const totalUnits = buildings.reduce((sum, b) => sum + totalUnitsFromMix(b.unitMix), 0)
-    || Math.max(1, Math.floor(gfaSqft * 0.85 / 750)); // fallback: weighted avg sqft (750 = weighted avg of unit mix)
+    || Math.max(1, Math.floor(gfaSqft * 0.85 / WEIGHTED_AVG_UNIT_SQFT)); // fallback: mix-weighted avg unit size
 
   const parkingRatio = zoningLimits.parkingRatio ?? 1.5;
   const stallsRequired = Math.ceil(totalUnits * parkingRatio);

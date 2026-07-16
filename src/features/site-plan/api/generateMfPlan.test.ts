@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest';
-import { mfPlanToElements, isMfPlanElement, type MfPlanResponse } from './generateMfPlan';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+  mfPlanToElements,
+  isMfPlanElement,
+  isContextContractError,
+  listMfCandidates,
+  generateMfSitePlanV2,
+  type MfPlanResponse,
+} from './generateMfPlan';
+
+const rpcMock = vi.fn();
+vi.mock('../../../lib/supabase', () => ({
+  supabase: { rpc: (...args: unknown[]) => rpcMock(...args) },
+}));
+
+beforeEach(() => {
+  rpcMock.mockReset();
+});
 
 // Live-shaped fixture (structure verified against fn_generate_mf_site_plan on
 // parcel 669046; coordinates simplified). Areas are EPSG:2274 backend truth.
@@ -90,6 +106,75 @@ describe('mfPlanToElements', () => {
     // garbage geometry is skipped, not thrown
     const r = mfPlanToElements({ buildings: [{ i: 1, geom: 'not-json' }], metrics: { gfa_sqft: 100 } });
     expect(r.elements).toHaveLength(0);
+  });
+});
+
+describe('context-contract error taxonomy (no silent legacy fallback)', () => {
+  it('recognizes every contract rejection the v2 RPC can return', () => {
+    for (const err of [
+      'planner_context_required',
+      'planner_context_not_found',
+      'planner_context_parcel_mismatch',
+      'planner_context_use_mismatch',
+      'planner_generation_not_allowed',
+      'planner_solver_brief_invalid',
+    ]) {
+      expect(isContextContractError(err)).toBe(true);
+    }
+    // Future planner_* contract errors are contract errors too
+    expect(isContextContractError('planner_new_rejection_kind')).toBe(true);
+  });
+
+  it('transport-ish/other failures are NOT contract errors (fallback window stays open)', () => {
+    expect(isContextContractError(null)).toBe(false);
+    expect(isContextContractError(undefined)).toBe(false);
+    expect(isContextContractError('network timeout')).toBe(false);
+    expect(isContextContractError('envelope too shallow for a building bar')).toBe(false);
+  });
+});
+
+describe('generateMfSitePlanV2 (context-driven generation)', () => {
+  it('sends the context id on the wire — the contract, not a vibe', async () => {
+    rpcMock.mockResolvedValue({ data: { parcel_ogc_fid: 1, context_id: 'ctx-1' }, error: null });
+    await generateMfSitePlanV2(669046, 'ctx-1', { seed: 3, persist: false });
+    expect(rpcMock).toHaveBeenCalledWith('fn_generate_mf_site_plan_v2', expect.objectContaining({
+      p_ogc_fid: 669046,
+      p_context_id: 'ctx-1',
+      p_seed: 3,
+      p_persist: false,
+    }));
+  });
+
+  it('contract rejections come back as responses (surfaced), transport failures as null', async () => {
+    rpcMock.mockResolvedValue({ data: { error: 'planner_context_parcel_mismatch' }, error: null });
+    const rejected = await generateMfSitePlanV2(669046, 'ctx-1');
+    expect(rejected?.error).toBe('planner_context_parcel_mismatch');
+    rpcMock.mockResolvedValue({ data: null, error: { message: '500' } });
+    expect(await generateMfSitePlanV2(669046, 'ctx-1')).toBeNull();
+  });
+});
+
+describe('listMfCandidates (saved candidates keep their stored context)', () => {
+  it('reads context_id/context_hash tolerantly: row level, metrics level, or absent (v1)', async () => {
+    rpcMock.mockResolvedValue({
+      data: [
+        { id: 'a', created_at: 't1', seed: 1, pins: [], parent_candidate_id: null,
+          metrics: { units_est: 75 }, context_id: 'ctx-row', context_hash: 'hash-row' },
+        { id: 'b', created_at: 't2', seed: 2, pins: [], parent_candidate_id: 'a',
+          metrics: { units_est: 60, context_id: 'ctx-metrics', context_hash: 'hash-metrics' } },
+        { id: 'c', created_at: 't3', seed: 3, pins: [], parent_candidate_id: null,
+          metrics: { units_est: 40 } },
+      ],
+      error: null,
+    });
+    const cands = await listMfCandidates(669046);
+    expect(cands.map(c => c.contextId)).toEqual(['ctx-row', 'ctx-metrics', null]);
+    expect(cands.map(c => c.contextHash)).toEqual(['hash-row', 'hash-metrics', null]);
+  });
+
+  it('fails soft to an empty rail', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    expect(await listMfCandidates(669046)).toEqual([]);
   });
 });
 

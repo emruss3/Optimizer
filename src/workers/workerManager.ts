@@ -17,9 +17,6 @@ export interface PlanUpdateResult {
 }
 
 export class PlannerWorkerManager {
-  /** Solver-safe planner context, attached to every solve (set by initSite) */
-  private lastSolverBrief: import('../engine/optimizer').WorkerSolverBrief | undefined;
-
   private worker: Worker | null = null;
 
   constructor() {
@@ -67,8 +64,10 @@ export class PlannerWorkerManager {
     if (!this.worker) {
       throw new Error('Worker not available');
     }
-    this.lastSolverBrief = solverBrief ?? this.lastSolverBrief;
 
+    // The brief travels VERBATIM with each call — no manager-side cache. A
+    // retained brief once carried the previous parcel/use context into the
+    // next solve; explicit-per-call makes staleness structurally impossible.
     const id = ++nextId;
     this.worker.postMessage({
       type: 'INIT_SITE',
@@ -78,7 +77,7 @@ export class PlannerWorkerManager {
       initialBuildingSpec,
       parkingSpec,
       buildingType,
-      solverBrief: this.lastSolverBrief,
+      solverBrief,
     });
 
     return this.waitForPlanUpdate(id);
@@ -194,6 +193,9 @@ export class PlannerWorkerManager {
       anglesDeg: number[];
     },
     maxIterations?: number,
+    /** The ACTIVE compiled context's worker brief — passed explicitly on every
+     *  solve (undefined = solve on standard defaults, honestly). */
+    solverBrief?: import('../engine/optimizer').WorkerSolverBrief,
     onProgress?: (iteration: number, score: number) => void
   ): Promise<OptimizeResult> {
     if (!this.worker) {
@@ -209,7 +211,7 @@ export class PlannerWorkerManager {
       designParams,
       parkingSpec,
       maxIterations,
-      solverBrief: this.lastSolverBrief,
+      solverBrief,
     });
 
     return new Promise((resolve, reject) => {

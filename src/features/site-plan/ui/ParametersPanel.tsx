@@ -51,6 +51,35 @@ type ParametersPanelProps = {
   currentInvestment: InvestmentAnalysis | null;
 };
 
+/** Compact slider row: label + live value on one line, thin track, no
+ *  min/max legend row (the range lives in the tooltip). */
+const SliderRow: React.FC<{
+  label: string;
+  value: number;
+  display: string;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}> = ({ label, value, display, min, max, step, onChange }) => (
+  <div>
+    <div className="flex items-baseline justify-between mb-1">
+      <label className="text-xs font-medium text-gray-600">{label}</label>
+      <span className="text-xs font-semibold text-gray-900 tabular-nums">{display}</span>
+    </div>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      title={`${min}–${max}`}
+      onChange={e => onChange(Number(e.target.value))}
+      className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+    />
+  </div>
+);
+
 const ParametersPanel: React.FC<ParametersPanelProps> = ({
   parcel,
   config,
@@ -90,158 +119,118 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
 
   return (
     <div className="w-full xl:w-80 bg-white border border-gray-200 rounded-lg p-4 overflow-y-auto">
-      <h3 className="text-lg font-semibold mb-4">Parameters</h3>
-
-      <div className="space-y-4 text-sm text-gray-700">
-        <div className="space-y-1">
-          <div className="text-xs uppercase tracking-wide text-gray-500">Parcel</div>
-          <div className="font-medium">{parcel.address}</div>
-          <div className="text-gray-600">{(parcel.deeded_acres || 0).toFixed(2)} acres</div>
-        </div>
-        <div className="space-y-1">
-          <div className="text-xs uppercase tracking-wide text-gray-500">Zoning</div>
-          <div className="font-medium">{parcel.zoning || 'N/A'}</div>
-        </div>
+      <div className="flex items-baseline justify-between mb-2">
+        <h3 className="text-sm font-semibold text-gray-900">Parameters</h3>
+        <span className="text-xs text-gray-500">
+          {(parcel.deeded_acres || 0).toFixed(2)} ac · {parcel.zoning || 'no zoning'}
+        </span>
+      </div>
+      <div className="text-xs text-gray-600 truncate mb-3" title={parcel.address}>
+        {parcel.address}
       </div>
 
       {staticPlan && (
-        <p className="mt-4 text-[11px] leading-snug text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
+        <p className="mb-3 text-[11px] leading-snug text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-1.5">
           This plan is generated from the compiled context — setbacks, FAR,
           height, density and parking come from ordinance + precedent. Use
           Generate for a new variation; sliders apply to the local engine only.
         </p>
       )}
-      <div className="mt-6 space-y-6">
-        <fieldset disabled={staticPlan} className={`m-0 p-0 border-0 space-y-6 ${staticPlan ? 'opacity-50' : ''}`}>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Target FAR: {config.designParameters.targetFAR}
-          </label>
-          <input
-            type="range"
-            min="0.5"
-            max="3.0"
-            step="0.1"
+      <div className="space-y-4">
+        <fieldset disabled={staticPlan} className={`m-0 p-0 border-0 space-y-3 ${staticPlan ? 'opacity-50' : ''}`}>
+          <SliderRow
+            label="Target FAR"
             value={config.designParameters.targetFAR}
-            onChange={(e) =>
+            display={config.designParameters.targetFAR.toFixed(1)}
+            min={0.5}
+            max={3}
+            step={0.1}
+            onChange={v =>
               onConfigChange({
-                designParameters: {
-                  ...config.designParameters,
-                  targetFAR: parseFloat(e.target.value)
-                }
+                designParameters: { ...config.designParameters, targetFAR: v }
               })
             }
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
           />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>0.5</span>
-            <span>3.0</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Coverage: {config.designParameters.targetCoveragePct}%
-          </label>
-          <input
-            type="range"
-            min="20"
-            max="80"
-            step="5"
-            value={config.designParameters.targetCoveragePct}
-            onChange={(e) =>
+          <SliderRow
+            label="Coverage"
+            value={config.designParameters.targetCoveragePct ?? 50}
+            display={`${config.designParameters.targetCoveragePct ?? 50}%`}
+            min={20}
+            max={80}
+            step={5}
+            onChange={v =>
               onConfigChange({
-                designParameters: {
-                  ...config.designParameters,
-                  targetCoveragePct: parseInt(e.target.value, 10)
-                }
+                designParameters: { ...config.designParameters, targetCoveragePct: v }
               })
             }
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
           />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>20%</span>
-            <span>80%</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Parking Ratio: {config.designParameters.parking.targetRatio}
-          </label>
-          <input
-            type="range"
-            min="0.5"
-            max="3.0"
-            step="0.1"
+          <SliderRow
+            label="Parking ratio"
             value={config.designParameters.parking.targetRatio}
-            onChange={(e) =>
+            display={`${config.designParameters.parking.targetRatio.toFixed(1)} /unit`}
+            min={0.5}
+            max={3}
+            step={0.1}
+            onChange={v =>
               onConfigChange({
                 designParameters: {
                   ...config.designParameters,
-                  parking: {
-                    ...config.designParameters.parking,
-                    targetRatio: parseFloat(e.target.value)
+                  parking: { ...config.designParameters.parking, targetRatio: v }
+                }
+              })
+            }
+          />
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Typology</label>
+            <select
+              value={config.designParameters.buildingTypology}
+              onChange={(e) =>
+                onConfigChange({
+                  designParameters: {
+                    ...config.designParameters,
+                    buildingTypology: e.target.value
                   }
-                }
-              })
-            }
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-          />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>0.5</span>
-            <span>3.0</span>
+                })
+              }
+              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="bar">Bar Building</option>
+              <option value="L-shape">L-Shaped</option>
+              <option value="podium">Podium</option>
+              <option value="u-shape">U-Shape</option>
+              <option value="courtyard-wrap">Courtyard Wrap</option>
+              <option value="custom">Custom</option>
+            </select>
           </div>
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Building Typology</label>
-          <select
-            value={config.designParameters.buildingTypology}
-            onChange={(e) =>
-              onConfigChange({
-                designParameters: {
-                  ...config.designParameters,
-                  buildingTypology: e.target.value
-                }
-              })
-            }
-            className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="bar">Bar Building</option>
-            <option value="L-shape">L-Shaped</option>
-            <option value="podium">Podium</option>
-            <option value="u-shape">U-Shape</option>
-            <option value="courtyard-wrap">Courtyard Wrap</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Number of Buildings: {config.designParameters.numBuildings}
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            step="1"
-            value={config.designParameters.numBuildings}
-            onChange={(e) =>
-              onConfigChange({
-                designParameters: {
-                  ...config.designParameters,
-                  numBuildings: parseInt(e.target.value, 10)
-                }
-              })
-            }
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-          />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
-            <span>1</span>
-            <span>5</span>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Buildings</label>
+            <div className="grid grid-cols-6 gap-1" role="group" aria-label="Number of buildings">
+              {/* Auto = coverage/precedent-driven count (numBuildings unset) */}
+              {[undefined, 1, 2, 3, 4, 5].map(n => {
+                const active = config.designParameters.numBuildings === n;
+                return (
+                  <button
+                    key={n ?? 'auto'}
+                    onClick={() =>
+                      onConfigChange({
+                        designParameters: { ...config.designParameters, numBuildings: n }
+                      })
+                    }
+                    title={n == null ? 'Let coverage and local precedent decide the count' : `${n} building${n === 1 ? '' : 's'}`}
+                    className={`px-0 py-1.5 text-xs rounded border tabular-nums ${
+                      active
+                        ? 'bg-blue-600 border-blue-600 text-white font-semibold'
+                        : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                    }`}
+                  >
+                    {n ?? 'Auto'}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
         </fieldset>
 
         {rpcMetrics && (

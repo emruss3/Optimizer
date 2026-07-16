@@ -11,11 +11,13 @@ const bar = (w = 61, d = 18, x0 = 0, y0 = 0) => [
 ];
 
 const mix = [
-  { type: 'studio', count: 6, avgSqft: 450 },
-  { type: '1br', count: 24, avgSqft: 650 },
-  { type: '2br', count: 21, avgSqft: 900 },
-  { type: '3br', count: 9, avgSqft: 1200 },
+  { type: 'studio', count: 6, avgSqft: 550 },
+  { type: '1br', count: 24, avgSqft: 700 },
+  { type: '2br', count: 21, avgSqft: 1100 },
+  { type: '3br', count: 9, avgSqft: 1600 },
 ];
+
+const SQFT_PER_SQM = 10.7639;
 
 describe('computeFloorplate', () => {
   it('slices a bar into typed units on two banks with end cores', () => {
@@ -25,7 +27,7 @@ describe('computeFloorplate', () => {
     // Only known types, each with a color + label
     for (const u of fp.units) {
       expect(UNIT_COLORS[u.type]).toBeDefined();
-      expect(['S', 'A', 'B', 'C']).toContain(u.label);
+      expect(['Studio', '1 Bed', '2 Bed', '3 Bed']).toContain(u.label);
     }
     // All unit geometry stays inside the footprint bbox
     for (const u of fp.units) {
@@ -38,14 +40,41 @@ describe('computeFloorplate', () => {
     }
   });
 
-  it('never renders more units per type than the per-floor mix', () => {
+  it('draws each unit at its fixed per-type area (proportional sizing)', () => {
     const fp = computeFloorplate(bar(), mix, 3);
+    const bySqft: Record<string, number> = { studio: 550, '1br': 700, '2br': 1100, '3br': 1600 };
+    for (const u of fp.units) {
+      const xs = u.ring.map(p => p[0]);
+      const ys = u.ring.map(p => p[1]);
+      const areaSqft =
+        (Math.max(...xs) - Math.min(...xs)) *
+        (Math.max(...ys) - Math.min(...ys)) *
+        SQFT_PER_SQM;
+      // Within 10% of the type's nominal size (MIN_UNIT_W can pad narrow types)
+      expect(areaSqft).toBeGreaterThan(bySqft[u.type] * 0.9);
+      expect(areaSqft).toBeLessThan(bySqft[u.type] * 1.1);
+    }
+  });
+
+  it('re-fills dynamically: a longer bar yields more units, a shorter bar fewer', () => {
+    const base = computeFloorplate(bar(61), mix, 3).units.length;
+    const longer = computeFloorplate(bar(100), mix, 3).units.length;
+    const shorter = computeFloorplate(bar(35), mix, 3).units.length;
+    expect(longer).toBeGreaterThan(base);
+    expect(shorter).toBeLessThan(base);
+  });
+
+  it('keeps roughly the mix proportions when filling a long bar', () => {
+    const fp = computeFloorplate(bar(160), mix, 3);
     const byType: Record<string, number> = {};
     for (const u of fp.units) byType[u.type] = (byType[u.type] ?? 0) + 1;
-    expect(byType['studio'] ?? 0).toBeLessThanOrEqual(Math.round(6 / 3));
-    expect(byType['1br'] ?? 0).toBeLessThanOrEqual(Math.round(24 / 3));
-    expect(byType['2br'] ?? 0).toBeLessThanOrEqual(Math.round(21 / 3));
-    expect(byType['3br'] ?? 0).toBeLessThanOrEqual(Math.round(9 / 3));
+    // 1br has the largest share of the mix (24 of 60) — it should dominate
+    expect(byType['1br'] ?? 0).toBeGreaterThanOrEqual(byType['studio'] ?? 0);
+    expect(byType['1br'] ?? 0).toBeGreaterThanOrEqual(byType['3br'] ?? 0);
+    // Every type in the mix shows up on a bar this long
+    for (const t of ['studio', '1br', '2br', '3br']) {
+      expect(byType[t] ?? 0).toBeGreaterThan(0);
+    }
   });
 
   it('units within a bank never overlap (disjoint x-ranges)', () => {
