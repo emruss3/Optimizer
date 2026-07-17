@@ -7,3 +7,6 @@ terminals/
 .env.local
 playwright-report/
 test-results/
+private-backups/
+*.tar.age
+*.tar.age.sha256
