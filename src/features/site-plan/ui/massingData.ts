@@ -31,11 +31,14 @@ export function buildingHeightM(floors: number): number {
  * horizontal distances match the extrusion heights (which are real metres) —
  * otherwise buildings at Nashville's latitude would look ~24% too squat.
  */
-export function buildMassingData(elements: Element[]): { polygons: MassingPolygon[]; extent: number } {
+export function buildMassingData(
+  elements: Element[],
+  ground?: { parcelRing?: number[][]; envelopeRing?: number[][] }
+): { polygons: MassingPolygon[]; extent: number; groundPaths: Array<{ path: number[][]; color: [number, number, number, number]; widthM: number }> } {
   const drawable = elements.filter(
     e => TYPE_COLORS[e.type] && e.geometry?.coordinates?.[0]?.length >= 4
   );
-  if (drawable.length === 0) return { polygons: [], extent: 100 };
+  if (drawable.length === 0) return { polygons: [], extent: 100, groundPaths: [] };
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const el of drawable) {
@@ -69,6 +72,16 @@ export function buildMassingData(elements: Element[]): { polygons: MassingPolygo
         : el.name ?? el.id,
   }));
 
+  // Parcel + envelope outlines on the ground plane, in the SAME centred frame
+  const groundPaths: Array<{ path: number[][]; color: [number, number, number, number]; widthM: number }> = [];
+  const toLocal = (ring: number[][]) => ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k, 0.05]);
+  if (ground?.parcelRing && ground.parcelRing.length >= 4) {
+    groundPaths.push({ path: toLocal(ground.parcelRing), color: [71, 85, 105, 255], widthM: 0.9 });
+  }
+  if (ground?.envelopeRing && ground.envelopeRing.length >= 4) {
+    groundPaths.push({ path: toLocal(ground.envelopeRing), color: [37, 99, 235, 200], widthM: 0.5 });
+  }
+
   const extent = Math.max((maxX - minX) * k, (maxY - minY) * k, 10);
-  return { polygons, extent };
+  return { polygons, extent, groundPaths };
 }

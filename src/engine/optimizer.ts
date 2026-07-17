@@ -9,6 +9,7 @@ import { buildBuildingFootprint, clampBuildingToEnvelope } from './buildingGeome
 import { solveParkingBayPacking } from './parkingBaySolver';
 import { placeBarsAlongEdges } from './edgePlacement';
 import { computeFeasibility } from './feasibility';
+import { validatePlanElements, rejectionChip, clipPolysToObstacles, unionPolys } from './validatePlan';
 import { computeProForma } from './proforma';
 import { areaM2, correctedAreaM2, mercatorCorrectionFactor, normalizeToPolygon, safeBbox, intersection, difference, polygons, isPointInPolygon } from './geometry';
 
@@ -89,6 +90,9 @@ export interface OptimizeResult {
   }>;
   iterations: number;
   finalScore: number;
+  /** Candidates the zero-overlap gate rejected (never rendered) — the solves
+   *  rail shows these collapsed with their reason chips. */
+  rejected?: { count: number; reasons: string[] };
 }
 
 // ─── score weights ───────────────────────────────────────────────────────────
@@ -397,6 +401,37 @@ function computeFullResult(
     parkingSpec,
     maxStalls
   );
+
+  // Zero-overlap repair: the packer takes buildings as obstacles but can
+  // still leak a bay under a bar (found by the validation gate). Clip all
+  // parking flatwork against the building footprints and rescale the stall
+  // count by surviving bay area — per-bay counts are area-proportional, so
+  // the displayed numbers stay consistent with the drawn geometry.
+  const obstaclePolys = buildingFootprints.map(b => normalizeToPolygon(b.footprint));
+  const preClipBayArea = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0);
+  // The drive corridor is clipped against buildings only; bays and aisles
+  // yield to BOTH buildings and the drive (access beats storage).
+  if (parkingSolution.circulationPolygons) {
+    // Junctions overlap by construction (connector tees into the main
+    // drive) — merge the network first, then clip it against buildings.
+    parkingSolution.circulationPolygons = clipPolysToObstacles(
+      unionPolys(parkingSolution.circulationPolygons.map(c => normalizeToPolygon(c)) as never) as never,
+      obstaclePolys as never,
+      6
+    ) as never;
+  }
+  const bayObstacles = [
+    ...obstaclePolys,
+    ...((parkingSolution.circulationPolygons ?? []).map(c => normalizeToPolygon(c))),
+  ];
+  parkingSolution.bays = clipPolysToObstacles(parkingSolution.bays as never, bayObstacles as never, 13) as never;
+  parkingSolution.aisles = clipPolysToObstacles(parkingSolution.aisles as never, bayObstacles as never, 6) as never;
+  const postClipBayArea = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0);
+  if (preClipBayArea > 0 && postClipBayArea < preClipBayArea - 1) {
+    parkingSolution.stallsAchieved = Math.floor(
+      parkingSolution.stallsAchieved * (postClipBayArea / preClipBayArea)
+    );
+  }
 
   const parkingAreaM2 = parkingSolution.bays.reduce((s, b) => s + areaM2(b), 0) +
     parkingSolution.aisles.reduce((s, a) => s + areaM2(a), 0);
@@ -1102,29 +1137,81 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   }
 
   // ── 4. Build full results only for best + top 3 (expensive, but only ~4 calls) ─
-  const bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec);
+  // Zero-overlap gate: every candidate is validated before it can be returned.
+  // An invalid best is replaced by the best VALID alternative; invalid
+  // alternatives are dropped and reported (never rendered).
+  const rejectedReasons: string[] = [];
 
-  const top3Alternatives = topN
+  let bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec);
+  let bestSpecs = bestBuildings;
+  let bestValidation = validatePlanElements(bestResult.elements);
+
+  const rankedAlternatives = topN
     .filter(a => Math.abs(a.score - bestScore) > 0.005)
     .slice(0, 3)
-    .map(a => {
-      const full = computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec);
-      return {
-        elements: full.elements,
-        metrics: full.metrics,
-        violations: full.violations,
-        score: full.score
-      };
-    });
+    .map(a => ({
+      buildings: a.buildings,
+      full: computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec),
+    }))
+    .map(a => ({ ...a, validation: validatePlanElements(a.full.elements) }));
+
+  if (!bestValidation.ok) {
+    rejectedReasons.push(rejectionChip(bestValidation));
+    const promoted = rankedAlternatives.find(a => a.validation.ok);
+    if (promoted) {
+      bestResult = promoted.full;
+      bestSpecs = promoted.buildings;
+      bestValidation = promoted.validation;
+    }
+  }
+
+  const top3Alternatives = rankedAlternatives
+    .filter(a => {
+      if (!a.validation.ok) {
+        rejectedReasons.push(rejectionChip(a.validation));
+        return false;
+      }
+      return a.full !== bestResult;
+    })
+    .map(a => ({
+      elements: a.full.elements,
+      metrics: a.full.metrics,
+      violations: a.full.violations,
+      score: a.full.score,
+    }));
+
+  if (!bestValidation.ok) {
+    // Nothing valid survived: an explicit rejection, never rendered garbage.
+    return {
+      bestElements: [],
+      bestMetrics: bestResult.metrics,
+      bestViolations: [
+        ...bestResult.violations,
+        {
+          code: 'geometry-overlap',
+          message: `Plan rejected: ${bestValidation.reason ?? 'overlapping geometry'} — re-solving`,
+          severity: 'error',
+        },
+      ],
+      bestBuildings: [],
+      top3Alternatives: [],
+      iterations: maxIterations,
+      finalScore: 0,
+      rejected: { count: rejectedReasons.length, reasons: rejectedReasons },
+    };
+  }
 
   return {
     bestElements: bestResult.elements,
     bestMetrics: bestResult.metrics,
     bestViolations: bestResult.violations,
-    bestBuildings: bestBuildings,
+    bestBuildings: bestSpecs,
     top3Alternatives,
     iterations: maxIterations,
-    finalScore: bestScore
+    finalScore: bestScore,
+    rejected: rejectedReasons.length
+      ? { count: rejectedReasons.length, reasons: rejectedReasons }
+      : undefined,
   };
 }
 

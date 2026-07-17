@@ -102,6 +102,8 @@ interface EnterpriseSitePlannerProps {
    * limited to pinned buildings (a real edit → regeneration).
    */
   staticPlan?: boolean;
+  /** Degraded-mode honesty: watermark the canvas as a default-assumption draft */
+  draftMode?: boolean;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -122,7 +124,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   onAddBuilding,
   onDeleteBuildings,
   onCloneBuildings,
-  staticPlan = false
+  staticPlan = false,
+  draftMode = false
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
   // run unconditionally on every render. The `!parcel` guard lives just before
@@ -1239,6 +1242,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             hoveredElement={hoveredElement}
             showLabels={true}
             parkingViz={parkingViz}
+            draftMode={draftMode}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}

@@ -11,6 +11,31 @@ export interface UnitMixEntry {
   count: number;
   avgSqft: number;
   rentPerMonth: number;
+  /** Required stalls per unit for this type. Defaults are typology defaults
+   *  (PARKING_RATIO_SOURCE) until the compiled context supplies real ones. */
+  parkingRatio?: number;
+}
+
+/** Per-type parking requirements — typology defaults until context-supplied. */
+export const PARKING_RATIO_DEFAULTS: Record<UnitMixEntry['type'], number> = {
+  studio: 1.0,
+  '1br': 1.25,
+  '2br': 1.5,
+  '3br': 1.75,
+};
+
+/** Provenance of the per-type ratios above (display honesty). */
+export const PARKING_RATIO_SOURCE = 'typology_default';
+
+/** Stalls required for a mix using per-type ratios (ceil per TestFit read). */
+export function requiredStallsForMix(mix: UnitMixEntry[] | undefined): number {
+  if (!mix?.length) return 0;
+  return Math.ceil(
+    mix.reduce(
+      (sum, e) => sum + e.count * (e.parkingRatio ?? PARKING_RATIO_DEFAULTS[e.type] ?? 1.5),
+      0
+    )
+  );
 }
 
 /**
@@ -70,6 +95,7 @@ export function generateUnitMixForCount(totalUnits: number): UnitMixEntry[] {
       count: Math.max(0, count),
       avgSqft: def.avgSqft,
       rentPerMonth: def.rentPerMonth,
+      parkingRatio: PARKING_RATIO_DEFAULTS[def.type],
     };
   });
 }

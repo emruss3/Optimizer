@@ -25,6 +25,8 @@ import ContextPanel from './ui/ContextPanel';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { validatePlanElements } from '../../engine/validatePlan';
+import TabulationPanel from './ui/TabulationPanel';
 import {
   compilePlannerContext,
   plannerContextToDesignContext,
@@ -129,6 +131,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // variation descends from; A1 rail data.
   const mfPinsRef = useRef<MfPin[]>([]);
   const mfRegenInFlightRef = useRef(false);
+  // Degraded-mode honesty: true when the visible plan was built on default
+  // assumptions (context unavailable/timed out). Drafts are watermarked and
+  // never persisted — degraded output must not look authoritative.
+  const [draftMode, setDraftMode] = useState(false);
+  const draftModeRef = useRef(false);
+  const markDraft = useCallback((v: boolean) => {
+    draftModeRef.current = v;
+    setDraftMode(v);
+  }, []);
+  // Zero-overlap gate bookkeeping: one silent re-solve per gesture on the
+  // server path; rejected worker candidates surface in the solves rail.
+  const serverGeoRetryRef = useRef(false);
+  const [solveRejected, setSolveRejected] = useState<{ count: number; reasons: string[] } | null>(null);
+  // Bumping this recompiles the context (the Retry button on the amber banner)
+  const [compileNonce, setCompileNonce] = useState(0);
   // Live-drag pump (dynamic site plans): drag events coalesce latest-wins
   // into preview solves (persist=false); the release commits the candidate.
   const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
@@ -186,6 +203,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   const handleSavePlan = useCallback(
     (name: string) => {
+      // Draft plans (default assumptions) are never persisted — saving one
+      // would launder degraded output into an authoritative-looking scheme.
+      if (draftModeRef.current) {
+        setViolations(v => [...v, {
+          code: 'draft-not-saved',
+          message: 'This plan uses default assumptions (context unavailable) — retry the context compile before saving.',
+          severity: 'warning',
+        }]);
+        return;
+      }
       savePlanToDb({
         parcel_id: parcelIdStr,
         name,
@@ -369,19 +396,45 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setPlanBasis(`Context contract error — ${describeContextFlag(resp.error ?? '')}`);
       return true; // handled: an explicit rejection, not a fallback case
     }
+    let degraded = false;
     if (!resp) {
       // v2 RPC unreachable (transport failure / not yet deployed) → the
       // deliberate deployment-compatibility window: the legacy six-argument
-      // generator. Lineage below records the plan as context-free.
+      // generator. Context-free = DRAFT: watermarked, never persisted.
+      degraded = true;
       resp = await generateMfSitePlan(contextOgcFid, {
         seed: opts.seed,
         pins: opts.pins,
         parentId: opts.parentId,
-        persist: opts.persist,
+        persist: false,
       });
     }
     if (!resp || !resp.buildings || resp.buildings.length === 0) return false;
     const mapped = mfPlanToElements(resp);
+
+    // Zero-overlap invariant: server plans are validated before they can
+    // render, same as the worker path. An invalid candidate is re-solved once
+    // with a different seed; if that also fails it is REJECTED, not rendered.
+    const validation = validatePlanElements(mapped.elements);
+    if (!validation.ok) {
+      if (!serverGeoRetryRef.current) {
+        serverGeoRetryRef.current = true;
+        setPlanBasis(`Plan rejected: ${validation.reason} — re-solving`);
+        const ok = await runServerMfPlan({ ...opts, seed: opts.seed + 13 });
+        serverGeoRetryRef.current = false;
+        return ok;
+      }
+      setViolations([{
+        code: 'geometry-overlap',
+        message: `Plan rejected: ${validation.reason}. Generate again for a new variation.`,
+        severity: 'error',
+      }]);
+      setPlanBasis(`Plan rejected: ${validation.reason}`);
+      return false;
+    }
+    serverGeoRetryRef.current = false;
+    markDraft(degraded || !effectiveContextId);
+
     const { metrics: serverMetrics, basis, flags } = mapped;
     let generated = mapped.elements;
     if (opts.dropPinIndex != null) {
@@ -507,6 +560,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     planModeRef.current = 'mf';
     const ctx = ctxSettledRef.current;
     const zoningLabel = ctx && ctx !== 'pending' && ctx.zoningBase ? ctx.zoningBase : null;
+    // No settled context = default assumptions = DRAFT (watermarked, unsaved)
+    markDraft(!zoningLabel && !plannerCtxRef.current);
     setPlanBasis(
       `Multifamily massing (${config.designParameters.buildingTypology})` +
       (zoningLabel ? ` — ${zoningLabel}` : ' — default assumptions') +
@@ -538,6 +593,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         iters, // 0 = instant constructive solve; >0 = SA refinement
         workerBrief
       );
+
+      // Rejected candidates (zero-overlap gate) surface in the solves rail —
+      // they were never rendered.
+      setSolveRejected(result.rejected ?? null);
 
       // Feed best result into the plan output (already in EPSG:3857 meters)
       setPlanOutput(
@@ -1123,6 +1182,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       mfPinsRef.current = [];
       productRef.current = 'apartments';
       setProduct('apartments');
+      draftModeRef.current = false;
+      setDraftMode(false);
+      serverGeoRetryRef.current = false;
+      setSolveRejected(null);
       setActiveCandidateId(null);
       setMfCandidates([]);
       ctxSettledRef.current = 'pending';
@@ -1265,7 +1328,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextOgcFid, contextUse, useResolved]);
+  }, [contextOgcFid, contextUse, useResolved, compileNonce]);
 
   // A1: load the parcel's scheme history on entry
   useEffect(() => {
@@ -1333,15 +1396,29 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       });
   }, [runServerMfPlan]);
 
-  // Fallback: if the context engine hasn't settled ~2.5s after the envelope is
-  // ready, don't block the user — plan with whatever we have (MF default).
+  // Fallback: if the context engine hasn't settled after the envelope is
+  // ready, don't block forever — but never flash a default plan while the
+  // compile is still in flight (cold compiles take ~4s). One grace period,
+  // then a DRAFT-marked default plan with the amber banner.
   useEffect(() => {
     if (!hasValidGeometry || !envelopeMeters) return;
     if (hasAutoGeneratedRef.current) return;
+    let second: number | undefined;
     const timer = window.setTimeout(() => {
-      autoPlan(ctxSettledRef.current === 'pending' ? null : ctxSettledRef.current);
+      if (ctxSettledRef.current !== 'pending') {
+        autoPlan(ctxSettledRef.current);
+        return;
+      }
+      // Still compiling: hold the skeleton instead of flashing defaults,
+      // then degrade honestly if the compile never lands.
+      second = window.setTimeout(() => {
+        autoPlan(ctxSettledRef.current === 'pending' ? null : ctxSettledRef.current);
+      }, 4500);
     }, 2500);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (second !== undefined) window.clearTimeout(second);
+    };
   }, [hasValidGeometry, envelopeMeters, autoPlan]);
 
   // Live re-solve when a design parameter changes (FAR, coverage, parking,
@@ -1464,6 +1541,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             onProductChange={plannerCtx?.context.typology === 'multifamily' ? handleProductChange : undefined}
             alternatives={alternatives}
             alternativeScores={solveScores}
+            rejectedSolves={solveRejected}
             selectedSolveIndex={selectedSolveIndex}
             onSelectSolve={selectSolve}
             savedPlans={savedPlans}
@@ -1480,14 +1558,44 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           />
         </div>
 
-        <div className="flex-1 min-w-0 min-h-[420px] xl:min-h-0">
+        <div className="flex-1 min-w-0 min-h-[420px] xl:min-h-0 relative">
+          {draftMode && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-amber-50 border border-amber-300 text-amber-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm">
+              <span>Using standard defaults — design context unavailable. Plan is a draft and won't be saved.</span>
+              <button
+                type="button"
+                className="px-2 py-0.5 rounded bg-amber-600 text-white hover:bg-amber-700"
+                onClick={() => {
+                  markDraft(false);
+                  hasAutoGeneratedRef.current = false;
+                  setCompileNonce(n => n + 1);
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {plannerLoading && elements.length === 0 && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/70 backdrop-blur-[1px]">
+              <div className="w-10 h-10 rounded-full border-[3px] border-blue-200 border-t-blue-600 animate-spin" />
+              <div className="text-sm text-gray-700">
+                Compiling context{parcel.address ? ` for ${parcel.address}` : ''}…
+              </div>
+              <div className="text-[11px] text-gray-400">ordinance · precedents · market comps</div>
+            </div>
+          )}
           {viewMode === '3d' ? (
             <SitePlannerErrorBoundary>
-              <Massing3D elements={elements} />
+              <Massing3D
+                elements={elements}
+                parcelGeometry={plannerParcel?.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined}
+                envelope={envelopeMeters ?? undefined}
+              />
             </SitePlannerErrorBoundary>
           ) : (
             <SitePlannerErrorBoundary>
               <EnterpriseSitePlanner
+                draftMode={draftMode}
                 parcel={plannerParcel}
                 planElements={elements}
                 metrics={metrics || undefined}
@@ -1518,7 +1626,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           )}
         </div>
 
-        <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto">
+        <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
+          <TabulationPanel
+            elements={elements}
+            metrics={metrics}
+            plannerCtx={plannerCtx}
+            acres={parcel.deeded_acres}
+          />
           <SchemesRail
             candidates={mfCandidates}
             activeId={activeCandidateId}

@@ -5,6 +5,11 @@ import {
   corridorLine,
   edgeDimensions,
   pickScaleBarFt,
+  setbackLabelIndices,
+  PLAN_Z_ORDER,
+  sortByZOrder,
+  pointsAlongSegment,
+  computeCurbCut,
 } from './planRendering';
 
 // Closed 40×20 rectangle, long axis along X
@@ -95,5 +100,70 @@ describe('pickScaleBarFt', () => {
 
   it('falls back to the smallest candidate when zoomed far in', () => {
     expect(pickScaleBarFt(1000).ft).toBe(10);
+  });
+});
+
+describe('setbackLabelIndices (one label per bearing group)', () => {
+  it('collapses collinear side segments into a single label', () => {
+    const edges = [
+      { type: 'side', edge: [[0, 0], [0, 10]] as [[number, number], [number, number]] },
+      { type: 'side', edge: [[0, 10], [0, 18]] as [[number, number], [number, number]] },
+      { type: 'side', edge: [[0.5, 18], [0.5, 40]] as [[number, number], [number, number]] }, // longest
+      { type: 'front', edge: [[0, 0], [50, 0]] as [[number, number], [number, number]] },
+    ];
+    const labeled = setbackLabelIndices(edges);
+    expect(labeled.size).toBe(2); // one side label + one front label
+    expect(labeled.has(2)).toBe(true); // the longest side segment carries it
+    expect(labeled.has(3)).toBe(true);
+  });
+
+  it('labels perpendicular sides separately (different bearing groups)', () => {
+    const edges = [
+      { type: 'side', edge: [[0, 0], [0, 30]] as [[number, number], [number, number]] },
+      { type: 'side', edge: [[0, 30], [40, 30]] as [[number, number], [number, number]] },
+    ];
+    expect(setbackLabelIndices(edges).size).toBe(2);
+  });
+});
+
+describe('PLAN_Z_ORDER contract', () => {
+  it('buildings above parking above circulation above greenspace', () => {
+    expect(PLAN_Z_ORDER.building).toBeGreaterThan(PLAN_Z_ORDER.parking);
+    expect(PLAN_Z_ORDER.parking).toBeGreaterThan(PLAN_Z_ORDER.circulation);
+    expect(PLAN_Z_ORDER.circulation).toBeGreaterThan(PLAN_Z_ORDER.greenspace);
+    expect(PLAN_Z_ORDER.other).toBeLessThan(PLAN_Z_ORDER.greenspace);
+  });
+  it('sortByZOrder is stable and total', () => {
+    const sorted = sortByZOrder([
+      { type: 'building' }, { type: 'greenspace' }, { type: 'parking' }, { type: 'unknown-type' },
+    ]);
+    expect(sorted.map(s => s.type)).toEqual(['greenspace', 'parking', 'building', 'unknown-type']);
+  });
+});
+
+describe('street-connection helpers', () => {
+  it('pointsAlongSegment spaces trees inside the insets', () => {
+    const pts = pointsAlongSegment([[0, 0], [100, 0]], 10, 5);
+    expect(pts.length).toBeGreaterThanOrEqual(8);
+    for (const [x] of pts) {
+      expect(x).toBeGreaterThanOrEqual(5);
+      expect(x).toBeLessThanOrEqual(95);
+    }
+  });
+
+  it('computeCurbCut finds the boundary point where the drive touches', () => {
+    const parcel = [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]];
+    const drive = [[45, 0.5], [55, 0.5], [55, 40], [45, 40], [45, 0.5]];
+    const cut = computeCurbCut(drive, parcel);
+    expect(cut).not.toBeNull();
+    expect(cut!.at[1]).toBeCloseTo(0, 5);
+    expect(cut!.at[0]).toBeGreaterThan(40);
+    expect(cut!.at[0]).toBeLessThan(60);
+  });
+
+  it('no curb cut when the drive dead-ends far from the boundary', () => {
+    const parcel = [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]];
+    const drive = [[45, 30], [55, 30], [55, 60], [45, 60], [45, 30]];
+    expect(computeCurbCut(drive, parcel)).toBeNull();
   });
 });

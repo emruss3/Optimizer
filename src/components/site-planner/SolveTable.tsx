@@ -68,6 +68,9 @@ interface SolveTableProps {
   savedPlans?: SavedSitePlan[];
   /** Callback when user clicks a saved plan row */
   onLoadSavedPlan?: (plan: SavedSitePlan) => void;
+  /** Candidates the zero-overlap gate rejected before rendering — collapsed
+   *  into one disclosure line with reason chips instead of red-✗ noise. */
+  rejected?: { count: number; reasons: string[] } | null;
 }
 
 interface RowData {
@@ -90,6 +93,7 @@ export function SolveTable({
   onSelect,
   savedPlans = [],
   onLoadSavedPlan,
+  rejected = null,
 }: SolveTableProps) {
   // Build unified row data: saved plans first (sorted by favorite then date), then generated solves
   const rows = useMemo<RowData[]>(() => {
@@ -234,6 +238,20 @@ export function SolveTable({
           </tbody>
         </table>
       </div>
+      {rejected && rejected.count > 0 && (
+        <details className="px-3 py-1.5 border-t border-gray-100 text-xs text-gray-500">
+          <summary className="cursor-pointer select-none">
+            {rejected.count} rejected before rendering
+          </summary>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {rejected.reasons.map((r, i) => (
+              <span key={i} className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-100">
+                {r}
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

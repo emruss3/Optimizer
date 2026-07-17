@@ -47,6 +47,8 @@ type ParametersPanelProps = {
   product?: 'apartments' | 'townhomes';
   /** Present only when the compiled context supports a product choice */
   onProductChange?: (product: 'apartments' | 'townhomes') => void;
+  /** Zero-overlap gate rejections (collapsed disclosure in the solve table) */
+  rejectedSolves?: { count: number; reasons: string[] } | null;
 
   // Current plan data for snapshot (used by save)
   currentElements: Element[];
@@ -111,6 +113,7 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
   resolvedTypology,
   product = 'apartments',
   onProductChange,
+  rejectedSolves = null,
 }) => {
   const [saveName, setSaveName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -406,12 +409,13 @@ const ParametersPanel: React.FC<ParametersPanelProps> = ({
           <div className="mt-4">
             <h3 className="text-sm font-semibold mb-2">Solves</h3>
             <SolveTable
-              solves={alternatives}
+              solves={alternatives.slice(0, 4)}
               scores={alternativeScores}
               selectedIndex={selectedSolveIndex}
               onSelect={(index) => onSelectSolve(index)}
               savedPlans={savedPlans}
               onLoadSavedPlan={onLoadPlan}
+              rejected={rejectedSolves}
             />
           </div>
         )}
