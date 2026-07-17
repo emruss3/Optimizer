@@ -64,8 +64,24 @@ const TabulationPanel: React.FC<{
         byType.set(e.type, cur);
       }
     }
-    const total = [...byType.values()].reduce((s, v) => s + v.units, 0);
+    let total = [...byType.values()].reduce((s, v) => s + v.units, 0);
     if (total === 0) return [];
+
+    // Reconcile to the KPI unit count: per-building mixes round independently
+    // and can drift by a unit or two from metrics.totalUnits. The table and
+    // the header must agree — absorb the delta in the largest type.
+    const kpiTotal = metrics?.totalUnits;
+    if (kpiTotal != null && kpiTotal > 0 && kpiTotal !== total) {
+      const largest = [...byType.entries()].sort((a, b) => b[1].units - a[1].units)[0];
+      if (largest) {
+        const delta = kpiTotal - total;
+        const perUnitSf = largest[1].units > 0 ? largest[1].sf / largest[1].units : 0;
+        largest[1].units = Math.max(0, largest[1].units + delta);
+        largest[1].sf = largest[1].units * perUnitSf;
+        total = kpiTotal;
+      }
+    }
+
     return (Object.keys(TYPE_LABELS) as UnitMixEntry['type'][])
       .filter(t => byType.has(t))
       .map(t => {
@@ -79,7 +95,7 @@ const TabulationPanel: React.FC<{
           pkgReq: Math.ceil(v.units * ratio),
         };
       });
-  }, [buildings]);
+  }, [buildings, metrics?.totalUnits]);
 
   const totals = useMemo(() => {
     const units = rows.reduce((s, r) => s + r.units, 0);

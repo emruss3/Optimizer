@@ -248,8 +248,19 @@ describe('KpiStrip with server-generated metrics (crash regression)', () => {
   it('renders the mapped metrics without violations/zoningCompliant crashing it', () => {
     const { metrics } = mfPlanToElements(RESP);
     const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
-    expect(getByText('Compliant')).toBeTruthy();
+    // 52/113 is parking-short: the chip must say so, not claim "Compliant"
+    // next to a red stalls stat (honesty over green).
+    expect(getByText('Parking short')).toBeTruthy();
     expect(getByText('52 / 113')).toBeTruthy();
+  });
+
+  it('fully-parked compliant plans keep the green Compliant chip', () => {
+    const { metrics } = mfPlanToElements({
+      ...RESP,
+      metrics: { ...RESP.metrics, stalls: 120, stalls_required: 113 },
+    });
+    const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
+    expect(getByText('Compliant')).toBeTruthy();
   });
 
   it('tolerates metrics missing optional fields entirely', () => {

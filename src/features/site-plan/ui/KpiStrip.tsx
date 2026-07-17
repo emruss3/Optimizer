@@ -66,13 +66,24 @@ const KpiStrip: React.FC<{
           />
         </span>
       )}
+      {/* Honesty: a green "Compliant" next to red 52/111 stalls reads as a
+          contradiction. Parking-short plans get an amber chip even when the
+          zoning envelope itself is compliant. */}
       <div
         className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
-          compliant ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+          !compliant
+            ? 'bg-red-50 text-red-700'
+            : parkingShort
+              ? 'bg-amber-50 text-amber-700'
+              : 'bg-green-50 text-green-700'
         }`}
       >
-        {compliant ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-        {compliant ? 'Compliant' : `${violations.length} issue${violations.length === 1 ? '' : 's'}`}
+        {compliant && !parkingShort ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+        {!compliant
+          ? `${violations.length} issue${violations.length === 1 ? '' : 's'}`
+          : parkingShort
+            ? 'Parking short'
+            : 'Compliant'}
       </div>
     </div>
   );
