@@ -289,6 +289,29 @@ export function compilePlannerContext(
   if (hit) return hit;
 
   const p = (async (): Promise<PlannerContextResponse | null> => {
+    // Cold-cache compiles can blow the API statement timeout (seen live:
+    // "canceling statement due to statement timeout" while the same compile
+    // runs in ~1.3s warm). One immediate retry rides the warmed buffers.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await compileOnce(ogcFid, selectedUse, userIntent);
+      if (r !== null || attempt === 1) return r;
+    }
+    return null;
+  })();
+
+  compileCache.set(key, p);
+  // A failed compile must not poison the cache
+  p.then(r => {
+    if (r == null) compileCache.delete(key);
+  });
+  return p;
+}
+
+async function compileOnce(
+  ogcFid: number,
+  selectedUse: string,
+  userIntent: Record<string, unknown>
+): Promise<PlannerContextResponse | null> {
     try {
       if (!supabase) return null;
       const { data, error } = await supabase.rpc('fn_compile_planner_context', {
@@ -313,14 +336,6 @@ export function compilePlannerContext(
       console.warn('[plannerContext] compile threw:', err);
       return null;
     }
-  })();
-
-  compileCache.set(key, p);
-  // A failed compile must not poison the cache
-  p.then(r => {
-    if (r == null) compileCache.delete(key);
-  });
-  return p;
 }
 
 /** Load the solver-safe brief for a known snapshot, parcel-verified. */

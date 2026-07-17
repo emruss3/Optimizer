@@ -107,25 +107,42 @@ export async function loadSitePlan(id: string): Promise<SavedSitePlan> {
  * Missing table → empty list (not an error): the UI shows "no saved plans"
  * instead of a red console and a broken panel.
  */
+/** Concurrent list calls share ONE probe so at most one 404 ever fires —
+ *  parcel-change + mount races were each paying their own failing request. */
+let probeInFlight: Promise<void> | null = null;
+
 export async function listSitePlans(parcelId: string): Promise<SavedSitePlan[]> {
   if (!supabase) throw new Error('Supabase client not initialised');
   if (tableKnownMissing) return [];
-
-  const { data, error } = await supabase
-    .from('site_plans')
-    .select('*')
-    .eq('parcel_id', parcelId)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    if (isMissingTableError(error)) {
-      tableKnownMissing = true;
-      console.info('[sitePlanStorage] saved-plans table not provisioned yet; hiding saved plans.');
-      return [];
-    }
-    throw error;
+  if (probeInFlight) {
+    await probeInFlight.catch(() => undefined);
+    if (tableKnownMissing) return [];
   }
-  return (data ?? []) as SavedSitePlan[];
+
+  let release: () => void = () => undefined;
+  if (!probeInFlight) {
+    probeInFlight = new Promise<void>(res => { release = res; });
+  }
+  try {
+    const { data, error } = await supabase
+      .from('site_plans')
+      .select('*')
+      .eq('parcel_id', parcelId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (isMissingTableError(error)) {
+        tableKnownMissing = true;
+        console.info('[sitePlanStorage] saved-plans table not provisioned yet; hiding saved plans.');
+        return [];
+      }
+      throw error;
+    }
+    return (data ?? []) as SavedSitePlan[];
+  } finally {
+    release();
+    probeInFlight = null;
+  }
 }
 
 /**
