@@ -22,7 +22,7 @@ import ResultsPanel from './ui/ResultsPanel';
 import Massing3D from './ui/Massing3D';
 import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
-import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, type DesignContext } from './api/designContext';
+import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, defaultUseFromZoningBase, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { validatePlanElements } from '../../engine/validatePlan';
@@ -1328,18 +1328,34 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   // Resolve the parcel's as-of-right uses once; correct the default use
   // BEFORE compiling so the first snapshot is for the right use.
+  // DENSITY-FIRST: the default is the densest as-of-right use — users flip
+  // DOWN to single-family if they want; a failed lookup must never silently
+  // leave an RM parcel on the single_family boot default (2622 W Heiman).
   useEffect(() => {
     if (contextOgcFid == null) return;
     let cancelled = false;
     setUseResolved(false);
     (async () => {
-      const raw = await fetchPermittedUses(contextOgcFid);
+      let raw = await fetchPermittedUses(contextOgcFid);
       if (cancelled) return;
+      if (raw == null) {
+        // Transient failure (cold cache / 503): one retry on warm buffers.
+        raw = await fetchPermittedUses(contextOgcFid);
+        if (cancelled) return;
+      }
       const list = normalizePermittedUses(raw);
       setPermittedUses(list);
       if (!userPickedUseRef.current) {
-        const preferred = pickDefaultUse(list);
-        if (preferred && preferred !== contextUse) setContextUse(preferred);
+        const preferred =
+          pickDefaultUse(list) ?? defaultUseFromZoningBase(parcel.zoning);
+        if (preferred) {
+          if (list.length === 0) {
+            console.info(
+              `[use-default] permitted-uses unavailable — density-first default '${preferred}' inferred from zoning base '${parcel.zoning}'.`
+            );
+          }
+          if (preferred !== contextUse) setContextUse(preferred);
+        }
       }
       setUseResolved(true);
     })();

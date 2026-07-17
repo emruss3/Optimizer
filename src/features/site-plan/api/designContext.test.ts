@@ -7,6 +7,7 @@ import {
   routesToLotFit,
   toContextTypology,
   pickDefaultUse,
+  defaultUseFromZoningBase,
 } from './designContext';
 
 describe('normalizeDesignContext', () => {
@@ -216,5 +217,30 @@ describe('parking context (typology_spec grounding)', () => {
     const ctx = normalizeDesignContext({ zoning_base: 'X', max_far: 1 })!;
     expect(ctx.parking).toBeUndefined();
     expect(contextToParkingPatch(ctx)).toEqual({});
+  });
+});
+
+describe('density-first default use (zoning-base fallback)', () => {
+  it('picks the densest as-of-right use from the permitted list', () => {
+    expect(pickDefaultUse(['single_family', 'two_family', 'multi_family'])).toBe('multi_family');
+    expect(pickDefaultUse(['single_family', 'two_family'])).toBe('two_family');
+    expect(pickDefaultUse(['single_family'])).toBe('single_family');
+    expect(pickDefaultUse([])).toBeNull();
+  });
+
+  it('infers density-first defaults from the zoning base when the RPC fails', () => {
+    // Multifamily-first districts must never boot on single_family
+    expect(defaultUseFromZoningBase('RM40')).toBe('multi_family');
+    expect(defaultUseFromZoningBase('RM20-A')).toBe('multi_family');
+    expect(defaultUseFromZoningBase('OR20')).toBe('multi_family');
+    expect(defaultUseFromZoningBase('MUG')).toBe('multi_family');
+    // One/two-family districts default single_family
+    expect(defaultUseFromZoningBase('RS5')).toBe('single_family');
+    expect(defaultUseFromZoningBase('R6')).toBe('single_family');
+    // Unknown/commercial: no inference (keep whatever is selected)
+    expect(defaultUseFromZoningBase('CS')).toBeNull();
+    expect(defaultUseFromZoningBase('SP')).toBeNull();
+    expect(defaultUseFromZoningBase(null)).toBeNull();
+    expect(defaultUseFromZoningBase('')).toBeNull();
   });
 });
