@@ -308,10 +308,13 @@ describe('SiteWorkspace: selected-use transition owns exactly one context', () =
     await act(async () => { dSf.resolve(ctxResp('single_family', 'ctx-sf')); });
     await waitFor(() => expect(screen.getByText(/67 exact-use RM40 precedents · high confidence/)).toBeTruthy());
     expect(screen.queryByText(/5 exact-use RM40 precedents/)).toBeNull();
-    // Generation started only after the settle — grounded on the NEW context
-    // id, never the stale one. (RM40 zoning keeps even single_family on the
-    // massing path per routesToLotFit, so the server generator runs.)
-    await waitFor(() => expect(genV2Mock).toHaveBeenCalledWith(669046, 'ctx-sf', expect.anything()));
+    // USE-BINDING INVARIANT: a single_family compiled context must NEVER
+    // ground multifamily massing (2600 W Heiman shipped exactly that). The
+    // MF generator is refused for BOTH snapshots; the violation says why.
+    await waitFor(() =>
+      expect(screen.getByTestId('violations').textContent).toContain('use-binding')
+    );
+    expect(genV2Mock).not.toHaveBeenCalledWith(669046, 'ctx-sf', expect.anything());
     expect(genV2Mock).not.toHaveBeenCalledWith(669046, 'ctx-mf', expect.anything());
   });
 

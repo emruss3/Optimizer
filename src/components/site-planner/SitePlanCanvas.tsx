@@ -433,7 +433,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (Math.min(screenW, screenH) < 18 || Math.max(screenW, screenH) < 40) return;
     const roomForDetail = screenW >= 90 && screenH >= 42;
 
-    const fontSize = Math.max(10, 14 / zoom);
+    // Fixed SCREEN size at any zoom (world-anchored, screen-sized labels —
+    // standard CAD behavior). The old Math.max(10, …) floor was in WORLD
+    // units, so badges grew with zoom past ~140%.
+    const fontSize = 14 / zoom;
 
     ctx.save();
     // Flip Y for text (canvas Y is inverted)

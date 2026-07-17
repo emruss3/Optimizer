@@ -27,6 +27,8 @@ import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/gen
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
+import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
+import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
 import {
   compilePlannerContext,
   plannerContextToDesignContext,
@@ -146,6 +148,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [solveRejected, setSolveRejected] = useState<{ count: number; reasons: string[] } | null>(null);
   // Bumping this recompiles the context (the Retry button on the amber banner)
   const [compileNonce, setCompileNonce] = useState(0);
+  // SF-first objective: the lot's legal max-buildout envelope (fn_max_buildout)
+  const [maxBuildout, setMaxBuildout] = useState<MaxBuildout | null>(null);
   // Live-drag pump (dynamic site plans): drag events coalesce latest-wins
   // into preview solves (persist=false); the release commits the candidate.
   const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
@@ -359,6 +363,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? opts.contextId
       : snapshot?.context_id ?? null;
     const effectiveProduct = opts.product ?? productRef.current;
+    // USE-BINDING INVARIANT: the use compiled must equal the use being
+    // massed. Massing an MF/TH product under a non-multifamily ACTIVE
+    // snapshot shipped SF setbacks beneath apartment bars (2600 W Heiman).
+    // Stored-candidate replays (explicit contextId) are exempt — their
+    // stored context IS the massing context and the UI marks them stale.
+    if (
+      opts.contextId === undefined &&
+      snapshot &&
+      snapshot.context.typology !== 'multifamily'
+    ) {
+      console.error(
+        `[use-binding] server solve: refusing to mass '${effectiveProduct}' under a '${snapshot.context.typology}' compiled context (${snapshot.context_id}). Compile use and massing use must match.`
+      );
+      setViolations([{
+        code: 'use-binding',
+        message: `Use mismatch: the compiled context is '${snapshot.context.typology}' but the solver was asked for multifamily massing. Pick the multifamily use (or generate lots) instead.`,
+        severity: 'error',
+      }]);
+      return false;
+    }
     let resp = effectiveContextId
       ? effectiveProduct === 'townhomes'
         ? await generateThSitePlan(contextOgcFid, effectiveContextId, {
@@ -434,6 +458,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     serverGeoRetryRef.current = false;
     markDraft(degraded || !effectiveContextId);
+
+    // Post-solve assertion: the generator's declared typology must match the
+    // product that was requested. This can only diverge on a server bug —
+    // scream, never silently render it as something it isn't.
+    const expectedFamily = effectiveProduct === 'townhomes' ? 'townhome' : 'multifamily';
+    if (resp.typology && resp.typology !== expectedFamily) {
+      console.error(
+        `[use-binding] server returned typology '${resp.typology}' for a '${effectiveProduct}' solve (context ${resp.context_id ?? 'none'}).`
+      );
+    }
 
     const { metrics: serverMetrics, basis, flags } = mapped;
     let generated = mapped.elements;
@@ -557,6 +591,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     // Guard: button handlers pass the click event — only numbers count.
     const iters = typeof iterations === 'number' ? iterations : 50;
+    // USE-BINDING INVARIANT (worker path): never MF-mass a single-family
+    // compiled context — that pairing shipped Table-A SF setbacks under
+    // apartment massing. Route to the lot generator the context calls for.
+    const boundSnapshot = plannerCtxRef.current;
+    if (boundSnapshot && boundSnapshot.context.typology === 'single_family') {
+      console.error(
+        `[use-binding] worker solve: refusing multifamily massing under a 'single_family' compiled context (${boundSnapshot.context_id}); routing to lot fit.`
+      );
+      setPlanBasis('Single-family context — routing to lot fit (multifamily massing requires a multifamily use).');
+      handleGenerateLots().catch(() => undefined);
+      return;
+    }
     planModeRef.current = 'mf';
     const ctx = ctxSettledRef.current;
     const zoningLabel = ctx && ctx !== 'pending' && ctx.zoningBase ? ctx.zoningBase : null;
@@ -1186,6 +1232,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setDraftMode(false);
       serverGeoRetryRef.current = false;
       setSolveRejected(null);
+      setMaxBuildout(null);
       setActiveCandidateId(null);
       setMfCandidates([]);
       ctxSettledRef.current = 'pending';
@@ -1203,6 +1250,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       lastCompiledUseRef.current = null;
     }
   }, [parcel.ogc_fid, parcel.id]);
+
+  // Max-buildout envelope for multifamily contexts — the SF-first headline
+  // and the KPI utilization stat. Fail-soft; absent for other typologies.
+  useEffect(() => {
+    const typology = plannerCtx?.context.typology;
+    if (contextOgcFid == null || typology !== 'multifamily') {
+      setMaxBuildout(null);
+      return;
+    }
+    let cancelled = false;
+    fetchMaxBuildout(contextOgcFid, 'multifamily').then(b => {
+      if (!cancelled) setMaxBuildout(b);
+    });
+    return () => { cancelled = true; };
+  }, [contextOgcFid, plannerCtx?.context.typology]);
 
   /** MF branch of the auto-plan: server site-system first (M2), client
    *  constructive massing as the fail-soft fallback. */
@@ -1451,7 +1513,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     <div className="h-full min-h-0 flex flex-col bg-gray-100">
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
       <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
-        <KpiStrip metrics={metrics} investment={investmentAnalysis} money={serverMoney} />
+        <KpiStrip
+          metrics={metrics}
+          investment={investmentAnalysis}
+          money={serverMoney}
+          planFlags={planLineage?.flags ?? []}
+          utilizationPct={
+            maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
+              ? (metrics.totalBuiltSF / maxBuildout.max_gsf) * 100
+              : null
+          }
+        />
         <div className="flex items-center gap-2 flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
@@ -1506,6 +1578,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             activeContext={plannerCtx}
             lineage={planLineage}
             blockedReason={`"${contextUse.replace(/_/g, ' ')}" is not permitted as-of-right on this parcel. Pick a permitted use in the Design Context panel.`}
+          />
+        </div>
+      )}
+
+      {maxBuildout && (
+        <div className="px-4 pt-3 flex-shrink-0">
+          <MaxBuildoutHeadline
+            buildout={maxBuildout}
+            achievedGsf={metrics?.totalBuiltSF ?? null}
+            currentStories={planLineage?.floors ?? null}
           />
         </div>
       )}
@@ -1640,6 +1722,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             busy={isGenerating || isGeneratingLots}
             activeContextId={plannerCtx?.context_id ?? null}
             onRegenerateWithCurrentContext={handleRegenerateCandidate}
+            maxGsf={maxBuildout?.max_gsf ?? null}
           />
           <ResultsPanel
             metrics={metrics}
