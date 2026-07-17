@@ -244,6 +244,24 @@ export function pickDefaultUse(uses: string[]): string | null {
   return uses[0];
 }
 
+/**
+ * DENSITY-FIRST fallback when the permitted-uses RPC is unavailable: infer
+ * the densest plausible as-of-right use from the zoning base the client
+ * already displays. An RM40 parcel must never default to single_family just
+ * because one network call 503'd — users flip DOWN to less dense if they
+ * want, the product never silently flips them down.
+ */
+export function defaultUseFromZoningBase(base: string | null | undefined): string | null {
+  const b = (base ?? '').trim().toUpperCase();
+  if (!b) return null;
+  // Multifamily-first districts: RM (multifamily), OR (office/residential),
+  // MU* (mixed-use), ORI (office/residential intensive).
+  if (/^(RM|OR|MU)/.test(b)) return 'multi_family';
+  // One/two-family districts: R6..R80, RS3.75..RS80.
+  if (/^RS?\d/.test(b)) return 'single_family';
+  return null;
+}
+
 // ── Fetchers (all fail-soft: null on any error) ─────────────────────────────
 
 async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Promise<T | null> {
