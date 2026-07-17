@@ -6,7 +6,7 @@ import type { Element } from '../../engine/types';
 import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
 import { feetToMeters, metersToFeet } from '../../engine/units';
-import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle } from './planRendering';
+import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut } from './planRendering';
 import { computeFloorplate, UNIT_COLORS } from './unitLayout';
 import type { EdgeClassification } from '../../engine/setbacks';
 
@@ -32,6 +32,9 @@ interface SitePlanCanvasProps {
   onWheel?: (event: React.WheelEvent<HTMLCanvasElement>) => void;
   /** CSS cursor reflecting the current interaction (grab/grabbing/move/…) */
   cursor?: string;
+  /** Degraded-mode honesty: plan built on default assumptions (context
+   *  unavailable) — watermarked so it can never look authoritative. */
+  draftMode?: boolean;
 }
 
 export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
@@ -54,7 +57,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   onMouseMove,
   onMouseUp,
   onWheel,
-  cursor
+  cursor,
+  draftMode = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -775,9 +779,13 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       side: '#64748B',
     };
     const fontSize = 10 / zoom;
+    // Label discipline: one label per (type, bearing) group — jagged sides
+    // classify as many short edges and printed the same "S 5′" repeatedly.
+    const labeled = setbackLabelIndices(edgeClassifications);
 
     ctx.save();
-    for (const edge of edgeClassifications) {
+    for (let ei = 0; ei < edgeClassifications.length; ei++) {
+      const edge = edgeClassifications[ei];
       const [[x1, y1], [x2, y2]] = edge.edge;
       ctx.strokeStyle = EDGE_COLORS[edge.type] ?? '#64748B';
       ctx.lineWidth = 3 / zoom;
@@ -787,6 +795,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.lineTo(x2, y2);
       ctx.stroke();
 
+      if (!labeled.has(ei)) continue;
       const setbackFt =
         edge.type === 'front' ? setbacks?.front :
         edge.type === 'rear' ? setbacks?.rear :
@@ -813,6 +822,144 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, [edgeClassifications, setbacks]);
 
+  // Perimeter landscape strip + street trees along the classified front
+  // edge(s), plus a curb-cut apron where the drive meets the street — the
+  // cheap polygons that make a plan read as designed instead of diagrammed.
+  // Purely decorative rendering: nothing here measures or changes the design.
+  const renderLandscape = useCallback((ctx: CanvasRenderingContext2D, zoom: number) => {
+    const parcelRing: number[][] | undefined = processedGeometry?.geometry?.coordinates?.[0];
+    if (!parcelRing || parcelRing.length < 4) return;
+
+    // Planting strip: stroke the boundary wide, clipped to the parcel, so a
+    // soft green band hugs the inside of the property line.
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(parcelRing[0][0], parcelRing[0][1]);
+    for (let i = 1; i < parcelRing.length; i++) ctx.lineTo(parcelRing[i][0], parcelRing[i][1]);
+    ctx.closePath();
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(74, 222, 128, 0.20)';
+    ctx.lineWidth = 7; // metres; half falls inside the clip → ~3.5 m strip
+    ctx.stroke();
+    ctx.restore();
+
+    // Street trees along front edges, skipping the drive corridor.
+    const fronts = (edgeClassifications ?? []).filter(e => e.type === 'front');
+    if (fronts.length) {
+      const drives = elements.filter(e => e.type === 'circulation');
+      const nearDrive = (x: number, y: number): boolean =>
+        drives.some(d => {
+          const ring = d.geometry?.coordinates?.[0];
+          if (!ring) return false;
+          return ring.some(([dx, dy]: number[]) => Math.hypot(dx - x, dy - y) < 8);
+        });
+      for (const f of fronts) {
+        for (const [tx, ty] of pointsAlongSegment(f.edge, 10, 4)) {
+          if (nearDrive(tx, ty)) continue;
+          ctx.save();
+          ctx.translate(tx, ty);
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.35)';
+          ctx.beginPath();
+          ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(22, 163, 74, 0.55)';
+          ctx.beginPath();
+          ctx.arc(0, 0, 1.1, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+
+    // Curb cut: white apron + throat dashes where the main drive meets the
+    // parcel line, so the drive stops dead-ending visually. Heuristic edge
+    // until true frontage (G0) lands.
+    const mainDrive = elements.find(e => e.type === 'circulation' && e.name === 'Main Drive')
+      ?? elements.find(e => e.type === 'circulation');
+    const driveRing = mainDrive?.geometry?.coordinates?.[0];
+    if (driveRing) {
+      const cut = computeCurbCut(driveRing as number[][], parcelRing);
+      if (cut) {
+        ctx.save();
+        ctx.translate(cut.at[0], cut.at[1]);
+        ctx.rotate(cut.edgeAngle);
+        // Apron: flared trapezoid across the boundary
+        ctx.fillStyle = 'rgba(203, 213, 225, 0.95)';
+        ctx.beginPath();
+        ctx.moveTo(-7, -1.2);
+        ctx.lineTo(7, -1.2);
+        ctx.lineTo(4.5, 3.6);
+        ctx.lineTo(-4.5, 3.6);
+        ctx.closePath();
+        ctx.fill();
+        // Curb line broken at the cut
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 2 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(-7, 0);
+        ctx.lineTo(7, 0);
+        ctx.stroke();
+        // Throat dashes (entry read)
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 0.5;
+        ctx.setLineDash([1.4, 1.2]);
+        ctx.beginPath();
+        ctx.moveTo(0, -0.8);
+        ctx.lineTo(0, 3.2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
+  }, [processedGeometry, edgeClassifications, elements]);
+
+  // Screen-space north arrow (top-right). World +Y is projected north — the
+  // canvas flips Y, so "up" on screen is north and the glyph is static.
+  const renderNorthArrow = useCallback((ctx: CanvasRenderingContext2D, cssW: number) => {
+    const x = cssW - 30;
+    const y = 34;
+    ctx.save();
+    ctx.strokeStyle = '#475569';
+    ctx.fillStyle = '#475569';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y + 10);
+    ctx.lineTo(x, y - 8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - 12);
+    ctx.lineTo(x - 4.5, y - 3);
+    ctx.lineTo(x + 4.5, y - 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = '700 10px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('N', x, y + 13);
+    ctx.restore();
+  }, []);
+
+  // Degraded-mode watermark: tiled diagonal "DRAFT" so default-assumption
+  // plans can never pass as authoritative.
+  const renderDraftWatermark = useCallback((ctx: CanvasRenderingContext2D, cssW: number, cssH: number) => {
+    ctx.save();
+    ctx.globalAlpha = 0.13;
+    ctx.fillStyle = '#B45309';
+    ctx.font = '700 26px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let ty = cssH * 0.28; ty < cssH; ty += cssH * 0.44) {
+      for (let tx = cssW * 0.3; tx < cssW; tx += cssW * 0.5) {
+        ctx.save();
+        ctx.translate(tx, ty);
+        ctx.rotate(-Math.PI / 10);
+        ctx.fillText('DRAFT — default assumptions', 0, 0);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }, []);
+
   // Screen-space legend (bottom-left) — names every color on the sheet so
   // open space and drive aisles aren't "unidentified green areas / grey lines".
   const renderLegend = useCallback((ctx: CanvasRenderingContext2D, cssH: number, hasLots: boolean) => {
@@ -825,6 +972,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ['Parking', '#E2E8F0'],
       ['Drive / aisle', '#CBD5E1'],
       ['Open space', '#BBF7D0'],
+      // Setback edge key — colors must match renderEdgeSetbacks exactly
+      ['Front setback', '#2563EB'],
+      ['Rear setback', '#D97706'],
+      ['Side setback', '#64748B'],
     ];
     if (hasLots) entries.push(['Lot line', '#F8FAFC']);
 
@@ -923,19 +1074,13 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       renderBuildableEnvelope(ctx, buildableEnvelope, viewport.zoom);
     }
 
-    // Sort elements by z-order: greenspace → parking/aisles → circulation → buildings
-    const zOrder: Record<string, number> = {
-      'other': -1, // generated lots sit under everything
-      'greenspace': 0,
-      'parking-aisle': 1,
-      'circulation': 2,
-      'parking': 3,
-      'parking-bay': 3,
-      'building': 4,
-    };
-    const sortedElements = [...elements].sort(
-      (a, b) => (zOrder[a.type] ?? 5) - (zOrder[b.type] ?? 5)
-    );
+    // Perimeter planting + street trees sit under the plan elements
+    renderLandscape(ctx, viewport.zoom);
+
+    // The z-order CONTRACT (PLAN_Z_ORDER in planRendering.ts): every path —
+    // server plan, worker fallback, degraded defaults — renders through this
+    // same sorted pipeline.
+    const sortedElements = sortByZOrder(elements);
 
     // Render elements in z-order
     sortedElements.forEach((element) => {
@@ -954,12 +1099,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         renderBayCount(ctx, element, viewport.zoom);
       }
 
-      // Name the zones on the sheet: drives and larger open spaces
+      // Name the drive on the sheet. Open-space areas are identified by the
+      // legend only — floating mid-canvas labels read as clutter next to
+      // TestFit's sheets.
       if (element.type === 'circulation' && element.name === 'Main Drive') {
         renderZoneLabel(ctx, element, viewport.zoom, 'Drive');
-      }
-      if (element.type === 'greenspace' && ((element.properties?.areaSqFt as number) ?? 0) > 4000) {
-        renderZoneLabel(ctx, element, viewport.zoom, 'Open space');
       }
 
       // Dimension callouts (width × depth) on the selected building
@@ -1013,7 +1157,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Screen-space chrome (after the world transform is popped)
     renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
     renderLegend(ctx, canvas.height / dpr, elements.some(e => e.type === 'other'));
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+    renderNorthArrow(ctx, canvas.width / dpr);
+    if (draftMode) {
+      renderDraftWatermark(ctx, canvas.width / dpr, canvas.height / dpr);
+    }
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, draftMode, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderNorthArrow, renderDraftWatermark, renderLandscape, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

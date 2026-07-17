@@ -2,16 +2,16 @@
 
 exports[`golden parcels — deterministic KPI regression > SA solve (30 iterations) is stable: l-shape-120 1`] = `
 {
-  "adaStalls": 5,
+  "adaStalls": 4,
   "buildings": 2,
   "builtSF": 86300,
   "compliant": true,
   "coveragePct": 20.8,
-  "evStalls": 9,
+  "evStalls": 8,
   "far": 1.25,
-  "openSpacePct": 54.3,
+  "openSpacePct": 55.6,
   "score": 0.699,
-  "stalls": 83,
+  "stalls": 77,
   "stallsRequired": 75,
   "units": 75,
 }
@@ -19,16 +19,16 @@ exports[`golden parcels — deterministic KPI regression > SA solve (30 iteratio
 
 exports[`golden parcels — deterministic KPI regression > SA solve (30 iterations) is stable: large-block-220x160 1`] = `
 {
-  "adaStalls": 18,
+  "adaStalls": 15,
   "buildings": 9,
   "builtSF": 361000,
-  "compliant": true,
+  "compliant": false,
   "coveragePct": 25.9,
-  "evStalls": 35,
+  "evStalls": 29,
   "far": 1.46,
-  "openSpacePct": 40.3,
+  "openSpacePct": 44.9,
   "score": 0.582,
-  "stalls": 343,
+  "stalls": 288,
   "stallsRequired": 311,
   "units": 311,
 }
@@ -36,16 +36,16 @@ exports[`golden parcels — deterministic KPI regression > SA solve (30 iteratio
 
 exports[`golden parcels — deterministic KPI regression > SA solve (30 iterations) is stable: mid-rect-80x60 1`] = `
 {
-  "adaStalls": 3,
+  "adaStalls": 2,
   "buildings": 1,
   "builtSF": 47000,
-  "compliant": true,
+  "compliant": false,
   "coveragePct": 23.2,
-  "evStalls": 5,
+  "evStalls": 4,
   "far": 1.39,
-  "openSpacePct": 30.4,
+  "openSpacePct": 35.7,
   "score": 0.724,
-  "stalls": 46,
+  "stalls": 38,
   "stallsRequired": 41,
   "units": 41,
 }
@@ -53,16 +53,16 @@ exports[`golden parcels — deterministic KPI regression > SA solve (30 iteratio
 
 exports[`golden parcels — deterministic KPI regression > constructive solve is stable: l-shape-120 1`] = `
 {
-  "adaStalls": 5,
+  "adaStalls": 4,
   "buildings": 2,
   "builtSF": 86300,
   "compliant": true,
   "coveragePct": 20.8,
-  "evStalls": 9,
+  "evStalls": 8,
   "far": 1.25,
-  "openSpacePct": 54.3,
+  "openSpacePct": 55.6,
   "score": 0.699,
-  "stalls": 83,
+  "stalls": 77,
   "stallsRequired": 75,
   "units": 75,
 }
@@ -70,16 +70,16 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
 
 exports[`golden parcels — deterministic KPI regression > constructive solve is stable: large-block-220x160 1`] = `
 {
-  "adaStalls": 19,
+  "adaStalls": 18,
   "buildings": 8,
   "builtSF": 375600,
   "compliant": true,
   "coveragePct": 25.3,
-  "evStalls": 37,
+  "evStalls": 35,
   "far": 1.52,
-  "openSpacePct": 41.7,
+  "openSpacePct": 42.9,
   "score": 0.577,
-  "stalls": 361,
+  "stalls": 347,
   "stallsRequired": 328,
   "units": 328,
 }
@@ -87,16 +87,16 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
 
 exports[`golden parcels — deterministic KPI regression > constructive solve is stable: mid-rect-80x60 1`] = `
 {
-  "adaStalls": 3,
+  "adaStalls": 2,
   "buildings": 1,
   "builtSF": 47000,
-  "compliant": true,
+  "compliant": false,
   "coveragePct": 23.2,
-  "evStalls": 5,
+  "evStalls": 4,
   "far": 1.39,
-  "openSpacePct": 30.4,
+  "openSpacePct": 35.7,
   "score": 0.724,
-  "stalls": 46,
+  "stalls": 38,
   "stallsRequired": 41,
   "units": 41,
 }
@@ -111,9 +111,9 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "coveragePct": 19.9,
   "evStalls": 5,
   "far": 1.19,
-  "openSpacePct": 51.2,
+  "openSpacePct": 53.2,
   "score": 0.691,
-  "stalls": 46,
+  "stalls": 42,
   "stallsRequired": 41,
   "units": 41,
 }
@@ -124,13 +124,13 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "adaStalls": 1,
   "buildings": 1,
   "builtSF": 12700,
-  "compliant": true,
+  "compliant": false,
   "coveragePct": 57.5,
-  "evStalls": 2,
+  "evStalls": 1,
   "far": 1.72,
-  "openSpacePct": 17.6,
+  "openSpacePct": 21.3,
   "score": 0.418,
-  "stalls": 13,
+  "stalls": 10,
   "stallsRequired": 11,
   "units": 11,
 }
@@ -138,16 +138,16 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
 
 exports[`golden parcels — deterministic KPI regression > constructive solve is stable: trapezoid-140 1`] = `
 {
-  "adaStalls": 5,
+  "adaStalls": 3,
   "buildings": 2,
   "builtSF": 93900,
-  "compliant": true,
+  "compliant": false,
   "coveragePct": 22,
-  "evStalls": 10,
+  "evStalls": 6,
   "far": 1.32,
-  "openSpacePct": 44.3,
+  "openSpacePct": 52.9,
   "score": 0.712,
-  "stalls": 91,
+  "stalls": 53,
   "stallsRequired": 82,
   "units": 82,
 }
@@ -162,9 +162,9 @@ exports[`golden parcels — deterministic KPI regression > constructive solve is
   "coveragePct": 17.4,
   "evStalls": 5,
   "far": 1.05,
-  "openSpacePct": 51.6,
+  "openSpacePct": 53.7,
   "score": 0.665,
-  "stalls": 46,
+  "stalls": 42,
   "stallsRequired": 41,
   "units": 41,
 }

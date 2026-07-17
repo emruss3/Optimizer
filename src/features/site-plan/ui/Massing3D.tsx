@@ -1,20 +1,48 @@
 import React, { useMemo } from 'react';
 import DeckGL from '@deck.gl/react';
 import { OrbitView } from '@deck.gl/core';
-import { PolygonLayer } from '@deck.gl/layers';
+import { PolygonLayer, PathLayer } from '@deck.gl/layers';
+import type { Polygon, MultiPolygon } from 'geojson';
 import type { Element } from '../../../engine/types';
 import { buildMassingData, type MassingPolygon } from './massingData';
+import { feature4326To3857 } from '../../../utils/reproject';
+import { normalizeToPolygon } from '../../../engine/geometry';
 
 const ORBIT_VIEW = new OrbitView({ orbitAxis: 'Z' });
+
+/** Parcel geometry arrives in either frame; the massing frame is 3857. */
+function ringIn3857(geom: Polygon | MultiPolygon | undefined | null): number[][] | undefined {
+  if (!geom) return undefined;
+  try {
+    const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];
+    const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+    const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
+    return normalizeToPolygon(reprojected).coordinates[0];
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * 3D extruded massing of the current plan.
  * Uses a map-free OrbitView in local metres (no Mapbox token required), so it
  * works anywhere the plan does. Buildings extrude by floor count; parking,
- * circulation and open space render as flatwork.
+ * circulation and open space render as flatwork; the parcel line and
+ * buildable envelope ground the scene.
  */
-const Massing3D: React.FC<{ elements: Element[] }> = ({ elements }) => {
-  const { polygons, extent } = useMemo(() => buildMassingData(elements), [elements]);
+const Massing3D: React.FC<{
+  elements: Element[];
+  parcelGeometry?: Polygon | MultiPolygon | null;
+  envelope?: Polygon | null;
+}> = ({ elements, parcelGeometry, envelope }) => {
+  const { polygons, extent, groundPaths } = useMemo(
+    () =>
+      buildMassingData(elements, {
+        parcelRing: ringIn3857(parcelGeometry),
+        envelopeRing: envelope?.coordinates?.[0],
+      }),
+    [elements, parcelGeometry, envelope]
+  );
 
   const initialViewState = useMemo(
     () => ({
@@ -31,6 +59,15 @@ const Massing3D: React.FC<{ elements: Element[] }> = ({ elements }) => {
 
   const layers = useMemo(
     () => [
+      new PathLayer({
+        id: 'ground-lines',
+        data: groundPaths,
+        getPath: (d: { path: number[][] }) => d.path,
+        getColor: (d: { color: [number, number, number, number] }) => d.color,
+        getWidth: (d: { widthM: number }) => d.widthM,
+        widthUnits: 'meters',
+        widthMinPixels: 1,
+      }),
       new PolygonLayer<MassingPolygon>({
         id: 'massing',
         data: polygons,
@@ -44,7 +81,7 @@ const Massing3D: React.FC<{ elements: Element[] }> = ({ elements }) => {
         pickable: true,
       }),
     ],
-    [polygons]
+    [polygons, groundPaths]
   );
 
   if (polygons.length === 0) {

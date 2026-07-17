@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { optimize, resolveScoreWeights } from '../../src/engine/optimizer';
 import { createBuildingSpec } from '../../src/engine/model';
+import { validatePlanElements } from '../../src/engine/validatePlan';
 
 
 describe('solverBrief (planner context contract)', () => {
@@ -191,5 +192,58 @@ describe('context objective weights replace the hardcoded constants', () => {
       solverBrief: { generationAllowed: true, precedent: prec, objectiveWeights: { financial_return: 0.1, precedent_fit: 0.6 } },
     });
     expect(balanced.finalScore).not.toBeCloseTo(precedentHeavy.finalScore, 6);
+  });
+});
+
+describe('zero-overlap invariant across worker paths (validatePlan gate)', () => {
+  const rect = (w: number, h: number) => ({
+    type: 'Polygon' as const,
+    coordinates: [[[0, 0], [w, 0], [w, h], [0, h], [0, 0]]],
+  });
+  const lshape = () => ({
+    type: 'Polygon' as const,
+    coordinates: [[[0, 0], [220, 0], [220, 70], [110, 70], [110, 150], [0, 150], [0, 0]]],
+  });
+  const sliver = () => ({
+    type: 'Polygon' as const,
+    coordinates: [[[0, 0], [300, 0], [300, 42], [0, 42], [0, 0]]],
+  });
+  const mk = (envelope: ReturnType<typeof rect>, seed: number, brief?: unknown) => ({
+    envelope,
+    zoning: { maxFar: 2, maxHeightFt: 60, frontSetbackFt: 0, sideSetbackFt: 0, rearSetbackFt: 0, maxCoveragePct: 60 } as never,
+    designParams: { targetFAR: 2, buildingTypology: 'bar', targetCoveragePct: 50, parking: { targetRatio: 1.5, stallWidthFt: 9, stallDepthFt: 18, aisleWidthFt: 24, adaPct: 2, evPct: 0 } } as never,
+    maxIterations: 0,
+    seed,
+    ...(brief ? { solverBrief: brief as never } : {}),
+  });
+
+  const ENVELOPES = [rect(207, 133), rect(300, 60), rect(90, 260), lshape(), sliver()];
+  const SEEDS = [1, 2, 3, 4];
+  const BRIEFS: Array<unknown | undefined> = [
+    undefined, // degraded/default-context path
+    { generationAllowed: true, precedent: { storiesP50: 2, storiesP75: 3, footprintP90SqFt: 12000, sampleSize: 40 } }, // context path
+  ];
+
+  it('every rendered result is overlap-free, every path, every seed', () => {
+    for (const envelope of ENVELOPES) {
+      for (const seed of SEEDS) {
+        for (const brief of BRIEFS) {
+          const r = optimize(mk(envelope, seed, brief));
+          const v = validatePlanElements(r.bestElements);
+          expect(v.ok, `env=${JSON.stringify(envelope.coordinates[0][2])} seed=${seed} brief=${!!brief}: ${v.reason}`).toBe(true);
+          for (const alt of r.top3Alternatives) {
+            const va = validatePlanElements(alt.elements);
+            expect(va.ok, `alternative seed=${seed}: ${va.reason}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('a rejection (if nothing valid) renders NOTHING and says why', () => {
+    // Rejection contract shape — exercised via the gate path.
+    const r = optimize({ ...mk(rect(207, 133), 1), solverBrief: { generationAllowed: false } as never });
+    expect(r.bestElements).toHaveLength(0);
+    expect(r.bestViolations.length).toBeGreaterThan(0);
   });
 });

@@ -4,6 +4,9 @@ import type { SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
 import type { MfMoney } from '../api/generateMfPlan';
 
+/** Financial UI parked by directive — computation dormant, not deleted. */
+const SHOW_YIELD_CHIP = false;
+
 const Stat: React.FC<{ label: string; value: string; alert?: boolean }> = ({ label, value, alert }) => (
   <div className="flex flex-col items-start min-w-[64px]">
     <span className="text-[10px] uppercase tracking-wide text-gray-500">{label}</span>
@@ -49,7 +52,9 @@ const KpiStrip: React.FC<{
         alert={parkingShort}
       />
       <Stat label="Open" value={`${(metrics.openSpacePct ?? 0).toFixed(0)}%`} />
-      {investment && (
+      {/* Financial UI is parked by directive: the Yield-on-Cost chip is hidden
+          but the computation stays live (SHOW_YIELD_CHIP flips it back on). */}
+      {SHOW_YIELD_CHIP && investment && (
         <Stat label="Yield on Cost" value={`${(investment.yieldOnCost * 100).toFixed(2)}%`} />
       )}
       {money?.available && typeof money.margin_on_cost === 'number' && (

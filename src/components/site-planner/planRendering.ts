@@ -128,6 +128,110 @@ export function edgeDimensions(coords: number[][], offsetM: number): DimensionCa
   return out;
 }
 
+/**
+ * THE z-order contract. Rendering sorts by this constant — the layer stack is
+ * guaranteed, not emergent, and every generation path (server, worker
+ * fallback, degraded defaults) goes through the same sorted renderer.
+ * Lower draws first (underneath).
+ */
+export const PLAN_Z_ORDER: Record<string, number> = {
+  other: -1, // generated lots sit under everything
+  greenspace: 0,
+  'parking-aisle': 1,
+  circulation: 2,
+  parking: 3,
+  'parking-bay': 3,
+  building: 4,
+};
+
+/** Sort elements for drawing per the z-order contract (stable for ties). */
+export function sortByZOrder<T extends { type: string }>(elements: T[]): T[] {
+  return [...elements].sort(
+    (a, b) => (PLAN_Z_ORDER[a.type] ?? 5) - (PLAN_Z_ORDER[b.type] ?? 5)
+  );
+}
+
+/**
+ * Setback-label discipline: one label per envelope edge GROUP. Parcels with
+ * jagged boundaries classify many short collinear segments as separate edges,
+ * which printed "S 5′" three times along one side. Group edges by
+ * (type, bearing bucket) and label only the longest edge of each group.
+ * Returns the indices (into the input array) that should carry a label.
+ */
+export function setbackLabelIndices(
+  edges: Array<{ type: string; edge: Segment }>
+): Set<number> {
+  const BUCKET_DEG = 15;
+  const best = new Map<string, { idx: number; len: number }>();
+  edges.forEach(({ type, edge }, idx) => {
+    const [[x1, y1], [x2, y2]] = edge;
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    let deg = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+    deg = ((deg % 180) + 180) % 180; // undirected bearing
+    const key = `${type}:${Math.round(deg / BUCKET_DEG) * BUCKET_DEG % 180}`;
+    const cur = best.get(key);
+    if (!cur || len > cur.len) best.set(key, { idx, len });
+  });
+  return new Set([...best.values()].map(v => v.idx));
+}
+
+/** Evenly spaced points along a segment, inset from both ends. */
+export function pointsAlongSegment(seg: Segment, spacingM: number, insetM = 0): Pt[] {
+  const [[x1, y1], [x2, y2]] = seg;
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const usable = len - insetM * 2;
+  if (usable <= 0 || spacingM <= 0) return [];
+  const n = Math.floor(usable / spacingM);
+  if (n < 1) return [];
+  const ux = (x2 - x1) / len;
+  const uy = (y2 - y1) / len;
+  const pts: Pt[] = [];
+  const start = insetM + (usable - n * spacingM) / 2 + spacingM / 2;
+  for (let i = 0; i < n; i++) {
+    const d = start + i * spacingM;
+    pts.push([x1 + ux * d, y1 + uy * d]);
+  }
+  return pts;
+}
+
+export interface CurbCut {
+  /** Apron centre on the parcel boundary */
+  at: Pt;
+  /** Angle of the boundary edge at the apron (radians) */
+  edgeAngle: number;
+}
+
+/**
+ * Where the drive meets the street: the parcel-boundary point nearest the
+ * drive polygon. Heuristic until true frontage lands (G0) — good enough to
+ * stop the drive visually dead-ending at the parcel line.
+ */
+export function computeCurbCut(driveRing: number[][], parcelRing: number[][]): CurbCut | null {
+  if (!driveRing || driveRing.length < 4 || !parcelRing || parcelRing.length < 4) return null;
+  let best: CurbCut | null = null;
+  let bestD = Infinity;
+  for (let i = 0; i < parcelRing.length - 1; i++) {
+    const [ax, ay] = parcelRing[i];
+    const [bx, by] = parcelRing[i + 1];
+    const ex = bx - ax;
+    const ey = by - ay;
+    const len2 = ex * ex + ey * ey;
+    if (len2 < 1e-9) continue;
+    for (const [px, py] of driveRing) {
+      const t = Math.max(0, Math.min(1, ((px - ax) * ex + (py - ay) * ey) / len2));
+      const qx = ax + t * ex;
+      const qy = ay + t * ey;
+      const d = Math.hypot(px - qx, py - qy);
+      if (d < bestD) {
+        bestD = d;
+        best = { at: [qx, qy], edgeAngle: Math.atan2(ey, ex) };
+      }
+    }
+  }
+  // Only when the drive actually reaches (≈ touches) the boundary
+  return bestD <= 6 ? best : null;
+}
+
 /** Pick a "nice" scale-bar length in feet for the current px-per-metre. */
 export function pickScaleBarFt(pxPerMeter: number, maxPx = 140): { ft: number; px: number } {
   const CANDIDATES_FT = [10, 20, 50, 100, 200, 400, 800];
