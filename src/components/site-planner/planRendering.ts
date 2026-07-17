@@ -152,25 +152,21 @@ export function sortByZOrder<T extends { type: string }>(elements: T[]): T[] {
 }
 
 /**
- * Setback-label discipline: one label per envelope edge GROUP. Parcels with
- * jagged boundaries classify many short collinear segments as separate edges,
- * which printed "S 5′" three times along one side. Group edges by
- * (type, bearing bucket) and label only the longest edge of each group.
+ * Setback-label discipline: ONE label per setback TYPE (front/side/rear),
+ * carried by that type's longest edge. Bearing-group labeling still repeated
+ * "S 5′" on jagged sides whose segments split across bearing buckets; the
+ * setback value is per-type anyway, so one label per type says everything.
  * Returns the indices (into the input array) that should carry a label.
  */
 export function setbackLabelIndices(
   edges: Array<{ type: string; edge: Segment }>
 ): Set<number> {
-  const BUCKET_DEG = 15;
   const best = new Map<string, { idx: number; len: number }>();
   edges.forEach(({ type, edge }, idx) => {
     const [[x1, y1], [x2, y2]] = edge;
     const len = Math.hypot(x2 - x1, y2 - y1);
-    let deg = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-    deg = ((deg % 180) + 180) % 180; // undirected bearing
-    const key = `${type}:${Math.round(deg / BUCKET_DEG) * BUCKET_DEG % 180}`;
-    const cur = best.get(key);
-    if (!cur || len > cur.len) best.set(key, { idx, len });
+    const cur = best.get(type);
+    if (!cur || len > cur.len) best.set(type, { idx, len });
   });
   return new Set([...best.values()].map(v => v.idx));
 }

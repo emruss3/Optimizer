@@ -21,12 +21,26 @@ const Stat: React.FC<{ label: string; value: string; alert?: boolean }> = ({ lab
  * the deterministic engine and update live during drags/slider moves — the
  * TestFit-style "numbers tick while you design" readout.
  */
+/** Hard-constraint clamps the generators emit: any of these present means the
+ *  plan hit a legal/parking wall — the badge must not read green. */
+const HARD_CLAMP_FLAGS: Record<string, string> = {
+  parking_below_ratio: 'parking short',
+  floors_clamped_by_far: 'FAR-clamped',
+  density_clamped_units: 'density-clamped',
+  coverage_cap_reached: 'coverage-capped',
+  unit_cap_reached_min_lot_or_density: 'unit-capped',
+};
+
 const KpiStrip: React.FC<{
   metrics: SiteMetrics | null;
   investment: InvestmentAnalysis | null;
   /** A3: local-sales valuation of the current scheme (server-computed) */
   money?: MfMoney | null;
-}> = ({ metrics, investment, money }) => {
+  /** Generator flags for the active plan — the badge consumes hard clamps */
+  planFlags?: string[];
+  /** Achieved GSF / max-buildout GSF, 0–100+ (SF-first objective) */
+  utilizationPct?: number | null;
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null }) => {
   if (!metrics) {
     return (
       <div className="text-sm text-gray-500">Generating plan…</div>
@@ -40,6 +54,15 @@ const KpiStrip: React.FC<{
   // generator) — tolerate missing fields instead of crashing the planner.
   const violations = metrics.violations ?? [];
   const compliant = metrics.zoningCompliant ?? violations.length === 0;
+  // The badge consumes the clamp flags the system already emits: a green
+  // "Compliant" next to a red stall count or an FAR clamp is a contradiction.
+  const clampReasons = [
+    ...new Set([
+      ...planFlags.filter(f => HARD_CLAMP_FLAGS[f]).map(f => HARD_CLAMP_FLAGS[f]),
+      ...(parkingShort ? ['parking short'] : []),
+    ]),
+  ];
+  const constrained = clampReasons.length > 0;
 
   return (
     <div className="flex items-center gap-5 overflow-x-auto">
@@ -66,23 +89,28 @@ const KpiStrip: React.FC<{
           />
         </span>
       )}
-      {/* Honesty: a green "Compliant" next to red 52/111 stalls reads as a
-          contradiction. Parking-short plans get an amber chip even when the
-          zoning envelope itself is compliant. */}
+      {utilizationPct != null && (
+        <Stat
+          label="Utilization"
+          value={`${utilizationPct.toFixed(0)}%`}
+          alert={utilizationPct < 50}
+        />
+      )}
       <div
+        title={constrained ? `Constrained: ${clampReasons.join(', ')}` : undefined}
         className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
           !compliant
             ? 'bg-red-50 text-red-700'
-            : parkingShort
+            : constrained
               ? 'bg-amber-50 text-amber-700'
               : 'bg-green-50 text-green-700'
         }`}
       >
-        {compliant && !parkingShort ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+        {compliant && !constrained ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
         {!compliant
           ? `${violations.length} issue${violations.length === 1 ? '' : 's'}`
-          : parkingShort
-            ? 'Parking short'
+          : constrained
+            ? `Constrained · ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
             : 'Compliant'}
       </div>
     </div>

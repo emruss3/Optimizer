@@ -21,7 +21,9 @@ const SchemesRail: React.FC<{
   /** The workspace's ACTIVE compiled context id (null = none compiled) */
   activeContextId?: string | null;
   onRegenerateWithCurrentContext?: (c: MfCandidate) => void;
-}> = ({ candidates, activeId, onView, busy, activeContextId, onRegenerateWithCurrentContext }) => {
+  /** Lot's legal max GSF (fn_max_buildout) — enables the utilization chip */
+  maxGsf?: number | null;
+}> = ({ candidates, activeId, onView, busy, activeContextId, onRegenerateWithCurrentContext, maxGsf = null }) => {
   if (candidates.length === 0) return null;
 
   // A3 ranking: best market margin gets the badge (order stays chronological
@@ -40,6 +42,9 @@ const SchemesRail: React.FC<{
           const units = n(c.metrics.units_est);
           const stalls = n(c.metrics.stalls);
           const far = n(c.metrics.far);
+          // SF-first: this scheme's yield against the lot's legal max GSF
+          const gfa = n(c.metrics.gfa_sqft);
+          const util = maxGsf && maxGsf > 0 && gfa != null ? (gfa / maxGsf) * 100 : null;
           // Only th_context_v1 writes unit-form metrics — the product tag
           const isTownhome = c.metrics.unit_w_ft != null;
           const active = c.id === activeId;
@@ -78,6 +83,14 @@ const SchemesRail: React.FC<{
                 </span>
                 <span className="text-gray-500 tabular-nums">{stalls != null ? `${stalls} st` : ''}</span>
                 <span className="text-gray-500 tabular-nums">{far != null ? `FAR ${far.toFixed(2)}` : ''}</span>
+                {util != null && (
+                  <span
+                    className={`tabular-nums ${util >= 85 ? 'text-green-700' : util >= 60 ? 'text-amber-600' : 'text-gray-500'}`}
+                    title="Achieved GSF vs the lot's legal max buildout"
+                  >
+                    {util.toFixed(0)}%
+                  </span>
+                )}
                 {margin != null && (
                   <span
                     className={`tabular-nums font-medium ${

@@ -103,8 +103,8 @@ describe('pickScaleBarFt', () => {
   });
 });
 
-describe('setbackLabelIndices (one label per bearing group)', () => {
-  it('collapses collinear side segments into a single label', () => {
+describe('setbackLabelIndices (one label per setback type)', () => {
+  it('collapses all side segments into a single label on the longest', () => {
     const edges = [
       { type: 'side', edge: [[0, 0], [0, 10]] as [[number, number], [number, number]] },
       { type: 'side', edge: [[0, 10], [0, 18]] as [[number, number], [number, number]] },
@@ -117,12 +117,15 @@ describe('setbackLabelIndices (one label per bearing group)', () => {
     expect(labeled.has(3)).toBe(true);
   });
 
-  it('labels perpendicular sides separately (different bearing groups)', () => {
+  it('perpendicular sides still share ONE label (value is per-type)', () => {
     const edges = [
       { type: 'side', edge: [[0, 0], [0, 30]] as [[number, number], [number, number]] },
       { type: 'side', edge: [[0, 30], [40, 30]] as [[number, number], [number, number]] },
+      { type: 'rear', edge: [[40, 30], [40, 0]] as [[number, number], [number, number]] },
     ];
-    expect(setbackLabelIndices(edges).size).toBe(2);
+    const labeled = setbackLabelIndices(edges);
+    expect(labeled.size).toBe(2); // one side + one rear
+    expect(labeled.has(1)).toBe(true); // longest side carries the side label
   });
 });
 
