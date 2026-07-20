@@ -604,6 +604,10 @@ const FLAG_TEXT: Record<string, string> = {
     'Site entry taken from verified street frontage — a boundary edge facing the public right-of-way (the gap in the parcel fabric), not a guess.',
   entry_heuristic_no_row_frontage:
     'No right-of-way edge found in the parcel fabric — the parcel appears landlocked; entry falls back to the longest-edge heuristic (access presumed by easement).',
+  parking_garage_plus_apron_lane_verified_v1:
+    'Townhome stalls (garage + apron, 2 per unit) counted only for rows that actually back onto a lane apron.',
+  th_row_without_lane_access:
+    'A townhome row has no rear lane behind it — its units cannot reach a garage and are counted as unparked.',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */

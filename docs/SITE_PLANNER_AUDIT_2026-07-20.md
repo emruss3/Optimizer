@@ -194,6 +194,15 @@ grammar library by lot class (P2–P3); build-to lines from verified frontage
 1. 3D legitimacy pack: floor banding, sun study with shadows, camera
    bookmarks/PNG export, plan-textured ground.
 2. TH lane-network grammar (West Heiman bar), then assemblage MVP.
+   **v1 shipped 2026-07-20 (migration 20260720000027): the lane grammar
+   (facing pairs across rear lanes with aprons, mews greens) was already
+   live; what shipped is its honesty — stalls counted only for rows that
+   actually back onto a lane (`th_row_without_lane_access` names every
+   unreachable row; pinned rows count zero until garages are modeled),
+   and townhome responses now carry an optimization verdict (units placed
+   vs the entitlement unit cap, `constraint_proven` when the legal
+   ceiling is reached). Remaining for v2: walk paths through mews,
+   varied unit-plan widths (A–H), assemblage MVP.**
 3. Fire-access validator; ADA/EV allocation; core/corridor server model.
 4. Grammar library by lot class (courtyard, podium, point block, wrap).
 5. Ordinance completeness dashboard; second jurisdiction pilot.

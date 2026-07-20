@@ -28,6 +28,8 @@ const PROOF_LABELS: Record<string, string> = {
   remaining_stories: 'Stories remaining',
   minimum_land_needed_sqft: 'Minimum land the gap needs (sqft)',
   constraint_proven: 'Constraint proven',
+  units_placed: 'Units placed',
+  entitlement_unit_cap: 'Entitlement unit cap',
 };
 
 const REGIME_LABELS: Record<string, string> = {
