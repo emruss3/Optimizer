@@ -29,6 +29,7 @@ import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
 import FlagsPanel from './ui/FlagsPanel';
 import HbuStrip from './ui/HbuStrip';
+import ExportReport from './ui/ExportReport';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
 import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
@@ -84,6 +85,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // collapsible left rail, reporting in tabs docked under the canvas.
   const [leftRailCollapsed, setLeftRailCollapsed] = useState(false);
   const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results'>('tabulation');
+  // Exit artifact (P1-5): print-ready scheme report with a plan snapshot.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPng, setExportPng] = useState<string | null>(null);
+  const openExport = useCallback(() => {
+    const canvas = document.querySelector('canvas[data-export="site-plan"]') as HTMLCanvasElement | null;
+    try {
+      setExportPng(canvas ? canvas.toDataURL('image/png') : null);
+    } catch {
+      setExportPng(null);
+    }
+    setExportOpen(true);
+  }, []);
   // An ERROR-severity violation is never something to hunt for in a tab —
   // surface the Flags dock the moment one lands.
   useEffect(() => {
@@ -1717,6 +1730,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             3D Massing
           </button>
         </div>
+        <button
+          onClick={openExport}
+          disabled={!metrics || draftMode || !!compileBlocked}
+          title={
+            !metrics
+              ? 'Generate a plan first'
+              : draftMode || compileBlocked
+                ? 'Reports are only produced from context-verified plans'
+                : 'Print-ready scheme report with plan, tabulation, and solver receipts'
+          }
+          className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Export
+        </button>
         </div>
       </div>
 
@@ -2004,6 +2031,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
         </div>
       </div>
+      {exportOpen && (
+        <ExportReport
+          address={parcel.address ?? parcelIdStr}
+          zoning={(parcel.zoning as string | undefined) ?? null}
+          planPng={exportPng}
+          planBasis={planBasis}
+          metrics={metrics}
+          elements={elements}
+          buildout={maxBuildout}
+          currentStories={planLineage?.floors ?? null}
+          plannerCtx={plannerCtx}
+          violations={violations}
+          lineageFlags={planLineage?.flags ?? []}
+          acres={parcel.deeded_acres ?? null}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
     </div>
   );
 };

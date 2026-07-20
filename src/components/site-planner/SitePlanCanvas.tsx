@@ -1362,6 +1362,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   return (
     <canvas
       ref={canvasRef}
+      data-export="site-plan"
       className="w-full h-full absolute inset-0"
       style={{ cursor: cursor ?? 'crosshair' }}
       onMouseDown={onMouseDown}
