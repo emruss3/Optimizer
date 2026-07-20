@@ -15,13 +15,30 @@ const SEVERITY_STYLE: Record<string, string> = {
  * the governing constraint), and candidates the zero-overlap gate rejected.
  * An empty state is a statement, not an absence: the plan is clean.
  */
+const PROOF_LABELS: Record<string, string> = {
+  proof_basis: 'Proof basis',
+  binding_constraint: 'Binding constraint',
+  required_additional_gsf: 'GSF to reach envelope',
+  additional_units_at_selected_program: 'Additional units implied',
+  additional_stalls_required: 'Additional stalls required',
+  remaining_stall_capacity: 'Stall headroom remaining',
+  remaining_impervious_sqft: 'Impervious budget remaining (sqft)',
+  remaining_building_coverage_sqft: 'Coverage headroom remaining (sqft)',
+  remaining_footprint_eligible_sqft: 'Footprint-eligible land remaining (sqft)',
+  remaining_stories: 'Stories remaining',
+  minimum_land_needed_sqft: 'Minimum land the gap needs (sqft)',
+  constraint_proven: 'Constraint proven',
+};
+
 const FlagsPanel: React.FC<{
   violations: FeasibilityViolation[];
   /** Clamp/derivation flags reported by the generator for THIS plan */
   lineageFlags: string[];
   rejected?: { count: number; reasons: string[] } | null;
-}> = ({ violations, lineageFlags, rejected }) => {
-  const empty = violations.length === 0 && lineageFlags.length === 0 && !rejected;
+  /** Solver's quantified residual-capacity proof — rendered verbatim. */
+  proof?: Record<string, unknown> | null;
+}> = ({ violations, lineageFlags, rejected, proof }) => {
+  const empty = violations.length === 0 && lineageFlags.length === 0 && !rejected && !proof;
   if (empty) {
     return (
       <div className="p-4 text-sm text-gray-500">
@@ -52,6 +69,23 @@ const FlagsPanel: React.FC<{
             {rejected.count} candidate{rejected.count === 1 ? '' : 's'} rejected by the zero-overlap gate
           </span>
           — {rejected.reasons.join('; ')}. Rejected candidates never rendered.
+        </div>
+      )}
+      {proof && (
+        <div className="border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-700">
+          <div className="font-semibold text-slate-800 mb-1">Optimization proof (solver receipts)</div>
+          <table className="tabular-nums">
+            <tbody>
+              {Object.entries(PROOF_LABELS)
+                .filter(([k]) => proof[k] !== undefined && proof[k] !== null)
+                .map(([k, label]) => (
+                  <tr key={k}>
+                    <td className="pr-3 text-slate-500">{label}</td>
+                    <td className="font-medium">{String(proof[k]).replace(/_/g, ' ')}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

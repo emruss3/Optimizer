@@ -1750,6 +1750,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             buildout={maxBuildout}
             achievedGsf={metrics?.totalBuiltSF ?? null}
             currentStories={planLineage?.floors ?? null}
+            optimizationStatus={metrics?.optimizationStatus ?? null}
+            optimizationProof={metrics?.optimizationProof ?? null}
           />
         </div>
       )}
@@ -1976,6 +1978,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 violations={violations}
                 lineageFlags={planLineage?.flags ?? []}
                 rejected={solveRejected}
+                proof={metrics?.optimizationProof ?? null}
               />
             )}
             {dockTab === 'results' && (

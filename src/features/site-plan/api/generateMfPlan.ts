@@ -238,6 +238,13 @@ export function mfPlanToElements(resp: MfPlanResponse): {
         // zoning violation. Consumers (KpiStrip) need these present.
         violations: [],
         zoningCompliant: true,
+        // The solver's own optimization verdict travels VERBATIM — the UI
+        // must never re-infer what the server has already proven.
+        optimizationStatus: typeof m.optimization_status === 'string' ? m.optimization_status : undefined,
+        optimizationProof:
+          m.optimization_proof && typeof m.optimization_proof === 'object'
+            ? (m.optimization_proof as Record<string, unknown>)
+            : undefined,
       } as SiteMetrics)
     : null;
 

@@ -100,6 +100,22 @@ describe('mfPlanToElements', () => {
     expect(isMfPlanElement({ id: 'gen-lot-1' })).toBe(false);
   });
 
+  it('carries the solver optimization verdict + proof VERBATIM into metrics', () => {
+    const { metrics } = mfPlanToElements({
+      ...RESP,
+      metrics: {
+        ...(RESP.metrics as Record<string, unknown>),
+        optimization_status: 'feasible_demonstrably_constrained',
+        optimization_proof: { proof_basis: 'buildable_envelope_exhausted', constraint_proven: true },
+      },
+    });
+    expect(metrics?.optimizationStatus).toBe('feasible_demonstrably_constrained');
+    expect(metrics?.optimizationProof).toEqual({
+      proof_basis: 'buildable_envelope_exhausted',
+      constraint_proven: true,
+    });
+  });
+
   it('dedupes flags — best-effort pinned solves append their marker once per softened gate', () => {
     const { flags } = mfPlanToElements({
       ...RESP,

@@ -18,7 +18,10 @@ const MaxBuildoutHeadline: React.FC<{
   achievedGsf?: number | null;
   /** Stories of the current scheme, to highlight the active ladder rung */
   currentStories?: number | null;
-}> = ({ buildout, achievedGsf, currentStories }) => {
+  /** Solver's own verdict + proof — displayed verbatim when present. */
+  optimizationStatus?: string | null;
+  optimizationProof?: Record<string, unknown> | null;
+}> = ({ buildout, achievedGsf, currentStories, optimizationStatus, optimizationProof }) => {
   if (!buildout || buildout.max_gsf <= 0) return null;
 
   const capture =
@@ -26,7 +29,16 @@ const MaxBuildoutHeadline: React.FC<{
       ? Math.min(999, (achievedGsf / buildout.max_gsf) * 100)
       : null;
   const gap = achievedGsf != null && achievedGsf > 0 ? Math.max(0, buildout.max_gsf - achievedGsf) : null;
-  const solved = capture != null && capture >= 85;
+  // The server's verdict wins; capture-inference is only the fallback for
+  // plans generated before the classification contract existed.
+  const solved = optimizationStatus
+    ? optimizationStatus === 'feasible'
+    : capture != null && capture >= 85;
+  const proven = optimizationStatus === 'feasible_demonstrably_constrained';
+  const proofBasis =
+    typeof optimizationProof?.proof_basis === 'string'
+      ? (optimizationProof.proof_basis as string).replace(/_/g, ' ')
+      : null;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-3 py-2">
@@ -44,10 +56,15 @@ const MaxBuildoutHeadline: React.FC<{
           <span className="text-gray-700">
             Best feasible plan found: <span className="font-semibold">{fmt(achievedGsf)} GSF</span>
           </span>
-          <span className={`ml-2 font-semibold ${solved ? 'text-green-700' : capture >= 60 ? 'text-amber-600' : 'text-red-600'}`}>
+          <span className={`ml-2 font-semibold ${solved ? 'text-green-700' : proven ? 'text-slate-600' : capture >= 60 ? 'text-amber-600' : 'text-red-600'}`}>
             {capture.toFixed(0)}% capture
           </span>
-          {!solved && (
+          {proven && (
+            <span className="ml-2 text-slate-600" title="The solver quantified the remaining capacity and proved the gap belongs to the lot, not the search.">
+              proven constrained{proofBasis ? ` — ${proofBasis}` : ''}
+            </span>
+          )}
+          {!solved && !proven && (
             <span className="ml-2 text-amber-700">
               gap {fmt(gap)} GSF · optimization incomplete — additional search warranted
             </span>
