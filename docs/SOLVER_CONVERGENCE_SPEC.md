@@ -8,12 +8,36 @@ every solve; §4 classification (`feasible` / `feasible_optimization_incomplete`
 / `feasible_demonstrably_constrained`) with the quantified proof object in
 `metrics.optimization_proof`; §5 static no-parcel-literal regression.
 
-Phase 2 (open): the remaining §2 search dimensions — NEW bar placement beyond
-the initial capacity set (the 2611 W Heiman proof shows +3,100 sqft footprint
-at the coverage cap × 4 floors closes the entire 12,400 GSF gap), bar count /
-orientation / length sweeps, single- vs double-loaded parking module variants,
-unit-program variation, and alternative parking regimes. The proof object now
-measures the phase-2 prize on every parcel.
+Phase 2a shipped (migrations `mf_v2_convergence_phase2a` + `_slab_fix`):
+**in-envelope supplemental parking** (stall land beside the drive network
+INSIDE the building envelope — the outside-only search missed it) and
+**infill bars** carved from residual envelope land (slab-scan at three
+vertical anchors, near-rectangular pieces only), both inside the convergence
+loop, capped by live parking/coverage/impervious headroom and the access
+contract (drive reach + 250 ft of parking). Measured live: 669046 rose
+92.9% → **100.0% capture (`feasible`)**; 488068 at 96.9% (96u); 2611 W
+Heiman gained +6 units (28→34) at unchanged GSF — its residual land is
+genuinely not bar-shaped, so infill correctly declined and the result stays
+honestly `feasible_optimization_incomplete`.
+
+Phase 2b/2c shipped (migrations `..._phase2b_court_realloc`,
+`..._phase2c_envelope_proof`): infill may reclaim green-court land under an
+open-space guard (≥ binding minimum, 15% floor), and the classifier prices
+land by ELIGIBILITY, not just budget — it measures remaining
+footprint-eligible envelope land, and when stories are maxed and that land
+cannot host the missing floorplate even as an upper bound, the result is
+PROVEN constrained (`proof_basis: buildable_envelope_exhausted`).
+
+**Acceptance fixture closed**: 2611 W Heiman = `feasible_demonstrably_constrained`,
+`constraint_proven: true`, 1,760 sqft footprint-eligible remaining vs 3,100
+needed, stories maxed — after the search genuinely exhausted iteration,
+in-envelope parking (+6 units), and court-reallocated infill. 669046 holds
+100.0% `feasible`.
+
+Phase 3 (open): bar deepening/lengthening beyond initial capacity, bar
+count/orientation sweeps, parking module variants, unit-program variation,
+structured/tuck-under regimes — the levers that could re-open proven-
+constrained lots by changing the geometry the proof is conditioned on.
 
 ## 1. Vocabulary (shipped client-side)
 
