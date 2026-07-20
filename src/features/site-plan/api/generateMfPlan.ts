@@ -245,6 +245,11 @@ export function mfPlanToElements(resp: MfPlanResponse): {
           m.optimization_proof && typeof m.optimization_proof === 'object'
             ? (m.optimization_proof as Record<string, unknown>)
             : undefined,
+        parkingRegime: typeof m.regime === 'string' ? m.regime : undefined,
+        regimeComparison:
+          m.regime_comparison && typeof m.regime_comparison === 'object'
+            ? (m.regime_comparison as Record<string, unknown>)
+            : undefined,
       } as SiteMetrics)
     : null;
 

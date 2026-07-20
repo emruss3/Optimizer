@@ -116,6 +116,31 @@ describe('mfPlanToElements', () => {
     });
   });
 
+  it('carries the parking regime + regime-comparison receipts VERBATIM into metrics', () => {
+    const { metrics } = mfPlanToElements({
+      ...RESP,
+      metrics: {
+        ...(RESP.metrics as Record<string, unknown>),
+        regime: 'tuck_under',
+        regime_comparison: {
+          surface_gsf: null,
+          surface_error: 'planner_parking_infeasible',
+          tuck_under_gsf: 227760,
+          chosen: 'tuck_under',
+          basis: 'complete_real_solves_argmax_gsf',
+        },
+      },
+    });
+    expect(metrics?.parkingRegime).toBe('tuck_under');
+    expect(metrics?.regimeComparison).toEqual({
+      surface_gsf: null,
+      surface_error: 'planner_parking_infeasible',
+      tuck_under_gsf: 227760,
+      chosen: 'tuck_under',
+      basis: 'complete_real_solves_argmax_gsf',
+    });
+  });
+
   it('dedupes flags — best-effort pinned solves append their marker once per softened gate', () => {
     const { flags } = mfPlanToElements({
       ...RESP,

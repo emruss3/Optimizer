@@ -109,6 +109,7 @@ const ExportReport: React.FC<{
             violations={violations}
             lineageFlags={lineageFlags}
             proof={metrics?.optimizationProof ?? null}
+            regimeComparison={metrics?.regimeComparison ?? null}
           />
         </div>
 

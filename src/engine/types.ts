@@ -143,6 +143,11 @@ export interface SiteMetrics {
   optimizationStatus?: string;
   /** Quantified residual-capacity proof object from the solver. */
   optimizationProof?: Record<string, unknown>;
+  /** Parking regime the returned solve used — 'surface' | 'tuck_under'. */
+  parkingRegime?: string;
+  /** Regime-comparison receipts when the dispatcher ran both complete
+   *  solves (surface + tuck-under): both GSFs/errors, chosen, basis. */
+  regimeComparison?: Record<string, unknown>;
 }
 
 export interface FeasibilityViolation {

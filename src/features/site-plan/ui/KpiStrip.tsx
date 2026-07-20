@@ -128,6 +128,14 @@ const KpiStrip: React.FC<{
           ⚠ {utilizationPct.toFixed(0)}% of theoretical envelope
         </div>
       )}
+      {metrics.parkingRegime === 'tuck_under' && (
+        <div
+          title="This scheme parks under the buildings (ground floor is a parking level). Chosen by comparing two complete solves — receipts in the Flags tab."
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-sky-50 text-sky-700 whitespace-nowrap"
+        >
+          Tuck-under parking
+        </div>
+      )}
     </div>
   );
 };
