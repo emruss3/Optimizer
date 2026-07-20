@@ -14,7 +14,7 @@ public.fn_generate_mf_site_plan_v2(
 )
 ```
 
-Its implementation now follows one development objective:
+Its implementation follows one development objective:
 
 > Maximize gross square feet inside the legal, physical, parking, circulation and program frontier.
 
@@ -28,16 +28,25 @@ Unit count is not the primary objective. Density limits units, but unit size and
 {
   "entitlement_capacity": {},
   "max_buildout": {
+    "contract_version": "max_buildout_v2",
     "max_gsf": 137688,
     "at_stories": 4,
     "at_unit_gsf": 1550,
     "units_at_max": 88,
     "footprint_at_max": 34422,
     "binding_constraint": "impervious_coverage",
+    "program_frontier": {
+      "gsf_max_option": {},
+      "units_max_option": {}
+    },
     "stories_ladder": []
   }
 }
 ```
+
+`program_frontier.gsf_max_option` is the quantity target. `units_max_option` shows the opposite legal corner: the largest unit count at a smaller gross unit size. The top-level `at_stories`, `at_unit_gsf`, `units_at_max`, and `footprint_at_max` keys are compatibility aliases of the GSF-max option and must remain equal to it.
+
+The SQL solver and TypeScript client accept either the aliases or the nested GSF-max option. An incomplete frontier returns `planner_max_buildout_contract_invalid`; it must never degrade silently to one story.
 
 `fn_max_buildout` sweeps gross unit sizes of 750, 950, 1,150, 1,350 and 1,550 SF across the height-supported story range. It evaluates density, FAR when applicable, measured usable land, surface-parking land and impervious coverage.
 
@@ -68,7 +77,7 @@ Regrid precedents shape form only:
 
 They never reduce the quantity target.
 
-The existing Regrid `depth_ft` metric is a whole-building oriented-bounding-box depth. It is now labeled:
+The existing Regrid `depth_ft` metric is a whole-building oriented-bounding-box depth. It is labeled:
 
 ```text
 depth_semantics: whole_building_oriented_bounding_box_not_bar_depth
@@ -132,6 +141,12 @@ Before reducing GSF, the solver attempts to use available land through:
 3. Connected double-loaded relief parking fields.
 4. Proportional shortening of all bars before dropping a whole bar.
 5. Exclusion of generated site lobes that cannot connect to the entry spine.
+
+Buildings remain in the directional building-setback envelope. Connected surface parking may use the broader side-setback site envelope used by `fn_max_buildout`; until parking-specific setbacks are loaded, that assumption is disclosed by:
+
+```text
+parking_envelope_side_setback_inset_pending_specific_parking_setbacks
+```
 
 Parking is clipped against final buildings and drives before its stall count is accepted. One stall is reserved during programming to protect against topology cleanup and integer rounding.
 
@@ -204,11 +219,40 @@ first compile: 688.4 ms, cache miss
 second compile: 0.6 ms, cache hit
 ```
 
+## July 20 frontier-contract regression
+
+A live extension to `fn_max_buildout` introduced `program_frontier` but removed the top-level aliases still consumed by the solver and frontend. On parcel `669046`, PostgreSQL converted the missing story value into the one-story fallback:
+
+```text
+before repair
+stories:       1
+GSF:           28,822
+capture:       24.5%
+parking:       66 / 65
+```
+
+The repaired contract restores the aliases and makes the solver consume the nested frontier directly. Aligning connected parking with the same site envelope used by the buildout frontier produced this fresh receipt:
+
+```text
+after repair
+max-GSF target: 117,794 SF
+stories:        4
+GSF:            78,529
+capture:        66.7%
+programmed units: 50
+parking:        77 / 75
+connected drives: 1 component
+hard constraints: passed
+yield clamp:    parking_land
+```
+
+This closes the silent one-story contract failure. It does not complete the yield objective: the current solver adds parking once and then trims bars, but does not run a second parking search followed by bar regrowth. A geometry probe found remaining connected parking capacity after trimming, so iterative parking/building co-optimization is the next solver improvement.
+
 ## Remaining limitations
 
 - Verified road frontage is still a heuristic.
 - Building centroid is an entrance proxy.
 - The active multifamily program prior remains low confidence.
 - Corridor width is temporarily 5.5 feet clear until the per-type unit/core specification lands.
-- The surface-parking grammar may capture less than the theoretical GSF frontier on irregular parcels; those losses are explicit and scored.
+- The current surface-parking grammar is not yet an iterative parking/building optimizer; residual parking land can remain after bar trimming.
 - Structured parking, podium and wrap alternatives are not yet searched by this solver.
