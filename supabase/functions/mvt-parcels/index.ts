@@ -25,6 +25,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Lot-level tiles only exist at z >= 14 (below that a tile spans tens of
+    // thousands of parcels and the DB query cannot finish inside the API
+    // statement timeout — measured 41,734 parcels for one z12 tile). The RPC
+    // has the same gate; answering here saves the round-trip entirely.
+    if (z < 14 || z > 22) {
+      return withCors(null, {
+        status: 204,
+        headers: { "Cache-Control": "public, max-age=86400, s-maxage=86400" },
+      });
+    }
+
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const ANON = Deno.env.get("SUPABASE_ANON_KEY");
     if (!SUPABASE_URL || !ANON) {
@@ -51,7 +62,6 @@ Deno.serve(async (req) => {
       console.error("RPC error", upstream.status, text, { z, x, y });
       // Treat as empty tile for UX; prevents red 500s in the browser
       return withCors(null, {
-        status: 204,
         status: 204,
         headers: { "Cache-Control": "public, max-age=600, s-maxage=600" },
       });

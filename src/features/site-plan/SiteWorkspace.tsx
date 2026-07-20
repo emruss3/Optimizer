@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Undo2, Redo2 } from 'lucide-react';
+import { Undo2, Redo2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import EnterpriseSitePlanner from '../../components/EnterpriseSitePlannerShell';
 import { SitePlannerErrorBoundary } from '../../components/ErrorBoundary';
 import type { InvestmentAnalysis, SelectedParcel } from '../../types/parcel';
@@ -27,6 +27,7 @@ import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/gen
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
+import FlagsPanel from './ui/FlagsPanel';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
 import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
@@ -78,6 +79,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
+  // Workspace shell (3b): the canvas is the workspace — parameters live in a
+  // collapsible left rail, reporting in tabs docked under the canvas.
+  const [leftRailCollapsed, setLeftRailCollapsed] = useState(false);
+  const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results'>('tabulation');
+  // An ERROR-severity violation is never something to hunt for in a tab —
+  // surface the Flags dock the moment one lands.
+  useEffect(() => {
+    if (violations.some(v => v.severity === 'error')) setDockTab('flags');
+  }, [violations]);
 
   // ── Design-context engine (brief Phase 1) ────────────────────────────────
   const contextOgcFid = useMemo(() => {
@@ -1737,6 +1747,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       )}
 
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
+        {!leftRailCollapsed && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
           <ContextPanel
             context={plannerCtx ? plannerContextToDesignContext(plannerCtx) : null}
@@ -1783,8 +1794,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             currentInvestment={investmentAnalysis}
           />
         </div>
+        )}
 
+        {/* Canvas column (3b): the plan is the workspace — the canvas takes
+            every pixel the rails give back, and reporting docks beneath it. */}
+        <div className="flex-1 min-w-0 flex flex-col xl:min-h-0">
         <div className="flex-1 min-w-0 min-h-[420px] xl:min-h-0 relative">
+          <button
+            type="button"
+            onClick={() => setLeftRailCollapsed(c => !c)}
+            title={leftRailCollapsed ? 'Show parameters' : 'Hide parameters — maximize the canvas'}
+            className="absolute top-2 left-2 z-20 p-1.5 rounded-md bg-white/90 border border-gray-200 text-gray-500 hover:text-gray-800 shadow-sm"
+          >
+            {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
           {draftMode && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-amber-50 border border-amber-300 text-amber-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm">
               <span>Using standard defaults — design context unavailable. Plan is a draft and won't be saved.</span>
@@ -1817,6 +1840,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 parcelGeometry={plannerParcel?.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined}
                 envelope={envelopeMeters ?? undefined}
                 neighbors={neighbors}
+                edgeClassifications={edgeClassifications}
               />
             </SitePlannerErrorBoundary>
           ) : (
@@ -1881,28 +1905,81 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           )}
         </div>
 
-        <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
-          <TabulationPanel
-            elements={elements}
-            metrics={metrics}
-            plannerCtx={plannerCtx}
-            acres={parcel.deeded_acres}
-          />
-          <SchemesRail
-            candidates={mfCandidates}
-            activeId={activeCandidateId}
-            onView={handleViewCandidate}
-            busy={isGenerating || isGeneratingLots}
-            activeContextId={plannerCtx?.context_id ?? null}
-            onRegenerateWithCurrentContext={handleRegenerateCandidate}
-            maxGsf={maxBuildout?.max_gsf ?? null}
-          />
-          <ResultsPanel
-            metrics={metrics}
-            investmentAnalysis={investmentAnalysis}
-            isGenerating={isGenerating}
-            violations={violations}
-          />
+        {/* Docked reporting tabs (3b) — tabulation | schemes | flags | results */}
+        <div className="mt-3 flex-shrink-0 bg-white border border-gray-200 rounded-lg flex flex-col max-h-72">
+          <div className="flex items-center border-b border-gray-100 flex-shrink-0">
+            {([
+              { key: 'tabulation', label: 'Tabulation', badge: null, alert: false },
+              { key: 'schemes', label: 'Schemes', badge: mfCandidates.length || null, alert: false },
+              {
+                key: 'flags',
+                label: 'Flags',
+                badge:
+                  (violations.length + (planLineage?.flags?.length ?? 0) + (solveRejected ? 1 : 0)) || null,
+                alert: violations.some(v => v.severity === 'error'),
+              },
+              { key: 'results', label: 'Results', badge: null, alert: false },
+            ] as const).map(t => (
+              <button
+                key={t.key}
+                data-testid={`dock-tab-${t.key}`}
+                onClick={() => setDockTab(t.key)}
+                className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px flex items-center gap-1.5 ${
+                  dockTab === t.key
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                {t.label}
+                {t.badge != null && (
+                  <span
+                    className={`text-[10px] tabular-nums rounded-full px-1.5 py-px ${
+                      t.alert ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {t.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          <div className="min-h-0 overflow-y-auto">
+            {dockTab === 'tabulation' && (
+              <TabulationPanel
+                elements={elements}
+                metrics={metrics}
+                plannerCtx={plannerCtx}
+                acres={parcel.deeded_acres}
+              />
+            )}
+            {dockTab === 'schemes' && (
+              <SchemesRail
+                candidates={mfCandidates}
+                activeId={activeCandidateId}
+                onView={handleViewCandidate}
+                busy={isGenerating || isGeneratingLots}
+                activeContextId={plannerCtx?.context_id ?? null}
+                onRegenerateWithCurrentContext={handleRegenerateCandidate}
+                maxGsf={maxBuildout?.max_gsf ?? null}
+              />
+            )}
+            {dockTab === 'flags' && (
+              <FlagsPanel
+                violations={violations}
+                lineageFlags={planLineage?.flags ?? []}
+                rejected={solveRejected}
+              />
+            )}
+            {dockTab === 'results' && (
+              <ResultsPanel
+                metrics={metrics}
+                investmentAnalysis={investmentAnalysis}
+                isGenerating={isGenerating}
+                violations={violations}
+              />
+            )}
+          </div>
+        </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import type { Element } from '../../../engine/types';
 import { METERS_PER_FOOT } from '../../../engine/units';
+import { pointsAlongSegment, type Segment } from '../../../components/site-planner/planRendering';
 
 export interface MassingPolygon {
   /** Polygon rings in local metres, centred on the plan's bbox centre */
@@ -40,17 +41,22 @@ export function buildMassingData(
     contextBuildings?: Array<{ polygon: { coordinates: number[][][] }; stories: number }>;
     /** Neighbor parcel outlines (3857) — flat ground plates */
     contextParcels?: Array<{ coordinates: number[][][] }>;
+    /** Front property edges (3857) — street trees plant along these, exactly
+     *  like the 2D landscape pass (10 m spacing, 4 m end inset, drive skip) */
+    frontEdges?: Segment[];
   }
 ): {
   polygons: MassingPolygon[];
   extent: number;
   groundPaths: Array<{ path: number[][]; color: [number, number, number, number]; widthM: number }>;
   contextPolygons: MassingPolygon[];
+  /** Street-tree positions in the same centred local frame */
+  trees: Array<{ position: [number, number] }>;
 } {
   const drawable = elements.filter(
     e => TYPE_COLORS[e.type] && e.geometry?.coordinates?.[0]?.length >= 4
   );
-  if (drawable.length === 0) return { polygons: [], extent: 100, groundPaths: [], contextPolygons: [] };
+  if (drawable.length === 0) return { polygons: [], extent: 100, groundPaths: [], contextPolygons: [], trees: [] };
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const el of drawable) {
@@ -118,6 +124,26 @@ export function buildMassingData(
     });
   }
 
+  // Street trees mirror the 2D landscape pass: planted along FRONT property
+  // edges at 10 m spacing (4 m end inset), skipping points near a drive so
+  // the curb cut stays clear. Same rules, same trees — only the projection
+  // into the centred frame differs.
+  const trees: Array<{ position: [number, number] }> = [];
+  if (ground?.frontEdges?.length) {
+    const driveRings = elements
+      .filter(e => e.type === 'circulation')
+      .map(e => e.geometry?.coordinates?.[0])
+      .filter((r): r is number[][] => Array.isArray(r));
+    const nearDrive = (x: number, y: number): boolean =>
+      driveRings.some(ring => ring.some(([dx, dy]) => Math.hypot(dx - x, dy - y) < 8));
+    for (const edge of ground.frontEdges) {
+      for (const [tx, ty] of pointsAlongSegment(edge, 10, 4)) {
+        if (nearDrive(tx, ty)) continue;
+        trees.push({ position: [(tx - cx) * k, (ty - cy) * k] });
+      }
+    }
+  }
+
   const extent = Math.max((maxX - minX) * k, (maxY - minY) * k, 10);
-  return { polygons, extent, groundPaths, contextPolygons };
+  return { polygons, extent, groundPaths, contextPolygons, trees };
 }

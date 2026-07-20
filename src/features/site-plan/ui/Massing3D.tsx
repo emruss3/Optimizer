@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import DeckGL from '@deck.gl/react';
 import { OrbitView } from '@deck.gl/core';
-import { PolygonLayer, PathLayer } from '@deck.gl/layers';
+import { PolygonLayer, PathLayer, ColumnLayer } from '@deck.gl/layers';
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { Element } from '../../../engine/types';
+import type { EdgeClassification } from '../../../engine/setbacks';
 import { buildMassingData, type MassingPolygon } from './massingData';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { normalizeToPolygon } from '../../../engine/geometry';
@@ -36,16 +37,21 @@ const Massing3D: React.FC<{
   envelope?: Polygon | null;
   /** Neighborhood context — existing buildings extrude as white massing */
   neighbors?: import('../api/neighbors').PlannerNeighbors | null;
-}> = ({ elements, parcelGeometry, envelope, neighbors }) => {
-  const { polygons, extent, groundPaths, contextPolygons } = useMemo(
+  /** Front-edge classifications (3857) — street trees plant along fronts */
+  edgeClassifications?: EdgeClassification[];
+}> = ({ elements, parcelGeometry, envelope, neighbors, edgeClassifications }) => {
+  const { polygons, extent, groundPaths, contextPolygons, trees } = useMemo(
     () =>
       buildMassingData(elements, {
         parcelRing: ringIn3857(parcelGeometry),
         envelopeRing: envelope?.coordinates?.[0],
         contextBuildings: neighbors?.buildings,
         contextParcels: neighbors?.parcels,
+        frontEdges: (edgeClassifications ?? [])
+          .filter(e => e.type === 'front' && e.edge.length >= 2)
+          .map(e => [e.edge[0], e.edge[1]] as [number[], number[]]),
       }),
-    [elements, parcelGeometry, envelope, neighbors]
+    [elements, parcelGeometry, envelope, neighbors, edgeClassifications]
   );
 
   const initialViewState = useMemo(
@@ -97,8 +103,32 @@ const Massing3D: React.FC<{
         lineWidthUnits: 'meters',
         pickable: true,
       }),
+      // Street trees: stylized trunk + canopy cylinders at the SAME points
+      // the 2D landscape pass plants (front edges, drive corridor skipped).
+      new ColumnLayer<{ position: [number, number] }>({
+        id: 'tree-trunks',
+        data: trees,
+        diskResolution: 6,
+        radius: 0.3,
+        extruded: true,
+        getPosition: d => d.position,
+        getElevation: 2.5,
+        getFillColor: [120, 83, 52, 255],
+        pickable: false,
+      }),
+      new ColumnLayer<{ position: [number, number] }>({
+        id: 'tree-canopies',
+        data: trees,
+        diskResolution: 8,
+        radius: 2.2,
+        extruded: true,
+        getPosition: d => d.position,
+        getElevation: 6.5,
+        getFillColor: [74, 160, 90, 200],
+        pickable: false,
+      }),
     ],
-    [polygons, groundPaths, contextPolygons]
+    [polygons, groundPaths, contextPolygons, trees]
   );
 
   if (polygons.length === 0) {
