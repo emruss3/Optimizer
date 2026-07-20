@@ -6,10 +6,11 @@ const fmt = (n: number | null | undefined, d = 0): string =>
   n == null ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: d });
 
 /**
- * SF-first headline: the developer's objective is maximizing GSF on the lot.
- * "82,400 / 137,700 GSF achievable (60%) · 88u @ 1,550 SF · 4 st · binding:
- * impervious coverage" — the scheme's yield against the legal envelope, with
- * the stories ladder showing the yield response to height.
+ * SF-first headline, with optimization honesty: the algebraic envelope is a
+ * THEORETICAL upper bound until the constructive solver actually reproduces
+ * it — "achievable" is reserved for solver-proven numbers. Below 85% capture
+ * the gap is stated as an unresolved optimization, never blended into a
+ * single number that reads as done.
  */
 const MaxBuildoutHeadline: React.FC<{
   buildout: MaxBuildout | null;
@@ -20,28 +21,39 @@ const MaxBuildoutHeadline: React.FC<{
 }> = ({ buildout, achievedGsf, currentStories }) => {
   if (!buildout || buildout.max_gsf <= 0) return null;
 
-  const utilization =
+  const capture =
     achievedGsf != null && achievedGsf > 0
       ? Math.min(999, (achievedGsf / buildout.max_gsf) * 100)
       : null;
+  const gap = achievedGsf != null && achievedGsf > 0 ? Math.max(0, buildout.max_gsf - achievedGsf) : null;
+  const solved = capture != null && capture >= 85;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-3 py-2">
       <div className="text-sm text-gray-900">
         <span className="font-semibold tabular-nums">
-          {achievedGsf != null && achievedGsf > 0 ? `${fmt(achievedGsf)} / ` : ''}
-          {fmt(buildout.max_gsf)} GSF achievable
+          {fmt(buildout.max_gsf)} GSF theoretical upper bound
         </span>
-        {utilization != null && (
-          <span className={`ml-1 font-semibold tabular-nums ${utilization >= 85 ? 'text-green-700' : utilization >= 60 ? 'text-amber-600' : 'text-red-600'}`}>
-            ({utilization.toFixed(0)}%)
-          </span>
-        )}
         <span className="text-gray-600">
           {' '}· {fmt(buildout.units_at_max)}u @ {fmt(buildout.at_unit_gsf)} SF · {buildout.at_stories} st ·{' '}
           binding: {bindingLabel(buildout.binding_constraint)}
         </span>
       </div>
+      {capture != null && gap != null && (
+        <div className="text-[12px] tabular-nums mt-0.5">
+          <span className="text-gray-700">
+            Best feasible plan found: <span className="font-semibold">{fmt(achievedGsf)} GSF</span>
+          </span>
+          <span className={`ml-2 font-semibold ${solved ? 'text-green-700' : capture >= 60 ? 'text-amber-600' : 'text-red-600'}`}>
+            {capture.toFixed(0)}% capture
+          </span>
+          {!solved && (
+            <span className="ml-2 text-amber-700">
+              gap {fmt(gap)} GSF · optimization incomplete — additional search warranted
+            </span>
+          )}
+        </div>
+      )}
 
       {buildout.stories_ladder.length > 1 && (
         <table className="mt-1.5 text-[11px] tabular-nums text-gray-700">

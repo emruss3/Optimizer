@@ -100,6 +100,9 @@ const KpiStrip: React.FC<{
           alert={utilizationPct < 50}
         />
       )}
+      {/* Compliance and optimization are SEPARATE verdicts: a code-compliant
+          plan at 78% of the theoretical envelope is not "done" — the capture
+          chip says so instead of letting the green chip imply optimality. */}
       <div
         title={constrained ? `Constrained: ${clampReasons.join(', ')}` : undefined}
         className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
@@ -114,9 +117,17 @@ const KpiStrip: React.FC<{
         {!compliant
           ? `${violations.length} issue${violations.length === 1 ? '' : 's'}`
           : constrained
-            ? `Constrained · ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
-            : 'Compliant'}
+            ? `Code compliant · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
+            : 'Code compliant'}
       </div>
+      {utilizationPct != null && utilizationPct < 85 && (
+        <div
+          title="The constructive solver has not reproduced the theoretical envelope — additional optimization search is warranted."
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700 whitespace-nowrap"
+        >
+          ⚠ {utilizationPct.toFixed(0)}% of theoretical envelope
+        </div>
+      )}
     </div>
   );
 };
