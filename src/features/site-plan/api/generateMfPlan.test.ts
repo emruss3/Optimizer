@@ -159,6 +159,17 @@ describe('townhome plans (th_context_v1) ride the same pipeline', () => {
     const totalUnits = (mix ?? []).reduce((s, u) => s + u.count, 0);
     expect(totalUnits).toBe(6);
     expect(metrics?.totalUnits).toBe(10);
+    // A TOWNHOME is not a small apartment building: the mix is a single
+    // 'townhome' row (full-depth party-wall dwellings, garage+apron parking),
+    // never a studio/1BR distribution — and the row carries its unit form so
+    // the canvas renders party-wall slices instead of a corridor floorplate.
+    const typed = rows[0].properties?.unitMix as Array<{ type: string; count: number; avgSqft: number; parkingRatio?: number }>;
+    expect(typed).toHaveLength(1);
+    expect(typed[0].type).toBe('townhome');
+    expect(typed[0].parkingRatio).toBe(2.0);
+    expect(Math.round(typed[0].avgSqft)).toBe(Math.round((4206 * 2) / 6));
+    const th = rows[0].properties?.th as { units: number; unitWFt: number | null; unitDFt: number | null };
+    expect(th).toEqual({ units: 6, unitWFt: 19, unitDFt: 36.9 });
     // mfgen ids: pins/strip/regenerate logic treats products identically
     expect(rows.every(isMfPlanElement)).toBe(true);
   });

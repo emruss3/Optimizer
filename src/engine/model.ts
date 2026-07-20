@@ -7,7 +7,9 @@ import type { Polygon, Point } from 'geojson';
 // ─── Unit Mix ────────────────────────────────────────────────────────────────
 
 export interface UnitMixEntry {
-  type: 'studio' | '1br' | '2br' | '3br';
+  /** 'townhome' = a full-depth party-wall dwelling (its own entrance, no
+   *  corridor) — never part of the apartment mix generator's distribution. */
+  type: 'studio' | '1br' | '2br' | '3br' | 'townhome';
   count: number;
   avgSqft: number;
   rentPerMonth: number;
@@ -22,6 +24,7 @@ export const PARKING_RATIO_DEFAULTS: Record<UnitMixEntry['type'], number> = {
   '1br': 1.25,
   '2br': 1.5,
   '3br': 1.75,
+  townhome: 2.0, // garage + apron: each unit parks itself
 };
 
 /** Provenance of the per-type ratios above (display honesty). */

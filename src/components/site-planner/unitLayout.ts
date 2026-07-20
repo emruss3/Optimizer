@@ -33,6 +33,7 @@ export const UNIT_COLORS: Record<string, string> = {
   '1br': '#86EFAC', // green
   '2br': '#93C5FD', // blue
   '3br': '#5EEAD4', // teal
+  townhome: '#A7D8B9', // sage — party-wall dwellings, distinct from flat types
 };
 
 const UNIT_LABELS: Record<string, string> = {
