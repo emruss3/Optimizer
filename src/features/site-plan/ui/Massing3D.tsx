@@ -1,11 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useCallback } from 'react';
 import DeckGL from '@deck.gl/react';
-import { OrbitView } from '@deck.gl/core';
+import { OrbitView, LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core';
 import { PolygonLayer, PathLayer, ColumnLayer } from '@deck.gl/layers';
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { Element } from '../../../engine/types';
 import type { EdgeClassification } from '../../../engine/setbacks';
 import { buildMassingData, type MassingPolygon } from './massingData';
+import { sunPosition, SUN_DATES } from './sunPosition';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { normalizeToPolygon } from '../../../engine/geometry';
 
@@ -24,12 +25,23 @@ function ringIn3857(geom: Polygon | MultiPolygon | undefined | null): number[][]
   }
 }
 
+/** Camera bookmarks: repeatable views for decks and comparisons. */
+const CAMERA_BOOKMARKS: Record<string, { rotationX: number; rotationOrbit: number }> = {
+  iso: { rotationX: 45, rotationOrbit: -30 },
+  top: { rotationX: 89.9, rotationOrbit: 0 },
+  street: { rotationX: 12, rotationOrbit: -55 },
+};
+
 /**
  * 3D extruded massing of the current plan.
  * Uses a map-free OrbitView in local metres (no Mapbox token required), so it
- * works anywhere the plan does. Buildings extrude by floor count; parking,
- * circulation and open space render as flatwork; the parcel line and
- * buildable envelope ground the scene.
+ * works anywhere the plan does. Buildings extrude by floor count with
+ * spandrel lines at every floor; a sun-study light (solstice/equinox presets
+ * × hour slider, positions from the scene's own latitude) casts real
+ * shadows — the entitlement argument, not decoration. Parking, circulation
+ * and open space render as flatwork; the parcel line and buildable envelope
+ * ground the scene. Camera bookmarks + a PNG snapshot make the view a
+ * shareable artifact.
  */
 const Massing3D: React.FC<{
   elements: Element[];
@@ -40,7 +52,7 @@ const Massing3D: React.FC<{
   /** Front-edge classifications (3857) — street trees plant along fronts */
   edgeClassifications?: EdgeClassification[];
 }> = ({ elements, parcelGeometry, envelope, neighbors, edgeClassifications }) => {
-  const { polygons, extent, groundPaths, contextPolygons, trees } = useMemo(
+  const { polygons, extent, groundPaths, contextPolygons, trees, floorLines, origin } = useMemo(
     () =>
       buildMassingData(elements, {
         parcelRing: ringIn3857(parcelGeometry),
@@ -54,7 +66,13 @@ const Massing3D: React.FC<{
     [elements, parcelGeometry, envelope, neighbors, edgeClassifications]
   );
 
-  const initialViewState = useMemo(
+  const [viewState, setViewState] = useState<Record<string, unknown> | null>(null);
+  const [sunKey, setSunKey] = useState('jun21');
+  const [sunHour, setSunHour] = useState(12);
+  const [shadows, setShadows] = useState(true);
+  const deckRef = useRef<{ deck?: { canvas?: HTMLCanvasElement } } | null>(null);
+
+  const baseViewState = useMemo(
     () => ({
       target: [0, 0, 0] as [number, number, number],
       rotationX: 45,
@@ -66,6 +84,28 @@ const Massing3D: React.FC<{
     }),
     [extent]
   );
+
+  const sun = useMemo(() => {
+    const day = SUN_DATES.find(d => d.key === sunKey)?.dayOfYear ?? 172;
+    return sunPosition(day, sunHour, origin.latDeg);
+  }, [sunKey, sunHour, origin.latDeg]);
+
+  const effects = useMemo(() => {
+    const ambient = new AmbientLight({ color: [255, 255, 255], intensity: sun.altitudeDeg > 0 ? 1.1 : 1.8 });
+    if (sun.altitudeDeg <= 0) {
+      // Sun below the horizon: flat ambient only — no fake daylight.
+      return [new LightingEffect({ ambient })];
+    }
+    const sunLight = new DirectionalLight({
+      color: [255, 250, 240],
+      intensity: 1.6,
+      direction: sun.direction,
+      _shadow: shadows,
+    });
+    const effect = new LightingEffect({ ambient, sunLight });
+    (effect as unknown as { shadowColor: number[] }).shadowColor = [0, 0, 0, 0.35];
+    return [effect];
+  }, [sun, shadows]);
 
   const layers = useMemo(
     () => [
@@ -103,6 +143,17 @@ const Massing3D: React.FC<{
         lineWidthUnits: 'meters',
         pickable: true,
       }),
+      // Spandrel rings at every floor line + parapet: the slab reads as a
+      // building. Same arithmetic as the extrusion heights.
+      new PathLayer({
+        id: 'floor-lines',
+        data: floorLines,
+        getPath: (d: { path: number[][] }) => d.path,
+        getColor: [30, 41, 59, 110],
+        getWidth: 0.18,
+        widthUnits: 'meters',
+        widthMinPixels: 1,
+      }),
       // Street trees: stylized trunk + canopy cylinders at the SAME points
       // the 2D landscape pass plants (front edges, drive corridor skipped).
       new ColumnLayer<{ position: [number, number] }>({
@@ -128,8 +179,17 @@ const Massing3D: React.FC<{
         pickable: false,
       }),
     ],
-    [polygons, groundPaths, contextPolygons, trees]
+    [polygons, groundPaths, contextPolygons, trees, floorLines]
   );
+
+  const snapshot = useCallback(() => {
+    const canvas = deckRef.current?.deck?.canvas;
+    if (!canvas) return;
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'massing.png';
+    a.click();
+  }, []);
 
   if (polygons.length === 0) {
     return (
@@ -142,14 +202,76 @@ const Massing3D: React.FC<{
   return (
     <div className="relative w-full h-full bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
       <DeckGL
+        ref={deckRef as never}
         views={ORBIT_VIEW}
-        initialViewState={initialViewState}
+        viewState={(viewState ?? baseViewState) as never}
+        onViewStateChange={({ viewState: vs }: { viewState: unknown }) =>
+          setViewState(vs as Record<string, unknown>)
+        }
         controller={true}
         layers={layers}
+        effects={effects}
+        glOptions={{ preserveDrawingBuffer: true } as never}
         getTooltip={({ object }) =>
           object ? { text: (object as MassingPolygon).label } : null
         }
       />
+      {/* Sun study + camera controls */}
+      <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
+        <select
+          value={sunKey}
+          onChange={e => setSunKey(e.target.value)}
+          className="border border-gray-200 rounded px-1 py-0.5 bg-white"
+          aria-label="Sun study date"
+          data-testid="sun-date"
+        >
+          {SUN_DATES.map(d => (
+            <option key={d.key} value={d.key}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+        <input
+          type="range"
+          min={6}
+          max={20}
+          step={0.5}
+          value={sunHour}
+          onChange={e => setSunHour(Number(e.target.value))}
+          className="w-24"
+          aria-label="Solar hour"
+          data-testid="sun-hour"
+        />
+        <span className="tabular-nums w-14">
+          {sun.altitudeDeg > 0
+            ? `${String(Math.floor(sunHour)).padStart(2, '0')}:${sunHour % 1 ? '30' : '00'} · ${Math.round(sun.altitudeDeg)}°`
+            : 'night'}
+        </span>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={shadows} onChange={e => setShadows(e.target.checked)} />
+          shadows
+        </label>
+      </div>
+      <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
+        {Object.entries(CAMERA_BOOKMARKS).map(([key, cam]) => (
+          <button
+            key={key}
+            onClick={() => setViewState({ ...(viewState ?? baseViewState), ...cam })}
+            className="px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700 capitalize"
+            data-testid={`camera-${key}`}
+          >
+            {key}
+          </button>
+        ))}
+        <button
+          onClick={snapshot}
+          className="px-1.5 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+          title="Download the current view as PNG"
+          data-testid="massing-snapshot"
+        >
+          PNG
+        </button>
+      </div>
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/80 rounded px-2 py-1 pointer-events-none">
         Drag to orbit · scroll to zoom
       </div>
