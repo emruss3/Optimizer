@@ -1,20 +1,46 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchMaxBuildout, isMaxBuildout, bindingLabel, __clearMaxBuildoutCache } from './maxBuildout';
+import {
+  fetchMaxBuildout,
+  isMaxBuildout,
+  normalizeMaxBuildout,
+  bindingLabel,
+  __clearMaxBuildoutCache,
+} from './maxBuildout';
 
 const rpcMock = vi.fn();
 vi.mock('../../../lib/supabase', () => ({
   supabase: { rpc: (...args: unknown[]) => rpcMock(...args) },
 }));
 
-// Live-shaped fixture (verified against fn_max_buildout on parcel 553450).
+// Compatibility-shaped fixture verified against fn_max_buildout on 553450.
 const BUILDOUT = {
+  contract_version: 'max_buildout_v2',
   parcel_ogc_fid: 553450,
   typology: 'multifamily',
   max_gsf: 137688,
   at_stories: 4,
   at_unit_gsf: 1550,
   units_at_max: 88,
+  footprint_at_max: 34422,
   binding_constraint: 'impervious_coverage',
+  program_frontier: {
+    gsf_max_option: {
+      stories: 4,
+      units: 88,
+      max_gsf: 137688,
+      unit_gsf: 1550,
+      footprint_sqft: 34422,
+      binding: 'impervious_coverage',
+    },
+    units_max_option: {
+      stories: 4,
+      units: 110,
+      gsf: 82500,
+      unit_gsf: 750,
+      footprint_sqft: 20625,
+      binding: 'density(units)',
+    },
+  },
   stories_ladder: [
     { stories: 1, units: 41, max_gsf: 64265, unit_gsf: 1550, footprint_sqft: 64265, binding: 'impervious_coverage' },
     { stories: 4, units: 88, max_gsf: 137688, unit_gsf: 1550, footprint_sqft: 34422, binding: 'impervious_coverage' },
@@ -22,24 +48,78 @@ const BUILDOUT = {
   entitlement_capacity: { max_units: 110, max_units_source: 'ordinance', far_uncapped_for_mf: true },
 };
 
+// Regression shape that shipped on 2026-07-20: the richer program frontier was
+// present, but top-level aliases were absent. The old parser hid the headline,
+// and the SQL solver silently collapsed to one story.
+const FRONTIER_ONLY = {
+  contract_version: 'max_buildout_v2',
+  parcel_ogc_fid: 669046,
+  typology: 'multifamily',
+  max_gsf: 117794,
+  binding_constraint: 'impervious_coverage',
+  program_frontier: {
+    gsf_max_option: {
+      stories: 4,
+      units: 75,
+      max_gsf: 117794,
+      unit_gsf: 1550,
+      footprint_sqft: 29448,
+      binding: 'impervious_coverage',
+    },
+    units_max_option: {
+      stories: 4,
+      units: 94,
+      gsf: 70941,
+      unit_gsf: 750,
+      footprint_sqft: 17735,
+      binding: 'density(units)',
+    },
+  },
+  stories_ladder: [
+    { stories: 1, units: 35, max_gsf: 54979, unit_gsf: 1550, footprint_sqft: 54979, binding: 'impervious_coverage' },
+    { stories: 4, units: 75, max_gsf: 117794, unit_gsf: 1550, footprint_sqft: 29448, binding: 'impervious_coverage' },
+  ],
+};
+
 beforeEach(() => {
   rpcMock.mockReset();
   __clearMaxBuildoutCache();
 });
 
-describe('fn_max_buildout client (SF-first headline)', () => {
-  it('recognizes the live payload shape and caches by parcel+typology', async () => {
+describe('fn_max_buildout client (GSF-first headline)', () => {
+  it('recognizes the compatibility payload and caches by parcel+typology', async () => {
     rpcMock.mockResolvedValue({ data: BUILDOUT, error: null });
-    const a = await fetchMaxBuildout(553450, 'multifamily');
-    const b = await fetchMaxBuildout(553450, 'multifamily');
-    expect(a?.max_gsf).toBe(137688);
-    expect(a?.stories_ladder).toHaveLength(2);
-    expect(b).toBe(a);
+    const first = await fetchMaxBuildout(553450, 'multifamily');
+    const second = await fetchMaxBuildout(553450, 'multifamily');
+    expect(first?.max_gsf).toBe(137688);
+    expect(first?.stories_ladder).toHaveLength(2);
+    expect(second).toBe(first);
     expect(rpcMock).toHaveBeenCalledTimes(1);
     expect(rpcMock).toHaveBeenCalledWith('fn_max_buildout', {
       p_ogc_fid: 553450,
       p_typology: 'multifamily',
     });
+  });
+
+  it('derives required aliases from program_frontier instead of hiding the result', async () => {
+    expect(isMaxBuildout(FRONTIER_ONLY)).toBe(false);
+
+    const normalized = normalizeMaxBuildout(FRONTIER_ONLY);
+    expect(normalized).toMatchObject({
+      max_gsf: 117794,
+      at_stories: 4,
+      at_unit_gsf: 1550,
+      units_at_max: 75,
+      footprint_at_max: 29448,
+      binding_constraint: 'impervious_coverage',
+    });
+    expect(isMaxBuildout(normalized)).toBe(true);
+
+    rpcMock.mockResolvedValue({ data: FRONTIER_ONLY, error: null });
+    const fetched = await fetchMaxBuildout(669046, 'multifamily');
+    expect(fetched?.at_stories).toBe(4);
+    expect(fetched?.units_at_max).toBe(75);
+    expect(fetched?.program_frontier?.units_max_option?.units).toBe(94);
   });
 
   it('failures return null and never poison the cache', async () => {
@@ -49,7 +129,7 @@ describe('fn_max_buildout client (SF-first headline)', () => {
     expect((await fetchMaxBuildout(1))?.max_gsf).toBe(137688);
   });
 
-  it('guards shape and labels the binding constraint for display', () => {
+  it('guards normalized shape and labels the binding constraint for display', () => {
     expect(isMaxBuildout(BUILDOUT)).toBe(true);
     expect(isMaxBuildout({ max_gsf: 'nope' })).toBe(false);
     expect(bindingLabel('impervious_coverage')).toBe('impervious coverage');
