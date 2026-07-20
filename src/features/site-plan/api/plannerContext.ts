@@ -608,6 +608,10 @@ const FLAG_TEXT: Record<string, string> = {
     'Townhome stalls (garage + apron, 2 per unit) counted only for rows that actually back onto a lane apron.',
   th_row_without_lane_access:
     'A townhome row has no rear lane behind it — its units cannot reach a garage and are counted as unparked.',
+  fire_access_within_150ft:
+    'Every point of every building is within 150 ft of drive pavement (IFC 503.1.1 hose-lay measure, sampled per 20 ft).',
+  fire_access_exceeds_150ft:
+    'Some building point is more than 150 ft from drive pavement — fire apparatus access needs attention (IFC 503.1.1 measure).',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */

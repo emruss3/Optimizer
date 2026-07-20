@@ -204,6 +204,12 @@ grammar library by lot class (P2–P3); build-to lines from verified frontage
    ceiling is reached). Remaining for v2: walk paths through mews,
    varied unit-plan widths (A–H), assemblage MVP.**
 3. Fire-access validator; ADA/EV allocation; core/corridor server model.
+   **Validators v1 shipped 2026-07-20 (migration 20260720000028): fire
+   access measured as the worst building point to drive pavement (IFC
+   503.1.1, 20 ft sampling, bars + pins), flagged within/exceeds 150 ft;
+   ADA stalls per the IBC 1106 table; EV-capable at 10% — all as metrics
+   receipts with a validators_basis citation, never silent gates.
+   Remaining: core/corridor model, ADA stall placement geometry.**
 4. Grammar library by lot class (courtyard, podium, point block, wrap).
 5. Ordinance completeness dashboard; second jurisdiction pilot.
 
