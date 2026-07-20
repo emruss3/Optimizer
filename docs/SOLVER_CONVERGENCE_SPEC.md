@@ -1,8 +1,19 @@
 # Max-GSF solver convergence — governing spec (owner directive, 2026-07-20)
 
-Status: **accepted, next server round.** The client-side terminology half is
-shipped (theoretical bound vs best-feasible, gap, optimization status). This
-document is the contract for the generator work.
+Status: **phase 1 shipped (migration `mf_v2_convergence_phase1`, applied
+live)**; phase 2 open. Shipped: §1 vocabulary (client), §2 partially — the
+parking-search → stall-recount → bar-regrow pass now iterates to a bounded
+fixpoint instead of running once; §3 residual-capacity accounting computed on
+every solve; §4 classification (`feasible` / `feasible_optimization_incomplete`
+/ `feasible_demonstrably_constrained`) with the quantified proof object in
+`metrics.optimization_proof`; §5 static no-parcel-literal regression.
+
+Phase 2 (open): the remaining §2 search dimensions — NEW bar placement beyond
+the initial capacity set (the 2611 W Heiman proof shows +3,100 sqft footprint
+at the coverage cap × 4 floors closes the entire 12,400 GSF gap), bar count /
+orientation / length sweeps, single- vs double-loaded parking module variants,
+unit-program variation, and alternative parking regimes. The proof object now
+measures the phase-2 prize on every parcel.
 
 ## 1. Vocabulary (shipped client-side)
 
