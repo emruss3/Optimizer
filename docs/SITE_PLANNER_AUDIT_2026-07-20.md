@@ -172,7 +172,12 @@ grammar library by lot class (P2–P3); build-to lines from verified frontage
    harness folds into the parking-regime work (item 4). Full record in
    SOLVER_CONVERGENCE_SPEC.md §Phase 3.**
 4. Tuck-under parking regime (now also carries the real-solve
-   configuration-sweep harness from item 3).
+   configuration-sweep harness from item 3). **Shipped 2026-07-20
+   (migrations 20260720000022..23): fn_mf_solve_core regime worker +
+   dispatcher comparing complete solves by achieved GSF. 558613 converts
+   parking-infeasible → 227,760 GSF / 100% capture feasible; random-24
+   ratchets to 87.0% plan-or-proven (gate raised 80→85). Receipts in
+   metrics.regime_comparison; tuck chip + Flags receipts in UI.**
 5. PDF export deliverable.
 6. G0 road-edge ingestion → verified frontage.
 7. Surface optimization_status/proof verbatim in UI.

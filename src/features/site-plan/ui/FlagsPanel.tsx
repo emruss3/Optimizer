@@ -30,6 +30,15 @@ const PROOF_LABELS: Record<string, string> = {
   constraint_proven: 'Constraint proven',
 };
 
+const REGIME_LABELS: Record<string, string> = {
+  chosen: 'Regime chosen',
+  surface_gsf: 'Surface regime GSF',
+  surface_error: 'Surface regime refusal',
+  tuck_under_gsf: 'Tuck-under regime GSF',
+  tuck_under_error: 'Tuck-under regime refusal',
+  basis: 'Comparison basis',
+};
+
 const FlagsPanel: React.FC<{
   violations: FeasibilityViolation[];
   /** Clamp/derivation flags reported by the generator for THIS plan */
@@ -37,8 +46,11 @@ const FlagsPanel: React.FC<{
   rejected?: { count: number; reasons: string[] } | null;
   /** Solver's quantified residual-capacity proof — rendered verbatim. */
   proof?: Record<string, unknown> | null;
-}> = ({ violations, lineageFlags, rejected, proof }) => {
-  const empty = violations.length === 0 && lineageFlags.length === 0 && !rejected && !proof;
+  /** Dispatcher's regime-comparison receipts (both complete solves). */
+  regimeComparison?: Record<string, unknown> | null;
+}> = ({ violations, lineageFlags, rejected, proof, regimeComparison }) => {
+  const empty =
+    violations.length === 0 && lineageFlags.length === 0 && !rejected && !proof && !regimeComparison;
   if (empty) {
     return (
       <div className="p-4 text-sm text-gray-500">
@@ -82,6 +94,29 @@ const FlagsPanel: React.FC<{
                   <tr key={k}>
                     <td className="pr-3 text-slate-500">{label}</td>
                     <td className="font-medium">{String(proof[k]).replace(/_/g, ' ')}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {regimeComparison && (
+        <div className="border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-700">
+          <div className="font-semibold text-slate-800 mb-1">
+            Parking-regime comparison (two complete solves)
+          </div>
+          <table className="tabular-nums">
+            <tbody>
+              {Object.entries(REGIME_LABELS)
+                .filter(([k]) => regimeComparison[k] !== undefined && regimeComparison[k] !== null)
+                .map(([k, label]) => (
+                  <tr key={k}>
+                    <td className="pr-3 text-slate-500">{label}</td>
+                    <td className="font-medium">
+                      {typeof regimeComparison[k] === 'number'
+                        ? Number(regimeComparison[k]).toLocaleString()
+                        : String(regimeComparison[k]).replace(/_/g, ' ')}
+                    </td>
                   </tr>
                 ))}
             </tbody>

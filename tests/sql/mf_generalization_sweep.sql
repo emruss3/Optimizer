@@ -6,8 +6,11 @@
 -- Acceptance gates:
 --   1. 100% STRUCTURED: every eligible parcel returns a solve or a jsonb
 --      error object with a machine-readable class — never a dead string.
---   2. >=80% PLAN-OR-PROVEN: solves + dimensioned impossibility terminals
+--   2. >=85% PLAN-OR-PROVEN: solves + dimensioned impossibility terminals
 --      (planner_envelope_unbuildable_depth) over eligible parcels.
+--      (Ratcheted from 80 on 2026-07-20 when the P1-4 regime dispatcher —
+--      surface vs tuck-under compared as complete real solves — converted
+--      the parking-infeasible residual class; measured 87.0%.)
 --   3. Every solve is fully parked and classified (optimization_status).
 --
 -- Usage: psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f tests/sql/mf_generalization_sweep.sql
@@ -90,8 +93,8 @@ begin
   pct := 100.0 * (n_solved + n_proven_terminal) / greatest(n_eligible, 1);
   raise notice 'sweep: eligible %, solved %, proven terminals %, plan-or-proven %.1f%%',
     n_eligible, n_solved, n_proven_terminal, pct;
-  if pct < 80 then
-    raise exception 'plan-or-proven %.1f%% is below the 80%% acceptance gate', pct;
+  if pct < 85 then
+    raise exception 'plan-or-proven %.1f%% is below the 85%% acceptance gate', pct;
   end if;
 end
 $sweep$;

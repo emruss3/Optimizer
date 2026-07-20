@@ -102,6 +102,35 @@ the regime work, not as an in-function heuristic. Live generator remains
 byte-identical to the pre-sweep source (md5 `096a1dba…`), re-verified by
 the full acceptance sweep at the recorded baseline (82.6% plan-or-proven).
 
+### Phase 3 shipped (same date): the regime dispatcher — real solves compared
+
+P1-4 delivered the honest harness the falsification demanded (migrations
+`20260720000022..23`):
+
+- `fn_mf_solve_core(...7 args..., p_regime)` is the full solver body with
+  eight mechanical transforms that all collapse to the original expression
+  in the surface regime (verified: surface output byte-equal to the
+  pre-restructure generator on 669046 — top level AND metrics). Tuck-under
+  regime: ground floor of every bar is a parking level (~380 sqft gross
+  per stall), residential floors = floors − 1 with a story bought back
+  inside the legal caps when available, stall supply gains
+  `floor(footprint/380)`, coverage/footprint targets size against
+  residential floors, trim loops cannot consume the parking level, and a
+  structured `planner_regime_infeasible` refusal covers sub-2-story caps.
+- `fn_generate_mf_site_plan_v2` (contract unchanged) dispatches: surface
+  solve first; only when refused or below the envelope, one more complete
+  tuck-under solve; argmax by achieved GSF (challenger needs 2% + 1 sqft);
+  receipts in `metrics.regime_comparison`. Pinned edits keep the fast
+  single-solve path. Feasible parcels pay zero extra latency.
+- **Measured**: 558613 converted from `planner_parking_infeasible` to
+  227,760 GSF / 147 units / 100% capture `feasible` (tuck). 408769 and
+  627065 kept their better surface solves (height caps block the story
+  buy-back — the comparison said so and chose surface). 385519 (1-story
+  cap) kept surface via the challenger's structured refusal. Random-24:
+  **18/23 solving (78.3%), 20/23 plan-or-proven (87.0%)** — up from
+  82.6%; acceptance gate ratcheted 80 → 85. Remaining residuals: 2
+  tiny-shape packer misses, 1 bridge-blocked — all structured.
+
 ## 1. Vocabulary (shipped client-side)
 
 - The algebraic envelope from `fn_max_buildout` is the **theoretical GSF

@@ -598,6 +598,8 @@ const FLAG_TEXT: Record<string, string> = {
     'The lot cannot park this massing at the required ratio.',
   planner_parking_shortfall:
     'Parking supply falls short of the required stalls.',
+  regime_tuck_under_v1:
+    'Ground floor of every bar hosts parking (tuck-under regime); residential floors sit above. Chosen by comparing complete solves.',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */

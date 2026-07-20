@@ -2017,6 +2017,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 lineageFlags={planLineage?.flags ?? []}
                 rejected={solveRejected}
                 proof={metrics?.optimizationProof ?? null}
+                regimeComparison={metrics?.regimeComparison ?? null}
               />
             )}
             {dockTab === 'results' && (
