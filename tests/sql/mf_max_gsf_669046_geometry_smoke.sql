@@ -35,15 +35,16 @@ begin
   end if;
 
   if (plan_result#>>'{metrics,floors}')::integer<>4
-     or (plan_result#>>'{metrics,gsf_capture_pct}')::numeric<60
+     or (plan_result#>>'{metrics,gsf_capture_pct}')::numeric<85
      or (plan_result#>>'{metrics,stalls}')::integer<(plan_result#>>'{metrics,stalls_required}')::integer
      or (plan_result#>>'{metrics,drive_components}')::integer<>1
      or not coalesce((plan_result#>>'{metrics,hard_constraints_passed}')::boolean,false) then
     raise exception '669046 lost frontier or hard-constraint receipts: %',plan_result;
   end if;
 
-  if not (plan_result->'flags' ? 'max_buildout_program_frontier_consumed') then
-    raise exception '669046 did not consume the nested GSF-max frontier: %',plan_result->'flags';
+  if not (plan_result->'flags' ? 'max_buildout_program_frontier_consumed')
+     or not (plan_result->'flags' ? 'precedent_bar_length_soft_target_not_quantity_cap') then
+    raise exception '669046 did not consume the GSF frontier independently of precedent quantity: %',plan_result->'flags';
   end if;
 
   with elems as (
