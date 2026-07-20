@@ -4,6 +4,7 @@ import {
   isPlannerContextResponse,
   compileCacheKey,
   canonicalJson,
+  plannerContextToDesignContext,
   briefToZoningPatch,
   briefToParkingPatch,
   briefToWorkerBrief,
@@ -52,10 +53,10 @@ const RESP = {
 } as unknown as PlannerContextResponse;
 
 // planner_context_v2 priors — structure per fn_local_built_form_v2 on parcel
-// 669046 (multifamily): 5 exact-use RM40 precedents with real geometry.
+// 669046 (multifamily): five exact-use RM40 precedents with real geometry.
 const V2_PRIORS: PrecedentPriors = {
   sample_size: 5,
-  confidence: 'high',
+  confidence: 'medium',
   selection: {
     mode: 'exact_same_zoning',
     requested_typology: 'multifamily',
@@ -65,7 +66,7 @@ const V2_PRIORS: PrecedentPriors = {
     sample_size: 5,
     available_count: 5,
     sample_cap: 100,
-    confidence: 'high',
+    confidence: 'medium',
   },
   type_mix: { multifamily: 5 },
   precedent_parcel_ids: [1, 2, 3, 4, 5],
@@ -76,6 +77,10 @@ const V2_PRIORS: PrecedentPriors = {
   stories: { p50: 2, p75: 2, p90: 3 },
   length_ft: { p25: 110, p50: 140, p75: 163.7, p90: 190 },
   depth_ft: { p25: 60, p50: 99.8, p75: 110, p90: 120 },
+  whole_building_obb_depth_ft: { p25: 60, p50: 99.8, p75: 110, p90: 120 },
+  depth_semantics: 'whole_building_oriented_bounding_box_not_bar_depth',
+  bar_depth_source: 'typology_or_program_spec_only',
+  quantity_role: 'form_only_never_caps_gsf',
   aspect_ratio: { p50: 1.6 },
   compactness: { p50: 0.62 },
   underwrite_target: {
@@ -93,7 +98,45 @@ const RESP_V2 = {
   ...RESP,
   context_id: 'ctx-v2',
   context_version: CONTEXT_VERSION_V2,
-  solver_brief: { ...BRIEF, precedent_priors: V2_PRIORS },
+  context: {
+    schema_version: CONTEXT_VERSION_V2,
+    parcel_ogc_fid: 669046,
+    selected_use: 'multifamily',
+    typology: 'multifamily',
+    generation_allowed: true,
+    flags: [],
+    legal: {
+      permitted_as_of_right: true,
+      max_coverage_pct: { value: 60, source: 'typology_spec' },
+      max_building_coverage_pct: { value: 60, source: 'typology_spec' },
+      max_impervious_pct: { value: 75, source: 'ordinance' },
+    },
+    objective_profile: BRIEF.objective_profile,
+    provenance: {},
+  },
+  solver_brief: {
+    ...BRIEF,
+    hard_constraints: {
+      ...BRIEF.hard_constraints,
+      max_building_coverage_pct: 60,
+      max_impervious_pct: 75,
+      coverage_semantics: {
+        max_coverage_pct: 'building_footprint_only',
+        max_impervious_pct: 'building_plus_parking_plus_drives_and_other_impervious',
+      },
+    },
+    precedent_priors: V2_PRIORS,
+    max_buildout: {
+      contract_version: 'max_buildout_v3',
+      max_gsf: 116250,
+      at_stories: 4,
+      at_unit_gsf: 1550,
+      units_at_max: 75,
+      unit_gsf_min: 750,
+      unit_gsf_max: 1550,
+      program_frontier: { gsf_max_option: { stories: 4, max_gsf: 116250, units: 75, unit_gsf: 1550 } },
+    },
+  },
 } as unknown as PlannerContextResponse;
 
 describe('planner context type guards', () => {
@@ -117,7 +160,7 @@ describe('canonical JSON serializer (cache-key correctness)', () => {
     expect(canonicalJson(a)).toBe(canonicalJson(b));
   });
 
-  it('distinct nested values do NOT collide', () => {
+  it('distinct nested values do not collide', () => {
     const a = { weights: { far: 1, yield: 2 } };
     const b = { weights: { far: 2, yield: 1 } };
     expect(canonicalJson(a)).not.toBe(canonicalJson(b));
@@ -139,7 +182,17 @@ describe('compile cache key', () => {
   });
 });
 
-describe('the worker fallback receives the SAME context values as the server', () => {
+describe('context display and zoning adapters', () => {
+  it('keeps building coverage and ordinance impervious coverage separate', () => {
+    const display = plannerContextToDesignContext(RESP_V2);
+    expect(display.maxBuildingCoveragePct).toMatchObject({ value: 60, source: 'typology_spec' });
+    expect(display.maxCoveragePct).toMatchObject({ value: 60, source: 'typology_spec' });
+    expect(display.maxImperviousPct).toMatchObject({ value: 75, source: 'ordinance' });
+    expect(briefToZoningPatch(RESP_V2.solver_brief)).toMatchObject({ maxCoveragePct: 60 });
+  });
+});
+
+describe('the worker fallback receives the same decision contract', () => {
   it('hard constraints → zoning patch, verbatim', () => {
     expect(briefToZoningPatch(BRIEF)).toEqual({
       frontSetbackFt: 20, sideSetbackFt: 5, rearSetbackFt: 20,
@@ -165,31 +218,31 @@ describe('the worker fallback receives the SAME context values as the server', (
       objectiveWeights: { financial_return: 0.2 },
     });
   });
-  it('v2 Regrid geometry priors travel: depth, length, coverage, building count, selection', () => {
-    const wb = briefToWorkerBrief(RESP_V2);
-    expect(wb.precedent).toMatchObject({
-      depthP50Ft: 99.8,
+  it('uses the max-GSF story target and refuses whole-building OBB depth', () => {
+    const worker = briefToWorkerBrief(RESP_V2);
+    expect(worker.precedent).toMatchObject({
+      depthP50Ft: null,
       lengthP75Ft: 163.7,
       coverageP75Pct: 31,
       buildingCountP50: 6,
-      storiesP50: 2,
-      storiesP75: 2,
+      storiesP50: 4,
+      storiesP75: 4,
       footprintP75SqFt: 9100,
       footprintP90SqFt: 12000,
       sampleSize: 5,
-      confidence: 'high',
+      confidence: 'medium',
       selectionMode: 'exact_same_zoning',
       precedentParcelIds: [1, 2, 3, 4, 5],
     });
-    expect(wb.objectiveWeights).toEqual({ financial_return: 0.2 });
+    expect(worker.objectiveWeights).toEqual({ financial_return: 0.2 });
   });
 });
 
-describe('planUsedActiveContext (the "Context applied" gate)', () => {
+describe('planUsedActiveContext (the Context applied gate)', () => {
   const v2plan = {
     context_id: 'ctx-1',
     context_version: 'planner_context_v2',
-    generator_version: 'mf_context_v2_regrid_typology_v1',
+    generator_version: 'mf_max_gsf_v1',
   };
   it('true only for matching id + v2 version + context-aware generator', () => {
     expect(planUsedActiveContext(v2plan, 'ctx-1')).toBe(true);
@@ -204,9 +257,10 @@ describe('planUsedActiveContext (the "Context applied" gate)', () => {
   it('false when no active context exists at all', () => {
     expect(planUsedActiveContext(v2plan, null)).toBe(false);
   });
-  it('recognizes the current server lineage vocabulary', () => {
+  it('recognizes all current server lineage vocabulary', () => {
     expect(isContextAwareGeneratorVersion('mf_context_v2_regrid_typology_v1')).toBe(true);
     expect(isContextAwareGeneratorVersion('mf_context_v2')).toBe(true);
+    expect(isContextAwareGeneratorVersion('mf_max_gsf_v1')).toBe(true);
     expect(isContextAwareGeneratorVersion('garden_v1')).toBe(false);
     expect(isContextAwareGeneratorVersion(null)).toBe(false);
   });
@@ -218,16 +272,12 @@ describe('flag translation', () => {
       .toBe('Matched the selected use and zoning subtype.');
     expect(describeContextFlag('regrid_zoning_filter_relaxed'))
       .toBe("Expanded beyond the parcel's zoning subtype due to limited local examples.");
-    expect(describeContextFlag('regrid_compatible_use_classes_used'))
-      .toBe('Included compatible building uses due to limited exact matches.');
-    expect(describeContextFlag('regrid_sample_capped_100'))
-      .toBe('Analyzed the 100 closest and most lot-comparable precedents.');
-    expect(describeContextFlag('bar_depth_from_regrid_geometry_p50'))
-      .toBe('Building depth initialized from the local median.');
-    expect(describeContextFlag('bar_length_target_from_regrid_geometry_p75'))
-      .toBe('Building length initialized from the local 75th percentile.');
-    expect(describeContextFlag('stories_from_precedent_p50_p75'))
-      .toBe('Story count initialized from the local built-form range.');
+    expect(describeContextFlag('precedent_bar_length_soft_target_not_quantity_cap'))
+      .toBe('Local building length is a soft form target, not a yield cap.');
+    expect(describeContextFlag('stories_from_max_gsf_frontier'))
+      .toBe('Story count follows the max-GSF legal frontier.');
+    expect(describeContextFlag('unit_gsf_band_hard_pass'))
+      .toBe('Programmed unit GSF is inside the hard development range.');
     expect(describeContextFlag('frontage_geometry_is_placeholder_until_road_edge_upgrade'))
       .toBe('Access remains based on a frontage heuristic, not a verified road edge.');
   });
