@@ -100,6 +100,21 @@ describe('mfPlanToElements', () => {
     expect(isMfPlanElement({ id: 'gen-lot-1' })).toBe(false);
   });
 
+  it('dedupes flags — best-effort pinned solves append their marker once per softened gate', () => {
+    const { flags } = mfPlanToElements({
+      ...RESP,
+      flags: [
+        'parking_below_ratio', 'pinned_best_effort_v1',
+        'impervious_coverage_exceeded_pinned', 'pinned_best_effort_v1',
+        'unit_gsf_out_of_band_pinned', 'pinned_best_effort_v1',
+      ],
+    });
+    expect(flags).toEqual([
+      'parking_below_ratio', 'pinned_best_effort_v1',
+      'impervious_coverage_exceeded_pinned', 'unit_gsf_out_of_band_pinned',
+    ]);
+  });
+
   it('degenerate/empty responses map to zero elements and null metrics', () => {
     const { elements, metrics } = mfPlanToElements({ generation: 'envelope too shallow for a building bar' });
     expect(elements).toHaveLength(0);

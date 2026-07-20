@@ -575,6 +575,29 @@ const FLAG_TEXT: Record<string, string> = {
   frontage_geometry_is_placeholder_until_road_edge_upgrade:
     'Access remains based on a frontage heuristic, not a verified road edge.',
   parking_below_ratio: 'Parking provided is below the target ratio.',
+  // Pinned best-effort solves (the dynamic edit loop): the plan renders, and
+  // every cap the placed building strains or breaks is stated here.
+  pinned_best_effort_v1:
+    'Solved around your placed building — binding caps are flagged instead of blocking the edit.',
+  parking_caps_units_below_program_min:
+    'Parking or density caps the unit count below what this floor area would normally program — fewer, larger units.',
+  unit_gsf_out_of_band_pinned:
+    'Average unit size falls outside the hard program band because a placed building fixes the floor area.',
+  building_coverage_exceeded_pinned:
+    'The placed building pushes total footprint over the building-coverage cap.',
+  impervious_coverage_exceeded_pinned:
+    'The placed building pushes total impervious area over the impervious-coverage cap.',
+  far_exceeded_pinned:
+    'The placed building pushes floor area over the FAR cap.',
+  building_coverage_exceeded:
+    'Total footprint exceeds the building-coverage cap.',
+  impervious_coverage_exceeded:
+    'Total impervious area exceeds the impervious-coverage cap.',
+  far_exceeded: 'Floor area exceeds the FAR cap.',
+  planner_parking_infeasible:
+    'The lot cannot park this massing at the required ratio.',
+  planner_parking_shortfall:
+    'Parking supply falls short of the required stalls.',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */

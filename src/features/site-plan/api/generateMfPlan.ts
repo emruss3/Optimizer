@@ -211,7 +211,9 @@ export function mfPlanToElements(resp: MfPlanResponse): {
     metrics,
     basis: resp.plan_basis ?? null,
     flags: Array.isArray(resp.flags)
-      ? (resp.flags as unknown[]).filter((f): f is string => typeof f === 'string')
+      ? // Deduped: best-effort pinned solves append their marker once per
+        // softened gate — counts ("+n") must reflect DISTINCT reasons.
+        [...new Set((resp.flags as unknown[]).filter((f): f is string => typeof f === 'string'))]
       : [],
   };
 }

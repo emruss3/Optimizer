@@ -1164,7 +1164,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             );
             const wFt = Math.round(metersToFeet(wM));
             const dFt = Math.round(metersToFeet(dM));
-            const areaSqFt = (selectedBuilding.properties?.areaSqFt as number) || Math.round(wFt * dFt);
+            // GFA from LIVE geometry, not the stored areaSqFt property — the
+            // property lags a resize gesture, freezing the readout mid-drag.
+            const areaSqFt = Math.round(wFt * dFt);
             return (
               <div className="absolute top-3 left-3 z-10 bg-white rounded-lg shadow-md border border-gray-200 px-3 py-2 text-sm flex items-center gap-3">
                 <div className="min-w-0">

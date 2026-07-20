@@ -29,6 +29,10 @@ const HARD_CLAMP_FLAGS: Record<string, string> = {
   density_clamped_units: 'density-clamped',
   coverage_cap_reached: 'coverage-capped',
   unit_cap_reached_min_lot_or_density: 'unit-capped',
+  // Pinned best-effort (dynamic edits): softened caps read as constraints…
+  parking_caps_units_below_program_min: 'units capped by parking',
+  unit_gsf_out_of_band_pinned: 'unit size out of band',
+  // …while EXCEEDED caps become red violations via the workspace mapping.
 };
 
 const KpiStrip: React.FC<{
