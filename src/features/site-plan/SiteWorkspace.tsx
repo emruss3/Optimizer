@@ -46,6 +46,14 @@ import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 
+/**
+ * Diagnostics-only escape hatch: when '1', context-free solves render as
+ * watermarked, never-persisted DRAFTS (the pre-2026-07-20 behavior) instead of
+ * being blocked outright. Never set in production builds — the enterprise
+ * posture is that nothing renders without a compiled ordinance context.
+ */
+const ALLOW_DEGRADED_DRAFT = import.meta.env.VITE_ALLOW_DEGRADED_DRAFT === '1';
+
 type SiteWorkspaceProps = {
   parcel: SelectedParcel;
 };
@@ -137,11 +145,25 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Degraded-mode honesty: true when the visible plan was built on default
   // assumptions (context unavailable/timed out). Drafts are watermarked and
   // never persisted — degraded output must not look authoritative.
+  // ENTERPRISE POSTURE (default): context-free massing does not render AT ALL —
+  // a failed/hung compile blocks the canvas behind a Retry screen instead of
+  // drafting. The watermarked-draft path survives only behind this diagnostics
+  // flag; the one draft that remains without it is the explicit replay of a
+  // pre-contract saved scheme (its stored basis IS the legacy generator).
   const [draftMode, setDraftMode] = useState(false);
   const draftModeRef = useRef(false);
   const markDraft = useCallback((v: boolean) => {
     draftModeRef.current = v;
     setDraftMode(v);
+  }, []);
+  // Massing blocked because no compiled context exists (compile failed or hung).
+  // Distinct from generationBlocked (use not permitted): this is "we don't KNOW
+  // the rules yet", that is "the rules say no".
+  const [compileBlocked, setCompileBlocked] = useState<string | null>(null);
+  const compileBlockedRef = useRef<string | null>(null);
+  const markCompileBlocked = useCallback((reason: string | null) => {
+    compileBlockedRef.current = reason;
+    setCompileBlocked(reason);
   }, []);
   // Zero-overlap gate bookkeeping: one silent re-solve per gesture on the
   // server path; rejected worker candidates surface in the solves rail.
@@ -212,7 +234,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     (name: string) => {
       // Draft plans (default assumptions) are never persisted — saving one
       // would launder degraded output into an authoritative-looking scheme.
-      if (draftModeRef.current) {
+      // Same while massing is blocked: whatever is on canvas predates the block.
+      if (draftModeRef.current || compileBlockedRef.current) {
         setViolations(v => [...v, {
           code: 'draft-not-saved',
           message: 'This plan uses default assumptions (context unavailable) — retry the context compile before saving.',
@@ -425,6 +448,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     let degraded = false;
     if (!resp) {
+      // Explicit replay of a pre-contract saved scheme: its stored basis IS
+      // the legacy generator, so the replay stays on it (rendered as a draft,
+      // never persisted). This is the ONLY context-free render that survives
+      // the enterprise gate — it is historical data, labeled stale in the rail.
+      const legacyReplay = opts.contextId === null;
+      if (!legacyReplay && !ALLOW_DEGRADED_DRAFT) {
+        if (effectiveContextId) {
+          // The massing SERVICE is unreachable but the compiled context is in
+          // hand — return false so the caller's worker fallback solves on the
+          // SAME brief (worker parity). That path is grounded, not degraded.
+          return false;
+        }
+        // No compiled context at all: nothing may render. Block with Retry.
+        markCompileBlocked('The zoning context has not compiled for this parcel.');
+        return true; // handled: an explicit refusal, not a fallback case
+      }
       // v2 RPC unreachable (transport failure / not yet deployed) → the
       // deliberate deployment-compatibility window: the legacy six-argument
       // generator. Context-free = DRAFT: watermarked, never persisted.
@@ -521,7 +560,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }
     }
     return true;
-  }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates, loadMoney]);
+  }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates, loadMoney, markCompileBlocked]);
 
   /** Drain the live-drag queue: exactly one solve in flight, latest wins.
    *  Preview solves render silently; the final (release) solve persists the
@@ -582,11 +621,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (planModeRef.current === 'mf-server') {
       setIsGenerating(true);
       try {
-        await runServerMfPlan({
+        const ok = await runServerMfPlan({
           seed: mfSeedRef.current + 1,
           pins: mfPinsRef.current,
           parentId: activeCandidateId,
         });
+        if (!ok) {
+          // Service unreachable mid-session: the CURRENT plan stays exactly as
+          // it is — say so rather than silently doing nothing.
+          setViolations(v => [...v, {
+            code: 'server-unreachable',
+            message: 'The massing service did not respond — the current plan is unchanged. Try again.',
+            severity: 'warning',
+          }]);
+        }
       } finally {
         setIsGenerating(false);
       }
@@ -606,11 +654,29 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       handleGenerateLots().catch(() => undefined);
       return;
     }
-    planModeRef.current = 'mf';
     const ctx = ctxSettledRef.current;
     const zoningLabel = ctx && ctx !== 'pending' && ctx.zoningBase ? ctx.zoningBase : null;
-    // No settled context = default assumptions = DRAFT (watermarked, unsaved)
-    markDraft(!zoningLabel && !plannerCtxRef.current);
+    if (!zoningLabel && !plannerCtxRef.current) {
+      // No settled context. Enterprise gate: the worker never masses on
+      // default assumptions — block (or explain that the compile is still
+      // running). With the diagnostics flag, fall through as a DRAFT.
+      if (!ALLOW_DEGRADED_DRAFT) {
+        if (ctxSettledRef.current === 'pending') {
+          setViolations(v => [...v, {
+            code: 'context-pending',
+            message: 'The zoning context is still compiling — massing starts automatically when it settles.',
+            severity: 'warning',
+          }]);
+        } else {
+          markCompileBlocked('The zoning context is unavailable for this parcel.');
+        }
+        return;
+      }
+      markDraft(true);
+    } else {
+      markDraft(false);
+    }
+    planModeRef.current = 'mf';
     setPlanBasis(
       `Multifamily massing (${config.designParameters.buildingTypology})` +
       (zoningLabel ? ` — ${zoningLabel}` : ' — default assumptions') +
@@ -714,7 +780,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGenerating(false);
     }
-  }, [config, envelopeMeters, setPlanOutput, applyAlternatives, pushHistory, trackBuildings, runServerMfPlan]);
+  }, [config, envelopeMeters, setPlanOutput, applyAlternatives, pushHistory, trackBuildings, runServerMfPlan, markDraft, markCompileBlocked]);
 
   // Live re-solve: a fast, deterministic constructive solve (no annealing) run
   // when the user nudges parameter sliders, so the plan updates without clicking
@@ -1233,6 +1299,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setProduct('apartments');
       draftModeRef.current = false;
       setDraftMode(false);
+      compileBlockedRef.current = null;
+      setCompileBlocked(null);
       serverGeoRetryRef.current = false;
       setSolveRejected(null);
       setMaxBuildout(null);
@@ -1307,6 +1375,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    */
   const autoPlan = useCallback((ctx: DesignContext | null) => {
     if (hasAutoGeneratedRef.current || !envelopeMeters || !hasValidGeometry) return;
+    // Defense in depth: while massing is blocked (no compiled context), no
+    // auto-path may lay anything out. Retry / a late settle re-arms.
+    if (compileBlockedRef.current) return;
     hasAutoGeneratedRef.current = true;
     if (ctx && routesToLotFit(ctx)) {
       planModeRef.current = 'sf';
@@ -1339,6 +1410,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setGenerationBlocked(false);
       hasAutoGeneratedRef.current = false;
     }
+    // ENTERPRISE TRUST GATE: a failed compile (after the client's retry)
+    // blocks massing outright — nothing renders on default assumptions.
+    // The Retry screen re-compiles; a later success lands below and re-arms.
+    if (!resp && !ALLOW_DEGRADED_DRAFT) {
+      markCompileBlocked('The zoning context compile failed for this parcel.');
+      hasAutoGeneratedRef.current = true; // no auto-plan may run while blocked
+      planModeRef.current = null;
+      setPlanBasis('Massing blocked — zoning context unavailable.');
+      return;
+    }
+    // A real context arrived (retry succeeded, or a hung compile settled
+    // late) → lift the block and plan on it.
+    if (resp && compileBlockedRef.current) {
+      markCompileBlocked(null);
+      hasAutoGeneratedRef.current = false;
+    }
     // A LATE compile settle must REPLACE any degraded draft that rendered
     // while it was in flight — "Context unavailable" beside a fully compiled
     // panel shipped a degraded solve wearing authoritative reporting.
@@ -1347,7 +1434,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       hasAutoGeneratedRef.current = false;
     }
     autoPlan(ctx);
-  }, [autoPlan, markDraft]);
+  }, [autoPlan, markDraft, markCompileBlocked]);
 
   // Resolve the parcel's as-of-right uses once; correct the default use
   // BEFORE compiling so the first snapshot is for the right use.
@@ -1502,29 +1589,40 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // races it into a degraded solve. This single timeout is the hung-compile
   // escape hatch only, sized ABOVE the compile p95 (~8s cold) plus the
   // client's one retry. If it ever fires while the compile is genuinely
-  // still pending, the solve renders as a DRAFT — and a late compile settle
-  // REPLACES it (handleCompileSettled re-arms).
+  // still pending, massing is BLOCKED behind the Retry screen (a late settle
+  // lifts the block); only the diagnostics flag renders a DRAFT instead.
   useEffect(() => {
     if (!hasValidGeometry || !envelopeMeters) return;
     if (hasAutoGeneratedRef.current) return;
     let second: number | undefined;
     const timer = window.setTimeout(() => {
-      if (hasAutoGeneratedRef.current) return;
+      if (hasAutoGeneratedRef.current || compileBlockedRef.current) return;
       if (ctxSettledRef.current !== 'pending') {
         autoPlan(ctxSettledRef.current);
         return;
       }
-      // Still compiling after the escape-hatch window: degrade honestly.
       second = window.setTimeout(() => {
-        if (hasAutoGeneratedRef.current) return;
-        autoPlan(ctxSettledRef.current === 'pending' ? null : ctxSettledRef.current);
+        if (hasAutoGeneratedRef.current || compileBlockedRef.current) return;
+        if (ctxSettledRef.current !== 'pending') {
+          autoPlan(ctxSettledRef.current);
+          return;
+        }
+        // Compile still hung past both windows.
+        if (!ALLOW_DEGRADED_DRAFT) {
+          markCompileBlocked('The zoning context compile is not responding.');
+          hasAutoGeneratedRef.current = true;
+          return;
+        }
+        autoPlan(null); // diagnostics flag: degrade honestly as a DRAFT
       }, 8000);
     }, 4000);
     return () => {
       window.clearTimeout(timer);
       if (second !== undefined) window.clearTimeout(second);
     };
-  }, [hasValidGeometry, envelopeMeters, autoPlan]);
+    // compileNonce: each explicit Retry re-arms the escape hatch, so a retried
+    // compile that hangs re-blocks instead of spinning forever.
+  }, [hasValidGeometry, envelopeMeters, autoPlan, markCompileBlocked, compileNonce]);
 
   // Live re-solve when a design parameter changes (FAR, coverage, parking,
   // typology) — but only after the first plan exists. Debounced so dragging a
@@ -1753,6 +1851,33 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 }}
               />
             </SitePlannerErrorBoundary>
+          )}
+          {/* ENTERPRISE TRUST GATE: no compiled context → the canvas is
+              blocked outright. Whatever numbers a context-free solve would
+              show cannot be traced to an ordinance, so nothing is shown.
+              (Covers the 3D view too — same container.) */}
+          {compileBlocked && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-slate-900/85 text-center px-8 rounded-lg">
+              <div className="text-white text-base font-semibold">
+                Massing blocked — zoning context unavailable
+              </div>
+              <div className="text-slate-300 text-sm max-w-md">
+                {compileBlocked} Plans here are only drawn from a verified
+                ordinance context — every number must trace to its source, so
+                nothing renders without one.
+              </div>
+              <button
+                type="button"
+                className="mt-1 px-4 py-1.5 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+                onClick={() => {
+                  markCompileBlocked(null);
+                  hasAutoGeneratedRef.current = false;
+                  setCompileNonce(n => n + 1);
+                }}
+              >
+                Retry context compile
+              </button>
+            </div>
           )}
         </div>
 
