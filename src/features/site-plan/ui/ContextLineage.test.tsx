@@ -4,7 +4,9 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ContextLineage, { resolveContextApplication, type PlanLineage } from './ContextLineage';
 import type { PlannerContextResponse } from '../api/plannerContext';
 
-// Active v2 snapshot: 5 exact multifamily precedents with Regrid geometry.
+// Active v2 snapshot: five exact multifamily precedents with Regrid geometry.
+// The approximately 100-foot depth is whole-building OBB evidence and must not
+// be presented as an apartment-bar target.
 const ACTIVE = {
   context_id: 'ctx-active',
   context_version: 'planner_context_v2',
@@ -15,7 +17,7 @@ const ACTIVE = {
   solver_brief: {
     precedent_priors: {
       sample_size: 5,
-      confidence: 'high',
+      confidence: 'medium',
       selection: {
         mode: 'exact_same_zoning',
         requested_typology: 'multifamily',
@@ -23,9 +25,13 @@ const ACTIVE = {
         same_zoning_required: true,
         lot_band: '+/-50%',
         sample_size: 5,
-        confidence: 'high',
+        confidence: 'medium',
       },
       depth_ft: { p50: 99.8 },
+      whole_building_obb_depth_ft: { p50: 99.8 },
+      depth_semantics: 'whole_building_oriented_bounding_box_not_bar_depth',
+      bar_depth_source: 'typology_or_program_spec_only',
+      quantity_role: 'form_only_never_caps_gsf',
       length_ft: { p75: 163.7 },
       stories: { p50: 2, p75: 2 },
       underwrite_target: { depth_ft_p50: 99.8, length_ft_p75: 163.7 },
@@ -39,14 +45,14 @@ const SERVER_LINEAGE: PlanLineage = {
   contextId: 'ctx-active',
   contextVersion: 'planner_context_v2',
   contextHash: 'abcdef0123456789',
-  generatorVersion: 'mf_context_v2_regrid_typology_v1',
-  scoreVersion: 'context_score_v2',
+  generatorVersion: 'mf_max_gsf_v1',
+  scoreVersion: 'context_score_gsf_v1',
   programPriorVersion: 'existing_engine_bridge_v0_1',
   scoreTotal: 0.834,
   scoreComponents: { precedent_fit: 0.834 },
   flags: ['bar_depth_from_regrid_geometry_p50'],
   buildings: 2,
-  floors: 2,
+  floors: 4,
   footprintSqft: 19215,
 };
 
@@ -101,7 +107,7 @@ describe('resolveContextApplication (the six honest states)', () => {
     expect(resolveContextApplication(args({ compiling: true, activeContext: null, lineage: null }))).toBe('compiling');
   });
 
-  it('no context or no plan yet → unavailable (standard defaults)', () => {
+  it('no context or no plan yet → unavailable, never current-authoritative', () => {
     expect(resolveContextApplication(args({ activeContext: null }))).toBe('unavailable');
     expect(resolveContextApplication(args({ lineage: null }))).toBe('unavailable');
   });
@@ -122,15 +128,16 @@ describe('resolveContextApplication (the six honest states)', () => {
 });
 
 describe('<ContextLineage> (decision explanation near Plan Basis)', () => {
-  it('applied: names the precedents and the priors they informed, plus the generated result', () => {
+  it('applied: names the form precedents without presenting OBB depth as bar depth', () => {
     render(
       <ContextLineage state="applied" activeContext={ACTIVE} lineage={SERVER_LINEAGE} />
     );
     expect(screen.getByText('Context applied')).toBeTruthy();
     expect(
-      screen.getByText('5 exact multifamily precedents informed: 100 ft target depth · 164 ft target length · 2-story prior')
+      screen.getByText('5 exact multifamily precedents supplied form evidence: 164 ft local length · 2-story local form norm')
     ).toBeTruthy();
-    expect(screen.getByText(/2 buildings · 2 stories · 19,215 SF footprint/)).toBeTruthy();
+    expect(screen.queryByText(/100 ft/)).toBeNull();
+    expect(screen.getByText(/2 buildings · 4 stories · 19,215 SF footprint/)).toBeTruthy();
     expect(screen.getByText(/Precedent fit: 0\.834/)).toBeTruthy();
   });
 
@@ -141,19 +148,19 @@ describe('<ContextLineage> (decision explanation near Plan Basis)', () => {
     fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText(/context_version: planner_context_v2/)).toBeTruthy();
     expect(screen.getByText(/context_hash: abcdef0123…/)).toBeTruthy();
-    expect(screen.getByText(/generator_version: mf_context_v2_regrid_typology_v1/)).toBeTruthy();
-    expect(screen.getByText(/score_version: context_score_v2/)).toBeTruthy();
+    expect(screen.getByText(/generator_version: mf_max_gsf_v1/)).toBeTruthy();
+    expect(screen.getByText(/score_version: context_score_gsf_v1/)).toBeTruthy();
     expect(screen.getByText(/program_prior_version: existing_engine_bridge_v0_1/)).toBeTruthy();
     expect(screen.getByText(/regrid_precedents: 5/)).toBeTruthy();
-    // Flags are translated, not raw snake_case
-    expect(screen.getByText(/Building depth initialized from the local median\./)).toBeTruthy();
+    // Flags are translated, not raw snake_case, and explicitly disavow OBB depth.
+    expect(screen.getByText(/Legacy local depth value recorded; it must not control apartment-bar depth\./)).toBeTruthy();
   });
 
   it('each honest state renders its own message, never "Context applied"', () => {
     const cases: Array<[string, RegExp]> = [
       ['compiling', /Compiling local context/],
       ['applied-fallback', /Context applied with fallback evidence/],
-      ['unavailable', /Context unavailable — using standard defaults/],
+      ['unavailable', /Context not verified — no authoritative plan basis/],
       ['blocked', /Generation blocked by legal or physical constraints/],
       ['stale', /Plan is stale — selected use or context has changed/],
     ];
