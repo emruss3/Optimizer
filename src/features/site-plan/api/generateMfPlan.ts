@@ -430,6 +430,8 @@ export interface MfCandidate {
    *  view re-render must use this id, never today's context. */
   contextId: string | null;
   contextHash: string | null;
+  /** Generator lineage for the rail's version tag (tolerant read) */
+  generatorVersion?: string | null;
   /** Local-sales margin on cost (A3 ranking) — enriched client-side */
   marginOnCost?: number | null;
 }
@@ -474,6 +476,7 @@ export async function listMfCandidates(ogcFid: number, limit = 20): Promise<MfCa
         metrics,
         contextId: str(r.context_id) ?? str(metrics.context_id),
         contextHash: str(r.context_hash) ?? str(metrics.context_hash),
+        generatorVersion: str(r.generator_version) ?? str(metrics.generator_version),
       };
     });
   } catch {

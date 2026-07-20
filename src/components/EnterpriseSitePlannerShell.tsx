@@ -104,6 +104,8 @@ interface EnterpriseSitePlannerProps {
   staticPlan?: boolean;
   /** Degraded-mode honesty: watermark the canvas as a default-assumption draft */
   draftMode?: boolean;
+  /** Neighborhood context (parcels/buildings/streets), canvas-frame 3857 */
+  neighbors?: import('../features/site-plan/api/neighbors').PlannerNeighbors | null;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -125,7 +127,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   onDeleteBuildings,
   onCloneBuildings,
   staticPlan = false,
-  draftMode = false
+  draftMode = false,
+  neighbors = null
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
   // run unconditionally on every render. The `!parcel` guard lives just before
@@ -1238,6 +1241,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             showLabels={true}
             parkingViz={parkingViz}
             draftMode={draftMode}
+            neighbors={neighbors}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}

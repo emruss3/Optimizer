@@ -35,6 +35,9 @@ interface SitePlanCanvasProps {
   /** Degraded-mode honesty: plan built on default assumptions (context
    *  unavailable) — watermarked so it can never look authoritative. */
   draftMode?: boolean;
+  /** Neighborhood context (canvas-frame 3857): grey parcels, existing
+   *  building outlines, street edges — the plan reads in its block. */
+  neighbors?: import('../../features/site-plan/api/neighbors').PlannerNeighbors | null;
 }
 
 export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
@@ -58,7 +61,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   onMouseUp,
   onWheel,
   cursor,
-  draftMode = false
+  draftMode = false,
+  neighbors = null
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -825,6 +829,60 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, [edgeClassifications, setbacks]);
 
+  // Neighborhood context: neighbor parcels in grey, existing building
+  // footprints as light outlines, street segments as wide casings — drawn
+  // UNDER the plan so the scheme reads in its block. Display only.
+  const renderNeighbors = useCallback((ctx: CanvasRenderingContext2D, zoom: number) => {
+    if (!neighbors) return;
+    ctx.save();
+    // Street casings first (widest, lightest)
+    for (const road of neighbors.roads) {
+      const coords = road.line.coordinates;
+      if (!coords || coords.length < 2) continue;
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.9)';
+      ctx.lineWidth = 12; // metres — reads as a street body
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(coords[0][0], coords[0][1]);
+      for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
+      ctx.lineWidth = 0.6;
+      ctx.setLineDash([6, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // Neighbor parcels
+    for (const p of neighbors.parcels) {
+      const ring = p.coordinates?.[0];
+      if (!ring || ring.length < 4) continue;
+      ctx.beginPath();
+      ctx.moveTo(ring[0][0], ring[0][1]);
+      for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(241, 245, 249, 0.75)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(203, 213, 225, 0.9)';
+      ctx.lineWidth = 1 / zoom;
+      ctx.stroke();
+    }
+    // Existing buildings (light mass with a fine outline)
+    for (const b of neighbors.buildings) {
+      const ring = b.polygon.coordinates?.[0];
+      if (!ring || ring.length < 4) continue;
+      ctx.beginPath();
+      ctx.moveTo(ring[0][0], ring[0][1]);
+      for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)';
+      ctx.lineWidth = 1 / zoom;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }, [neighbors]);
+
   // Perimeter landscape strip + street trees along the classified front
   // edge(s), plus a curb-cut apron where the drive meets the street — the
   // cheap polygons that make a plan read as designed instead of diagrammed.
@@ -1077,6 +1135,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       renderBuildableEnvelope(ctx, buildableEnvelope, viewport.zoom);
     }
 
+    // Neighborhood first (bottom of the stack), then landscape, then the plan
+    renderNeighbors(ctx, viewport.zoom);
     // Perimeter planting + street trees sit under the plan elements
     renderLandscape(ctx, viewport.zoom);
 
@@ -1164,7 +1224,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (draftMode) {
       renderDraftWatermark(ctx, canvas.width / dpr, canvas.height / dpr);
     }
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, draftMode, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderNorthArrow, renderDraftWatermark, renderLandscape, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, draftMode, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderNorthArrow, renderDraftWatermark, renderNeighbors, renderLandscape, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

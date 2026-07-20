@@ -24,6 +24,19 @@ const SchemesRail: React.FC<{
   /** Lot's legal max GSF (fn_max_buildout) — enables the utilization chip */
   maxGsf?: number | null;
 }> = ({ candidates, activeId, onView, busy, activeContextId, onRegenerateWithCurrentContext, maxGsf = null }) => {
+  // Pre-context schemes (no stored context id) are STALE noise next to
+  // current ones — collapse them under a disclosure instead of deleting.
+  const current = candidates.filter(c => c.contextId != null);
+  const stale = candidates.filter(c => c.contextId == null);
+
+  /** Short generator tag: which engine/version produced the scheme. */
+  const genTag = (v: string | null | undefined): string | null => {
+    if (!v) return null;
+    if (v.startsWith('th_context')) return null; // TH chip already shown
+    if (v.startsWith('mf_context_v2')) return 'v2';
+    if (v.startsWith('mf_context')) return 'ctx';
+    return 'v1';
+  };
   if (candidates.length === 0) return null;
 
   // A3 ranking: best market margin gets the badge (order stays chronological
@@ -38,7 +51,7 @@ const SchemesRail: React.FC<{
         <span className="text-[10px] text-gray-400">{candidates.length} saved</span>
       </div>
       <div className="space-y-1 max-h-64 overflow-y-auto">
-        {candidates.map(c => {
+        {current.map(c => {
           const units = n(c.metrics.units_est);
           const stalls = n(c.metrics.stalls);
           const far = n(c.metrics.far);
@@ -76,6 +89,14 @@ const SchemesRail: React.FC<{
                     title="Townhome scheme (attached-dwelling standards)"
                   >
                     TH
+                  </span>
+                )}
+                {genTag(c.generatorVersion) && (
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border border-slate-200 rounded px-1 flex-shrink-0"
+                    title={`Generator: ${c.generatorVersion}`}
+                  >
+                    {genTag(c.generatorVersion)}
                   </span>
                 )}
                 <span className="font-medium text-gray-900 tabular-nums">
@@ -135,6 +156,29 @@ const SchemesRail: React.FC<{
             </div>
           );
         })}
+        {stale.length > 0 && (
+          <details className="pt-1 text-[11px] text-gray-500">
+            <summary className="cursor-pointer select-none">
+              {stale.length} older scheme{stale.length === 1 ? '' : 's'} (pre-context — numbers may predate current rules)
+            </summary>
+            <div className="mt-1 space-y-0.5">
+              {stale.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => onView(c)}
+                  disabled={busy}
+                  className="w-full text-left px-2 py-1 rounded border border-gray-100 hover:border-gray-300 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <span className="font-mono text-[10px] text-gray-400">
+                    {c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                  </span>
+                  <span className="tabular-nums">{n(c.metrics.units_est) ?? '—'} u</span>
+                  <span className="ml-auto text-[9px] uppercase tracking-wide text-gray-400">stale</span>
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </div>
   );
