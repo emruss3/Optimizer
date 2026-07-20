@@ -34,10 +34,42 @@ needed, stories maxed — after the search genuinely exhausted iteration,
 in-envelope parking (+6 units), and court-reallocated infill. 669046 holds
 100.0% `feasible`.
 
-Phase 3 (open): bar deepening/lengthening beyond initial capacity, bar
-count/orientation sweeps, parking module variants, unit-program variation,
-structured/tuck-under regimes — the levers that could re-open proven-
-constrained lots by changing the geometry the proof is conditioned on.
+## Generalization sweep (2026-07-20, deterministic random sample)
+
+Hash-ordered random sample of multifamily-eligible parcels (RM/OR/MU,
+8k–450k sqft), stratified in four size bands, 12 parcels, zero
+cherry-picking. **Before the slab-fallback fix: 9 of 12 produced nothing.**
+Dominant class (6): `no bars fit the envelope` — the band grid demands
+OBB-aligned rectangles the true polygon must cover, so irregular envelopes
+placed zero bars.
+
+Shipped fix (`mf_v2_slab_fallback_placement`): a slab-fallback placement
+runs before any refusal (near-rectangular slab pieces hugging the spine
+corridor, 45 ft minimum run), and residual refusals are STRUCTURED
+(`planner_envelope_unplaceable` + envelope dimensions + grammar minimums).
+Recovered 2 of the 6 immediately (1.31 ac → 36u parked; 0.69 ac → 13u
+parked, both honestly classified); fixtures unregressed (669046 holds
+100.0%); determinism holds.
+
+## Measured failure-class ledger (phase 3 backlog, by sample frequency)
+
+1. **Tiny-envelope small lots** (3/12: 0.27–0.50 ac): post-setback envelope
+   cannot host the spine + bar + parking-module grammar at all. Needs a
+   compact street-loaded small-plex grammar (no internal spine).
+2. **Extreme-irregular envelopes** (1/12: bent-strip parcel, 475×363 bbox,
+   zero axis-aligned slabs): needs rotated/oriented slab search.
+3. **Drive-network connectivity on large irregular lots** (1/12, 4.3 ac):
+   `planner_drive_network_disconnected` on an unpinned solve.
+4. **Impervious trim non-convergence on very large lots** (1/12, 8.6 ac):
+   the trim loop refused instead of converging.
+5. Parking self-sizing on ~0.8 ac (1/12): unpinned
+   `planner_parking_infeasible` — generator mis-sized its own bars.
+
+Phase 3 (open): the ledger above, plus bar deepening/lengthening beyond
+initial capacity, orientation sweeps, parking module variants, unit-program
+variation, structured/tuck-under regimes. The rule stands: examples
+identify failure classes; the sweep measures them; no fix may condition on
+a parcel.
 
 ## 1. Vocabulary (shipped client-side)
 
