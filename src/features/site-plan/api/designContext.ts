@@ -48,7 +48,12 @@ export interface DesignContext {
   maxFar?: ContextValue;
   maxHeightFt?: ContextValue;
   maxDensityDuAc?: ContextValue;
+  /** Compatibility alias for building-footprint coverage only. */
   maxCoveragePct?: ContextValue;
+  /** Building footprints only — not ISR/impervious coverage. */
+  maxBuildingCoveragePct?: ContextValue;
+  /** Buildings + parking + drives + other impervious surface. */
+  maxImperviousPct?: ContextValue;
   /** e.g. 'surface' | 'structured' — derived from the regime */
   parkingStrategy?: string;
   /** Stall/aisle geometry + ratio from typology_spec */
@@ -83,6 +88,18 @@ function cv(x: unknown): ContextValue | undefined {
   return undefined;
 }
 
+/** Convert ratio-style ISR values (0.75) into display percentages (75). */
+function percentCv(x: unknown): ContextValue | undefined {
+  const value = cv(x);
+  if (!value) return undefined;
+  const numeric = typeof value.value === 'string' ? Number(value.value) : value.value;
+  if (typeof numeric !== 'number' || !Number.isFinite(numeric)) return value;
+  return {
+    ...value,
+    value: numeric > 0 && numeric <= 1 ? numeric * 100 : numeric,
+  };
+}
+
 /** First present key wins — tolerates naming drift in the backend payload. */
 function pick(o: Record<string, unknown>, ...keys: string[]): unknown {
   for (const k of keys) {
@@ -100,6 +117,18 @@ export function normalizeDesignContext(json: unknown): DesignContext | null {
   if (json == null || typeof json !== 'object') return null;
   const o = json as Record<string, unknown>;
   const setbacks = (pick(o, 'setbacks') ?? {}) as Record<string, unknown>;
+  const buildingCoverage = percentCv(pick(
+    o,
+    'max_building_coverage_pct',
+    'coverage_pct',
+    'max_coverage_pct'
+  ));
+  const imperviousCoverage = percentCv(pick(
+    o,
+    'max_impervious_pct',
+    'max_isr',
+    'max_impervious_coverage_pct'
+  ));
 
   const ctx: DesignContext = {
     zoningBase: (pick(o, 'zoning_base', 'zoningBase', 'zoning') as string) ?? undefined,
@@ -115,7 +144,9 @@ export function normalizeDesignContext(json: unknown): DesignContext | null {
     maxFar: cv(pick(o, 'far_max', 'far', 'max_far', 'maxFar')),
     maxHeightFt: cv(pick(o, 'height_max_ft', 'height_ft', 'max_height_ft', 'maxHeightFt')),
     maxDensityDuAc: cv(pick(o, 'density_max_du_ac', 'density_du_ac', 'max_density_du_per_acre', 'density')),
-    maxCoveragePct: cv(pick(o, 'coverage_pct', 'max_coverage_pct', 'max_impervious_coverage_pct')),
+    maxCoveragePct: buildingCoverage,
+    maxBuildingCoveragePct: buildingCoverage,
+    maxImperviousPct: imperviousCoverage,
     parkingStrategy: (pick(o, 'parking_strategy', 'parkingStrategy') as string) ?? undefined,
     parking: normalizeParking(pick(o, 'parking')),
     flags: normalizeFlags(pick(o, 'flags', 'warnings')),
@@ -137,7 +168,8 @@ const num = (v: ContextValue | undefined): number | undefined => {
  * Map a DesignContext onto the planner's zoning config — this is what makes
  * the FIRST auto-solve zoning-grounded instead of hardcoded defaults.
  * Only returns keys the context actually knows; everything else keeps the
- * existing config value.
+ * existing config value. Impervious coverage is not mapped onto the legacy
+ * building-coverage field; the server contract enforces it separately.
  */
 export function contextToZoningPatch(ctx: DesignContext): Record<string, number> {
   const patch: Record<string, number> = {};
@@ -147,7 +179,7 @@ export function contextToZoningPatch(ctx: DesignContext): Record<string, number>
   const far = num(ctx.maxFar);
   const height = num(ctx.maxHeightFt);
   const density = num(ctx.maxDensityDuAc);
-  const coverage = num(ctx.maxCoveragePct);
+  const coverage = num(ctx.maxBuildingCoveragePct ?? ctx.maxCoveragePct);
   if (front != null) patch.frontSetbackFt = front;
   if (side != null) patch.sideSetbackFt = side;
   if (rear != null) patch.rearSetbackFt = rear;
