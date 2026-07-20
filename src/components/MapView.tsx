@@ -66,39 +66,31 @@ const MapView = React.memo(function MapView({
       }
     });
 
-    // On-screen zoom buttons: parcels only render at zoom ≥ ~15, and without
+    // On-screen zoom buttons: parcels only render at zoom ≥ 14, and without
     // these the only way in is scroll-wheel — undiscoverable and unavailable
     // on some devices.
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
 
     map.on("load", () => {
       if (!map.getSource("parcels")) {
-        console.log("≡ƒù║∩╕Å Adding parcels source to map...");
         map.addSource("parcels", {
           type: "vector",
           tiles: [
             "https://okxrvetbzpoazrybhcqj.supabase.co/functions/v1/mvt-parcels?z={z}&x={x}&y={y}"
           ],
-          minzoom: 10,
+          // Lot-level tiles only exist at z >= 14 — below that a tile spans
+          // tens of thousands of parcels and the tile RPC refuses (it used to
+          // burn the full 20s DB statement timeout per tile to render
+          // nothing). Keep in sync with parcels_mvt_b64 and the edge gate.
+          minzoom: 14,
           maxzoom: 17,
           promoteId: "ogc_fid"   // <-- matches the SQL feature id
-        });
-        
-        // Listen for source data loading events
-        map.on("sourcedata", (e) => {
-          if (e.sourceId === "parcels") {
-            if (e.isSourceLoaded) {
-              console.log("Γ£à Parcels source loaded successfully");
-            } else if (e.dataType === "source") {
-              console.log("≡ƒôí Parcels source data event:", e);
-            }
-          }
         });
 
         // Listen for tile loading errors
         map.on("error", (e) => {
           if (e.error?.message?.includes("parcels") || e.error?.message?.includes("mvt")) {
-            console.error("Γ¥î Parcel tile error:", e.error);
+            console.error("Parcel tile error:", e.error);
           }
         });
 
@@ -125,36 +117,6 @@ const MapView = React.memo(function MapView({
           }
         });
         
-        // Log when layers are added
-        console.log("Γ£à Parcel layers added. Current zoom:", map.getZoom());
-
-        // Check if we're zoomed in enough
-        if (map.getZoom() < 10) {
-          console.warn("ΓÜá∩╕Å Map zoom is below 10. Parcels require zoom >= 10. Current zoom:", map.getZoom());
-        }
-
-        // Monitor zoom changes
-        map.on("zoom", () => {
-          const zoom = map.getZoom();
-          if (zoom >= 10 && zoom < 10.1) {
-            console.log("≡ƒôì Zoom level reached 10 - parcels should now be visible");
-          }
-        });
-
-        // Check source after a short delay to see if tiles loaded
-        setTimeout(() => {
-          const source = map.getSource("parcels");
-          if (source && source.type === "vector") {
-            const vectorSource = source as mapboxgl.VectorTileSource;
-            console.log("≡ƒöì Parcels source status:", {
-              loaded: vectorSource.loaded(),
-              tiles: vectorSource.tiles,
-              minzoom: vectorSource.minzoom,
-              maxzoom: vectorSource.maxzoom
-            });
-          }
-        }, 2000);
-
         // Mouse cursor for interactivity
         map.on("mouseenter", "parcels-fill", () => (map.getCanvas().style.cursor = "pointer"));
         map.on("mouseleave", "parcels-fill", () => (map.getCanvas().style.cursor = ""));

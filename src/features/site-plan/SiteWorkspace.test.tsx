@@ -310,10 +310,9 @@ describe('SiteWorkspace: selected-use transition owns exactly one context', () =
     expect(screen.queryByText(/5 exact-use RM40 precedents/)).toBeNull();
     // USE-BINDING INVARIANT: a single_family compiled context must NEVER
     // ground multifamily massing (2600 W Heiman shipped exactly that). The
-    // MF generator is refused for BOTH snapshots; the violation says why.
-    await waitFor(() =>
-      expect(screen.getByTestId('violations').textContent).toContain('use-binding')
-    );
+    // MF generator is refused for BOTH snapshots; the error violation
+    // auto-surfaces the docked Flags tab (3b) with the refusal chip.
+    await waitFor(() => expect(screen.getByText('use-binding')).toBeTruthy());
     expect(genV2Mock).not.toHaveBeenCalledWith(669046, 'ctx-sf', expect.anything());
     expect(genV2Mock).not.toHaveBeenCalledWith(669046, 'ctx-mf', expect.anything());
   });
@@ -365,9 +364,10 @@ describe('SiteWorkspace: generation gate (generation_allowed=false)', () => {
     expect(genLegacyMock).not.toHaveBeenCalled();
     expect(optimizeSiteMock).not.toHaveBeenCalled();
 
-    // An explicit Generate click is refused with an explanation
+    // An explicit Generate click is refused with an explanation — the error
+    // violation auto-surfaces the docked Flags tab (3b) with the code chip.
     fireEvent.click(screen.getByText('Run generate'));
-    await waitFor(() => expect(screen.getByTestId('violations').textContent).toContain('context'));
+    await waitFor(() => expect(screen.getByText('context')).toBeTruthy());
     expect(genV2Mock).not.toHaveBeenCalled();
     expect(optimizeSiteMock).not.toHaveBeenCalled();
 
@@ -465,6 +465,9 @@ describe('SiteWorkspace: saved candidates keep their stored context', () => {
 
     // Auto-plan generated on the ACTIVE snapshot
     await waitFor(() => expect(genV2Mock).toHaveBeenCalledWith(669046, 'ctx-mf', expect.anything()));
+
+    // Schemes live in the docked tab now (3b) — open it
+    fireEvent.click(screen.getByTestId('dock-tab-schemes'));
 
     // The older candidate is flagged and offers the explicit action
     const regenBtn = await screen.findByText('Regenerate with current context');
