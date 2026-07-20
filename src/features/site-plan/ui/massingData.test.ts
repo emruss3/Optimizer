@@ -77,4 +77,26 @@ describe('buildMassingData', () => {
     ]);
     expect(polygons).toHaveLength(0);
   });
+
+  it('emits a spandrel ring per floor line plus the parapet, at the extrusion arithmetic', () => {
+    const { floorLines } = buildMassingData([
+      el('b1', 'building', square(X, Y, 40), 3),
+      el('p1', 'parking-bay', square(X + 50, Y, 20)),
+    ]);
+    // 3 floors: spandrels at 14 ft and 24 ft + parapet at 34 ft — flatwork emits none.
+    expect(floorLines).toHaveLength(3);
+    const zs = floorLines.map(f => f.path[0][2]).sort((a, b) => a - b);
+    expect(zs[0]).toBeCloseTo(14 * 0.3048, 4);
+    expect(zs[1]).toBeCloseTo(24 * 0.3048, 4);
+    expect(zs[2]).toBeCloseTo(34 * 0.3048, 4);
+  });
+
+  it('derives the sun-study origin from the scene, not a hardcoded city', () => {
+    const { origin } = buildMassingData([el('b1', 'building', square(X, Y, 40), 2)]);
+    // -9660000, 4320000 in 3857 sits near 86.8°W / 36.1°N.
+    expect(origin.lonDeg).toBeLessThan(-86);
+    expect(origin.lonDeg).toBeGreaterThan(-88);
+    expect(origin.latDeg).toBeGreaterThan(35);
+    expect(origin.latDeg).toBeLessThan(37);
+  });
 });

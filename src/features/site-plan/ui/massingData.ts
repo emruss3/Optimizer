@@ -52,11 +52,21 @@ export function buildMassingData(
   contextPolygons: MassingPolygon[];
   /** Street-tree positions in the same centred local frame */
   trees: Array<{ position: [number, number] }>;
+  /** Spandrel rings at every floor line + parapet — the massing reads as a
+   *  building with real floors, not an extruded slab. */
+  floorLines: Array<{ path: number[][] }>;
+  /** Scene origin (derived from the plan's own Mercator frame) — feeds the
+   *  sun-study light; never a hardcoded city. */
+  origin: { latDeg: number; lonDeg: number };
 } {
   const drawable = elements.filter(
     e => TYPE_COLORS[e.type] && e.geometry?.coordinates?.[0]?.length >= 4
   );
-  if (drawable.length === 0) return { polygons: [], extent: 100, groundPaths: [], contextPolygons: [], trees: [] };
+  if (drawable.length === 0)
+    return {
+      polygons: [], extent: 100, groundPaths: [], contextPolygons: [], trees: [],
+      floorLines: [], origin: { latDeg: 0, lonDeg: 0 },
+    };
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const el of drawable) {
@@ -144,6 +154,26 @@ export function buildMassingData(
     }
   }
 
+  // Floor banding: a spandrel ring at every intermediate floor line (ground
+  // floor is 14 ft, uppers 10 ft — same arithmetic as buildingHeightM) plus
+  // a parapet ring at the roof line.
+  const floorLines: Array<{ path: number[][] }> = [];
+  for (const el of drawable) {
+    if (el.type !== 'building') continue;
+    const floors = Math.max(1, Math.floor((el.properties?.floors as number) ?? 1));
+    const ring = el.geometry.coordinates[0];
+    if (!ring || ring.length < 4) continue;
+    const local = ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k]);
+    for (let fl = 1; fl <= Math.min(floors, 30); fl++) {
+      const zFt = fl < floors ? 4 + 10 * fl : 4 + 10 * floors; // parapet at roof
+      const z = zFt * METERS_PER_FOOT;
+      floorLines.push({ path: local.map(([x, y]) => [x, y, z]) });
+    }
+  }
+
+  const lonDeg = (cx / 6378137) * (180 / Math.PI);
+  const latDeg = latRad * (180 / Math.PI);
+
   const extent = Math.max((maxX - minX) * k, (maxY - minY) * k, 10);
-  return { polygons, extent, groundPaths, contextPolygons, trees };
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, origin: { latDeg, lonDeg } };
 }
