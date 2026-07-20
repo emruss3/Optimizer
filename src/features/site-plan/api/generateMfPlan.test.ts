@@ -276,7 +276,7 @@ describe('KpiStrip with server-generated metrics (crash regression)', () => {
     const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
     // 52/113 is parking-short: the chip must say so, not claim "Compliant"
     // next to a red stalls stat (honesty over green).
-    expect(getByText(/Constrained · parking short/)).toBeTruthy();
+    expect(getByText(/Code compliant · constrained: parking short/)).toBeTruthy();
     expect(getByText('52 / 113')).toBeTruthy();
   });
 
@@ -286,13 +286,13 @@ describe('KpiStrip with server-generated metrics (crash regression)', () => {
       metrics: { ...RESP.metrics, stalls: 120, stalls_required: 113 },
     });
     const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
-    expect(getByText('Compliant')).toBeTruthy();
+    expect(getByText('Code compliant')).toBeTruthy();
   });
 
   it('tolerates metrics missing optional fields entirely', () => {
     const bare = { totalBuiltSF: 1000, achievedFAR: 0.5 } as never;
     const { getByText } = render(React.createElement(KpiStrip, { metrics: bare, investment: null }));
-    expect(getByText('Compliant')).toBeTruthy();
+    expect(getByText('Code compliant')).toBeTruthy();
   });
 });
 
@@ -309,8 +309,8 @@ describe('KpiStrip clamp-flag badge (work order item 2)', () => {
         planFlags: ['floors_clamped_by_far', 'density_clamped_units'],
       })
     );
-    expect(queryByText('Compliant')).toBeNull();
-    expect(getByText(/Constrained · FAR-clamped \+1/)).toBeTruthy();
+    expect(queryByText('Code compliant')).toBeNull();
+    expect(getByText(/Code compliant · constrained: FAR-clamped \+1/)).toBeTruthy();
   });
 
   it('utilization stat renders when provided', () => {
