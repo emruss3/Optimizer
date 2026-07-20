@@ -91,14 +91,19 @@ function normalizeFrontierOption(value: unknown): ProgramFrontierOption | null {
   const unitGsf = asFiniteNumber(option.unit_gsf);
   if (stories == null || units == null || unitGsf == null) return null;
 
+  const maxGsf = asFiniteNumber(option.max_gsf);
+  const gsf = asFiniteNumber(option.gsf);
+  const footprint = asFiniteNumber(option.footprint_sqft);
+  const binding = asText(option.binding);
+
   return {
     stories,
     units,
     unit_gsf: unitGsf,
-    max_gsf: asFiniteNumber(option.max_gsf) ?? undefined,
-    gsf: asFiniteNumber(option.gsf) ?? undefined,
-    footprint_sqft: asFiniteNumber(option.footprint_sqft) ?? undefined,
-    binding: asText(option.binding) ?? undefined,
+    ...(maxGsf != null ? { max_gsf: maxGsf } : {}),
+    ...(gsf != null ? { gsf } : {}),
+    ...(footprint != null ? { footprint_sqft: footprint } : {}),
+    ...(binding != null ? { binding } : {}),
   };
 }
 
@@ -124,13 +129,14 @@ function normalizeLadder(value: unknown): StoriesRung[] {
       return [];
     }
 
+    const footprint = asFiniteNumber(rung.footprint_sqft);
     return [{
       stories,
       units,
       max_gsf: maxGsf,
       unit_gsf: unitGsf,
-      footprint_sqft: asFiniteNumber(rung.footprint_sqft) ?? undefined,
       binding,
+      ...(footprint != null ? { footprint_sqft: footprint } : {}),
     }];
   });
 }
@@ -198,18 +204,25 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
     return null;
   }
 
-  const entitlement = asObject(raw.entitlement_capacity);
-  const assumptions = asObject(raw.assumptions);
-  const programFrontier = gsfMaxOption
+  const contractVersion = asText(raw.contract_version);
+  const footprint =
+    asFiniteNumber(raw.footprint_at_max) ??
+    gsfMaxOption?.footprint_sqft ??
+    bestRung?.footprint_sqft ??
+    null;
+  const frontierNote = asText(frontierRaw?.note);
+  const programFrontier: ProgramFrontier | null = gsfMaxOption
     ? {
         gsf_max_option: gsfMaxOption,
-        units_max_option: unitsMaxOption ?? undefined,
-        note: asText(frontierRaw?.note) ?? undefined,
+        ...(unitsMaxOption ? { units_max_option: unitsMaxOption } : {}),
+        ...(frontierNote ? { note: frontierNote } : {}),
       }
-    : undefined;
+    : null;
+  const entitlement = asObject(raw.entitlement_capacity);
+  const assumptions = asObject(raw.assumptions);
+  const note = asText(raw.note);
 
   return {
-    contract_version: asText(raw.contract_version) ?? undefined,
     parcel_ogc_fid: parcelOgcFid,
     typology,
     max_gsf: maxGsf,
@@ -217,16 +230,13 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
     at_unit_gsf: atUnitGsf,
     units_at_max: unitsAtMax,
     binding_constraint: binding,
-    footprint_at_max:
-      asFiniteNumber(raw.footprint_at_max) ??
-      gsfMaxOption?.footprint_sqft ??
-      bestRung?.footprint_sqft ??
-      undefined,
-    program_frontier: programFrontier,
     stories_ladder: ladder,
-    entitlement_capacity: entitlement as EntitlementCapacity | undefined,
-    assumptions: assumptions ?? undefined,
-    note: asText(raw.note) ?? undefined,
+    ...(contractVersion ? { contract_version: contractVersion } : {}),
+    ...(footprint != null ? { footprint_at_max: footprint } : {}),
+    ...(programFrontier ? { program_frontier: programFrontier } : {}),
+    ...(entitlement ? { entitlement_capacity: entitlement as EntitlementCapacity } : {}),
+    ...(assumptions ? { assumptions } : {}),
+    ...(note ? { note } : {}),
   };
 }
 
@@ -234,10 +244,10 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
 export function isMaxBuildout(value: unknown): value is MaxBuildout {
   const object = asObject(value);
   return !!object &&
-    asFiniteNumber(object.max_gsf) !== null &&
-    asFiniteNumber(object.at_stories) !== null &&
-    asFiniteNumber(object.at_unit_gsf) !== null &&
-    asFiniteNumber(object.units_at_max) !== null &&
+    typeof object.max_gsf === 'number' &&
+    typeof object.at_stories === 'number' &&
+    typeof object.at_unit_gsf === 'number' &&
+    typeof object.units_at_max === 'number' &&
     Array.isArray(object.stories_ladder);
 }
 
