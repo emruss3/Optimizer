@@ -8,6 +8,7 @@ import { useParcelSelection } from '../hooks/useParcelSelection';
 import { useActiveProject } from '../store/project';
 import Guard from './Guard';
 import ShareInviteDialog from './ShareInviteDialog';
+import AuthChip from './AuthChip';
 import { MessageCircle } from 'lucide-react';
 
 interface HeaderProps {
@@ -269,6 +270,8 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
           <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors focus-ring" aria-label="Settings" data-testid="header-settings">
             <Settings className="w-4 h-4" />
           </button>
+
+          <AuthChip />
           
           {/* Command Palette button */}
           <button 
