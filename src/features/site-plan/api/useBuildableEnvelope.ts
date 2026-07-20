@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { getEnvelope } from '../../../api/fetchEnvelope';
 import type { SelectedParcel } from '../../../types/parcel';
 import type { Polygon } from 'geojson';
 import { normalizeToPolygon } from '../../../engine/geometry';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { feetToMeters } from '../../../engine/units';
+import { compilePlannerContext } from './plannerContext';
+import { defaultUseFromZoningBase } from './designContext';
 import {
   classifyParcelEdges,
   applyVariableSetbacks,
@@ -32,7 +33,6 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
   const [error, setError] = useState<string | null>(null);
   const [edgeClassifications, setEdgeClassifications] = useState<EdgeClassification[]>([]);
   const ogcFidRef = useRef<number | null>(null);
-  const didRunRef = useRef(false);
 
   useEffect(() => {
     if (!parcel?.ogc_fid) {
@@ -55,27 +55,42 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
     let cancelled = false;
     setStatus('loading');
 
-    // Road-grounded edge classification is a backend M1 deliverable — the
-    // roads corpus isn't loaded yet and get_parcel_front_edge_with_roads is a
-    // stub, so we don't call either (it was a guaranteed 404 + console noise).
-    // Until then edges classify by the longest-edge heuristic below.
-    getEnvelope(parcelId)
-      .then((env) => {
+    // Envelope basis: the COMPILED CONTEXT (planner_context_v2). The legacy
+    // get_parcel_buildable_envelope RPC carried projection-bugged 3857 math
+    // and cost 2.3–5s per call; the compiled brief already has ordinance
+    // setbacks, FAR, and a buildable envelope — and the promise cache means
+    // this shares the exact compile the workspace makes (density-first use),
+    // so this is effectively free.
+    const compileUse = defaultUseFromZoningBase(parcel.zoning) ?? 'multi_family';
+    compilePlannerContext(parcelId, compileUse)
+      .then((resp) => {
         if (cancelled) return;
 
-        if (!env?.buildable_geom) {
+        const brief = resp?.solver_brief;
+        if (!brief) {
           setStatus('invalid');
-          setError('Supabase RPC get_parcel_buildable_envelope returned null. Run SQL audit.');
-          console.warn('⚠️ [useBuildableEnvelope] RPC returned null buildable_geom. Check: supabase/sql/get_parcel_buildable_envelope.sql and AUDIT_BACKEND_STATUS.sql');
+          setError('Planner context compile failed — no solver brief for the buildable envelope.');
           return;
         }
 
-        // Determine setback values from the RPC response
+        const hc = brief.hard_constraints ?? {};
+        // Ordinance setbacks from the brief (typology defaults as last resort)
         const setbacksFt = {
-          front: env.setbacks_applied?.front ?? env.front_setback_ft ?? 20,
-          side: env.setbacks_applied?.side ?? env.side_setback_ft ?? 10,
-          rear: env.setbacks_applied?.rear ?? env.rear_setback_ft ?? 20,
+          front: hc.front_setback_ft ?? 20,
+          side: hc.side_setback_ft ?? 10,
+          rear: hc.rear_setback_ft ?? 20,
         };
+
+        // Brief envelope is WGS84 GeoJSON → the canvas frame is 3857 metres.
+        let briefEnvelope3857: Polygon | null = null;
+        try {
+          const raw = brief.geometry?.buildable_envelope as Polygon | undefined;
+          if (raw?.coordinates?.[0]?.length >= 4) {
+            briefEnvelope3857 = normalizeToPolygon(feature4326To3857(raw) as Polygon);
+          }
+        } catch {
+          briefEnvelope3857 = null;
+        }
 
         // Convert the parcel's original geometry to 3857 for edge classification
         let parcelPoly3857: Polygon | null = null;
@@ -113,20 +128,25 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
           );
         }
 
-        // Use the improved envelope if valid, otherwise fall back to RPC envelope
-        const finalEnvelope = improvedEnvelope ?? env.buildable_geom;
+        // The variable-setback envelope (built from the brief's ordinance
+        // values) is authoritative; the brief's own envelope is the fallback.
+        const finalEnvelope = improvedEnvelope ?? briefEnvelope3857;
+        if (!finalEnvelope) {
+          setStatus('invalid');
+          setError('No buildable envelope could be derived from the compiled context.');
+          return;
+        }
 
         setEdgeClassifications(edgeClasses);
         setEnvelope(finalEnvelope);
         setRpcMetrics({
-          areaSqft: env.area_sqft,
-          setbacks: env.setbacks_applied ?? {
+          setbacks: {
             front: setbacksFt.front,
             side: setbacksFt.side,
             rear: setbacksFt.rear,
           },
-          edges: edgeClasses.length > 0 ? edgeClasses : env.edge_types,
-          hasZoning: env.far_max !== null && env.far_max > 0,
+          edges: edgeClasses,
+          hasZoning: hc.max_far != null && hc.max_far > 0,
         });
         setStatus('ready');
         setError(null);
@@ -136,7 +156,7 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
           setStatus('invalid');
           const errorMsg = err instanceof Error ? err.message : String(err);
           setError(errorMsg);
-          console.error('❌ [useBuildableEnvelope] Failed to fetch envelope:', err);
+          console.error('❌ [useBuildableEnvelope] Failed to derive envelope from context:', err);
         }
       });
 

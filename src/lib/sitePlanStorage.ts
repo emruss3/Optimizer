@@ -32,10 +32,12 @@ export type SaveSitePlanInput = {
 // ─── Storage functions ────────────────────────────────────────────────────────
 
 /**
- * The saved-plans table is not provisioned yet — plan persistence arrives
- * with siteplanner_session/siteplanner_candidate (Beat-TestFit plan, M2).
- * Until then: detect "table missing" once, stop re-querying (no 404 spam),
- * and fail with a message that says what's actually going on.
+ * The site_plans table is live with strictly per-user RLS (migration
+ * 20260720000001): reads are owner-scoped (anonymous sessions see an empty
+ * list — a 200, not a 404) and writes require an authenticated user; the DB
+ * stamps created_by from the JWT. The missing-table latch below stays as a
+ * defensive gate for environments that haven't applied the migration —
+ * detect once, stop re-querying (no 404 spam), fail with a real message.
  */
 let tableKnownMissing = false;
 
@@ -48,8 +50,16 @@ function isMissingTableError(e: unknown): boolean {
   );
 }
 
+/** RLS refused the write — in practice: no authenticated user behind the JWT. */
+function isRlsDeniedError(e: unknown): boolean {
+  const err = e as { code?: string; message?: string } | null;
+  return err?.code === '42501' || /row-level security/i.test(err?.message ?? '');
+}
+
 const NOT_PROVISIONED_MSG =
-  'Saved plans are not available yet — plan persistence ships with candidate sessions (M2).';
+  'Saved plans are not available in this environment (site_plans table missing).';
+const SIGN_IN_REQUIRED_MSG =
+  'Saving plans requires signing in — saved plans are private to your account.';
 
 /**
  * Save a site plan to the database.
@@ -59,8 +69,13 @@ export async function saveSitePlan(input: SaveSitePlanInput): Promise<SavedSiteP
   if (!supabase) throw new Error('Supabase client not initialised');
   if (tableKnownMissing) throw new Error(NOT_PROVISIONED_MSG);
 
+  // Fail BEFORE the network call when no one is signed in: the insert policy
+  // would refuse anyway, and this keeps the console free of 401/42501 noise.
   const userId = (await supabase.auth.getUser()).data?.user?.id ?? null;
+  if (!userId) throw new Error(SIGN_IN_REQUIRED_MSG);
 
+  // created_by is deliberately NOT sent — the DB stamps auth.uid() itself,
+  // so a client can never save a plan as someone else.
   const { data, error } = await supabase
     .from('site_plans')
     .insert({
@@ -71,7 +86,6 @@ export async function saveSitePlan(input: SaveSitePlanInput): Promise<SavedSiteP
       metrics: input.metrics,
       violations: input.violations,
       investment: input.investment,
-      created_by: userId,
     })
     .select()
     .single();
@@ -81,6 +95,8 @@ export async function saveSitePlan(input: SaveSitePlanInput): Promise<SavedSiteP
       tableKnownMissing = true;
       throw new Error(NOT_PROVISIONED_MSG);
     }
+    // Token expired between the pre-check and the insert (rare race).
+    if (isRlsDeniedError(error)) throw new Error(SIGN_IN_REQUIRED_MSG);
     throw error;
   }
   return data as SavedSitePlan;
@@ -103,9 +119,10 @@ export async function loadSitePlan(id: string): Promise<SavedSitePlan> {
 }
 
 /**
- * List all saved plans for a parcel, newest first.
- * Missing table → empty list (not an error): the UI shows "no saved plans"
- * instead of a red console and a broken panel.
+ * List all saved plans for a parcel, newest first. RLS scopes the result to
+ * the signed-in owner; an anonymous session legitimately gets [] (a 200 —
+ * "no saved plans", not an error). Missing table → empty list too: the UI
+ * shows "no saved plans" instead of a red console and a broken panel.
  */
 /** Concurrent list calls share ONE probe so at most one 404 ever fires —
  *  parcel-change + mount races were each paying their own failing request. */

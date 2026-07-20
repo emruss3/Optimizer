@@ -377,6 +377,42 @@ describe('SiteWorkspace: generation gate (generation_allowed=false)', () => {
   });
 });
 
+describe('SiteWorkspace: enterprise trust gate (no context → no massing)', () => {
+  it('a FAILED compile blocks the canvas outright — no generator runs — and Retry recompiles into a real plan', async () => {
+    let attempt = 0;
+    compileMock.mockImplementation(async () => {
+      attempt += 1;
+      return attempt === 1 ? null : ctxResp('multi_family', 'ctx-recovered');
+    });
+
+    render(<SiteWorkspace parcel={PARCEL} />);
+
+    // The failed compile (compilePlannerContext already retried internally)
+    // blocks massing — the Retry screen renders and NOTHING is generated:
+    // not the v2 server path, not the context-free legacy generator, not the
+    // worker on default assumptions.
+    await waitFor(() =>
+      expect(screen.getByText('Massing blocked — zoning context unavailable')).toBeTruthy());
+    expect(genV2Mock).not.toHaveBeenCalled();
+    expect(genLegacyMock).not.toHaveBeenCalled();
+    expect(optimizeSiteMock).not.toHaveBeenCalled();
+
+    // An explicit Generate click while blocked must also refuse.
+    fireEvent.click(screen.getByText('Run generate'));
+    expect(genV2Mock).not.toHaveBeenCalled();
+    expect(genLegacyMock).not.toHaveBeenCalled();
+    expect(optimizeSiteMock).not.toHaveBeenCalled();
+
+    // Retry → fresh compile succeeds → the block lifts and the plan renders
+    // on the recovered context (and only on it).
+    fireEvent.click(screen.getByText('Retry context compile'));
+    await waitFor(() =>
+      expect(genV2Mock).toHaveBeenCalledWith(669046, 'ctx-recovered', expect.anything()));
+    expect(screen.queryByText('Massing blocked — zoning context unavailable')).toBeNull();
+    expect(genLegacyMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('SiteWorkspace: worker parity (fallback carries the ACTIVE brief)', () => {
   it('when the server generators are unreachable, the worker solve receives Regrid priors and objective weights from the active context', async () => {
     compileMock.mockImplementation(async () => ctxResp('multi_family', 'ctx-mf'));

@@ -33,12 +33,24 @@ export function buildingHeightM(floors: number): number {
  */
 export function buildMassingData(
   elements: Element[],
-  ground?: { parcelRing?: number[][]; envelopeRing?: number[][] }
-): { polygons: MassingPolygon[]; extent: number; groundPaths: Array<{ path: number[][]; color: [number, number, number, number]; widthM: number }> } {
+  ground?: {
+    parcelRing?: number[][];
+    envelopeRing?: number[][];
+    /** Existing neighborhood buildings (3857) — extruded white context */
+    contextBuildings?: Array<{ polygon: { coordinates: number[][][] }; stories: number }>;
+    /** Neighbor parcel outlines (3857) — flat ground plates */
+    contextParcels?: Array<{ coordinates: number[][][] }>;
+  }
+): {
+  polygons: MassingPolygon[];
+  extent: number;
+  groundPaths: Array<{ path: number[][]; color: [number, number, number, number]; widthM: number }>;
+  contextPolygons: MassingPolygon[];
+} {
   const drawable = elements.filter(
     e => TYPE_COLORS[e.type] && e.geometry?.coordinates?.[0]?.length >= 4
   );
-  if (drawable.length === 0) return { polygons: [], extent: 100, groundPaths: [] };
+  if (drawable.length === 0) return { polygons: [], extent: 100, groundPaths: [], contextPolygons: [] };
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const el of drawable) {
@@ -82,6 +94,30 @@ export function buildMassingData(
     groundPaths.push({ path: toLocal(ground.envelopeRing), color: [37, 99, 235, 200], widthM: 0.5 });
   }
 
+  // Neighborhood context in the SAME centred frame: existing buildings as
+  // white massing (ed_stories × 10 ft), neighbor parcels as ground plates.
+  const contextPolygons: MassingPolygon[] = [];
+  for (const p of ground?.contextParcels ?? []) {
+    const ring = p.coordinates?.[0];
+    if (!ring || ring.length < 4) continue;
+    contextPolygons.push({
+      polygon: [ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k])],
+      elevation: 0.05,
+      color: [241, 245, 249, 160],
+      label: 'Neighboring parcel',
+    });
+  }
+  for (const b of ground?.contextBuildings ?? []) {
+    const ring = b.polygon?.coordinates?.[0];
+    if (!ring || ring.length < 4) continue;
+    contextPolygons.push({
+      polygon: [ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k])],
+      elevation: buildingHeightM(b.stories),
+      color: [255, 255, 255, 235],
+      label: `Existing · ${Math.max(1, Math.round(b.stories))} floors`,
+    });
+  }
+
   const extent = Math.max((maxX - minX) * k, (maxY - minY) * k, 10);
-  return { polygons, extent, groundPaths };
+  return { polygons, extent, groundPaths, contextPolygons };
 }

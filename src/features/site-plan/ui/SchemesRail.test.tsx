@@ -31,11 +31,13 @@ describe('SchemesRail (saved candidates keep their context identity)', () => {
         onRegenerateWithCurrentContext={() => undefined}
       />
     );
-    // The explicit action appears ONLY for the two non-current candidates
-    expect(screen.getAllByText('Regenerate with current context')).toHaveLength(2);
-    // Badges distinguish "older context" from "predates the contract"
+    // Older-context candidates keep the explicit regenerate action;
+    // PRE-CONTRACT candidates now collapse under the stale disclosure
+    // (work order 2026-07-20 §4a) instead of rendering as full rows.
+    expect(screen.getAllByText('Regenerate with current context')).toHaveLength(1);
     expect(screen.getByTitle(/Saved under an older context version/)).toBeTruthy();
-    expect(screen.getByTitle(/Saved before the context contract/)).toBeTruthy();
+    expect(screen.getByText(/1 older scheme \(pre-context/)).toBeTruthy();
+    expect(screen.getByText('stale')).toBeTruthy();
   });
 
   it('without an active context nothing is flagged (no context to be older than)', () => {

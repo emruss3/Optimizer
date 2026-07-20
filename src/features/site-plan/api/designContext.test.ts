@@ -244,3 +244,31 @@ describe('density-first default use (zoning-base fallback)', () => {
     expect(defaultUseFromZoningBase('')).toBeNull();
   });
 });
+
+describe('normalizePermittedUses — LIVE fn_resolve_permitted_uses shape', () => {
+  it('reads the as_of_right boolean map (the shape that silently parsed to [])', () => {
+    const live = {
+      as_of_right: {
+        commercial: false,
+        industrial: false,
+        two_family: true,
+        multi_family: true,
+        single_family: true,
+        short_term_rental: false,
+      },
+    };
+    const uses = normalizePermittedUses(live);
+    expect(uses).toContain('multi_family');
+    expect(uses).toContain('single_family');
+    expect(uses).toContain('two_family');
+    expect(uses).not.toContain('commercial');
+    // …and density-first default resolves multifamily from the REAL list
+    expect(pickDefaultUse(uses)).toBe('multi_family');
+  });
+
+  it('still reads legacy array shapes', () => {
+    expect(normalizePermittedUses({ feasible_uses: ['single_family'] })).toEqual(['single_family']);
+    expect(normalizePermittedUses(['multi_family'])).toEqual(['multi_family']);
+    expect(normalizePermittedUses(null)).toEqual([]);
+  });
+});

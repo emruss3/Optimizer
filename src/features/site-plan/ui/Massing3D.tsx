@@ -34,14 +34,18 @@ const Massing3D: React.FC<{
   elements: Element[];
   parcelGeometry?: Polygon | MultiPolygon | null;
   envelope?: Polygon | null;
-}> = ({ elements, parcelGeometry, envelope }) => {
-  const { polygons, extent, groundPaths } = useMemo(
+  /** Neighborhood context — existing buildings extrude as white massing */
+  neighbors?: import('../api/neighbors').PlannerNeighbors | null;
+}> = ({ elements, parcelGeometry, envelope, neighbors }) => {
+  const { polygons, extent, groundPaths, contextPolygons } = useMemo(
     () =>
       buildMassingData(elements, {
         parcelRing: ringIn3857(parcelGeometry),
         envelopeRing: envelope?.coordinates?.[0],
+        contextBuildings: neighbors?.buildings,
+        contextParcels: neighbors?.parcels,
       }),
-    [elements, parcelGeometry, envelope]
+    [elements, parcelGeometry, envelope, neighbors]
   );
 
   const initialViewState = useMemo(
@@ -59,6 +63,19 @@ const Massing3D: React.FC<{
 
   const layers = useMemo(
     () => [
+      // White context massing under everything — the block the plan lives in
+      new PolygonLayer<MassingPolygon>({
+        id: 'context-massing',
+        data: contextPolygons,
+        extruded: true,
+        getPolygon: (d: MassingPolygon) => d.polygon,
+        getElevation: (d: MassingPolygon) => d.elevation,
+        getFillColor: (d: MassingPolygon) => d.color,
+        getLineColor: [203, 213, 225, 255],
+        getLineWidth: 0.25,
+        lineWidthUnits: 'meters',
+        pickable: false,
+      }),
       new PathLayer({
         id: 'ground-lines',
         data: groundPaths,
@@ -81,7 +98,7 @@ const Massing3D: React.FC<{
         pickable: true,
       }),
     ],
-    [polygons, groundPaths]
+    [polygons, groundPaths, contextPolygons]
   );
 
   if (polygons.length === 0) {
