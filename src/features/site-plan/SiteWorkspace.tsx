@@ -28,6 +28,7 @@ import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToE
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
 import FlagsPanel from './ui/FlagsPanel';
+import HbuStrip from './ui/HbuStrip';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
 import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
@@ -1744,6 +1745,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       {/* Draft plans never wear the authoritative Max-GSF dressing — a
           degraded solve reporting achievable-GSF capture is exactly the
           "broken plan in current dress" failure. */}
+      {contextOgcFid != null && permittedUses.length > 1 && !draftMode && !compileBlocked && (
+        <div className="px-4 pt-3 flex-shrink-0">
+          <HbuStrip
+            ogcFid={contextOgcFid}
+            uses={permittedUses}
+            activeUse={contextUse}
+            onSelectUse={handleUseChange}
+          />
+        </div>
+      )}
       {maxBuildout && !draftMode && (
         <div className="px-4 pt-3 flex-shrink-0">
           <MaxBuildoutHeadline
