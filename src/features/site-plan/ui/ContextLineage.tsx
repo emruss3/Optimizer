@@ -7,12 +7,7 @@ import {
   type PlannerContextResponse,
 } from '../api/plannerContext';
 
-/**
- * What the LAST generated plan reported about its own basis. Captured from
- * the generator response (server) or stamped by the workspace (worker
- * fallback) — never inferred from the active context, so the "Context
- * applied" claim below stays honest.
- */
+/** What the last generated plan reported about its own basis. */
 export interface PlanLineage {
   solvedBy: 'server' | 'worker';
   contextId?: string | null;
@@ -24,7 +19,6 @@ export interface PlanLineage {
   scoreTotal?: number | null;
   scoreComponents?: Record<string, number> | null;
   flags?: string[];
-  /** Generated-result summary (from the plan's own metrics) */
   buildings?: number | null;
   floors?: number | null;
   footprintSqft?: number | null;
@@ -40,11 +34,7 @@ export type ContextApplicationState =
   | 'blocked'
   | 'stale';
 
-/**
- * Decide the honest state for the "Context applied to this plan" strip.
- * "Applied" is only claimed when the plan's own lineage matches the ACTIVE
- * snapshot — a plan generated without (or with another) context must say so.
- */
+/** Decide the honest state for the context-to-plan lineage strip. */
 export function resolveContextApplication(args: {
   compiling: boolean;
   blocked: boolean;
@@ -73,64 +63,58 @@ export function resolveContextApplication(args: {
         lineage.contextVersion === CONTEXT_VERSION_V2;
   if (!applied) return 'unavailable';
 
-  // Applied — but did the evidence itself fall back? Relaxed Regrid selection
-  // or an insufficient sample is still context, just weaker context.
-  const sel = activeContext.solver_brief.precedent_priors.selection;
-  const conf = sel?.confidence ?? activeContext.solver_brief.precedent_priors.confidence;
+  const selection = activeContext.solver_brief.precedent_priors.selection;
+  const confidence = selection?.confidence ?? activeContext.solver_brief.precedent_priors.confidence;
   const fallbackEvidence =
-    (sel && sel.mode !== 'exact_same_zoning') ||
-    conf === 'low' ||
-    conf === 'insufficient' ||
-    (lineage.flags ?? []).some(f => f.includes('relaxed') || f.includes('insufficient'));
+    (selection && selection.mode !== 'exact_same_zoning') ||
+    confidence === 'low' ||
+    confidence === 'insufficient' ||
+    (lineage.flags ?? []).some(flag => flag.includes('relaxed') || flag.includes('insufficient'));
   return fallbackEvidence ? 'applied-fallback' : 'applied';
 }
 
-const fmt = (v: number | null | undefined, digits = 0): string | null =>
-  typeof v === 'number' && Number.isFinite(v)
-    ? digits > 0 ? v.toFixed(digits) : Math.round(v).toLocaleString()
+const fmt = (value: number | null | undefined, digits = 0): string | null =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? digits > 0 ? value.toFixed(digits) : Math.round(value).toLocaleString()
     : null;
 
-/** "N exact multifamily precedents informed: depth · length · stories" */
+/** "N exact precedents informed: length · local story norm" (form only). */
 function priorsSummary(ctx: PlannerContextResponse): string | null {
-  const pri = ctx.solver_brief.precedent_priors;
-  const n = pri.selection?.sample_size ?? pri.sample_size;
+  const priors = ctx.solver_brief.precedent_priors;
+  const n = priors.selection?.sample_size ?? priors.sample_size;
   if (n == null || n <= 0) return null;
-  const exactness = pri.selection
-    ? pri.selection.match_mode === 'exact' ? 'exact ' : `${pri.selection.match_mode} `
+  const exactness = priors.selection
+    ? priors.selection.match_mode === 'exact' ? 'exact ' : `${priors.selection.match_mode} `
     : '';
-  const use = (pri.selection?.requested_typology ?? ctx.context.typology ?? 'local').replace(/_/g, ' ');
+  const use = (priors.selection?.requested_typology ?? ctx.context.typology ?? 'local').replace(/_/g, ' ');
   const parts: string[] = [];
-  const depth = pri.underwrite_target?.depth_ft_p50 ?? pri.depth_ft?.p50;
-  const length = pri.underwrite_target?.length_ft_p75 ?? pri.length_ft?.p75;
-  const stories = pri.stories?.p50;
-  if (depth != null) parts.push(`${Math.round(depth)} ft target depth`);
-  if (length != null) parts.push(`${Math.round(length)} ft target length`);
-  if (stories != null) parts.push(`${Math.round(stories)}-story prior`);
-  if (parts.length === 0) return `${n} ${exactness}${use} precedents informed this plan`;
-  return `${n} ${exactness}${use} precedents informed: ${parts.join(' · ')}`;
+  const depthIsObb =
+    priors.depth_semantics === 'whole_building_oriented_bounding_box_not_bar_depth' ||
+    priors.bar_depth_source === 'typology_or_program_spec_only';
+  const depth = priors.underwrite_target?.depth_ft_p50 ?? priors.depth_ft?.p50;
+  const length = priors.underwrite_target?.length_ft_p75 ?? priors.length_ft?.p75;
+  const stories = priors.stories?.p50;
+  if (!depthIsObb && depth != null) parts.push(`${Math.round(depth)} ft form depth`);
+  if (length != null) parts.push(`${Math.round(length)} ft local length`);
+  if (stories != null) parts.push(`${Math.round(stories)}-story local form norm`);
+  if (parts.length === 0) return `${n} ${exactness}${use} precedents supplied form evidence`;
+  return `${n} ${exactness}${use} precedents supplied form evidence: ${parts.join(' · ')}`;
 }
 
 const STATE_STYLE: Record<ContextApplicationState, { label: string; cls: string }> = {
   compiling: { label: 'Compiling local context…', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
   applied: { label: 'Context applied', cls: 'bg-green-50 text-green-700 border-green-200' },
   'applied-fallback': { label: 'Context applied with fallback evidence', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
-  unavailable: { label: 'Context unavailable — using standard defaults', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
+  unavailable: { label: 'Context not verified — no authoritative plan basis', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
   blocked: { label: 'Generation blocked by legal or physical constraints', cls: 'bg-red-50 text-red-700 border-red-200' },
   stale: { label: 'Plan is stale — selected use or context has changed', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
 };
 
-/**
- * "Context applied to this plan" — the decision-explanation strip next to
- * Plan Basis. Says which local evidence informed the plan, what came out,
- * and (in details) the full context/generator lineage. Local evidence,
- * program evidence, legal constraints, and user priorities — compiled into a
- * versioned planning basis, not "AI magic".
- */
+/** Visible evidence → decision → result lineage next to Plan Basis. */
 const ContextLineage: React.FC<{
   state: ContextApplicationState;
   activeContext: PlannerContextResponse | null;
   lineage: PlanLineage | null;
-  /** Extra sentence for the blocked state (which use, why) */
   blockedReason?: string | null;
 }> = ({ state, activeContext, lineage, blockedReason }) => {
   const [open, setOpen] = useState(false);
@@ -165,7 +149,7 @@ const ContextLineage: React.FC<{
         </div>
         {applied && lineage && (
           <button
-            onClick={() => setOpen(v => !v)}
+            onClick={() => setOpen(value => !value)}
             className="flex items-center gap-0.5 flex-shrink-0 font-medium opacity-70 hover:opacity-100"
             aria-expanded={open}
           >
@@ -189,8 +173,8 @@ const ContextLineage: React.FC<{
           <div>solved_by: {lineage.solvedBy}</div>
           {(lineage.flags ?? []).length > 0 && (
             <div className="font-sans">
-              {(lineage.flags ?? []).map(f => (
-                <div key={f} title={f}>· {describeContextFlag(f)}</div>
+              {(lineage.flags ?? []).map(flag => (
+                <div key={flag} title={flag}>· {describeContextFlag(flag)}</div>
               ))}
             </div>
           )}

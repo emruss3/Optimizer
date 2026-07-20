@@ -1,18 +1,12 @@
 /**
- * Planner context contract client (planner_context_v1, live 2026-07-13).
+ * Planner context contract client.
  *
- * ONE compiled, versioned, immutable context snapshot drives the context UI,
- * the server generator (v2), and the client worker fallback. This module is
- * the only place the browser talks to that contract:
- *
- *   fn_compile_planner_context(ogc_fid, use, user_intent) → snapshot + brief
- *   fn_get_planner_solver_brief(context_id, expected_parcel) → verified brief
- *
- * Types mirror the LIVE response shape (captured from parcel 669046), not the
- * spec paraphrase. Fail-soft everywhere: null on error, never mock context.
- * planner.* tables are private — never queried from browser code.
+ * One compiled, versioned, immutable context snapshot drives the context UI,
+ * server generator, and client worker fallback. Browser code talks only to the
+ * audited public RPC contract; planner.* tables remain private.
  */
 import { supabase } from '../../../lib/supabase';
+import type { DesignContext } from './designContext';
 
 // ── Shared value shapes ──────────────────────────────────────────────────────
 
@@ -21,6 +15,8 @@ export interface SourcedValue<T = number> {
   value: T | null;
   source: string;
   confidence?: string;
+  semantics?: string;
+  deprecated_alias_for?: string;
 }
 
 export interface ObjectiveProfile {
@@ -44,7 +40,15 @@ export interface HardConstraints {
   max_far: number | null;
   max_height_ft: number | null;
   max_density_du_acre: number | null;
+  /** Compatibility alias: building-footprint coverage only. */
   max_coverage_pct: number | null;
+  max_building_coverage_pct?: number | null;
+  max_impervious_pct?: number | null;
+  max_impervious_sqft?: number | null;
+  coverage_semantics?: {
+    max_coverage_pct?: string;
+    max_impervious_pct?: string;
+  };
   min_open_space_pct: number | null;
   developable: boolean;
 }
@@ -66,11 +70,7 @@ export interface Percentiles {
   p90?: number;
 }
 
-/**
- * How the typology-aware Regrid resolver (fn_local_built_form_v2) chose the
- * comparison set. Records the tier it settled on, so the UI can say honestly
- * whether the precedents are exact-use/same-zoning or a relaxed fallback.
- */
+/** How the typology-aware Regrid resolver selected the comparison set. */
 export interface RegridPrecedentSelection {
   mode:
     | 'exact_same_zoning'
@@ -89,11 +89,7 @@ export interface RegridPrecedentSelection {
   confidence: 'high' | 'medium' | 'low' | 'insufficient';
 }
 
-/**
- * Local built-form priors (planner_context_v2). Everything beyond
- * sample_size/confidence is optional so planner_context_v1 snapshots —
- * which only carry footprint/stories — keep parsing during rollout.
- */
+/** Local built-form priors. Regrid values are form evidence, never quantity caps. */
 export interface PrecedentPriors {
   sample_size: number | null;
   confidence: string | null;
@@ -108,7 +104,12 @@ export interface PrecedentPriors {
   coverage_pct?: Percentiles | null;
   stories?: Percentiles | null;
   length_ft?: Percentiles | null;
+  /** Legacy alias. Current context labels this whole-building OBB depth. */
   depth_ft?: Percentiles | null;
+  whole_building_obb_depth_ft?: Percentiles | null;
+  depth_semantics?: string | null;
+  bar_depth_source?: string | null;
+  quantity_role?: string | null;
   aspect_ratio?: Percentiles | null;
   compactness?: Percentiles | null;
 
@@ -134,6 +135,43 @@ export interface ProgramPrior {
   [k: string]: unknown;
 }
 
+export interface MaxBuildoutBrief {
+  contract_version?: string;
+  max_gsf: number;
+  at_stories?: number;
+  at_unit_gsf?: number;
+  units_at_max?: number;
+  footprint_at_max?: number;
+  unit_gsf_min?: number;
+  unit_gsf_max?: number;
+  binding_constraint?: string;
+  stories_ladder?: Array<{
+    stories?: number;
+    max_gsf?: number;
+    units?: number;
+    unit_gsf?: number;
+  }>;
+  program_frontier?: {
+    gsf_max_option?: {
+      stories?: number;
+      max_gsf?: number;
+      units?: number;
+      unit_gsf?: number;
+    };
+    units_max_option?: {
+      stories?: number;
+      gsf?: number;
+      units?: number;
+      unit_gsf?: number;
+    };
+    unit_gsf_band?: {
+      min?: number;
+      max?: number;
+      hard_constraint?: boolean;
+    };
+  };
+}
+
 export interface SolverBriefGeometry {
   parcel?: unknown;
   buildable_envelope?: unknown;
@@ -156,6 +194,8 @@ export interface SolverBrief {
   precedent_priors: PrecedentPriors;
   program_prior: ProgramPrior;
   program_prior_version: string | null;
+  max_buildout?: MaxBuildoutBrief;
+  entitlement_capacity?: Record<string, unknown>;
   physical?: Record<string, unknown>;
   market_summary?: Record<string, unknown>;
   objective_profile: ObjectiveProfile;
@@ -192,7 +232,10 @@ export interface PlannerContext {
     max_far?: SourcedValue;
     max_height_ft?: SourcedValue;
     max_density_du_acre?: SourcedValue;
+    /** Compatibility alias: building-footprint coverage only. */
     max_coverage_pct?: SourcedValue<number>;
+    max_building_coverage_pct?: SourcedValue<number>;
+    max_impervious_pct?: SourcedValue<number>;
     min_open_space_pct?: SourcedValue;
     source_conflicts?: unknown[];
   };
@@ -203,6 +246,8 @@ export interface PlannerContext {
   parking?: Record<string, unknown>;
   parking_strategy?: string | null;
   typology_spec?: Record<string, unknown>;
+  max_buildout?: MaxBuildoutBrief;
+  entitlement_capacity?: Record<string, unknown>;
   program_prior?: ProgramPrior;
   program_prior_version?: string | null;
   objective_profile: ObjectiveProfile;
@@ -248,16 +293,11 @@ export function isPlannerContextResponse(x: unknown): x is PlannerContextRespons
   );
 }
 
-// ── Fetchers (fail-soft; the compile is cached per parcel+use+intent) ───────
+// ── Fetchers (client cache + bounded server snapshot reuse) ─────────────────
 
 const compileCache = new Map<string, Promise<PlannerContextResponse | null>>();
 
-/**
- * Recursive canonical JSON: object keys sorted at EVERY depth. The old
- * top-level-only key sort collided on nested objective profiles
- * ({weights:{a,b}} vs {weights:{b,a}} serialized differently), which made
- * "identical" intents miss the cache — or worse, distinct intents share it.
- */
+/** Recursive canonical JSON: object keys sorted at every depth. */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -266,7 +306,7 @@ export function canonicalJson(value: unknown): string {
   return `{${keys.map(k => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(',')}}`;
 }
 
-/** Stable cache key: parcel + use + canonical (deep key-sorted) intent. */
+/** Stable cache key: parcel + use + canonical intent. */
 export function compileCacheKey(ogcFid: number, use: string, intent?: Record<string, unknown>): string {
   const normalized = intent && Object.keys(intent).length > 0
     ? canonicalJson(intent)
@@ -274,11 +314,7 @@ export function compileCacheKey(ogcFid: number, use: string, intent?: Record<str
   return `${ogcFid}|${use.toLowerCase().trim()}|${normalized}`;
 }
 
-/**
- * Compile (or fetch the cached compile of) the parcel's planner context.
- * React re-renders share the same in-flight promise — the snapshot table is
- * hash-deduped server-side, but we avoid even asking twice.
- */
+/** Compile or share the in-flight compile for this parcel/use/intent. */
 export function compilePlannerContext(
   ogcFid: number,
   selectedUse: string,
@@ -288,23 +324,20 @@ export function compilePlannerContext(
   const hit = compileCache.get(key);
   if (hit) return hit;
 
-  const p = (async (): Promise<PlannerContextResponse | null> => {
-    // Cold-cache compiles can blow the API statement timeout (seen live:
-    // "canceling statement due to statement timeout" while the same compile
-    // runs in ~1.3s warm). One immediate retry rides the warmed buffers.
+  const promise = (async (): Promise<PlannerContextResponse | null> => {
+    // One retry rides warmed database buffers after a cold timeout.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await compileOnce(ogcFid, selectedUse, userIntent);
-      if (r !== null || attempt === 1) return r;
+      const result = await compileOnce(ogcFid, selectedUse, userIntent);
+      if (result !== null || attempt === 1) return result;
     }
     return null;
   })();
 
-  compileCache.set(key, p);
-  // A failed compile must not poison the cache
-  p.then(r => {
-    if (r == null) compileCache.delete(key);
+  compileCache.set(key, promise);
+  promise.then(result => {
+    if (result == null) compileCache.delete(key);
   });
-  return p;
+  return promise;
 }
 
 async function compileOnce(
@@ -312,30 +345,30 @@ async function compileOnce(
   selectedUse: string,
   userIntent: Record<string, unknown>
 ): Promise<PlannerContextResponse | null> {
-    try {
-      if (!supabase) return null;
-      const { data, error } = await supabase.rpc('fn_compile_planner_context', {
-        p_ogc_fid: ogcFid,
-        p_use: selectedUse,
-        p_user_intent: userIntent,
-      });
-      if (error) {
-        console.warn('[plannerContext] compile failed:', error.message ?? error);
-        return null;
-      }
-      if (data && typeof data === 'object' && 'error' in (data as object)) {
-        console.warn('[plannerContext] compile declined:', (data as { error: string }).error);
-        return null;
-      }
-      if (!isPlannerContextResponse(data)) {
-        console.warn('[plannerContext] compile returned an unexpected shape');
-        return null;
-      }
-      return data;
-    } catch (err) {
-      console.warn('[plannerContext] compile threw:', err);
+  try {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc('fn_compile_planner_context', {
+      p_ogc_fid: ogcFid,
+      p_use: selectedUse,
+      p_user_intent: userIntent,
+    });
+    if (error) {
+      console.warn('[plannerContext] compile failed:', error.message ?? error);
       return null;
     }
+    if (data && typeof data === 'object' && 'error' in (data as object)) {
+      console.warn('[plannerContext] compile declined:', (data as { error: string }).error);
+      return null;
+    }
+    if (!isPlannerContextResponse(data)) {
+      console.warn('[plannerContext] compile returned an unexpected shape');
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.warn('[plannerContext] compile threw:', error);
+    return null;
+  }
 }
 
 /** Load the solver-safe brief for a known snapshot, parcel-verified. */
@@ -362,32 +395,28 @@ export async function getPlannerSolverBrief(
       };
     }
     return null;
-  } catch (err) {
-    console.warn('[plannerContext] brief fetch threw:', err);
+  } catch (error) {
+    console.warn('[plannerContext] brief fetch threw:', error);
     return null;
   }
 }
 
-/** Test hook: clear the compile cache (parcel navigation does NOT need this). */
+/** Test hook: clear the compile cache. */
 export function __clearPlannerContextCache(): void {
   compileCache.clear();
 }
 
 // ── Adapters: compiled context → existing display/solver shapes ─────────────
 
-import type { DesignContext } from './designContext';
-
-/**
- * Project the compiled context onto the ContextPanel's display shape so the
- * panel renders the SAME snapshot the solver uses (no competing fetches).
- */
+/** Project the compiled context onto the display shape used by ContextPanel. */
 export function plannerContextToDesignContext(resp: PlannerContextResponse): DesignContext {
   const legal = resp.context.legal ?? ({} as PlannerContext['legal']);
   const asCv = (v?: SourcedValue | null) =>
     v && v.value != null
       ? { value: v.value, source: v.source ?? 'unknown', confidence: (v.confidence ?? 'medium') as never }
       : undefined;
-  const pk = resp.solver_brief.parking;
+  const parking = resp.solver_brief.parking;
+  const buildingCoverage = legal.max_building_coverage_pct ?? legal.max_coverage_pct;
   return {
     zoningBase: legal.zoning_base ?? undefined,
     zoningSubtype: legal.zoning_subtype ?? undefined,
@@ -400,14 +429,16 @@ export function plannerContextToDesignContext(resp: PlannerContextResponse): Des
     maxFar: asCv(legal.max_far),
     maxHeightFt: asCv(legal.max_height_ft),
     maxDensityDuAc: asCv(legal.max_density_du_acre),
-    maxCoveragePct: asCv(legal.max_coverage_pct),
-    parkingStrategy: pk.strategy ?? resp.context.parking_strategy ?? undefined,
+    maxCoveragePct: asCv(buildingCoverage),
+    maxBuildingCoveragePct: asCv(buildingCoverage),
+    maxImperviousPct: asCv(legal.max_impervious_pct),
+    parkingStrategy: parking.strategy ?? resp.context.parking_strategy ?? undefined,
     parking: {
-      ratio: pk.ratio ?? undefined,
-      basis: pk.basis ?? undefined,
-      stallWidthFt: pk.stall_width_ft ?? undefined,
-      stallDepthFt: pk.stall_depth_ft ?? undefined,
-      aisleWidthFt: pk.aisle_width_ft ?? undefined,
+      ratio: parking.ratio ?? undefined,
+      basis: parking.basis ?? undefined,
+      stallWidthFt: parking.stall_width_ft ?? undefined,
+      stallDepthFt: parking.stall_depth_ft ?? undefined,
+      aisleWidthFt: parking.aisle_width_ft ?? undefined,
     },
     flags: resp.context.flags ?? [],
     permittedUses: [],
@@ -425,43 +456,64 @@ export function briefToZoningPatch(brief: SolverBrief): Record<string, number> {
   if (hc.max_far != null && hc.max_far > 0) patch.maxFar = hc.max_far;
   if (hc.max_height_ft != null && hc.max_height_ft > 0) patch.maxHeightFt = hc.max_height_ft;
   if (hc.max_density_du_acre != null && hc.max_density_du_acre > 0) patch.maxDensityDuPerAcre = hc.max_density_du_acre;
-  if (hc.max_coverage_pct != null && hc.max_coverage_pct > 0) patch.maxCoveragePct = hc.max_coverage_pct;
+  const buildingCoverage = hc.max_building_coverage_pct ?? hc.max_coverage_pct;
+  if (buildingCoverage != null && buildingCoverage > 0) patch.maxCoveragePct = buildingCoverage;
   return patch;
 }
 
 /** Brief parking → the solver's parking design-parameter patch. */
 export function briefToParkingPatch(brief: SolverBrief): Record<string, number> {
-  const pk = brief.parking;
+  const parking = brief.parking;
   const patch: Record<string, number> = {};
-  if (pk.ratio != null && pk.ratio > 0) patch.targetRatio = pk.ratio;
-  if (pk.stall_width_ft != null && pk.stall_width_ft > 0) patch.stallWidthFt = pk.stall_width_ft;
-  if (pk.stall_depth_ft != null && pk.stall_depth_ft > 0) patch.stallDepthFt = pk.stall_depth_ft;
-  if (pk.aisle_width_ft != null && pk.aisle_width_ft > 0) patch.aisleWidthFt = pk.aisle_width_ft;
+  if (parking.ratio != null && parking.ratio > 0) patch.targetRatio = parking.ratio;
+  if (parking.stall_width_ft != null && parking.stall_width_ft > 0) patch.stallWidthFt = parking.stall_width_ft;
+  if (parking.stall_depth_ft != null && parking.stall_depth_ft > 0) patch.stallDepthFt = parking.stall_depth_ft;
+  if (parking.aisle_width_ft != null && parking.aisle_width_ft > 0) patch.aisleWidthFt = parking.aisle_width_ft;
   return patch;
 }
 
-/** Solver-safe subset for the client worker fallback — the worker and the
- *  server generator may use different algorithms, but they read the SAME
- *  context values (hard constraints/parking travel via the config patches;
- *  this carries the Regrid built-form priors and the generation gate). */
+function maxBuildoutStories(brief: SolverBrief): number | null {
+  const maxBuildout = brief.max_buildout;
+  const direct = maxBuildout?.at_stories;
+  if (typeof direct === 'number' && Number.isFinite(direct) && direct > 0) return direct;
+  const nested = maxBuildout?.program_frontier?.gsf_max_option?.stories;
+  if (typeof nested === 'number' && Number.isFinite(nested) && nested > 0) return nested;
+  const best = [...(maxBuildout?.stories_ladder ?? [])]
+    .filter(r => typeof r.stories === 'number' && typeof r.max_gsf === 'number')
+    .sort((a, b) => (b.max_gsf ?? 0) - (a.max_gsf ?? 0))[0];
+  return typeof best?.stories === 'number' && best.stories > 0 ? best.stories : null;
+}
+
+/**
+ * Solver-safe subset for the client worker fallback. The existing worker still
+ * names its story fields as precedent fields, so the max-GSF story target is
+ * placed there as a compatibility bridge. Local precedent stories never cap
+ * quantity, and whole-building OBB depth is never passed as apartment-bar depth.
+ */
 export function briefToWorkerBrief(resp: PlannerContextResponse): import('../../../engine/optimizer').WorkerSolverBrief {
-  const pri = resp.solver_brief.precedent_priors;
-  const ut = pri.underwrite_target;
+  const priors = resp.solver_brief.precedent_priors;
+  const target = priors.underwrite_target;
+  const quantityStories = maxBuildoutStories(resp.solver_brief);
+  const depthIsWholeBuildingObb =
+    priors.depth_semantics === 'whole_building_oriented_bounding_box_not_bar_depth' ||
+    priors.bar_depth_source === 'typology_or_program_spec_only';
   return {
     generationAllowed: resp.generation_allowed,
     precedent: {
-      storiesP50: pri.stories?.p50 ?? null,
-      storiesP75: ut?.stories_p75 ?? pri.stories?.p75 ?? null,
-      footprintP75SqFt: ut?.footprint_sqft_p75 ?? pri.footprint_sqft?.p75 ?? null,
-      footprintP90SqFt: ut?.footprint_sqft_p90 ?? pri.footprint_sqft?.p90 ?? null,
-      depthP50Ft: ut?.depth_ft_p50 ?? pri.depth_ft?.p50 ?? null,
-      lengthP75Ft: ut?.length_ft_p75 ?? pri.length_ft?.p75 ?? null,
-      coverageP75Pct: ut?.coverage_pct_p75 ?? pri.coverage_pct?.p75 ?? null,
-      buildingCountP50: ut?.building_count_p50 ?? pri.building_count?.p50 ?? null,
-      sampleSize: pri.sample_size ?? null,
-      confidence: pri.confidence ?? null,
-      selectionMode: pri.selection?.mode ?? null,
-      precedentParcelIds: pri.precedent_parcel_ids ?? undefined,
+      storiesP50: quantityStories ?? priors.stories?.p50 ?? null,
+      storiesP75: quantityStories ?? target?.stories_p75 ?? priors.stories?.p75 ?? null,
+      footprintP75SqFt: target?.footprint_sqft_p75 ?? priors.footprint_sqft?.p75 ?? null,
+      footprintP90SqFt: target?.footprint_sqft_p90 ?? priors.footprint_sqft?.p90 ?? null,
+      depthP50Ft: depthIsWholeBuildingObb
+        ? null
+        : target?.depth_ft_p50 ?? priors.depth_ft?.p50 ?? null,
+      lengthP75Ft: target?.length_ft_p75 ?? priors.length_ft?.p75 ?? null,
+      coverageP75Pct: target?.coverage_pct_p75 ?? priors.coverage_pct?.p75 ?? null,
+      buildingCountP50: target?.building_count_p50 ?? priors.building_count?.p50 ?? null,
+      sampleSize: priors.sample_size ?? null,
+      confidence: priors.confidence ?? null,
+      selectionMode: priors.selection?.mode ?? null,
+      precedentParcelIds: priors.precedent_parcel_ids ?? undefined,
     },
     programPrior: {
       averageUnitSqft: (resp.solver_brief.program_prior?.average_unit_sqft?.value as number | null) ?? null,
@@ -470,7 +522,7 @@ export function briefToWorkerBrief(resp: PlannerContextResponse): import('../../
   };
 }
 
-// ── Context lineage vocabulary (current server implementation) ──────────────
+// ── Context lineage vocabulary ──────────────────────────────────────────────
 
 export const CONTEXT_VERSION_V2 = 'planner_context_v2';
 
@@ -478,17 +530,14 @@ export const CONTEXT_VERSION_V2 = 'planner_context_v2';
 const CONTEXT_AWARE_GENERATORS = new Set([
   'mf_context_v2',
   'mf_context_v2_regrid_typology_v1',
+  'mf_max_gsf_v1',
 ]);
 
 export function isContextAwareGeneratorVersion(v: string | null | undefined): boolean {
   return v != null && CONTEXT_AWARE_GENERATORS.has(v);
 }
 
-/**
- * "Context applied" is earned, not assumed: the plan must carry the ACTIVE
- * snapshot's id, a v2 context version, and a context-aware generator version.
- * Anything less is a fallback state and must say so.
- */
+/** "Context applied" is earned by matching snapshot and generator lineage. */
 export function planUsedActiveContext(
   plan: { context_id?: string | null; context_version?: string | null; generator_version?: string | null },
   activeContextId: string | null | undefined
@@ -515,9 +564,14 @@ const FLAG_TEXT: Record<string, string> = {
   regrid_lot_band_relaxed_any: 'Included precedents on lots of any size due to limited local examples.',
   regrid_typology_filter_insufficient: 'Too few precedents of the selected use — the comparison set is a broad fallback.',
   regrid_sample_capped_100: 'Analyzed the 100 closest and most lot-comparable precedents.',
-  bar_depth_from_regrid_geometry_p50: 'Building depth initialized from the local median.',
-  bar_length_target_from_regrid_geometry_p75: 'Building length initialized from the local 75th percentile.',
-  stories_from_precedent_p50_p75: 'Story count initialized from the local built-form range.',
+  bar_depth_from_regrid_geometry_p50: 'Legacy local depth value recorded; it must not control apartment-bar depth.',
+  bar_depth_from_typology_program_spec: 'Building depth comes from the typology/program specification.',
+  bar_length_target_from_regrid_geometry_p75: 'Local p75 length informs building form.',
+  precedent_bar_length_soft_target_not_quantity_cap: 'Local building length is a soft form target, not a yield cap.',
+  stories_from_precedent_p50_p75: 'Local story count is recorded as form evidence only.',
+  stories_from_max_gsf_frontier: 'Story count follows the max-GSF legal frontier.',
+  coverage_response_lifted_stories_before_clamping_gsf: 'The solver added legal stories before reducing GSF for coverage.',
+  unit_gsf_band_hard_pass: 'Programmed unit GSF is inside the hard development range.',
   frontage_geometry_is_placeholder_until_road_edge_upgrade:
     'Access remains based on a frontage heuristic, not a verified road edge.',
   parking_below_ratio: 'Parking provided is below the target ratio.',
@@ -530,15 +584,17 @@ export function describeContextFlag(flag: string): string {
 
 /** One-line context summary for the plan-basis strip. */
 export function plannerContextSummary(resp: PlannerContextResponse): string {
-  const b = resp.solver_brief;
-  const prec = b.precedent_priors;
-  const legalConf = resp.context.legal?.confidence ?? 'unknown';
+  const brief = resp.solver_brief;
+  const precedents = brief.precedent_priors;
+  const legalConfidence = resp.context.legal?.confidence ?? 'unknown';
   const parts = [
     `Context ${resp.context_version.replace('planner_context_', '')}`,
-    `${prec.sample_size ?? 0} precedents (${prec.confidence ?? 'unknown'})`,
-    `prior ${b.program_prior_version ?? 'none'}`,
-    `zoning ${legalConf}`,
-    b.geometry.front_edge_is_placeholder ? 'frontage heuristic pending road upgrade' : `access ${b.geometry.access_method ?? 'road'}`,
+    `${precedents.sample_size ?? 0} precedents (${precedents.confidence ?? 'unknown'})`,
+    `prior ${brief.program_prior_version ?? 'none'}`,
+    `zoning ${legalConfidence}`,
+    brief.geometry.front_edge_is_placeholder
+      ? 'frontage heuristic pending road upgrade'
+      : `access ${brief.geometry.access_method ?? 'road'}`,
   ];
   return parts.join(' · ');
 }

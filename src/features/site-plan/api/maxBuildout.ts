@@ -15,6 +15,12 @@ export interface StoriesRung {
   binding: string;
 }
 
+export interface UnitGsfBand {
+  min: number;
+  max: number;
+  hard_constraint?: boolean;
+}
+
 export interface ProgramFrontierOption {
   stories: number;
   units: number;
@@ -29,6 +35,7 @@ export interface ProgramFrontierOption {
 export interface ProgramFrontier {
   gsf_max_option: ProgramFrontierOption;
   units_max_option?: ProgramFrontierOption;
+  unit_gsf_band?: UnitGsfBand;
   note?: string;
 }
 
@@ -43,7 +50,7 @@ export interface EntitlementCapacity {
   basis?: string;
 }
 
-/** Normalized client contract. Compatibility aliases are always populated. */
+/** Normalized client contract. Compatibility aliases and hard band are present. */
 export interface MaxBuildout {
   contract_version?: string;
   parcel_ogc_fid: number;
@@ -52,6 +59,8 @@ export interface MaxBuildout {
   at_stories: number;
   at_unit_gsf: number;
   units_at_max: number;
+  unit_gsf_min: number;
+  unit_gsf_max: number;
   binding_constraint: string;
   footprint_at_max?: number;
   program_frontier?: ProgramFrontier;
@@ -107,6 +116,21 @@ function normalizeFrontierOption(value: unknown): ProgramFrontierOption | null {
   };
 }
 
+function normalizeUnitGsfBand(value: unknown): UnitGsfBand | null {
+  const band = asObject(value);
+  if (!band) return null;
+  const min = asFiniteNumber(band.min);
+  const max = asFiniteNumber(band.max);
+  if (min == null || max == null || min <= 0 || max < min) return null;
+  return {
+    min,
+    max,
+    ...(typeof band.hard_constraint === 'boolean'
+      ? { hard_constraint: band.hard_constraint }
+      : {}),
+  };
+}
+
 function normalizeLadder(value: unknown): StoriesRung[] {
   if (!Array.isArray(value)) return [];
 
@@ -147,8 +171,9 @@ function normalizeLadder(value: unknown): StoriesRung[] {
  * - compatibility aliases at_stories / at_unit_gsf / units_at_max;
  * - program_frontier.gsf_max_option, introduced by the richer frontier API.
  *
- * Missing aliases must never turn into a silent one-story plan or a hidden
- * headline. The normalizer derives them from the frontier or best ladder rung.
+ * Contract v3 publishes a hard unit-GSF band. Older compatible payloads derive
+ * that band from the units-max and GSF-max corners (or the ladder) so the UI
+ * remains available without ever accepting an impossible inverted range.
  */
 export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
   const raw = asObject(value);
@@ -157,6 +182,7 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
   const frontierRaw = asObject(raw.program_frontier);
   const gsfMaxOption = normalizeFrontierOption(frontierRaw?.gsf_max_option);
   const unitsMaxOption = normalizeFrontierOption(frontierRaw?.units_max_option);
+  const explicitBand = normalizeUnitGsfBand(frontierRaw?.unit_gsf_band);
   const ladder = normalizeLadder(raw.stories_ladder);
   const bestRung = [...ladder].sort(
     (a, b) => b.max_gsf - a.max_gsf || b.stories - a.stories
@@ -191,11 +217,26 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
   const parcelOgcFid = asFiniteNumber(raw.parcel_ogc_fid);
   const typology = asText(raw.typology);
 
+  const ladderUnitSizes = ladder.map(r => r.unit_gsf).filter(Number.isFinite);
+  const unitGsfMin =
+    asFiniteNumber(raw.unit_gsf_min) ??
+    explicitBand?.min ??
+    unitsMaxOption?.unit_gsf ??
+    (ladderUnitSizes.length > 0 ? Math.min(...ladderUnitSizes) : null);
+  const unitGsfMax =
+    asFiniteNumber(raw.unit_gsf_max) ??
+    explicitBand?.max ??
+    gsfMaxOption?.unit_gsf ??
+    (ladderUnitSizes.length > 0 ? Math.max(...ladderUnitSizes) : null);
+
   if (
     maxGsf == null || maxGsf <= 0 ||
     atStories == null || atStories <= 0 ||
     atUnitGsf == null || atUnitGsf <= 0 ||
     unitsAtMax == null || unitsAtMax <= 0 ||
+    unitGsfMin == null || unitGsfMin <= 0 ||
+    unitGsfMax == null || unitGsfMax < unitGsfMin ||
+    atUnitGsf < unitGsfMin || atUnitGsf > unitGsfMax ||
     binding == null ||
     parcelOgcFid == null ||
     typology == null ||
@@ -211,10 +252,18 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
     bestRung?.footprint_sqft ??
     null;
   const frontierNote = asText(frontierRaw?.note);
+  const normalizedBand: UnitGsfBand = {
+    min: unitGsfMin,
+    max: unitGsfMax,
+    ...(explicitBand?.hard_constraint != null
+      ? { hard_constraint: explicitBand.hard_constraint }
+      : {}),
+  };
   const programFrontier: ProgramFrontier | null = gsfMaxOption
     ? {
         gsf_max_option: gsfMaxOption,
         ...(unitsMaxOption ? { units_max_option: unitsMaxOption } : {}),
+        unit_gsf_band: normalizedBand,
         ...(frontierNote ? { note: frontierNote } : {}),
       }
     : null;
@@ -229,6 +278,8 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
     at_stories: atStories,
     at_unit_gsf: atUnitGsf,
     units_at_max: unitsAtMax,
+    unit_gsf_min: unitGsfMin,
+    unit_gsf_max: unitGsfMax,
     binding_constraint: binding,
     stories_ladder: ladder,
     ...(contractVersion ? { contract_version: contractVersion } : {}),
@@ -248,6 +299,12 @@ export function isMaxBuildout(value: unknown): value is MaxBuildout {
     typeof object.at_stories === 'number' &&
     typeof object.at_unit_gsf === 'number' &&
     typeof object.units_at_max === 'number' &&
+    typeof object.unit_gsf_min === 'number' &&
+    typeof object.unit_gsf_max === 'number' &&
+    object.unit_gsf_min > 0 &&
+    object.unit_gsf_max >= object.unit_gsf_min &&
+    object.at_unit_gsf >= object.unit_gsf_min &&
+    object.at_unit_gsf <= object.unit_gsf_max &&
     Array.isArray(object.stories_ladder);
 }
 

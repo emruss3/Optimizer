@@ -96,9 +96,9 @@ const TypeRow: React.FC<{ label: string; value: string | null; basis: string }> 
   );
 
 /**
- * "Local precedent basis" — what NEARBY BUILDINGS of the selected use look
- * like, and exactly how that comparison set was chosen. These are soft design
- * priors from Regrid building geometry, not legal limits.
+ * "Local precedent basis" — what nearby buildings of the selected use look
+ * like, and exactly how that comparison set was chosen. These are soft form
+ * priors from Regrid geometry, never legal or quantity limits.
  */
 const PrecedentBasis: React.FC<{
   precedent: PrecedentPriors;
@@ -126,6 +126,10 @@ const PrecedentBasis: React.FC<{
         .map(([t, c]) => `${t.replace(/_/g, ' ')} ${c}`)
         .join(' · ')
     : null;
+  const wholeBuildingDepth = precedent.whole_building_obb_depth_ft ?? precedent.depth_ft;
+  const depthIsObb =
+    precedent.depth_semantics === 'whole_building_oriented_bounding_box_not_bar_depth' ||
+    precedent.bar_depth_source === 'typology_or_program_spec_only';
 
   return (
     <div className="mt-3 pt-3 border-t border-gray-100">
@@ -140,8 +144,12 @@ const PrecedentBasis: React.FC<{
 
       <div className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-0.5">Typical form</div>
       <TypeRow label="Footprint" value={fmtNum(precedent.footprint_sqft?.p50) && `${fmtNum(precedent.footprint_sqft?.p50)} SF`} basis="median" />
-      <TypeRow label="Depth" value={fmt1(precedent.depth_ft?.p50) && `${fmt1(precedent.depth_ft?.p50)} ft`} basis="median" />
-      <TypeRow label="Length" value={fmt1(precedent.length_ft?.p75) && `${fmt1(precedent.length_ft?.p75)} ft`} basis="p75" />
+      <TypeRow
+        label={depthIsObb ? 'Whole-building depth' : 'Depth'}
+        value={fmt1(wholeBuildingDepth?.p50) && `${fmt1(wholeBuildingDepth?.p50)} ft`}
+        basis={depthIsObb ? 'OBB median · not bar depth' : 'median'}
+      />
+      <TypeRow label="Length" value={fmt1(precedent.length_ft?.p75) && `${fmt1(precedent.length_ft?.p75)} ft`} basis="p75 form target" />
       <TypeRow
         label="Stories"
         value={
@@ -151,10 +159,10 @@ const PrecedentBasis: React.FC<{
               : fmt1(precedent.stories.p50)
             : null
         }
-        basis="typical"
+        basis="local form norm"
       />
-      <TypeRow label="Coverage" value={fmt1(precedent.coverage_pct?.p75) && `${fmt1(precedent.coverage_pct?.p75)}%`} basis="p75" />
-      <TypeRow label="Buildings per site" value={fmt1(precedent.building_count?.p50)} basis="median" />
+      <TypeRow label="Coverage" value={fmt1(precedent.coverage_pct?.p75) && `${fmt1(precedent.coverage_pct?.p75)}%`} basis="p75 form evidence" />
+      <TypeRow label="Buildings per site" value={fmt1(precedent.building_count?.p50)} basis="median form evidence" />
       {sel?.lot_band && (
         <TypeRow label="Lot-size band" value={sel.lot_band === 'any' ? 'any lot size' : `${sel.lot_band} of subject`} basis="" />
       )}
@@ -164,7 +172,7 @@ const PrecedentBasis: React.FC<{
         </p>
       )}
       <p className="text-[10px] text-gray-400 mt-1.5 leading-snug">
-        Soft design priors from nearby Regrid building geometry — zoning and physical constraints remain hard limits.
+        Soft form evidence from nearby Regrid buildings. Max-GSF, zoning, parking, and physical constraints control quantity.
       </p>
     </div>
   );
@@ -173,9 +181,7 @@ const PrecedentBasis: React.FC<{
 interface ContextPanelProps {
   /** DISPLAY-ONLY projection of the one compiled planner context */
   context: DesignContext | null;
-  /** solver_brief.precedent_priors from the SAME compiled snapshot the
-   *  solvers read — the local Regrid built-form basis (v2) or the reduced
-   *  footprint/stories priors (v1). */
+  /** solver_brief.precedent_priors from the same compiled snapshot */
   precedent?: PrecedentPriors | null;
   /** context.market from the compiled snapshot (pricing comps) */
   pricing?: unknown;
@@ -190,11 +196,7 @@ interface ContextPanelProps {
   generationBlocked?: boolean;
 }
 
-/**
- * Design Context panel — renders the SAME compiled snapshot the solver uses.
- * This component fetches nothing; SiteWorkspace owns the context (single
- * source of truth per the planner contract).
- */
+/** Display-only context panel; SiteWorkspace owns the single active snapshot. */
 const ContextPanel: React.FC<ContextPanelProps> = ({
   context,
   precedent,
@@ -212,6 +214,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
   const saleP25 = fmtUsd(p(pricing, 'sale_price', 'p25'));
   const saleP75 = fmtUsd(p(pricing, 'sale_price', 'p75'));
   const hasPricing = priceBldgSf || priceLotSf || saleP50;
+  const buildingCoverage = context?.maxBuildingCoveragePct ?? context?.maxCoveragePct;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -236,8 +239,8 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
       )}
 
       {!loading && !context && (
-        <p className="text-xs text-gray-500">
-          Context unavailable — using standard defaults.
+        <p className="text-xs text-red-700">
+          Verified context is unavailable — generation is blocked until the snapshot loads.
         </p>
       )}
 
@@ -270,7 +273,8 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
           <Row label="Max FAR" v={context.maxFar} />
           <Row label="Max height" v={context.maxHeightFt} unit="ft" />
           <Row label="Max density" v={context.maxDensityDuAc} unit="DU/ac" />
-          <Row label="Max coverage" v={context.maxCoveragePct} unit="%" />
+          <Row label="Max building coverage" v={buildingCoverage} unit="%" />
+          <Row label="Max impervious surface" v={context.maxImperviousPct} unit="%" />
           {context.flags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {context.flags.map(flag => (

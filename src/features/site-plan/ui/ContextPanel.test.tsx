@@ -10,7 +10,7 @@ import {
 } from '../api/plannerContext';
 
 // Live-shaped compiled snapshot (structure captured from
-// fn_compile_planner_context(669046, 'multifamily') on 2026-07-13).
+// fn_compile_planner_context(669046, 'multifamily')).
 const RESP = {
   context_id: '46816a05-bcb2-43e1-8ce9-3be146ef8f61',
   context_version: 'planner_context_v1',
@@ -39,6 +39,8 @@ const RESP = {
       max_height_ft: { value: 45, source: 'ordinance' },
       max_density_du_acre: { value: 40, source: 'ordinance' },
       max_coverage_pct: { value: 60, source: 'typology_spec' },
+      max_building_coverage_pct: { value: 60, source: 'typology_spec' },
+      max_impervious_pct: { value: 75, source: 'ordinance' },
     },
     precedent: {
       n_comps: 64,
@@ -72,7 +74,13 @@ const RESP = {
     hard_constraints: {
       front_setback_ft: 20, side_setback_ft: 5, rear_setback_ft: 20,
       max_far: 1, max_height_ft: 45, max_density_du_acre: 40,
-      max_coverage_pct: 60, min_open_space_pct: null, developable: true,
+      max_coverage_pct: 60, max_building_coverage_pct: 60,
+      max_impervious_pct: 75,
+      coverage_semantics: {
+        max_coverage_pct: 'building_footprint_only',
+        max_impervious_pct: 'building_plus_parking_plus_drives_and_other_impervious',
+      },
+      min_open_space_pct: null, developable: true,
     },
     parking: {
       strategy: 'surface', ratio: 1.5, basis: 'per_unit',
@@ -91,12 +99,11 @@ const RESP = {
   },
 } as unknown as PlannerContextResponse;
 
-// planner_context_v2 priors for the SAME parcel (669046) — the verified
-// decision-sensitivity pair from the Regrid context v2 rollout: the same
-// location produces different precedent sets for different requested uses.
+// planner_context_v2 priors for the same parcel. Five exact examples cannot be
+// called high confidence, and the 99.8-ft depth is a whole-complex OBB metric.
 const MF_PRIORS_V2: PrecedentPriors = {
   sample_size: 5,
-  confidence: 'high',
+  confidence: 'medium',
   selection: {
     mode: 'exact_same_zoning',
     requested_typology: 'multifamily',
@@ -106,11 +113,15 @@ const MF_PRIORS_V2: PrecedentPriors = {
     sample_size: 5,
     available_count: 5,
     sample_cap: 100,
-    confidence: 'high',
+    confidence: 'medium',
   },
   type_mix: { multifamily: 5 },
   footprint_sqft: { p50: 7536 },
   depth_ft: { p50: 99.8 },
+  whole_building_obb_depth_ft: { p50: 99.8 },
+  depth_semantics: 'whole_building_oriented_bounding_box_not_bar_depth',
+  bar_depth_source: 'typology_or_program_spec_only',
+  quantity_role: 'form_only_never_caps_gsf',
   length_ft: { p75: 163.7 },
   stories: { p50: 2, p75: 2 },
   coverage_pct: { p75: 31 },
@@ -141,7 +152,7 @@ const SF_PRIORS_V2: PrecedentPriors = {
 };
 
 describe('ContextPanel (display-only, one compiled context)', () => {
-  it('renders the compiled snapshot: ordinance provenance, hard values, precedent basis', () => {
+  it('renders the compiled snapshot with separate coverage semantics', () => {
     render(
       <ContextPanel
         context={plannerContextToDesignContext(RESP)}
@@ -155,16 +166,17 @@ describe('ContextPanel (display-only, one compiled context)', () => {
       />
     );
     expect(screen.getByText('RM40 · Multi Family')).toBeTruthy();
-    // ordinance-sourced values wear their source, not an "est." badge
-    expect(screen.getAllByText('ordinance').length).toBeGreaterThanOrEqual(4);
-    expect(screen.getByText('45 ft')).toBeTruthy(); // max height (ordinance!)
+    expect(screen.getAllByText('ordinance').length).toBeGreaterThanOrEqual(5);
+    expect(screen.getByText('45 ft')).toBeTruthy();
     expect(screen.getByText('40 DU/ac')).toBeTruthy();
-    // precedent basis from the SAME snapshot (no independent fetch)
+    expect(screen.getByText('Max building coverage')).toBeTruthy();
+    expect(screen.getByText('60 %')).toBeTruthy();
+    expect(screen.getByText('Max impervious surface')).toBeTruthy();
+    expect(screen.getByText('75 %')).toBeTruthy();
     expect(screen.getByText('Local precedent basis')).toBeTruthy();
     expect(screen.getByText(/64 precedents · medium confidence/)).toBeTruthy();
-    expect(screen.getByText(/1,513 SF/)).toBeTruthy(); // footprint median
+    expect(screen.getByText(/1,513 SF/)).toBeTruthy();
     expect(screen.getByText('$256')).toBeTruthy();
-    // snapshot identity line
     expect(screen.getByText(/64 precedents \(medium\)/)).toBeTruthy();
     expect(screen.getByText(/frontage heuristic pending road upgrade/)).toBeTruthy();
   });
@@ -187,11 +199,12 @@ describe('ContextPanel (display-only, one compiled context)', () => {
     expect(onUse).toHaveBeenCalledWith('single_family');
   });
 
-  it('fails soft: no context → honest message, never mock data', () => {
+  it('fails closed: no verified context means generation is blocked, never mock data', () => {
     render(
       <ContextPanel context={null} loading={false} uses={[]} use="multifamily" onUseChange={() => undefined} />
     );
-    expect(screen.getByText(/Context unavailable — using standard defaults/)).toBeTruthy();
+    expect(screen.getByText(/Verified context is unavailable — generation is blocked/)).toBeTruthy();
+    expect(screen.queryByText(/standard defaults/)).toBeNull();
   });
 
   it('compiling state is explicit', () => {
@@ -215,13 +228,14 @@ describe('Local precedent basis (planner_context_v2)', () => {
       />
     );
 
-  it('single-family and multifamily on the same parcel display DIFFERENT samples and dimensions', () => {
+  it('single-family and multifamily on the same parcel display different form evidence', () => {
     const mf = renderWithPriors(MF_PRIORS_V2, 'multifamily');
-    expect(screen.getByText(/Multifamily · 5 exact-use RM40 precedents · high confidence/)).toBeTruthy();
+    expect(screen.getByText(/Multifamily · 5 exact-use RM40 precedents · medium confidence/)).toBeTruthy();
     expect(screen.getByText(/7,536 SF/)).toBeTruthy();
     expect(screen.getByText(/99\.8 ft/)).toBeTruthy();
+    expect(screen.getByText(/OBB median · not bar depth/)).toBeTruthy();
     expect(screen.getByText(/163\.7 ft/)).toBeTruthy();
-    expect(screen.getByText('6')).toBeTruthy(); // buildings per site (median)
+    expect(screen.getByText('6')).toBeTruthy();
     mf.unmount();
 
     renderWithPriors(SF_PRIORS_V2, 'single_family');
@@ -229,10 +243,10 @@ describe('Local precedent basis (planner_context_v2)', () => {
     expect(screen.getByText(/1,435 SF/)).toBeTruthy();
     expect(screen.getByText(/31\.1 ft/)).toBeTruthy();
     expect(screen.getByText(/62\.2 ft/)).toBeTruthy();
-    expect(screen.queryByText(/7,536 SF/)).toBeNull(); // no MF bleed-through
+    expect(screen.queryByText(/7,536 SF/)).toBeNull();
   });
 
-  it('an exact same-zoning selection shows NO relaxation warning', () => {
+  it('an exact same-zoning selection shows no relaxation warning', () => {
     renderWithPriors(MF_PRIORS_V2, 'multifamily');
     expect(screen.queryByText(/expanded/i)).toBeNull();
   });
@@ -257,7 +271,7 @@ describe('Local precedent basis (planner_context_v2)', () => {
     ).toBeTruthy();
   });
 
-  it('planner_context_v1 priors (no selection/geometry) still render without crashing', () => {
+  it('planner_context_v1 priors still render without crashing', () => {
     renderWithPriors(
       { sample_size: 64, confidence: 'medium', footprint_sqft: { p50: 1513 }, stories: { p50: 1, p75: 2 } },
       'multifamily'
@@ -265,7 +279,7 @@ describe('Local precedent basis (planner_context_v2)', () => {
     expect(screen.getByText('Local precedent basis')).toBeTruthy();
     expect(screen.getByText(/64 precedents · medium confidence/)).toBeTruthy();
     expect(screen.getByText(/1,513 SF/)).toBeTruthy();
-    expect(screen.getByText(/1–2/)).toBeTruthy(); // stories p50–p75 range
+    expect(screen.getByText(/1–2/)).toBeTruthy();
   });
 
   it('does not expose raw context JSON', () => {
@@ -281,6 +295,8 @@ describe('plannerContext adapters', () => {
     expect(dc.zoningBase).toBe('RM40');
     expect(dc.maxFar).toEqual({ value: 1, source: 'ordinance', confidence: 'medium' });
     expect(dc.setbackSideFt?.value).toBe(5);
+    expect(dc.maxBuildingCoveragePct).toMatchObject({ value: 60, source: 'typology_spec' });
+    expect(dc.maxImperviousPct).toMatchObject({ value: 75, source: 'ordinance' });
     expect(dc.parking?.aisleWidthFt).toBe(24);
     expect(dc.flags).toContain('frontage_geometry_is_placeholder_until_road_edge_upgrade');
   });
