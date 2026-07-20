@@ -1066,11 +1066,6 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
               {envelopeStatus === 'invalid' && envelopeError && !usingFallbackEnvelope && (
                 <span className="text-sm text-red-700">
                   {envelopeError}
-                  {envelopeError.includes('returned null') && (
-                    <span className="ml-2 text-xs">
-                      Check: supabase/sql/get_parcel_buildable_envelope.sql and AUDIT_BACKEND_STATUS.sql
-                    </span>
-                  )}
                 </span>
               )}
             </div>

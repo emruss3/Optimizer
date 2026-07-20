@@ -310,6 +310,21 @@ export function normalizeFlags(json: unknown): string[] {
 export function normalizePermittedUses(json: unknown): string[] {
   if (json == null) return [];
   const o = (typeof json === 'object' ? json : {}) as Record<string, unknown>;
+
+  // LIVE SHAPE (fn_resolve_permitted_uses): { as_of_right: { multi_family:
+  // true, single_family: true, … } } — an object of booleans, not an array.
+  // This mismatch made every parse return [] while the RPC 200'd, which sent
+  // RM40 parcels to the zoning-base fallback instead of the real list.
+  const boolMap = pick(o, 'as_of_right', 'asOfRight', 'permitted') as
+    | Record<string, unknown>
+    | undefined;
+  if (boolMap && typeof boolMap === 'object' && !Array.isArray(boolMap)) {
+    const uses = Object.entries(boolMap)
+      .filter(([, v]) => v === true)
+      .map(([k]) => k);
+    if (uses.length > 0) return uses;
+  }
+
   const list = (Array.isArray(json) ? json : (pick(o, 'feasible_uses_as_of_right', 'feasible_uses', 'uses') as unknown[])) ?? [];
   if (!Array.isArray(list)) return [];
   return list
