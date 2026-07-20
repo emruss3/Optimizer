@@ -535,7 +535,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (resp.candidate_id) setActiveCandidateId(resp.candidate_id);
     const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
-    setViolations([]);
+    // Pinned best-effort honesty: any cap the user's placed building EXCEEDED
+    // is a red violation on a rendered plan — the edit shows, the breach is
+    // loud (and auto-surfaces the Flags dock). Clamps stay amber in the KPI.
+    const exceededFlags = flags.filter(f => f.endsWith('_exceeded_pinned'));
+    setViolations(exceededFlags.map(f => ({
+      code: f.replace(/_pinned$/, ''),
+      message: describeContextFlag(f),
+      severity: 'error' as const,
+    })));
     // Plan lineage — what THIS plan reports about its own basis. The
     // "Context applied" strip compares these against the active snapshot.
     const mNum = (v: unknown): number | null =>

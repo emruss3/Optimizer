@@ -413,6 +413,30 @@ describe('SiteWorkspace: enterprise trust gate (no context → no massing)', () 
   });
 });
 
+describe('SiteWorkspace: pinned best-effort edits render with loud violations', () => {
+  it('an edit that exceeds a cap still renders — the breach is a red violation in the auto-opened Flags dock, never a frozen canvas', async () => {
+    compileMock.mockImplementation(async () => ctxResp('multi_family', 'ctx-mf'));
+    genV2Mock.mockImplementation(async (_fid, ctxId) => ({
+      ...serverResp(ctxId),
+      flags: [
+        'impervious_coverage_exceeded_pinned',
+        'pinned_best_effort_v1',
+        'parking_caps_units_below_program_min',
+      ],
+    }));
+
+    render(<SiteWorkspace parcel={PARCEL} />);
+
+    // The solve RENDERED (server generation succeeded)…
+    await waitFor(() => expect(genV2Mock).toHaveBeenCalledWith(669046, 'ctx-mf', expect.anything()));
+    // …and the exceeded cap surfaced as an error violation, which auto-opens
+    // the Flags dock showing the red violation chip AND the generator's own
+    // flag row (both carry the plain-language cap text — that's by design).
+    await waitFor(() => expect(screen.getByText('impervious_coverage_exceeded')).toBeTruthy());
+    expect(screen.getAllByText(/impervious area over the impervious-coverage cap/).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('SiteWorkspace: worker parity (fallback carries the ACTIVE brief)', () => {
   it('when the server generators are unreachable, the worker solve receives Regrid priors and objective weights from the active context', async () => {
     compileMock.mockImplementation(async () => ctxResp('multi_family', 'ctx-mf'));
