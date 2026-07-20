@@ -165,8 +165,14 @@ grammar library by lot class (P2–P3); build-to lines from verified frontage
 ## P1 — decisiveness: the developer verdict (acceptance: HBU verdict < 5 s warm; stories-click round-trip < 3 s; PDF in hand)
 1. HBU comparator verdict strip (all as-of-right uses × products, ranked).
 2. Intent consumption: clickable stories ladder, editable mix.
-3. Config sweeps (best-of-N orientations/bar counts).
-4. Tuck-under parking regime.
+3. Config sweeps (best-of-N orientations/bar counts). **Outcome
+   (2026-07-20): in-function proxy ranking falsified head-to-head and
+   reverted (migrations 20260720000018..21); seed phases measured
+   invariant (≤0.02%). Honest sweeps must compare complete real solves —
+   harness folds into the parking-regime work (item 4). Full record in
+   SOLVER_CONVERGENCE_SPEC.md §Phase 3.**
+4. Tuck-under parking regime (now also carries the real-solve
+   configuration-sweep harness from item 3).
 5. PDF export deliverable.
 6. G0 road-edge ingestion → verified frontage.
 7. Surface optimization_status/proof verbatim in UI.

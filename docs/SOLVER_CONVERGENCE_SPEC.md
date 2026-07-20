@@ -66,10 +66,41 @@ parked, both honestly classified); fixtures unregressed (669046 holds
    `planner_parking_infeasible` — generator mis-sized its own bars.
 
 Phase 3 (open): the ledger above, plus bar deepening/lengthening beyond
-initial capacity, orientation sweeps, parking module variants, unit-program
-variation, structured/tuck-under regimes. The rule stands: examples
-identify failure classes; the sweep measures them; no fix may condition on
-a parcel.
+initial capacity, parking module variants, unit-program variation,
+structured/tuck-under regimes. The rule stands: examples identify failure
+classes; the sweep measures them; no fix may condition on a parcel.
+
+### Phase 3 measured result (2026-07-20): orientation-by-proxy FALSIFIED
+
+Two in-function orientation strategies were built, applied live, probed
+head-to-head against the pre-change generator, and **reverted with
+receipts** (migrations `20260720000018..21`):
+
+1. **Proxy frame ranking** (score candidate frames by dry-run band area,
+   switch on a 5% win): regressed the flagship fixture 669046 from
+   `feasible` / 100.0% capture to `feasible_demonstrably_constrained` —
+   parking and circulation dominate the real solve, so placeable band area
+   cannot rank two frames that both place bars.
+2. **Rescue-only switching** (alternate considered only when the incumbent
+   frame places zero bars, with the dry run faithfully mirroring the
+   placer's shallow-frame adaptations): regressed 408769 from 13,650 GSF /
+   62.9% capture to 6,120 GSF / 28.2%. The slab-scan / MICC-packer /
+   compact-plex fallbacks exist precisely for band-less frames and beat a
+   banded alternate frame. Across the random-24 acceptance sample the
+   rescue converted zero refusals (both depth-terminals stayed terminal).
+
+Seed phase classes (`p_seed % 3` band offsets 0/4/8 ft) were also measured:
+max spread 24 GSF on 122,636 (0.02%), zero on the others — the convergence
+passes make the generator phase-invariant, so best-of-seeds is 3× latency
+for noise.
+
+**Standing conclusion**: a configuration sweep is honest only when it
+compares *complete real solves* (frames, bar counts, parking regimes) by
+achieved GSF. That multi-solve harness is the same machinery the
+tuck-under/structured parking regime comparison requires, so it ships with
+the regime work, not as an in-function heuristic. Live generator remains
+byte-identical to the pre-sweep source (md5 `096a1dba…`), re-verified by
+the full acceptance sweep at the recorded baseline (82.6% plan-or-proven).
 
 ## 1. Vocabulary (shipped client-side)
 
