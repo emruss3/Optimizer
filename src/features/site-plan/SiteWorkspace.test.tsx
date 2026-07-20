@@ -379,10 +379,14 @@ describe('SiteWorkspace: generation gate (generation_allowed=false)', () => {
 
 describe('SiteWorkspace: enterprise trust gate (no context → no massing)', () => {
   it('a FAILED compile blocks the canvas outright — no generator runs — and Retry recompiles into a real plan', async () => {
-    let attempt = 0;
-    compileMock.mockImplementation(async () => {
-      attempt += 1;
-      return attempt === 1 ? null : ctxResp('multi_family', 'ctx-recovered');
+    // Deterministic per-use mock: every multi_family compile fails until the
+    // Retry click flips the switch. (The HBU strip issues additional
+    // compiles; in production they share the promise cache, but the mock
+    // bypasses it, so attempt-counting would race.)
+    let failMf = true;
+    compileMock.mockImplementation(async (_fid, use) => {
+      if (use !== 'multi_family') return new Promise<never>(() => undefined); // irrelevant use stays pending
+      return failMf ? null : ctxResp('multi_family', 'ctx-recovered');
     });
 
     render(<SiteWorkspace parcel={PARCEL} />);
@@ -405,6 +409,7 @@ describe('SiteWorkspace: enterprise trust gate (no context → no massing)', () 
 
     // Retry → fresh compile succeeds → the block lifts and the plan renders
     // on the recovered context (and only on it).
+    failMf = false;
     fireEvent.click(screen.getByText('Retry context compile'));
     await waitFor(() =>
       expect(genV2Mock).toHaveBeenCalledWith(669046, 'ctx-recovered', expect.anything()));

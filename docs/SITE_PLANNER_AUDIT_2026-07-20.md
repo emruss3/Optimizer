@@ -7,9 +7,18 @@ feature claims verified in code or on screen this session).
 
 ## Headline numbers
 
-- **Coverage**: 4/12 randomly sampled eligible parcels produce a rendered
-  plan (33%); was 3/12 before today's slab-fallback. 8/12 return structured,
-  classifiable diagnoses (was: dead strings). 0/12 die silently.
+> **End-of-day P0 result (same date, after the coverage ledger closed):**
+> original random-12: **11/12 solving (92%), 12/12 plan-or-proven**. Unseen
+> random-12 (ranks 4–6 per band, never tuned on): 6/11 eligible solving,
+> 100% structured. **Combined random-24: 74% solving, 82.6% plan-or-proven —
+> the P0 acceptance gate (≥80%) passes.** Enforced by
+> `tests/sql/mf_generalization_sweep.sql`. Residual classes: tiny-shape
+> packer misses ×2, bridge-blocked ×1, parking variant ×1 — all structured.
+
+- **Coverage (morning baseline)**: 4/12 randomly sampled eligible parcels
+  produce a rendered plan (33%); was 3/12 before today's slab-fallback.
+  8/12 return structured, classifiable diagnoses (was: dead strings).
+  0/12 die silently.
 - **Quality when the grammar fits**: 99.9% / 83.3% / 59.5% / 56% capture, all
   fully parked, zero building×pavement overlap, deterministic, classified
   (`feasible` / `incomplete` / `demonstrably_constrained` with proof).

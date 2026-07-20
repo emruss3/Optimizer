@@ -138,6 +138,11 @@ export interface SiteMetrics {
   earthworkFillCY?: number;
   earthworkNetCY?: number;
   earthworkCost?: number;
+  /** Server solver's own verdict — 'feasible' | 'feasible_optimization_incomplete'
+   *  | 'feasible_demonstrably_constrained'. Displayed verbatim, never re-inferred. */
+  optimizationStatus?: string;
+  /** Quantified residual-capacity proof object from the solver. */
+  optimizationProof?: Record<string, unknown>;
 }
 
 export interface FeasibilityViolation {
