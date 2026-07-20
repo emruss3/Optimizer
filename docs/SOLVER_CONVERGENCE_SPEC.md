@@ -131,6 +131,34 @@ P1-4 delivered the honest harness the falsification demanded (migrations
   82.6%; acceptance gate ratcheted 80 → 85. Remaining residuals: 2
   tiny-shape packer misses, 1 bridge-blocked — all structured.
 
+### P1-6 shipped (same date): verified frontage from the parcel fabric
+
+`fn_parcel_row_frontage` (migrations `20260720000024..26`): a boundary
+segment is ROW-FACING when the strip just outside it is not covered by
+any neighboring parcel — the public right-of-way is the gap in the parcel
+fabric. No external road data consulted; the 68-row OSM stub can enrich
+names/classes later without changing the definition. Both generators (MF
+worker + townhome) take their entry from the longest verified frontage
+edge, flagged `entry_from_row_frontage_v1`; fabric-locked parcels keep
+the longest-edge heuristic and carry `entry_heuristic_no_row_frontage`.
+
+Measured on the random-24 (all through the production dispatcher):
+
+- **408219 CONVERTED**: the bridge-blocked residual solved once the drive
+  network rooted at the real street (9.7% capture, honestly classified).
+- **661257: 55.6 → 66.7% capture. 627065: 36.3 → 46.4%.** Correct entry
+  frames improved real solves.
+- **385519: 43.8 → 34.6% — an HONEST regression.** Its street frontage is
+  the short side (179 ft, detector coverage 0); the old longest-edge
+  entry (340 ft, coverage 1.0) routed access through a neighboring
+  parcel. The lower number is the buildable one.
+- 660290 (2611 W Heiman) enters from its actual 350 ft W Heiman frontage
+  in both products; 669046 is fabric-locked and says so while keeping its
+  100% solve.
+- **New totals: 19/23 solving (82.6%), 21/23 plan-or-proven (91.3%)** —
+  gate ratcheted 85 → 90. Remaining residuals: the 2 tiny-shape packer
+  misses only.
+
 ## 1. Vocabulary (shipped client-side)
 
 - The algebraic envelope from `fn_max_buildout` is the **theoretical GSF

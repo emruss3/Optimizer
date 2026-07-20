@@ -600,6 +600,10 @@ const FLAG_TEXT: Record<string, string> = {
     'Parking supply falls short of the required stalls.',
   regime_tuck_under_v1:
     'Ground floor of every bar hosts parking (tuck-under regime); residential floors sit above. Chosen by comparing complete solves.',
+  entry_from_row_frontage_v1:
+    'Site entry taken from verified street frontage — a boundary edge facing the public right-of-way (the gap in the parcel fabric), not a guess.',
+  entry_heuristic_no_row_frontage:
+    'No right-of-way edge found in the parcel fabric — the parcel appears landlocked; entry falls back to the longest-edge heuristic (access presumed by easement).',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */

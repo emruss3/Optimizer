@@ -179,7 +179,14 @@ grammar library by lot class (P2–P3); build-to lines from verified frontage
    ratchets to 87.0% plan-or-proven (gate raised 80→85). Receipts in
    metrics.regime_comparison; tuck chip + Flags receipts in UI.**
 5. PDF export deliverable.
-6. G0 road-edge ingestion → verified frontage.
+6. G0 road-edge ingestion → verified frontage. **Shipped 2026-07-20
+   (migrations 20260720000024..26) as the fabric-gap detector: a ROW edge
+   is one whose outside strip no neighboring parcel covers — no external
+   road data needed. Both generators enter from verified frontage
+   (flagged), landlocked parcels say so honestly. Converted the
+   bridge-blocked residual (408219), +11/+10 capture on two parcels, one
+   honest regression (385519's old entry crossed a neighbor). Random-24:
+   91.3% plan-or-proven, gate ratcheted 85→90.**
 7. Surface optimization_status/proof verbatim in UI.
 8. Ship auth (persistence is live and waiting) + front-end deploy pipeline.
 
