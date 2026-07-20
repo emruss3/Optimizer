@@ -102,6 +102,8 @@ export function mfPlanToElements(resp: MfPlanResponse): {
   const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
 
   const isTownhome = resp.typology === 'townhome';
+  const mNum = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
   for (const b of resp.buildings ?? []) {
     const poly = toCanvasPolygon(b.geom);
     if (!poly) continue;
@@ -112,18 +114,41 @@ export function mfPlanToElements(resp: MfPlanResponse): {
       1,
       Math.round(b.units ?? ((b.footprint_sqft ?? 0) * floors) / AVG_UNIT_SF)
     );
+    // A townhome row is NOT an apartment floorplate: each unit is a
+    // full-depth party-wall slice with its own entrance — no corridor, no
+    // studio/1BR program. The row carries its true unit form (count + width
+    // from the generator) and a single honest mix row; the canvas renders
+    // party-wall slices from `th`, never computeFloorplate.
+    const thRow = isTownhome && b.units
+      ? {
+          units: Math.max(1, Math.round(b.units)),
+          unitWFt: mNum(resp.metrics?.unit_w_ft),
+          unitDFt: mNum(resp.metrics?.unit_d_ft),
+        }
+      : null;
     elements.push({
       // Pinned bars keep a STABLE id across regenerations (index-based ids
       // renumber every solve, which would break live-drag element identity)
       id: b.pinned ? `mfgen-pin-${b.pin_index ?? 0}` : `mfgen-bldg-${b.i}`,
       type: 'building',
-      name: isTownhome && b.units ? `Townhomes ${b.i} · ${b.units}u` : `Building ${b.i}`,
+      name: thRow ? `Townhomes ${b.i} · ${b.units}u` : `Building ${b.i}`,
       geometry: poly,
       properties: {
         areaSqFt: b.footprint_sqft,
         floors,
         stories: floors,
-        unitMix: generateUnitMixForCount(unitsForBar),
+        ...(thRow
+          ? {
+              th: thRow,
+              unitMix: [{
+                type: 'townhome' as const,
+                count: thRow.units,
+                avgSqft: thRow.units > 0 ? ((b.footprint_sqft ?? 0) * floors) / thRow.units : 0,
+                rentPerMonth: 0,
+                parkingRatio: 2.0, // garage + apron: each unit parks itself
+              }],
+            }
+          : { unitMix: generateUnitMixForCount(unitsForBar) }),
         use: 'residential',
         color: b.pinned ? '#2563EB' : '#3B82F6',
         pinned: b.pinned ?? false,
@@ -149,13 +174,23 @@ export function mfPlanToElements(resp: MfPlanResponse): {
   (resp.parking ?? []).forEach((p, idx) => {
     const poly = toCanvasPolygon(p.geom);
     if (!poly) return;
+    // Townhome "parking" is garage aprons — each dwelling parks itself off
+    // the lane. Striping them like an apartment surface lot is exactly the
+    // "small multifamily" misread; they render as plain driveway aprons.
     elements.push({
       id: `mfgen-park-${idx + 1}`,
       type: 'parking',
-      name: p.stalls ? `Parking · ${p.stalls} stalls` : 'Parking',
+      name: isTownhome
+        ? p.stalls ? `Aprons · ${p.stalls} stalls` : 'Garage aprons'
+        : p.stalls ? `Parking · ${p.stalls} stalls` : 'Parking',
       geometry: poly,
       // parkingSpaces is the canvas's stall-count vocabulary (bay labels)
-      properties: { stalls: p.stalls, parkingSpaces: p.stalls, color: '#CBD5E1' },
+      properties: {
+        stalls: p.stalls,
+        parkingSpaces: p.stalls,
+        color: isTownhome ? '#D8DEE6' : '#CBD5E1',
+        ...(isTownhome ? { apron: true } : {}),
+      },
       metadata: meta,
     });
   });

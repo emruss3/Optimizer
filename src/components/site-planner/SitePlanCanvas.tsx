@@ -6,7 +6,7 @@ import type { Element } from '../../engine/types';
 import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
 import { feetToMeters, metersToFeet } from '../../engine/units';
-import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut } from './planRendering';
+import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut, townhomeSlices } from './planRendering';
 import { computeFloorplate, UNIT_COLORS } from './unitLayout';
 import type { EdgeClassification } from '../../engine/setbacks';
 
@@ -346,6 +346,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   // decorative hatching across the whole polygon.
   const renderParkingStripes = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     if (element.type !== 'parking' && element.type !== 'parking-bay') return;
+    // Townhome garage aprons are private driveways, not a striped surface
+    // lot — striping them was part of the "small multifamily" misread.
+    if (element.properties?.apron) return;
     if (!parkingViz) return;
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 3) return;
@@ -530,6 +533,66 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
     // Skip when detail would be sub-3px noise
     if (UNIT_SPACING_M * zoom < 3) return;
+
+    // TOWNHOME ROWS are not apartment floorplates: each unit is a full-depth
+    // party-wall slice with its own entrance — no corridor, no studio/1BR
+    // program (the West Heiman reference: rows of ~19 ft plans fronting
+    // lanes). Render N equal slices with party walls and door ticks.
+    const th = element.properties?.th as
+      | { units: number; unitWFt?: number | null }
+      | undefined;
+    if (th && th.units >= 1) {
+      const slices = townhomeSlices(coords, th.units);
+      if (slices.length === 0) return;
+      const floors = Math.max(1, Math.floor((element.properties?.floors as number) || 1));
+      const areaSqFt = (element.properties?.areaSqFt as number) || 0;
+      const unitSf = areaSqFt > 0 ? (areaSqFt / th.units) * floors : 0;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(coords[0][0], coords[0][1]);
+      for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
+      ctx.closePath();
+      ctx.clip();
+      slices.forEach((slice, i) => {
+        // Alternating sage tones so each dwelling reads individually
+        ctx.fillStyle = i % 2 === 0 ? (UNIT_COLORS['townhome'] ?? '#A7D8B9') : '#BCE3C9';
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(slice.ring[0][0], slice.ring[0][1]);
+        for (let k = 1; k < slice.ring.length; k++) ctx.lineTo(slice.ring[k][0], slice.ring[k][1]);
+        ctx.closePath();
+        ctx.fill();
+        // Party walls: bolder than apartment unit lines — they are real walls
+        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+        ctx.lineWidth = 2 / zoom;
+        ctx.stroke();
+        // Door ticks on both long edges (entry one side, garage the other)
+        ctx.strokeStyle = 'rgba(30,41,59,0.55)';
+        ctx.lineWidth = 1.2 / zoom;
+        for (const e of slice.edges) {
+          ctx.beginPath();
+          ctx.moveTo(e.mid[0], e.mid[1]);
+          ctx.lineTo(e.mid[0] + e.inward[0] * 1.4, e.mid[1] + e.inward[1] * 1.4);
+          ctx.stroke();
+        }
+      });
+      // Per-unit SF tag when a unit is wide enough on screen
+      if (unitSf > 0 && feetToMeters(th.unitWFt ?? 19) * zoom >= 16) {
+        const fontSize = 8 / zoom;
+        ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+        ctx.fillStyle = '#166534';
+        ctx.globalAlpha = 0.95;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (const slice of slices) {
+          const cx = slice.ring.slice(0, 4).reduce((s, p) => s + p[0], 0) / 4;
+          const cy = slice.ring.slice(0, 4).reduce((s, p) => s + p[1], 0) / 4;
+          ctx.fillText(`${Math.round(unitSf).toLocaleString()} SF`, cx, cy);
+        }
+      }
+      ctx.restore();
+      return;
+    }
 
     const mix = element.properties?.unitMix as
       | Array<{ type: string; count: number; avgSqft: number }>
@@ -1024,11 +1087,21 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   // Screen-space legend (bottom-left) — names every color on the sheet so
   // open space and drive aisles aren't "unidentified green areas / grey lines".
   const renderLegend = useCallback((ctx: CanvasRenderingContext2D, cssH: number, hasLots: boolean) => {
+    // Townhome plans key their party-wall dwellings, not an apartment mix —
+    // showing "Studio · 550 SF" beside townhome rows was the giveaway that
+    // the product was being drawn as small multifamily.
+    const thEl = elements.find(e => (e.properties as Record<string, unknown> | undefined)?.th);
+    const thW = (thEl?.properties as { th?: { unitWFt?: number | null } } | undefined)?.th?.unitWFt;
+    const unitRows: Array<[string, string]> = thEl
+      ? [[`Townhome${thW ? ` · ${Math.round(thW)} ft wide` : ''}`, UNIT_COLORS['townhome']]]
+      : [
+          ['Studio · 550 SF', UNIT_COLORS['studio']],
+          ['1 Bed · 700 SF', UNIT_COLORS['1br']],
+          ['2 Bed · 1,100 SF', UNIT_COLORS['2br']],
+          ['3 Bed · 1,600 SF', UNIT_COLORS['3br']],
+        ];
     const entries: Array<[string, string]> = [
-      ['Studio · 550 SF', UNIT_COLORS['studio']],
-      ['1 Bed · 700 SF', UNIT_COLORS['1br']],
-      ['2 Bed · 1,100 SF', UNIT_COLORS['2br']],
-      ['3 Bed · 1,600 SF', UNIT_COLORS['3br']],
+      ...unitRows,
       ['Core / stairs', '#94A3B8'],
       ['Parking', '#E2E8F0'],
       ['Drive / aisle', '#CBD5E1'],
@@ -1071,7 +1144,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.fillText(label, x + pad + 16, rowY);
     });
     ctx.restore();
-  }, []);
+  }, [elements]);
 
   // Screen-space scale bar (drawn after the world transform is popped)
   const renderScaleBar = useCallback((ctx: CanvasRenderingContext2D, zoom: number, cssW: number, cssH: number) => {

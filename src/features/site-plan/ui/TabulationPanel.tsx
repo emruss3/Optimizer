@@ -12,6 +12,7 @@ const TYPE_LABELS: Record<UnitMixEntry['type'], string> = {
   '1br': '1 Bed',
   '2br': '2 Bed',
   '3br': '3 Bed',
+  townhome: 'Townhome',
 };
 
 interface Row {

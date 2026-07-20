@@ -190,6 +190,60 @@ export function pointsAlongSegment(seg: Segment, spacingM: number, insetM = 0): 
   return pts;
 }
 
+export interface TownhomeSlice {
+  /** Closed ring of the party-wall slice (world coordinates) */
+  ring: number[][];
+  /** Front/back long-edge midpoints with inward unit normals — door ticks */
+  edges: Array<{ mid: Pt; inward: Pt }>;
+}
+
+/**
+ * Party-wall slices for a townhome row: N equal FULL-DEPTH panels along the
+ * row's long axis. This is what makes a townhome a townhome — each unit spans
+ * the whole building depth with its own entrance; there is no corridor to
+ * slice an apartment mix around.
+ */
+export function townhomeSlices(ring: number[][], units: number): TownhomeSlice[] {
+  if (!ring || ring.length < 4 || units < 1) return [];
+  const theta = longestEdgeAngle(ring);
+  const c = Math.cos(-theta), s = Math.sin(-theta);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of ring) {
+    const lx = x * c - y * s;
+    const ly = x * s + y * c;
+    if (lx < minX) minX = lx;
+    if (lx > maxX) maxX = lx;
+    if (ly < minY) minY = ly;
+    if (ly > maxY) maxY = ly;
+  }
+  if (!(maxX > minX) || !(maxY > minY)) return [];
+  const w = (maxX - minX) / units;
+  const cb = Math.cos(theta), sb = Math.sin(theta);
+  const back = ([x, y]: number[]): Pt => [x * cb - y * sb, x * sb + y * cb];
+  const midY = (minY + maxY) / 2;
+  const out: TownhomeSlice[] = [];
+  for (let i = 0; i < units; i++) {
+    const x0 = minX + i * w;
+    const x1 = x0 + w;
+    const xm = (x0 + x1) / 2;
+    out.push({
+      ring: [[x0, minY], [x1, minY], [x1, maxY], [x0, maxY], [x0, minY]].map(back),
+      edges: [
+        { mid: back([xm, minY]), inward: dirTo(back([xm, minY]), back([xm, midY])) },
+        { mid: back([xm, maxY]), inward: dirTo(back([xm, maxY]), back([xm, midY])) },
+      ],
+    });
+  }
+  return out;
+}
+
+function dirTo(from: Pt, to: Pt): Pt {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const len = Math.hypot(dx, dy) || 1;
+  return [dx / len, dy / len];
+}
+
 export interface CurbCut {
   /** Apron centre on the parcel boundary */
   at: Pt;

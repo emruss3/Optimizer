@@ -10,6 +10,7 @@ import {
   sortByZOrder,
   pointsAlongSegment,
   computeCurbCut,
+  townhomeSlices,
 } from './planRendering';
 
 // Closed 40×20 rectangle, long axis along X
@@ -141,6 +142,54 @@ describe('PLAN_Z_ORDER contract', () => {
       { type: 'building' }, { type: 'greenspace' }, { type: 'parking' }, { type: 'unknown-type' },
     ]);
     expect(sorted.map(s => s.type)).toEqual(['greenspace', 'parking', 'building', 'unknown-type']);
+  });
+});
+
+describe('townhomeSlices (party-wall dwellings, not apartment floorplates)', () => {
+  const ringArea = (ring: number[][]) => {
+    let a = 0;
+    for (let i = 0; i < ring.length - 1; i++) {
+      a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1];
+    }
+    return Math.abs(a / 2);
+  };
+
+  it('slices a row into N equal FULL-DEPTH panels along the long axis', () => {
+    const slices = townhomeSlices(rect40x20, 4);
+    expect(slices).toHaveLength(4);
+    for (const s of slices) {
+      // Each panel: 10 wide × the FULL 20 depth — no corridor split
+      expect(ringArea(s.ring)).toBeCloseTo(200, 6);
+    }
+    // Panels tile the whole footprint
+    const total = slices.reduce((sum, s) => sum + ringArea(s.ring), 0);
+    expect(total).toBeCloseTo(800, 6);
+  });
+
+  it('door ticks point inward from both long edges of every panel', () => {
+    const slices = townhomeSlices(rect40x20, 2);
+    for (const s of slices) {
+      expect(s.edges).toHaveLength(2);
+      for (const e of s.edges) {
+        // stepping inward from the edge midpoint must move toward mid-depth
+        const before = Math.abs(e.mid[1] - 10);
+        const after = Math.abs(e.mid[1] + e.inward[1] * 2 - 10);
+        expect(after).toBeLessThan(before);
+      }
+    }
+  });
+
+  it('works in a rotated frame (slices stay perpendicular to the long axis)', () => {
+    const slices = townhomeSlices(rect40x20r30, 5);
+    expect(slices).toHaveLength(5);
+    const total = slices.reduce((sum, s) => sum + ringArea(s.ring), 0);
+    expect(total).toBeCloseTo(800, 4);
+    for (const s of slices) expect(ringArea(s.ring)).toBeCloseTo(160, 4);
+  });
+
+  it('degenerate inputs return no slices', () => {
+    expect(townhomeSlices([], 3)).toHaveLength(0);
+    expect(townhomeSlices(rect40x20, 0)).toHaveLength(0);
   });
 });
 
