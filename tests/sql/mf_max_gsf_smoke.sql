@@ -13,10 +13,13 @@ declare
   c1 jsonb;
   c2 jsonb;
   sf_context jsonb;
+  frontier_context jsonb;
   plan_a jsonb;
   plan_b jsonb;
+  frontier_plan jsonb;
   result jsonb;
   buildout jsonb;
+  gsf_option jsonb;
   bad_pin jsonb;
   base_row planner.context_snapshot%rowtype;
   high_ratio_id uuid;
@@ -28,11 +31,20 @@ declare
 begin
   buildout:=public.fn_max_buildout(553450,'multifamily');
   if buildout ? 'error' then raise exception 'max buildout failed: %',buildout; end if;
-  if (buildout->>'max_gsf')::numeric<100000
+  gsf_option:=buildout#>'{program_frontier,gsf_max_option}';
+  if buildout->>'contract_version'<>'max_buildout_v2'
+     or (buildout->>'max_gsf')::numeric<100000
      or (buildout->>'at_stories')::integer<2
      or nullif(buildout->>'at_unit_gsf','') is null
-     or nullif(buildout->>'units_at_max','') is null then
+     or nullif(buildout->>'units_at_max','') is null
+     or gsf_option is null then
     raise exception 'max-GSF frontier is incomplete: %',buildout;
+  end if;
+  if (buildout->>'at_stories')::integer<>(gsf_option->>'stories')::integer
+     or (buildout->>'at_unit_gsf')::numeric<>(gsf_option->>'unit_gsf')::numeric
+     or (buildout->>'units_at_max')::integer<>(gsf_option->>'units')::integer
+     or (buildout->>'footprint_at_max')::numeric<>(gsf_option->>'footprint_sqft')::numeric then
+    raise exception 'compatibility aliases drifted from program frontier: %',buildout;
   end if;
 
   c1:=public.fn_compile_planner_context(553450,'multifamily',intent);
@@ -122,6 +134,36 @@ begin
   from elems a join elems b on (a.kind,a.id)<(b.kind,b.id);
   if overlap_sqft>1 then
     raise exception 'building/parking/drive overlap exceeds tolerance: % sqft',overlap_sqft;
+  end if;
+
+  -- Regression fixture from the 2026-07-20 incident. A frontier-only payload
+  -- previously lost at_stories and silently generated one story / 24.5%% GSF.
+  frontier_context:=public.fn_compile_planner_context(
+    669046,'multifamily',jsonb_build_object('frontier_contract_nonce',gen_random_uuid())
+  );
+  if frontier_context ? 'error' then
+    raise exception '669046 context compile failed: %',frontier_context;
+  end if;
+  if frontier_context#>>'{solver_brief,max_buildout,contract_version}'<>'max_buildout_v2'
+     or (frontier_context#>>'{solver_brief,max_buildout,at_stories}')::integer<>4
+     or (frontier_context#>>'{solver_brief,max_buildout,program_frontier,gsf_max_option,stories}')::integer<>4 then
+    raise exception '669046 max-buildout contract lost its four-story frontier: %',frontier_context#>'{solver_brief,max_buildout}';
+  end if;
+
+  frontier_plan:=public.fn_generate_mf_site_plan_v2(
+    669046,'multifamily',17,'[]'::jsonb,null,false,(frontier_context->>'context_id')::uuid
+  );
+  if frontier_plan ? 'error' then
+    raise exception '669046 frontier solve failed: %',frontier_plan;
+  end if;
+  if (frontier_plan#>>'{metrics,floors}')::integer<>4
+     or (frontier_plan#>>'{metrics,gsf_capture_pct}')::numeric<60
+     or not (frontier_plan->'flags' ? 'max_buildout_program_frontier_consumed') then
+    raise exception '669046 regressed away from the max-GSF frontier: %',frontier_plan;
+  end if;
+  if (frontier_plan#>>'{metrics,stalls}')::integer<(frontier_plan#>>'{metrics,stalls_required}')::integer
+     or (frontier_plan#>>'{metrics,drive_components}')::integer<>1 then
+    raise exception '669046 frontier plan lost hard parking/access: %',frontier_plan;
   end if;
 
   bad_pin:=jsonb_build_array(jsonb_build_object(
