@@ -19,7 +19,7 @@
     "e2e:ci": "playwright test --reporter=line",
     "db:smoke": "psql -v ON_ERROR_STOP=1 \"$SUPABASE_DB_URL\" -f tests/sql/smoke.sql",
     "db:smoke:mf-gsf": "psql -v ON_ERROR_STOP=1 \"$SUPABASE_DB_URL\" -f tests/sql/mf_max_gsf_smoke.sql && psql -v ON_ERROR_STOP=1 \"$SUPABASE_DB_URL\" -f tests/sql/mf_max_gsf_669046_geometry_smoke.sql && psql -v ON_ERROR_STOP=1 \"$SUPABASE_DB_URL\" -f tests/sql/mf_program_contract_smoke.sql",
-    "db:smoke:planner-program-frontage": "psql -v ON_ERROR_STOP=1 \"$SUPABASE_DB_URL\" -f tests/sql/planner_context_program_frontage_smoke.sql",
+    "db:smoke:planner-program-frontage": "psql -v ON_ERROR_STOP=1 \"$SUPABASE_DB_URL\" -f tests/sql/planner_context_program_frontage_smoke.sql && psql -v ON_ERROR_STOP=1 \"$SUPABASE_DB_URL\" -f tests/sql/unit_spec_security_smoke.sql",
     "test:playwright": "NODE_OPTIONS='--loader ts-node/esm' playwright test",
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
