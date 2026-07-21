@@ -1,0 +1,93 @@
+name: Battery Gate
+
+# The acceptance battery as a PRE-MERGE gate (audit 2026-07-21, Ordered Path
+# item 2). Fixture mode replays committed real server responses through the
+# real client — mapper → zero-overlap validator → render — and fails the PR
+# when any battery parcel violates scripts/visual-battery/expectations.json
+# (server plan must render at/above its capture floor; defective-response
+# parcels must refuse LOUDLY and fall back to the worker).
+#
+# The ritual this enforces: a PR that changes server behavior must refresh
+# scripts/visual-battery/fixtures/mock_store.json and ratchet the floors UP.
+# Floors never go down; yesterday's numbers are the floor.
+#
+# The nightly live job runs the same battery against the real backend (solver
+# regressions that fixtures can't see) when BATTERY_SUPABASE_URL /
+# BATTERY_SUPABASE_ANON_KEY secrets are configured; otherwise it no-ops.
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-gate:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+      - name: Start mock Supabase (committed fixtures)
+        run: |
+          node scripts/visual-battery/mock-supabase.mjs &
+          npx wait-on -t 20000 tcp:54321
+      - name: Start app (dev server against the mock)
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: battery-gate-local-mock
+        run: |
+          npx vite --port 5199 --strictPort &
+          npx wait-on -t 60000 http://localhost:5199
+      - name: Run battery (ASSERT mode)
+        run: ASSERT=1 SHOTS_DIR=battery-out node scripts/visual-battery/battery.mjs
+      - name: Upload screenshots + results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: battery-gate-${{ github.run_id }}
+          path: battery-out/
+          retention-days: 14
+
+  live-battery:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run live battery (3 fixed + 1 random cohort parcel, advisory)
+        env:
+          BATTERY_SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
+          BATTERY_SUPABASE_ANON_KEY: ${{ secrets.BATTERY_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$BATTERY_SUPABASE_URL" ] || [ -z "$BATTERY_SUPABASE_ANON_KEY" ]; then
+            echo "Live battery skipped: BATTERY_SUPABASE_URL / BATTERY_SUPABASE_ANON_KEY secrets not configured."
+            echo "Fixture-gate coverage still runs on every PR; add the secrets to enable the nightly solver immune system."
+            exit 0
+          fi
+          VITE_SUPABASE_URL="$BATTERY_SUPABASE_URL" VITE_SUPABASE_ANON_KEY="$BATTERY_SUPABASE_ANON_KEY" npx vite --port 5199 --strictPort &
+          npx wait-on -t 60000 http://localhost:5199
+          ASSERT=1 LIVE_RANDOM=1 SHOTS_DIR=battery-out node scripts/visual-battery/battery.mjs
+      - name: Upload screenshots + results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: battery-live-${{ github.run_id }}
+          path: battery-out/
+          retention-days: 14

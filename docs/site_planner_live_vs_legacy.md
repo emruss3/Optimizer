@@ -121,3 +121,64 @@ The site planner is reachable through these production paths:
 
 All three paths lead to `EnterpriseSitePlannerShell.tsx`, which is the main production site planner component.
 
+
+---
+
+## Bugged-RPC reference classification (audit 2026-07-21, Ordered Path item 4)
+
+The legacy RPCs `get_buildable_envelope`, `get_parcel_geometry_3857`, and
+`score_pad` carry projection-bugged EPSG:3857 math and are BANNED from live
+paths (the compiled planner context is the sole envelope/measurement source).
+All **9** remaining references were traced and classified — **none is in a
+live measurement path**:
+
+| # | Site | RPC | Class | Status |
+|---|------|-----|-------|--------|
+| 1 | `components/SupabaseIntegrationExample.tsx:77` | get_buildable_envelope | display (code sample string in an unmounted demo) | dead |
+| 2 | `services/parcelGeometry.ts:91` | get_parcel_geometry_3857 | service method — zero runtime consumers (one TYPE-only import in unmounted `SetbackOverlay`; own test file) | dead, stamped |
+| 3 | `services/parcelAnalysis.ts:116` | get_buildable_envelope | deprecated service, demo-only | dead, stamped |
+| 4 | `services/parcelAnalysis.ts:156` | score_pad | deprecated service, demo-only | dead, stamped |
+| 5 | `services/parcelAnalysis.ts:263` | get_parcel_geometry_3857 | deprecated service, demo-only | dead, stamped |
+| 6 | `features/site-planner/engine/scorePad.ts:29` | score_pad | module with zero importers | dead, stamped |
+| 7 | `lib/rpc.ts:31` | score_pad | dead export (`sb` client re-export in the same file IS live via `map/ParcelSource.ts` — display only) | dead, stamped |
+| 8 | `lib/parcelRpc.ts:23` | get_parcel_geometry_3857 | deprecated wrapper, demo-only | dead, stamped |
+| 9 | `lib/parcelRpc.ts:55` | get_buildable_envelope | deprecated wrapper, demo-only | dead, stamped |
+
+Rule reaffirmed: anything that MEASURES (envelope, setbacks, areas) must come
+from the compiled planner context / server plan responses (EPSG:2274 truth).
+Display-only mounts of these files are tolerated but stamped; new imports of
+any stamped file are a review rejection.
+
+## envelope3857 staging decision (audit 2026-07-21, Ordered Path item 4)
+
+**Decided: the brief's `geometry.buildable_envelope` is PRIMARY** in
+`useBuildableEnvelope`; the client's variable-setback construction is the
+fallback (briefs without an envelope), and edge classification remains for
+display (F/R/S labels). Rationale: the brief envelope is computed by the
+context engine in EPSG:2274 true feet with directional setbacks off the REAL
+frontage; the client construction offsets in Web-Mercator metres, which
+under-applies setbacks by ~19% in true feet at Nashville's latitude and uses
+a frontage heuristic. `rpcMetrics.envelopeSource` records which path served
+each plan (`brief_2274_true` vs `client_variable_setbacks`).
+
+## Standing decisions (2026-07-21, recorded from the coordination session)
+
+**1. Degraded mode blocks massing entirely — DECIDED: YES.**
+No compiled context ⇒ no massing, ever: every gate is an unconditional
+hard-block behind the Retry screen (the `ALLOW_DEGRADED_DRAFT` bypass was
+deleted in PR #74; verified zero references remain). Rationale: warm compiles
+cost 11 ms, so a missing context is a real outage, not a latency case — and
+rendering on default assumptions is how SF setbacks once shipped under
+apartment bars. The single sanctioned exception is the explicit replay of a
+PRE-CONTRACT saved candidate: historical data, watermarked as a draft, never
+persisted, never auto-selected.
+
+**2. Auth/feedback flow — DECIDED: next client workstream after the battery
+gate lands.** Feedback events have been at zero since day one; every plan
+generated without them is training data lost. Sequence: (a) stopgap
+insert-only RLS policy so anonymous sessions can emit feedback events
+(no reads, session-keyed, rate-limited) — the loop starts collecting before
+sign-in exists as a habit; (b) the shipped AuthChip (PR #66) becomes a soft
+prompt at first plan generation, attaching user identity to feedback and
+saved schemes. RLS completion (currently 14/43 tables) remains the gate
+before EXTERNAL users — unchanged.

@@ -4,11 +4,19 @@
 // Unknown requests are logged to misses.log and answered 404 — the recorder.
 import http from 'node:http';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const STORE_PATH = process.env.MOCK_STORE || '/tmp/claude-0/-home-user-Optimizer/95899e1b-c1d4-5d12-92bb-5bf376ae4c76/scratchpad/mock_store.json';
-const MISS_LOG = '/tmp/claude-0/-home-user-Optimizer/95899e1b-c1d4-5d12-92bb-5bf376ae4c76/scratchpad/mock_misses.log';
+// Default store = the committed fixtures, so `node mock-supabase.mjs` works
+// out of the box (CI gate). MOCK_STORE overrides for a local refresh cycle.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const STORE_PATH = process.env.MOCK_STORE || path.join(HERE, 'fixtures', 'mock_store.json');
+const LOG_DIR = process.env.MOCK_LOG_DIR || HERE;
+const MISS_LOG = path.join(LOG_DIR, 'mock_misses.log');
+const log = (file, line) => { try { fs.appendFileSync(file, line); } catch { /* logging is never fatal */ } };
 let store = {};
 try { store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')); } catch { store = {}; }
+console.log(`mock store: ${STORE_PATH} (${Object.keys(store).length} keys)`);
 
 const keyFor = (path, body) => {
   // RPC calls key on fn name + the discriminating args; table reads key on path.
@@ -38,19 +46,19 @@ http.createServer((req, res) => {
     }
     const key = keyFor(req.url, body);
     if (key in store) {
-      fs.appendFileSync(MISS_LOG.replace('misses', 'hits'), `${Date.now()} HIT ${key}\n`);
+      log(MISS_LOG.replace('misses', 'hits'), `${Date.now()} HIT ${key}\n`);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify(store[key]));
       return;
     }
     // Table reads default to empty sets rather than errors (site_plans etc.)
     if (!req.url.includes('/rpc/')) {
-      fs.appendFileSync(MISS_LOG, `TABLE ${req.method} ${req.url}\n`);
+      log(MISS_LOG, `TABLE ${req.method} ${req.url}\n`);
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end('[]');
       return;
     }
-    fs.appendFileSync(MISS_LOG, `${key}\t${req.url}\t${body.slice(0, 300)}\n`);
+    log(MISS_LOG, `${key}\t${req.url}\t${body.slice(0, 300)}\n`);
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ message: `mock miss: ${key}` }));
   });

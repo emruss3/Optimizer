@@ -24,6 +24,10 @@ type RpcMetrics = {
   };
   edges?: unknown;
   hasZoning?: boolean;
+  /** Which construction served the envelope (audit 2026-07-21 item 4):
+   *  'brief_2274_true' = the context engine's directional envelope,
+   *  'client_variable_setbacks' = the Mercator-frame fallback. */
+  envelopeSource?: 'brief_2274_true' | 'client_variable_setbacks';
 };
 
 export const useBuildableEnvelope = (parcel?: SelectedParcel | null, frontageBearingDeg?: number | null) => {
@@ -128,9 +132,15 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null, frontageBea
           );
         }
 
-        // The variable-setback envelope (built from the brief's ordinance
-        // values) is authoritative; the brief's own envelope is the fallback.
-        const finalEnvelope = improvedEnvelope ?? briefEnvelope3857;
+        // STAGING DECISION (audit 2026-07-21 item 4): the brief's envelope is
+        // PRIMARY — the context engine computes it in EPSG:2274 true feet with
+        // directional setbacks off the REAL frontage, so its offsets carry no
+        // Mercator scale distortion (the client construction offsets in
+        // Web-Mercator metres, ~19% short in true feet at this latitude, off a
+        // frontage heuristic). The variable-setback construction remains the
+        // fallback for briefs without an envelope; edge classes are still
+        // computed for display (F/R/S labels).
+        const finalEnvelope = briefEnvelope3857 ?? improvedEnvelope;
         if (!finalEnvelope) {
           setStatus('invalid');
           setError('No buildable envelope could be derived from the compiled context.');
@@ -147,6 +157,7 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null, frontageBea
           },
           edges: edgeClasses,
           hasZoning: hc.max_far != null && hc.max_far > 0,
+          envelopeSource: briefEnvelope3857 ? 'brief_2274_true' : 'client_variable_setbacks',
         });
         setStatus('ready');
         setError(null);

@@ -1740,6 +1740,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.designParameters, config.zoning]);
 
+  // Test evidence hook (dev builds only): the headless battery gate reads
+  // what ACTUALLY rendered — who solved it, the basis line, the violation
+  // codes, the capture — instead of scraping pixels. Production bundles
+  // never ship it.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __planEvidence?: object }).__planEvidence = {
+      solvedBy: planLineage?.solvedBy ?? null,
+      basis: planBasis,
+      violationCodes: violations.map(v => v.code),
+      utilizationPct:
+        !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
+          ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
+          : null,
+    };
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode]);
+
   const plannerParcel = isValidParcel(parcel)
     ? parcel
     : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356);
