@@ -612,6 +612,12 @@ const FLAG_TEXT: Record<string, string> = {
     'Every point of every building is within 150 ft of drive pavement (IFC 503.1.1 hose-lay measure, sampled per 20 ft).',
   fire_access_exceeds_150ft:
     'Some building point is more than 150 ft from drive pavement — fire apparatus access needs attention (IFC 503.1.1 measure).',
+  designed_central_court_v1:
+    'This scheme includes a designed courtyard (protected green — never reclaimed for parking or footprint), chosen by comparing complete solves.',
+  amenity_program_ground_floor_v1:
+    'A clubhouse occupies the ground floor of the building nearest the arrival; its area is honestly excluded from residential GSF.',
+  pool_court_in_central_green_v1:
+    'A pool court sits inside the designed courtyard.',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */

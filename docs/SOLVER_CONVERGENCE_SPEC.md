@@ -131,6 +131,43 @@ P1-4 delivered the honest harness the falsification demanded (migrations
   82.6%; acceptance gate ratcheted 80 → 85. Remaining residuals: 2
   tiny-shape packer misses, 1 bridge-blocked — all structured.
 
+### Design grammar v2.2 shipped (same date): the courtyard is a regime
+
+Owner directive (screenshot review): "No one would build 3 separate
+buildings with just a bunch of random driveways and parking… public
+space, a pool, amenities. Building first, parking and greenspace /
+amenities." Root cause was explicit in the code: the capture push set
+`use_court := false` on every inter-bar gap ("every gap is a parking
+street") and the amenity conversion carried
+`amenity_bar_conversion_disabled_max_gsf`. Shipped (migrations
+`20260720000029..32`):
+
+- **Amenity program (all regimes)**: at ≥ 45k residential GSF, a
+  clubhouse occupies the ground floor of the bar nearest the verified
+  arrival; `amen_gsf` subtracts from residential GSF in every
+  computation (the program's capture cost is named, e.g. 669046
+  100.0 → 98.5). Pool court placed inside the designed green when one
+  exists. Receipts: `amenity_gsf`, `pool_court_sf`, two flags.
+- **The courtyard is a REGIME, not an in-band mutation.** Two live
+  geometric iterations were falsified the same way the P1-3 orientation
+  proxy was: a full-width court band severed wide sites (558613 measured
+  100 → 60.7), and a bounded end-window court stranded a bar behind it.
+  The court grammar (bounded 120–180 ft courtyard at the band end away
+  from the arrival spine, street continuing beside it, phase-2b
+  reallocation blocked from reclaiming it) now activates only under
+  `p_regime = 'courtyard'`; surface stays byte-baseline; tuck stays
+  courtless.
+- **Dispatcher v2**: surface → courtyard leg (sites ≥ 60k sqft with ≥ 2
+  bars) → tuck challenge. Courtyard is selected only when it actually
+  placed the court AND kept ≥ 93% of surface GSF — the design-value
+  policy is a named receipt (`design_policy:
+  court_selected_within_7pct_of_surface_gsf`), never a silent trade.
+- **Measured (random-24)**: 19/23 solving, 21/23 plan-or-proven (91.3%)
+  — identical to baseline, gate 90 holds. Courtyard chosen on 4 parcels
+  (679632: 7,964 SF court at 99.9% capture — zero cost; 385519: 5,975 SF
+  court at unchanged capture; 412554: court + clubhouse + pool for 1.3
+  points). 558613 keeps its tuck solve at 98.4 (amenity cost only).
+
 ### P1-6 shipped (same date): verified frontage from the parcel fabric
 
 `fn_parcel_row_frontage` (migrations `20260720000024..26`): a boundary

@@ -1106,6 +1106,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ['Parking', '#E2E8F0'],
       ['Drive / aisle', '#CBD5E1'],
       ['Open space', '#BBF7D0'],
+      ['Amenity / pool', '#F59E0B'],
       // Setback edge key — colors must match renderEdgeSetbacks exactly
       ['Front setback', '#2563EB'],
       ['Rear setback', '#D97706'],
