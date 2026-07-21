@@ -17,6 +17,9 @@ interface SitePlanCanvasProps {
   processedGeometry: { geometry: any; bounds: { minX: number; minY: number; maxX: number; maxY: number } } | null;
   buildableEnvelope?: import('geojson').Polygon;
   edgeClassifications?: EdgeClassification[];
+  /** WO-1c: landlocked parcels have no street to cut a curb into — the
+   *  apron/throat rendering is suppressed instead of drawing fiction. */
+  suppressCurbCut?: boolean;
   setbacks?: { front?: number; side?: number; rear?: number };
   isVertexEditing?: boolean;
   selectedVertex?: { elementId: string; vertexIndex: number } | null;
@@ -47,6 +50,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   processedGeometry,
   buildableEnvelope,
   edgeClassifications,
+  suppressCurbCut,
   setbacks,
   isVertexEditing = false,
   selectedVertex = null,
@@ -998,8 +1002,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Curb cut: white apron + throat dashes where the main drive meets the
     // parcel line, so the drive stops dead-ending visually. Heuristic edge
     // until true frontage (G0) lands.
-    const mainDrive = elements.find(e => e.type === 'circulation' && e.name === 'Main Drive')
-      ?? elements.find(e => e.type === 'circulation');
+    const mainDrive = suppressCurbCut
+      ? undefined
+      : elements.find(e => e.type === 'circulation' && e.name === 'Main Drive')
+        ?? elements.find(e => e.type === 'circulation');
     const driveRing = mainDrive?.geometry?.coordinates?.[0];
     if (driveRing) {
       const cut = computeCurbCut(driveRing as number[][], parcelRing);
@@ -1035,7 +1041,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         ctx.restore();
       }
     }
-  }, [processedGeometry, edgeClassifications, elements]);
+  }, [processedGeometry, edgeClassifications, elements, suppressCurbCut]);
 
   // Screen-space north arrow (top-right). World +Y is projected north — the
   // canvas flips Y, so "up" on screen is north and the glyph is static.

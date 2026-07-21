@@ -1,3 +1,8 @@
+// DEPRECATED (WO 2026-07-20 item 2c): the live planning flow gets its
+// envelope from the compiled solver brief (geometry.buildable_envelope)
+// — never from these RPCs. Grep-verified absent from features/site-plan,
+// workers, and engine. Remaining callers are demo/analysis surfaces only;
+// do not add new callers.
 import { sb } from './rpc';
 import { createRpcParams, createBatchRpcParams, type OgcFid, type ParcelId } from '../utils/parcelId';
 

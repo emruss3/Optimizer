@@ -214,3 +214,65 @@ describe('optimize (simulated annealing)', () => {
     expect(low.bestMetrics.siteCoveragePct).toBeLessThan(16);
   });
 });
+
+// ── WO-0: the worker's widened diet ─────────────────────────────────────────
+
+describe('WO-0: brief-wins contract + capture-primary objective', () => {
+  const briefFull = {
+    generationAllowed: true,
+    hardConstraints: { maxFar: 1.2, maxHeightFt: 55, maxCoveragePct: 45 },
+    parking: { ratio: 1.25, stallWidthFt: 9, stallDepthFt: 18, aisleWidthFt: 24 },
+    maxBuildout: { maxGsf: 90000, atStories: 5 },
+  };
+
+  it('records every brief-sourced input and NO legacy use when the brief is complete', () => {
+    const r = solveConstructive({
+      envelope, zoning, designParams,
+      parkingSpec: { stallW: 2.7432, stallD: 5.4864, aisleW: 7.3152, anglesDeg: [0] },
+      seed: 5,
+      solverBrief: briefFull,
+    });
+    expect(r.contract).toBeTruthy();
+    expect(r.contract!.briefFieldsUsed).toEqual(
+      expect.arrayContaining(['maxFar', 'maxCoveragePct', 'maxHeightFt', 'parkingRatio', 'parkingSpec', 'maxGsf'])
+    );
+    expect(r.contract!.legacyFieldsUsed).toEqual([]);
+  });
+
+  it('flags legacy fallback per-field when the brief is partial', () => {
+    const r = solveConstructive({
+      envelope, zoning, designParams,
+      parkingSpec: { stallW: 2.7432, stallD: 5.4864, aisleW: 7.3152, anglesDeg: [0] },
+      seed: 5,
+      solverBrief: { generationAllowed: true, hardConstraints: { maxFar: 1.2 } },
+    });
+    expect(r.contract!.briefFieldsUsed).toContain('maxFar');
+    expect(r.contract!.legacyFieldsUsed).toEqual(
+      expect.arrayContaining(['maxCoveragePct', 'maxHeightFt', 'parkingRatio', 'parkingSpec'])
+    );
+  });
+
+  it('no brief → no contract receipt (nothing to deprecate against)', () => {
+    const r = solveConstructive({ envelope, zoning, designParams, seed: 5 });
+    expect(r.contract).toBeUndefined();
+  });
+
+  it('WO-0d: a coverage-capped site CLIMBS floors toward the max-buildout GSF instead of settling', () => {
+    const withTarget = solveConstructive({
+      envelope, zoning, designParams,
+      seed: 9,
+      solverBrief: {
+        generationAllowed: true,
+        maxBuildout: { maxGsf: 140000, atStories: 6 },
+        hardConstraints: { maxFar: 2.0, maxHeightFt: 75, maxCoveragePct: 45 },
+      },
+    });
+    const without = solveConstructive({ envelope, zoning, designParams, seed: 9 });
+    const floorsOf = (r: typeof withTarget) =>
+      r.bestBuildings.length ? Math.max(...r.bestBuildings.map(b => b.floors ?? 1)) : 0;
+    expect(floorsOf(withTarget)).toBeGreaterThanOrEqual(floorsOf(without));
+    expect(withTarget.bestMetrics?.totalBuiltSF ?? 0).toBeGreaterThanOrEqual(
+      without.bestMetrics?.totalBuiltSF ?? 0
+    );
+  });
+});

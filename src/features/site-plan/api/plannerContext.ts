@@ -490,14 +490,107 @@ function maxBuildoutStories(brief: SolverBrief): number | null {
  * placed there as a compatibility bridge. Local precedent stories never cap
  * quantity, and whole-building OBB depth is never passed as apartment-bar depth.
  */
-export function briefToWorkerBrief(resp: PlannerContextResponse): import('../../../engine/optimizer').WorkerSolverBrief {
+export function briefToWorkerBrief(
+  resp: PlannerContextResponse,
+  /** WO-1b interim: directly-fetched fn_parcel_frontage result. Used ONLY
+   *  while the brief's front_edge is still a placeholder — the compiled
+   *  brief wins the moment the compiler maps real frontage into it. */
+  frontage?: import('./parcelFrontage').ParcelFrontage | null
+): import('../../../engine/optimizer').WorkerSolverBrief {
   const priors = resp.solver_brief.precedent_priors;
   const target = priors.underwrite_target;
   const quantityStories = maxBuildoutStories(resp.solver_brief);
   const depthIsWholeBuildingObb =
     priors.depth_semantics === 'whole_building_oriented_bounding_box_not_bar_depth' ||
     priors.bar_depth_source === 'typology_or_program_spec_only';
+  const brief = resp.solver_brief as unknown as Record<string, unknown>;
+  const hc = resp.solver_brief.hard_constraints;
+  const parking = resp.solver_brief.parking;
+  const mb = resp.solver_brief.max_buildout as
+    | {
+        max_gsf?: number | null;
+        at_stories?: number | null;
+        binding_constraint?: string | null;
+        stories_ladder?: Array<{ stories?: number | null; max_gsf?: number | null; units?: number | null }>;
+      }
+    | undefined;
+  const unitProgramRaw = brief.unit_program as
+    | {
+        corridor_clear_ft?: number | null;
+        implied_bar_depth_ft?: number | null;
+        units?: Array<{
+          type: string; gsf?: number | null; width_ft?: number | null; depth_ft?: number | null;
+          bedrooms?: number | null; parking_ratio?: number | null; default_mix_pct?: number | null;
+        }>;
+      }
+    | undefined;
+  const geometry = brief.geometry as
+    | { front_edge_is_placeholder?: boolean; front_edge?: { bearing_deg?: number | null }; landlocked?: boolean }
+    | undefined;
+  const briefHasRealFrontage = geometry?.front_edge_is_placeholder === false;
+  const frontEdge = briefHasRealFrontage
+    ? {
+        bearingDeg: geometry?.front_edge?.bearing_deg ?? null,
+        landlocked: geometry?.landlocked ?? false,
+        isPlaceholder: false,
+      }
+    : frontage
+      ? {
+          bearingDeg: frontage.primary?.bearing_deg ?? null,
+          landlocked: frontage.landlocked === true,
+          isPlaceholder: false,
+        }
+      : undefined;
   return {
+    maxBuildout: mb
+      ? {
+          maxGsf: mb.max_gsf ?? null,
+          atStories: mb.at_stories ?? null,
+          bindingConstraint: mb.binding_constraint ?? null,
+          storiesLadder: (mb.stories_ladder ?? []).map(r => ({
+            stories: r.stories ?? null,
+            maxGsf: r.max_gsf ?? null,
+            units: r.units ?? null,
+          })),
+        }
+      : undefined,
+    hardConstraints: hc
+      ? {
+          frontSetbackFt: hc.front_setback_ft ?? null,
+          sideSetbackFt: hc.side_setback_ft ?? null,
+          rearSetbackFt: hc.rear_setback_ft ?? null,
+          maxFar: hc.max_far ?? null,
+          maxHeightFt: hc.max_height_ft ?? null,
+          maxDensityDuAcre: hc.max_density_du_acre ?? null,
+          maxCoveragePct: hc.max_building_coverage_pct ?? hc.max_coverage_pct ?? null,
+          maxImperviousPct: (hc as unknown as { max_impervious_pct?: number | null }).max_impervious_pct ?? null,
+          minOpenSpacePct: (hc as unknown as { min_open_space_pct?: number | null }).min_open_space_pct ?? null,
+        }
+      : undefined,
+    parking: parking
+      ? {
+          ratio: parking.ratio ?? null,
+          stallWidthFt: parking.stall_width_ft ?? null,
+          stallDepthFt: parking.stall_depth_ft ?? null,
+          aisleWidthFt: parking.aisle_width_ft ?? null,
+        }
+      : undefined,
+    unitProgram: unitProgramRaw
+      ? {
+          corridorClearFt: unitProgramRaw.corridor_clear_ft ?? null,
+          impliedBarDepthFt: unitProgramRaw.implied_bar_depth_ft ?? null,
+          units: (unitProgramRaw.units ?? []).map(u => ({
+            type: u.type,
+            gsf: u.gsf ?? null,
+            widthFt: u.width_ft ?? null,
+            depthFt: u.depth_ft ?? null,
+            bedrooms: u.bedrooms ?? null,
+            parkingRatio: u.parking_ratio ?? null,
+            defaultMixPct: u.default_mix_pct ?? null,
+          })),
+        }
+      : undefined,
+    frontEdge,
     generationAllowed: resp.generation_allowed,
     precedent: {
       storiesP50: quantityStories ?? priors.stories?.p50 ?? null,
@@ -618,6 +711,8 @@ const FLAG_TEXT: Record<string, string> = {
     'A clubhouse occupies the ground floor of the building nearest the arrival; its area is honestly excluded from residential GSF.',
   pool_court_in_central_green_v1:
     'A pool court sits inside the designed courtyard.',
+  worker_brief_inputs_v2:
+    'The fallback solver ran entirely on the compiled brief (max-buildout target, ordinance constraints, parking spec) — no legacy side-channel inputs.',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */

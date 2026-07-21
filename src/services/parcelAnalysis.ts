@@ -1,3 +1,6 @@
+// DEPRECATED (WO 2026-07-20 item 2c): get_buildable_envelope here serves
+// legacy demo/analysis surfaces only. The live planner solves on the
+// compiled brief envelope. Do not add new callers.
 // © 2025 ER Technologies. All rights reserved.
 // Proprietary and confidential. Not for distribution.
 
