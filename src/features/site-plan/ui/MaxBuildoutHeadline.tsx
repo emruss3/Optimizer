@@ -21,7 +21,15 @@ const MaxBuildoutHeadline: React.FC<{
   /** Solver's own verdict + proof — displayed verbatim when present. */
   optimizationStatus?: string | null;
   optimizationProof?: Record<string, unknown> | null;
-}> = ({ buildout, achievedGsf, currentStories, optimizationStatus, optimizationProof }) => {
+  /** WO3-1b: massing program's construction type (V-A, podium, …). The chip
+   *  sits with stories; ladder rungs past its max_stories get the boundary
+   *  hint ("⇒ III-A/podium"). */
+  constructionType?: {
+    type?: string | null;
+    max_stories?: number | null;
+    description?: string | null;
+  } | null;
+}> = ({ buildout, achievedGsf, currentStories, optimizationStatus, optimizationProof, constructionType }) => {
   if (!buildout || buildout.max_gsf <= 0) return null;
 
   const capture =
@@ -47,8 +55,17 @@ const MaxBuildoutHeadline: React.FC<{
           {fmt(buildout.max_gsf)} GSF theoretical upper bound
         </span>
         <span className="text-gray-600">
-          {' '}· {fmt(buildout.units_at_max)}u @ {fmt(buildout.at_unit_gsf)} SF · {buildout.at_stories} st ·{' '}
-          binding: {bindingLabel(buildout.binding_constraint)}
+          {' '}· {fmt(buildout.units_at_max)}u @ {fmt(buildout.at_unit_gsf)} SF · {buildout.at_stories} st
+          {constructionType?.type && (
+            <span
+              className="ml-1 inline-block align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
+              title={constructionType.description ?? `Construction type ${constructionType.type}`}
+              data-testid="construction-type-chip"
+            >
+              {constructionType.type}
+            </span>
+          )}
+          {' '}· binding: {bindingLabel(buildout.binding_constraint)}
         </span>
       </div>
       {capture != null && gap != null && (
@@ -77,14 +94,20 @@ const MaxBuildoutHeadline: React.FC<{
           <thead>
             <tr className="text-[10px] uppercase tracking-wide text-gray-400">
               <th className="text-left font-medium pr-3">Stories</th>
-              {buildout.stories_ladder.map(r => (
-                <th
-                  key={r.stories}
-                  className={`text-right font-semibold px-2 ${r.stories === (currentStories ?? -1) ? 'text-blue-700' : ''}`}
-                >
-                  {r.stories}
-                </th>
-              ))}
+              {buildout.stories_ladder.map(r => {
+                const overType =
+                  constructionType?.max_stories != null && r.stories > constructionType.max_stories;
+                return (
+                  <th
+                    key={r.stories}
+                    title={overType ? `Above ${constructionType?.type ?? 'type'} limit ⇒ III-A/podium construction` : undefined}
+                    className={`text-right font-semibold px-2 ${r.stories === (currentStories ?? -1) ? 'text-blue-700' : ''} ${overType ? 'text-purple-700' : ''}`}
+                  >
+                    {r.stories}
+                    {overType ? '†' : ''}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -107,6 +130,12 @@ const MaxBuildoutHeadline: React.FC<{
           </tbody>
         </table>
       )}
+      {constructionType?.max_stories != null &&
+        buildout.stories_ladder.some(r => r.stories > (constructionType.max_stories as number)) && (
+          <div className="text-[10px] text-purple-700 mt-0.5">
+            † above {constructionType.type ?? 'type'} limit — requires III-A/podium construction
+          </div>
+        )}
 
       {buildout.entitlement_capacity?.max_units != null && (
         <div className="mt-1 text-[10px] text-gray-400">

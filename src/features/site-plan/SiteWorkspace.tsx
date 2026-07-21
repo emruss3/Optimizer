@@ -44,6 +44,7 @@ import {
   type PlannerContextResponse,
 } from './api/plannerContext';
 import { fetchParcelFrontage, type ParcelFrontage } from './api/parcelFrontage';
+import { fetchMassingProgram, type MassingProgram } from './api/massingProgram';
 import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, type PlanLineage } from './ui/ContextLineage';
 import SchemesRail from './ui/SchemesRail';
@@ -78,7 +79,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     normalizedGeometry,
     isValidParcel: hasValidGeometry
   } = useSitePlanState(parcel);
-  const { status, envelope, rpcMetrics, edgeClassifications, error: envelopeError } = useBuildableEnvelope(parcel);
+  // WO-1b/c: derived street frontage (fn_parcel_frontage). Brief-first: the
+  // worker mapper prefers the compiled brief's front_edge once the compiler
+  // maps it; until then this direct fetch powers street-edge-first massing,
+  // the landlocked banner, and curb-cut suppression.
+  const [frontage, setFrontage] = useState<ParcelFrontage | null>(null);
+  const frontageRef = useRef<ParcelFrontage | null>(null);
+  frontageRef.current = frontage;
+  // WO3: the massing program (composition directive + rationale). Brief-first
+  // like frontage; MF only (the TH product has its own grammar).
+  const [massingProg, setMassingProg] = useState<MassingProgram | null>(null);
+  const massingRef = useRef<MassingProgram | null>(null);
+  massingRef.current = massingProg;
+  const { status, envelope, rpcMetrics, edgeClassifications, error: envelopeError } = useBuildableEnvelope(parcel, frontage?.primary?.bearing_deg ?? null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
@@ -128,6 +141,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     fetchParcelFrontage(contextOgcFid).then(f => {
       if (!cancelled) setFrontage(f);
     });
+    setMassingProg(null);
+    fetchMassingProgram(contextOgcFid, 'multifamily').then(m => {
+      if (!cancelled) setMassingProg(m);
+    });
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
@@ -144,13 +161,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // generator/score lineage, result summary). Drives the honest "Context
   // applied" strip — never inferred from the active context.
   const [planLineage, setPlanLineage] = useState<PlanLineage | null>(null);
-  // WO-1b/c: derived street frontage (fn_parcel_frontage). Brief-first: the
-  // worker mapper prefers the compiled brief's front_edge once the compiler
-  // maps it; until then this direct fetch powers street-edge-first massing,
-  // the landlocked banner, and curb-cut suppression.
-  const [frontage, setFrontage] = useState<ParcelFrontage | null>(null);
-  const frontageRef = useRef<ParcelFrontage | null>(null);
-  frontageRef.current = frontage;
   // Use/context changed after this plan was generated → it no longer reflects
   // the active planning basis. Cleared by the next successful generation.
   const [planStale, setPlanStale] = useState(false);
@@ -749,7 +759,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // worker fallback grounds on the same Regrid priors, program prior,
       // and objective weights as the server generator (worker parity).
       const snapshot = plannerCtxRef.current;
-      const workerBrief = snapshot ? briefToWorkerBrief(snapshot, frontageRef.current) : undefined;
+      const workerBrief = snapshot ? briefToWorkerBrief(snapshot, frontageRef.current, massingRef.current) : undefined;
 
       // Use the optimizer for "Generate Plan" — it runs simulated annealing
       const result = await workerManager.optimizeSite(
@@ -796,6 +806,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           : null,
       });
       setPlanStale(false);
+      // WO3-1a: the massing rationale is the plan-basis napkin sentence for
+      // worker solves — the engine's own words, never a client synthesis.
+      if (massingRef.current?.rationale) {
+        setPlanBasis(massingRef.current.rationale);
+      }
 
       // Surface the optimizer's best + ranked alternatives in the solve table.
       // (Replaces the deprecated legacy-planner "generateAlternatives" path.)
@@ -824,7 +839,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
           anglesDeg: [0, 60, 90]
         }, typologyToBuildingType(config.designParameters.buildingTypology),
-        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current) : undefined);
+        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current, massingRef.current) : undefined);
         setPlanOutput(fallbackResult.elements || [], fallbackResult.metrics || null);
         setViolations(fallbackResult.violations || []);
         setSolverReady(true);
@@ -866,7 +881,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         config.designParameters,
         parkingSpec,
         0,
-        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current) : undefined
+        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current, massingRef.current) : undefined
       );
       setPlanOutput(result.bestElements || [], result.bestMetrics || null);
       setViolations(result.bestViolations || []);
@@ -1230,7 +1245,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         };
         const init = await workerManager.initSite(
           envelopeMeters, config.zoning, undefined, parkingSpec, undefined,
-          plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current) : undefined
+          plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current, massingRef.current) : undefined
         );
         setPlanOutput(init.elements || [], init.metrics || null);
         trackBuildings(init.buildings);
@@ -1817,6 +1832,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             currentStories={planLineage?.floors ?? null}
             optimizationStatus={metrics?.optimizationStatus ?? null}
             optimizationProof={metrics?.optimizationProof ?? null}
+            constructionType={massingProg?.construction_type ?? null}
           />
         </div>
       )}

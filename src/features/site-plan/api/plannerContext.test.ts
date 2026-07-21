@@ -216,6 +216,8 @@ describe('the worker fallback receives the same decision contract', () => {
       parking: { ratio: 1.5, stallWidthFt: 9, stallDepthFt: 18, aisleWidthFt: 24 },
       unitProgram: undefined,
       frontEdge: undefined,
+      massingProgram: undefined,
+      typeMix: null,
       precedent: {
         storiesP50: 1, storiesP75: 2,
         footprintP75SqFt: 2145, footprintP90SqFt: 3216,
