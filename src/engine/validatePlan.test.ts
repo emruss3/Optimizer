@@ -73,3 +73,56 @@ describe('validatePlanElements (zero-overlap invariant)', () => {
     expect(v.overlaps[0].bType === 'circulation' || v.overlaps[0].aType === 'circulation').toBe(true);
   });
 });
+
+/** Amenity carve-outs: the server's clubhouse occupies the host bar's ground
+ *  floor — same mass, deliberately coincident (amenity_program_ground_floor_v1).
+ *  Containment is legal; anything less stays a defect. */
+describe('validatePlanElements (ground-floor amenity carve-outs)', () => {
+  const amenity = (id: string, x: number, y: number, w: number, h: number): Element => {
+    const el = rect(id, 'building', x, y, w, h);
+    (el.properties as { use?: string }).use = 'amenity';
+    return el;
+  };
+
+  it('passes a clubhouse fully contained in its host bar', () => {
+    const v = validatePlanElements([
+      rect('bldg-1', 'building', 0, 0, 60, 20),
+      amenity('amenity-1', 2, 2, 15, 12), // wholly inside the bar
+    ]);
+    expect(v.ok).toBe(true);
+  });
+
+  it('rejects an amenity only PARTIALLY overlapping a building', () => {
+    const v = validatePlanElements([
+      rect('bldg-1', 'building', 0, 0, 60, 20),
+      amenity('amenity-1', 50, 10, 20, 15), // hangs off the bar
+    ]);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/building overlaps building/);
+  });
+
+  it('rejects an amenity overlapping parking (the 667574 pool-court defect)', () => {
+    const v = validatePlanElements([
+      amenity('amenity-2', 0, 0, 20, 25),
+      rect('park-3', 'parking', 15, 0, 30, 18),
+    ]);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/parking/);
+  });
+
+  it('rejects two amenities stacked on each other', () => {
+    const v = validatePlanElements([
+      amenity('amenity-1', 0, 0, 20, 20),
+      amenity('amenity-2', 5, 5, 20, 20),
+    ]);
+    expect(v.ok).toBe(false);
+  });
+
+  it('still rejects plain building-on-building even when one is large enough to contain', () => {
+    const v = validatePlanElements([
+      rect('b1', 'building', 0, 0, 60, 30),
+      rect('b2', 'building', 10, 10, 10, 10), // contained but NOT an amenity
+    ]);
+    expect(v.ok).toBe(false);
+  });
+});
