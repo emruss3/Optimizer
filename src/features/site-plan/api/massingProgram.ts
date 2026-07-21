@@ -1,19 +1,28 @@
 import { supabase } from '../../../lib/supabase';
 
 /**
- * WO3: the massing program — the engine's composition directive ("build
- * THIS program"): building count from consolidation (never precedent
- * count), bar dims from the unit program, stories + construction type from
- * the max-buildout ladder and IBC table, parti from frontage, and the
- * napkin rationale sentence. Brief-first: once the compiler composes
- * `massing_program` into the solver brief, the brief wins; until then this
- * direct fetch powers the worker and the plan-basis line. Cached per
+ * The massing program is the engine's preferred composition prior: building
+ * count from consolidation (never precedent count), bar dimensions from the
+ * unit program, stories + construction type from the max-buildout ladder, and
+ * a frontage-responsive parti. The server attempts it first, then relaxes
+ * through split-one, plus-one, and free-pack when geometry or access requires
+ * it. Brief-first: the compiled snapshot wins; this direct fetch remains a
+ * compatibility path for the worker and plan-basis line. Cached per
  * parcel+typology.
  */
 export interface MassingProgram {
   parcel_ogc_fid: number;
   typology: string;
   target_gsf?: number | null;
+  role?: 'preferred_massing_prior' | string | null;
+  relaxation_ladder?: Array<{
+    step?: 'exact' | 'split_one' | 'plus_one' | 'free_pack' | string;
+    description?: string | null;
+  }> | null;
+  relax_when?: {
+    drive_network_disconnected?: boolean;
+    placement_shortfall_gsf_pct_gt?: number | null;
+  } | null;
   stories?: number | null;
   building_count?: number | null;
   per_building?: {
@@ -33,6 +42,7 @@ export interface MassingProgram {
   rationale?: string | null;
   frontage?: { primary_ft?: number | null; landlocked?: boolean; bearing_deg?: string | number | null } | null;
   building_count_basis?: string | null;
+  note?: string | null;
 }
 
 const cache = new Map<string, Promise<MassingProgram | null>>();
