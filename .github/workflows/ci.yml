@@ -35,6 +35,22 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      # DB acceptance battery (audit 2026-07-21 CC-1): live solver, read-only
+      # (p_persist=false), fails the merge on any unexpected error or any
+      # capture below scripts/db-battery/floors.json. ENFORCING once the
+      # secrets exist; loud skip until then (a missing secret must not fail
+      # every fork PR). Geometry validity is battery-gate.yml's job.
+      - name: DB acceptance battery (solver floors)
+        env:
+          BATTERY_SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
+          BATTERY_SUPABASE_ANON_KEY: ${{ secrets.BATTERY_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$BATTERY_SUPABASE_URL" ] || [ -z "$BATTERY_SUPABASE_ANON_KEY" ]; then
+            echo "::warning::DB battery SKIPPED — add BATTERY_SUPABASE_URL / BATTERY_SUPABASE_ANON_KEY repo secrets to enforce solver floors on every PR."
+            exit 0
+          fi
+          node scripts/db-battery/run.mjs
+
       - name: E2E tests
         run: |
           if [ "$RUN_E2E" = "true" ]; then

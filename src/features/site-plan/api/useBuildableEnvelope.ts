@@ -146,6 +146,14 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null, frontageBea
           setError('No buildable envelope could be derived from the compiled context.');
           return;
         }
+        if (!briefEnvelope3857) {
+          // CC-3a receipt: the legacy client-frame construction firing is a
+          // context-engine gap worth a log line — the battery asserts this
+          // never happens on the reference parcels.
+          console.warn(
+            `[envelope] brief carried no buildable_envelope for parcel ${parcelId} — legacy client variable-setback construction in use.`
+          );
+        }
 
         setEdgeClassifications(edgeClasses);
         setEnvelope(finalEnvelope);

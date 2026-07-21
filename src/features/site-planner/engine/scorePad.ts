@@ -30,7 +30,7 @@ export interface ScorePadParams {
  */
 export async function scorePad(params: ScorePadParams): Promise<ScorePadResult> {
   try {
-    const { data, error } = await supabase.rpc('score_pad', {
+    const { data, error } = await supabase.rpc('score_pad', { // legacy-display-ok: module has zero importers
       p_parcel_id: params.p_parcel_id,
       p_pad_3857: params.p_pad_3857,
       p_parking_3857: params.p_parking_3857 || null
@@ -80,5 +80,5 @@ export async function batchScorePad(
     .map(result => result.value);
 }
 
-// Note: get_buildable_envelope and get_parcel_geometry_3857 functions
+// legacy-display-ok — Note: get_buildable_envelope and get_parcel_geometry_3857 functions
 // are now handled by the parcelGeometry service with correct signatures

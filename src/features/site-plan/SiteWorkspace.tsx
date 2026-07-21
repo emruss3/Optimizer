@@ -236,7 +236,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Live-drag pump (dynamic site plans): drag events coalesce latest-wins
   // into preview solves (persist=false); the release commits the candidate.
   const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
-  const dragPinRef = useRef<{ elementId: string; pinIndex: number } | null>(null);
+  const dragPinRef = useRef<{
+    elementId: string;
+    pinIndex: number;
+    /** Gesture-start dims — the release compares against these to record the
+     *  honest feedback event type (moved vs resized vs rotated). */
+    startW?: number;
+    startD?: number;
+    startRot?: number;
+  } | null>(null);
   // A3: local-sales valuation of the CURRENT scheme — ticks during drags
   const [serverMoney, setServerMoney] = useState<MfMoney | null>(null);
   const moneyInFlightRef = useRef(false);
@@ -994,7 +1002,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         } else {
           const existing = el?.properties?.pinIndex as number | undefined;
           pinIndex = existing != null && existing >= 0 && existing < pins.length ? existing : pins.length;
-          dragPinRef.current = { elementId: update.id, pinIndex };
+          dragPinRef.current = {
+            elementId: update.id,
+            pinIndex,
+            startW: update.widthFt,
+            startD: update.depthFt,
+            startRot: update.rotationRad,
+          };
         }
         if (pinIndex < pins.length) pins[pinIndex] = newPin;
         else pins.push(newPin);
@@ -1007,11 +1021,27 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           dropPinIndex: options?.final ? null : pinIndex,
         };
         if (options?.final) {
+          const start = dragPinRef.current;
           dragPinRef.current = null;
-          void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'building_moved', activeCandidateId, {
-            pin_index: pinIndex,
-            element_id: update.id,
-          });
+          // Honest event taxonomy: dims changed => resized, rotation changed
+          // => rotated, else moved. One event per gesture, at release.
+          const resized =
+            start?.startW != null &&
+            (Math.abs((update.widthFt ?? start.startW) - start.startW) > 0.01 ||
+              Math.abs((update.depthFt ?? (start.startD ?? 0)) - (start.startD ?? 0)) > 0.01);
+          const rotated =
+            !resized &&
+            start?.startRot != null &&
+            Math.abs((update.rotationRad ?? start.startRot) - start.startRot) > 0.005;
+          void recordPlannerFeedback(
+            plannerCtxRef.current?.context_id,
+            resized ? 'building_resized' : rotated ? 'building_rotated' : 'building_moved',
+            activeCandidateId,
+            {
+              pin_index: pinIndex,
+              element_id: update.id,
+            }
+          );
         }
         pumpMfRegen();
         return;
@@ -1750,12 +1780,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       solvedBy: planLineage?.solvedBy ?? null,
       basis: planBasis,
       violationCodes: violations.map(v => v.code),
+      envelopeSource: rpcMetrics?.envelopeSource ?? null,
       utilizationPct:
         !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
