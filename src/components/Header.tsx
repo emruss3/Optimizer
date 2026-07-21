@@ -198,18 +198,6 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
             <span className="text-sm hidden md:inline">Test</span>
           </button>
 
-          {/* Parcel Analysis Demo button */}
-          <button 
-            onClick={onOpenParcelAnalysisDemo}
-            className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-blue-600 text-white hover:bg-blue-700"
-            data-testid="parcel-analysis-demo-button"
-            title="Parcel Analysis Demo"
-            aria-label="Open Parcel Analysis Demo"
-          >
-            <Building2 className="w-4 h-4" />
-            <span className="text-sm hidden md:inline">Analysis Demo</span>
-          </button>
-          
           {/* Underwriting button */}
           <button 
             onClick={() => setDrawer(openDrawer === 'UNDERWRITING' ? null : 'UNDERWRITING')}
