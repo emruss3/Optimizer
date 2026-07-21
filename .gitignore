@@ -7,3 +7,8 @@ terminals/
 .env.local
 playwright-report/
 test-results/
+
+# visual-battery local artifacts (mock logs, gate output)
+scripts/visual-battery/mock_hits.log
+scripts/visual-battery/mock_misses.log
+battery-out/

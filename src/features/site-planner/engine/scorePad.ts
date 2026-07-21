@@ -1,3 +1,7 @@
+// DEPRECATED (audit 2026-07-21 item 4 — see docs/site_planner_live_vs_legacy.md):
+// this module calls projection-bugged legacy RPCs and has ZERO live consumers.
+// Do NOT import it into production flows; measurement comes from the compiled
+// planner context / server plan responses (EPSG:2274 truth) only.
 // © 2025 ER Technologies. All rights reserved.
 // Proprietary and confidential. Not for distribution.
 

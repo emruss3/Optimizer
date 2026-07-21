@@ -13,6 +13,9 @@ export async function getParcelsInBbox(
   return data as ParcelBBoxRow[];
 }
 
+/** @deprecated Dead export (zero importers) calling the projection-bugged
+ *  legacy `score_pad` RPC — see docs/site_planner_live_vs_legacy.md. The `sb`
+ *  client export in this file IS live (map/ParcelSource); this function is not. */
 export async function scorePad(
   parcelId: ParcelId,
   buildingWktOrGeoJson: string | object,
