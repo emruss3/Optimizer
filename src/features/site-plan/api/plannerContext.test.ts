@@ -204,9 +204,18 @@ describe('the worker fallback receives the same decision contract', () => {
       targetRatio: 1.5, stallWidthFt: 9, stallDepthFt: 18, aisleWidthFt: 24,
     });
   });
-  it('v1 priors + gate → worker brief (new fields null, no crash)', () => {
+  it('v1 priors + gate → worker brief (WO-0a: hard constraints + parking now travel too)', () => {
     expect(briefToWorkerBrief(RESP)).toEqual({
       generationAllowed: true,
+      maxBuildout: undefined,
+      hardConstraints: {
+        frontSetbackFt: 20, sideSetbackFt: 5, rearSetbackFt: 20,
+        maxFar: 1, maxHeightFt: 45, maxDensityDuAcre: 40,
+        maxCoveragePct: 60, maxImperviousPct: null, minOpenSpacePct: null,
+      },
+      parking: { ratio: 1.5, stallWidthFt: 9, stallDepthFt: 18, aisleWidthFt: 24 },
+      unitProgram: undefined,
+      frontEdge: undefined,
       precedent: {
         storiesP50: 1, storiesP75: 2,
         footprintP75SqFt: 2145, footprintP90SqFt: 3216,
@@ -216,6 +225,65 @@ describe('the worker fallback receives the same decision contract', () => {
       },
       programPrior: { averageUnitSqft: 950 },
       objectiveWeights: { financial_return: 0.2 },
+    });
+  });
+
+  it('WO-0a: the max-buildout target travels to the worker verbatim', () => {
+    const worker = briefToWorkerBrief(RESP_V2);
+    expect(worker.maxBuildout).toMatchObject({
+      maxGsf: 116250,
+      atStories: 4,
+    });
+    expect(worker.hardConstraints).toMatchObject({ maxCoveragePct: 60, maxImperviousPct: 75 });
+  });
+
+  it('WO-1b: directly-fetched frontage feeds frontEdge while the brief is a placeholder', () => {
+    const worker = briefToWorkerBrief(RESP_V2, {
+      parcel_ogc_fid: 553450,
+      landlocked: false,
+      n_segments: 1,
+      total_frontage_ft: 283.5,
+      primary: { length_ft: 283.5, bearing_deg: 261.4, midpoint_2274: [0, 0] },
+    });
+    expect(worker.frontEdge).toEqual({ bearingDeg: 261.4, landlocked: false, isPlaceholder: false });
+  });
+
+  it('WO-1c: landlocked frontage says so — and the brief WINS once its front_edge is real', () => {
+    const landlocked = briefToWorkerBrief(RESP_V2, {
+      parcel_ogc_fid: 669046, landlocked: true, n_segments: 0, total_frontage_ft: 0,
+    });
+    expect(landlocked.frontEdge).toEqual({ bearingDeg: null, landlocked: true, isPlaceholder: false });
+
+    const briefReal = {
+      ...RESP_V2,
+      solver_brief: {
+        ...(RESP_V2.solver_brief as object),
+        geometry: { front_edge_is_placeholder: false, front_edge: { bearing_deg: 90 } },
+      },
+    } as typeof RESP_V2;
+    const worker = briefToWorkerBrief(briefReal, {
+      parcel_ogc_fid: 553450, landlocked: true, n_segments: 0, total_frontage_ft: 0,
+    });
+    expect(worker.frontEdge).toEqual({ bearingDeg: 90, landlocked: false, isPlaceholder: false });
+  });
+
+  it('WO-1a: unit_program maps through the worker boundary when the compiler lands it', () => {
+    const withProgram = {
+      ...RESP_V2,
+      solver_brief: {
+        ...(RESP_V2.solver_brief as object),
+        unit_program: {
+          corridor_clear_ft: 5.75,
+          implied_bar_depth_ft: 67.3,
+          units: [{ type: '1br', gsf: 700, width_ft: 23, depth_ft: 30, bedrooms: 1, parking_ratio: 1.25, default_mix_pct: 40 }],
+        },
+      },
+    } as typeof RESP_V2;
+    const worker = briefToWorkerBrief(withProgram);
+    expect(worker.unitProgram).toEqual({
+      corridorClearFt: 5.75,
+      impliedBarDepthFt: 67.3,
+      units: [{ type: '1br', gsf: 700, widthFt: 23, depthFt: 30, bedrooms: 1, parkingRatio: 1.25, defaultMixPct: 40 }],
     });
   });
   it('uses the max-GSF story target and refuses whole-building OBB depth', () => {

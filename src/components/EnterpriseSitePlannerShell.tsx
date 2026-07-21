@@ -104,6 +104,8 @@ interface EnterpriseSitePlannerProps {
   staticPlan?: boolean;
   /** Degraded-mode honesty: watermark the canvas as a default-assumption draft */
   draftMode?: boolean;
+  /** WO-1c: landlocked parcel — suppress the curb-cut apron rendering. */
+  suppressCurbCut?: boolean;
   /** Neighborhood context (parcels/buildings/streets), canvas-frame 3857 */
   neighbors?: import('../features/site-plan/api/neighbors').PlannerNeighbors | null;
 }
@@ -128,6 +130,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   onCloneBuildings,
   staticPlan = false,
   draftMode = false,
+  suppressCurbCut,
   neighbors = null
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
@@ -1243,6 +1246,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             showLabels={true}
             parkingViz={parkingViz}
             draftMode={draftMode}
+            suppressCurbCut={suppressCurbCut}
             neighbors={neighbors}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}

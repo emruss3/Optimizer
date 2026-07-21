@@ -43,6 +43,7 @@ import {
   describeContextFlag,
   type PlannerContextResponse,
 } from './api/plannerContext';
+import { fetchParcelFrontage, type ParcelFrontage } from './api/parcelFrontage';
 import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, type PlanLineage } from './ui/ContextLineage';
 import SchemesRail from './ui/SchemesRail';
@@ -118,6 +119,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, []);
   const appliedContextRef = useRef<string | null>(null);
 
+  // WO-1b: frontage travels with the parcel, not the compile — fetch once
+  // per parcel and cache (parcelFrontage module dedupes in-flight calls).
+  useEffect(() => {
+    let cancelled = false;
+    setFrontage(null);
+    if (contextOgcFid == null) return;
+    fetchParcelFrontage(contextOgcFid).then(f => {
+      if (!cancelled) setFrontage(f);
+    });
+    return () => { cancelled = true; };
+  }, [contextOgcFid]);
+
   // ── ONE compiled planner context (planner_context_v2) drives everything ──
   // ContextPanel display, server generation (v2), worker grounding, plan
   // lineage, and feedback events all read this snapshot. Nothing else fetches
@@ -131,6 +144,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // generator/score lineage, result summary). Drives the honest "Context
   // applied" strip — never inferred from the active context.
   const [planLineage, setPlanLineage] = useState<PlanLineage | null>(null);
+  // WO-1b/c: derived street frontage (fn_parcel_frontage). Brief-first: the
+  // worker mapper prefers the compiled brief's front_edge once the compiler
+  // maps it; until then this direct fetch powers street-edge-first massing,
+  // the landlocked banner, and curb-cut suppression.
+  const [frontage, setFrontage] = useState<ParcelFrontage | null>(null);
+  const frontageRef = useRef<ParcelFrontage | null>(null);
+  frontageRef.current = frontage;
   // Use/context changed after this plan was generated → it no longer reflects
   // the active planning basis. Cleared by the next successful generation.
   const [planStale, setPlanStale] = useState(false);
@@ -729,7 +749,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // worker fallback grounds on the same Regrid priors, program prior,
       // and objective weights as the server generator (worker parity).
       const snapshot = plannerCtxRef.current;
-      const workerBrief = snapshot ? briefToWorkerBrief(snapshot) : undefined;
+      const workerBrief = snapshot ? briefToWorkerBrief(snapshot, frontageRef.current) : undefined;
 
       // Use the optimizer for "Generate Plan" — it runs simulated annealing
       const result = await workerManager.optimizeSite(
@@ -760,6 +780,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         contextHash: snapshot?.context_hash ?? null,
         scoreTotal: result.finalScore ?? null,
         workerUsedActiveContext: !!workerBrief,
+        // WO-0b receipt: which inputs the worker took from the brief vs the
+        // legacy side-channel args — legacy use while a brief exists is a flag.
+        flags: result.contract
+          ? (result.contract.legacyFieldsUsed.length
+              ? [`worker_legacy_inputs_used:${result.contract.legacyFieldsUsed.join('+')}`]
+              : ['worker_brief_inputs_v2'])
+          : [],
         buildings: result.bestBuildings?.length ?? null,
         floors: result.bestBuildings?.length
           ? Math.max(...result.bestBuildings.map(b => b.floors ?? 1))
@@ -797,7 +824,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           aisleW: feetToMeters(config.designParameters.parking.aisleWidthFt),
           anglesDeg: [0, 60, 90]
         }, typologyToBuildingType(config.designParameters.buildingTypology),
-        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current) : undefined);
+        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current) : undefined);
         setPlanOutput(fallbackResult.elements || [], fallbackResult.metrics || null);
         setViolations(fallbackResult.violations || []);
         setSolverReady(true);
@@ -839,7 +866,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         config.designParameters,
         parkingSpec,
         0,
-        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current) : undefined
+        plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current) : undefined
       );
       setPlanOutput(result.bestElements || [], result.bestMetrics || null);
       setViolations(result.bestViolations || []);
@@ -1203,7 +1230,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         };
         const init = await workerManager.initSite(
           envelopeMeters, config.zoning, undefined, parkingSpec, undefined,
-          plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current) : undefined
+          plannerCtxRef.current ? briefToWorkerBrief(plannerCtxRef.current, frontageRef.current) : undefined
         );
         setPlanOutput(init.elements || [], init.metrics || null);
         trackBuildings(init.buildings);
@@ -1856,6 +1883,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
+          {frontage?.landlocked === true && !draftMode && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-orange-50 border border-orange-300 text-orange-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm" data-testid="landlocked-banner">
+              No street frontage — access via easement assumed.
+            </div>
+          )}
           {draftMode && (
             <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 bg-amber-50 border border-amber-300 text-amber-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm">
               <span>Using standard defaults — design context unavailable. Plan is a draft and won't be saved.</span>
@@ -1895,6 +1927,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             <SitePlannerErrorBoundary>
               <EnterpriseSitePlanner
                 draftMode={draftMode}
+                suppressCurbCut={frontage?.landlocked === true}
                 neighbors={neighbors}
                 parcel={plannerParcel}
                 planElements={elements}

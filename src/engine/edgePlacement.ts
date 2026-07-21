@@ -36,6 +36,10 @@ export interface EdgePlacementOptions {
   avoidFootprints?: Polygon[];
   /** Id prefix (default 'building') */
   idPrefix?: string;
+  /** WO-1b: derived street-frontage bearing (compass degrees). When set,
+   *  edges sort STREET-EDGE-FIRST — best alignment with the frontage
+   *  bearing wins, length breaks ties — replacing longest-edge-first. */
+  preferredBearingDeg?: number | null;
 }
 
 const overlapArea = (a: Polygon, b: Polygon): number =>
@@ -61,15 +65,31 @@ export function placeBarsAlongEdges(envelope: Polygon, opts: EdgePlacementOption
   }
   const ccw = signedArea2 >= 0;
 
-  // Collect edges, longest first — long street frontages fill before jogs.
-  const edges: Array<{ a: number[]; b: number[]; len: number }> = [];
+  // Collect edges. Default order is longest-first; with a derived frontage
+  // bearing the order becomes STREET-EDGE-FIRST: edges most parallel to the
+  // street (mod 180°) fill first, so the massing addresses the actual
+  // frontage instead of whichever lot line happens to be longest.
+  const edges: Array<{ a: number[]; b: number[]; len: number; align: number }> = [];
+  const bearing = opts.preferredBearingDeg;
+  const bearingRad = bearing != null ? ((90 - bearing) * Math.PI) / 180 : null;
   for (let i = 0; i < ring.length - 1; i++) {
     const a = ring[i];
     const b = ring[i + 1];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    if (len > 1e-6) edges.push({ a, b, len });
+    if (len <= 1e-6) continue;
+    let align = 0;
+    if (bearingRad != null) {
+      const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      // Alignment mod 180°: 1 = parallel to the street, 0 = perpendicular.
+      align = Math.abs(Math.cos(ang - bearingRad));
+    }
+    edges.push({ a, b, len, align });
   }
-  edges.sort((e1, e2) => e2.len - e1.len);
+  if (bearingRad != null) {
+    edges.sort((e1, e2) => (e2.align - e1.align) || (e2.len - e1.len));
+  } else {
+    edges.sort((e1, e2) => e2.len - e1.len);
+  }
 
   const placed: BuildingSpec[] = [];
   const placedFootprints: Polygon[] = [...(opts.avoidFootprints ?? [])];

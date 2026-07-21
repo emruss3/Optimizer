@@ -74,6 +74,56 @@ export interface WorkerSolverBrief {
     averageUnitSqft?: number | null;
   };
   objectiveWeights?: Record<string, number>;
+  /** WO-0a: the theoretical envelope the fallback must chase — primary
+   *  objective becomes achievedGsf / maxGsf; the ladder drives floors. */
+  maxBuildout?: {
+    maxGsf?: number | null;
+    atStories?: number | null;
+    bindingConstraint?: string | null;
+    storiesLadder?: Array<{ stories: number | null; maxGsf: number | null; units?: number | null }>;
+  };
+  /** WO-0a/b: ordinance-sourced constraints from the compiled brief — these
+   *  WIN over the legacy zoning arg whenever present. */
+  hardConstraints?: {
+    frontSetbackFt?: number | null;
+    sideSetbackFt?: number | null;
+    rearSetbackFt?: number | null;
+    maxFar?: number | null;
+    maxHeightFt?: number | null;
+    maxDensityDuAcre?: number | null;
+    maxCoveragePct?: number | null;
+    maxImperviousPct?: number | null;
+    minOpenSpacePct?: number | null;
+  };
+  /** WO-0a/b: brief parking — WINS over the legacy parkingSpec arg. */
+  parking?: {
+    ratio?: number | null;
+    stallWidthFt?: number | null;
+    stallDepthFt?: number | null;
+    aisleWidthFt?: number | null;
+  };
+  /** WO-1a: fn_unit_program — per-type dims replace generateDefaultUnitMix
+   *  assumptions where present (typed now, consumed as it lands in the brief). */
+  unitProgram?: {
+    corridorClearFt?: number | null;
+    impliedBarDepthFt?: number | null;
+    units?: Array<{
+      type: string;
+      gsf?: number | null;
+      widthFt?: number | null;
+      depthFt?: number | null;
+      bedrooms?: number | null;
+      parkingRatio?: number | null;
+      defaultMixPct?: number | null;
+    }>;
+  };
+  /** WO-1b: derived street frontage — bars orient to this bearing
+   *  (street-edge-first) and the entry sits at its midpoint. */
+  frontEdge?: {
+    bearingDeg?: number | null;
+    landlocked?: boolean;
+    isPlaceholder?: boolean;
+  };
 }
 
 export interface OptimizeResult {
@@ -93,6 +143,9 @@ export interface OptimizeResult {
   /** Candidates the zero-overlap gate rejected (never rendered) — the solves
    *  rail shows these collapsed with their reason chips. */
   rejected?: { count: number; reasons: string[] };
+  /** WO-0b receipt: which inputs came from the compiled brief and which
+   *  still leaned on legacy side-channel args while a brief was in hand. */
+  contract?: { briefFieldsUsed: string[]; legacyFieldsUsed: string[] };
 }
 
 // ─── score weights ───────────────────────────────────────────────────────────
@@ -107,7 +160,25 @@ const WEIGHTS = {
   yieldOnCost: 0.10,
   /** Similarity to the local Regrid built form — 0 unless the context sets it */
   precedentFit: 0,
+  /** WO-0c: achievedGsf / maxBuildout.maxGsf — 0 until a max-buildout brief
+   *  arrives, then it becomes the PRIMARY component (capture is the product's
+   *  stated objective; resembling under-built neighbors is not). */
+  gsfCapture: 0,
 };
+
+/** WO-0c: with a max-buildout target in hand, capture leads the objective.
+ *  FAR utilization is subsumed by capture (same axis, worse denominator)
+ *  and unit count drops to a supporting role. */
+export function applyCapturePrimary(weights: ScoreWeights, hasMaxGsf: boolean): ScoreWeights {
+  if (!hasMaxGsf || weights.gsfCapture > 0) return weights;
+  return {
+    ...weights,
+    gsfCapture: weights.farUtilization + Math.max(0, weights.unitCount - 0.15) + 0.05,
+    farUtilization: 0,
+    unitCount: Math.min(weights.unitCount, 0.15),
+    yieldOnCost: Math.max(0, weights.yieldOnCost - 0.05),
+  };
+}
 
 export type ScoreWeights = typeof WEIGHTS;
 
@@ -157,17 +228,20 @@ const similarity = (a: number | null | undefined, b: number | null | undefined):
  * 50% footprint similarity to the local p75, 25% coverage similarity to the
  * local p75, 25% story similarity to the local p75.
  */
+/** WO-0c: FORM-ONLY precedent fit. The old 0.5-weight footprint-area term
+ *  rewarded resembling under-built neighbors — quantity is the capture
+ *  component's job. Form = bar depth, bar length, stories. */
 function scorePrecedentFit(
   precedent: WorkerSolverBrief['precedent'],
-  avgBarFootprintSqft: number,
-  coveragePct: number,
+  avgDepthFt: number,
+  avgLengthFt: number,
   avgFloors: number
 ): number {
   if (!precedent) return 0.5;
   return (
-    0.5 * similarity(avgBarFootprintSqft, precedent.footprintP75SqFt) +
-    0.25 * similarity(coveragePct, precedent.coverageP75Pct) +
-    0.25 * similarity(avgFloors, precedent.storiesP75)
+    0.4 * similarity(avgDepthFt, precedent.depthP50Ft) +
+    0.3 * similarity(avgLengthFt, precedent.lengthP75Ft) +
+    0.3 * similarity(avgFloors, precedent.storiesP75)
   );
 }
 
@@ -241,7 +315,7 @@ function scoreOnly(
   parkingSpec: { stallW: number; stallD: number; aisleW: number; anglesDeg: number[] },
   zoningLimits: { maxFar?: number; maxCoveragePct?: number; parkingRatio?: number },
   /** Pre-computed values to avoid recalculation every iteration */
-  cached: { siteAreaM2: number; siteAreaSqft: number; maxReasonableUnits: number },
+  cached: { siteAreaM2: number; siteAreaSqft: number; maxReasonableUnits: number; maxGsfSqft?: number | null },
   weights: ScoreWeights = WEIGHTS,
   precedent?: WorkerSolverBrief['precedent']
 ): { score: number; clampedBuildings: BuildingSpec[] } {
@@ -325,19 +399,29 @@ function scoreOnly(
   // 7. Yield on cost — cheap proxy during SA (full pro forma only for final results)
   const yieldOnCostScore = farScore * 0.5 + unitScore * 0.5;
 
-  // 8. Precedent fit — similarity to the local Regrid built form (only scored
-  // when the context's objective weights ask for it)
+  // 8. Precedent fit — FORM similarity to the local Regrid built form (only
+  // scored when the context's objective weights ask for it)
   let precedentFitScore = 0;
   if (weights.precedentFit > 0) {
-    const avgBarFpSqft = clamped.length > 0
-      ? (buildingFootprintTotal / clamped.length) * SQM_TO_SQFT
+    const avgDepthFt = clamped.length > 0
+      ? clamped.reduce((s, b) => s + b.depthM, 0) / clamped.length / 0.3048
       : 0;
-    const coveragePct = cached.siteAreaM2 > 0 ? (100 * buildingFootprintTotal) / cached.siteAreaM2 : 0;
+    const avgLengthFt = clamped.length > 0
+      ? clamped.reduce((s, b) => s + b.widthM, 0) / clamped.length / 0.3048
+      : 0;
     const avgFloors = clamped.length > 0
       ? clamped.reduce((s, b) => s + Math.max(1, b.floors), 0) / clamped.length
       : 0;
-    precedentFitScore = scorePrecedentFit(precedent, avgBarFpSqft, coveragePct, avgFloors);
+    precedentFitScore = scorePrecedentFit(precedent, avgDepthFt, avgLengthFt, avgFloors);
   }
+
+  // 9. GSF capture — the primary objective once a max-buildout brief exists
+  const totalGfaSqft = buildingFootprints.reduce(
+    (s, b) => s + correctedAreaM2(b.footprint) * SQM_TO_SQFT * Math.max(1, b.floors), 0
+  );
+  const captureScore = cached.maxGsfSqft != null && cached.maxGsfSqft > 0
+    ? Math.min(1, totalGfaSqft / cached.maxGsfSqft)
+    : 0;
 
   const totalScore =
     weights.unitCount * unitScore +
@@ -347,7 +431,8 @@ function scoreOnly(
     weights.openSpace * openSpaceScore +
     weights.noViolations * noViolationsScore +
     weights.yieldOnCost * yieldOnCostScore +
-    weights.precedentFit * precedentFitScore;
+    weights.precedentFit * precedentFitScore +
+    weights.gsfCapture * captureScore;
 
   // Apply containment penalty
   const finalScore = containmentPenalty > 0 ? totalScore * Math.max(0, 1 - containmentPenalty) : totalScore;
@@ -365,7 +450,8 @@ function computeFullResult(
   zoningLimits: { maxFar?: number; maxCoveragePct?: number; parkingRatio?: number },
   quotas: { adaPct: number; evPct: number },
   weights: ScoreWeights = WEIGHTS,
-  precedent?: WorkerSolverBrief['precedent']
+  precedent?: WorkerSolverBrief['precedent'],
+  maxGsfSqft?: number | null
 ): {
   score: number;
   elements: Element[];
@@ -495,14 +581,21 @@ function computeFullResult(
 
   let precedentFitScore = 0;
   if (weights.precedentFit > 0) {
-    const avgBarFpSqft = buildingFootprints.length > 0
-      ? (footprintAreaM2 / buildingFootprints.length) * SQM_TO_SQFT
+    const avgDepthFt = clamped.length > 0
+      ? clamped.reduce((s, b) => s + b.depthM, 0) / clamped.length / 0.3048
+      : 0;
+    const avgLengthFt = clamped.length > 0
+      ? clamped.reduce((s, b) => s + b.widthM, 0) / clamped.length / 0.3048
       : 0;
     const avgFloors = buildingFootprints.length > 0
       ? buildingFootprints.reduce((s, b) => s + Math.max(1, b.floors), 0) / buildingFootprints.length
       : 0;
-    precedentFitScore = scorePrecedentFit(precedent, avgBarFpSqft, feasibility.coverage * 100, avgFloors);
+    precedentFitScore = scorePrecedentFit(precedent, avgDepthFt, avgLengthFt, avgFloors);
   }
+
+  const captureScore = maxGsfSqft != null && maxGsfSqft > 0
+    ? Math.min(1, feasibility.gfaSqft / maxGsfSqft)
+    : 0;
 
   const totalScore =
     weights.unitCount * unitScore +
@@ -512,7 +605,8 @@ function computeFullResult(
     weights.openSpace * openSpaceScore +
     weights.noViolations * noViolationsScore +
     weights.yieldOnCost * yieldOnCostScore +
-    weights.precedentFit * precedentFitScore;
+    weights.precedentFit * precedentFitScore +
+    weights.gsfCapture * captureScore;
 
   // Build full elements (expensive — boolean ops for greenspace)
   const elements = buildElements(clamped, buildingFootprints, parkingSolution, feasibility, envelope);
@@ -794,13 +888,36 @@ export function optimize(input: OptimizeInput): OptimizeResult {
 
   const buildingType = typologyToBuildingType(designParams.buildingTypology);
 
-  // Auto-calculate how many buildings are needed to achieve target FAR.
-  // Honor the user's target FAR (the slider) and fall back to the zoning max.
-  // zoning.maxFar remains the COMPLIANCE cap, enforced in computeFeasibility.
+  // ── WO-0b: the compiled brief WINS over the legacy side-channel args.
+  // Every field the brief provides replaces its legacy counterpart; anything
+  // still taken from a legacy arg while a brief is in hand is recorded in
+  // the contract receipt so the lineage can say so.
+  const briefHc = input.solverBrief?.hardConstraints;
+  const briefParking = input.solverBrief?.parking;
+  const briefFieldsUsed: string[] = [];
+  const legacyFieldsUsed: string[] = [];
+  const pick = <T,>(field: string, briefVal: T | null | undefined, legacyVal: T | undefined): T | undefined => {
+    if (briefVal != null) { briefFieldsUsed.push(field); return briefVal; }
+    if (legacyVal !== undefined && input.solverBrief) legacyFieldsUsed.push(field);
+    return legacyVal ?? undefined;
+  };
+  const effMaxFar = pick('maxFar', briefHc?.maxFar, zoning.maxFar);
+  const effMaxCoveragePct = pick('maxCoveragePct', briefHc?.maxCoveragePct, zoning.maxCoveragePct);
+  const effMaxHeightFt = pick('maxHeightFt', briefHc?.maxHeightFt, zoning.maxHeightFt);
+  const effParkingRatio = pick('parkingRatio', briefParking?.ratio, zoning.minParkingRatio) ?? 1.5;
+  const maxGsfSqft = input.solverBrief?.maxBuildout?.maxGsf ?? null;
+  if (maxGsfSqft != null) briefFieldsUsed.push('maxGsf');
+
+  // Auto-calculate how many buildings are needed to achieve target GFA.
+  // WO-0c/d: the max-buildout GSF is THE target when known; the user's FAR
+  // slider and the zoning max remain the fallbacks. effMaxFar remains the
+  // COMPLIANCE cap, enforced in computeFeasibility.
   const SQM_TO_SQFT_CONST = 10.7639;
   const envelopeAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT_CONST;
-  const targetFAR = designParams.targetFAR ?? zoning.maxFar ?? 1.5;
-  const targetGFA = envelopeAreaSqft * targetFAR;
+  const targetFAR = designParams.targetFAR ?? effMaxFar ?? 1.5;
+  const targetGFA = maxGsfSqft != null && maxGsfSqft > 0
+    ? Math.min(maxGsfSqft, envelopeAreaSqft * targetFAR)
+    : envelopeAreaSqft * targetFAR;
   const defaultFloors = 3;
   const defaultBuildingFootprintSqft = (200 * 0.3048) * (60 * 0.3048) * SQM_TO_SQFT_CONST; // ~12,000 sqft
   const calculatedNumBuildings = Math.max(1, Math.min(8, Math.ceil(targetGFA / (defaultBuildingFootprintSqft * defaultFloors))));
@@ -808,17 +925,26 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     ? calculatedNumBuildings
     : designParams.numBuildings; // Use explicit value directly
 
-  const parkingSpec = input.parkingSpec ?? {
-    stallW: 2.7432,  // 9ft
-    stallD: 5.4864,  // 18ft
-    aisleW: 7.3152,  // 24ft
-    anglesDeg: [0, 60, 90]
-  };
+  const FT_TO_M = 0.3048;
+  const parkingSpec = briefParking?.stallWidthFt != null && briefParking?.stallDepthFt != null && briefParking?.aisleWidthFt != null
+    ? (briefFieldsUsed.push('parkingSpec'),
+      {
+        stallW: briefParking.stallWidthFt * FT_TO_M,
+        stallD: briefParking.stallDepthFt * FT_TO_M,
+        aisleW: briefParking.aisleWidthFt * FT_TO_M,
+        anglesDeg: input.parkingSpec?.anglesDeg ?? [0, 60, 90],
+      })
+    : (input.parkingSpec && input.solverBrief ? (legacyFieldsUsed.push('parkingSpec'), input.parkingSpec) : input.parkingSpec) ?? {
+      stallW: 2.7432,  // 9ft
+      stallD: 5.4864,  // 18ft
+      aisleW: 7.3152,  // 24ft
+      anglesDeg: [0, 60, 90]
+    };
 
   const zoningLimits = {
-    maxFar: zoning.maxFar,
-    maxCoveragePct: zoning.maxCoveragePct,
-    parkingRatio: zoning.minParkingRatio ?? 1.5
+    maxFar: effMaxFar,
+    maxCoveragePct: effMaxCoveragePct,
+    parkingRatio: effParkingRatio
   };
 
   // ADA / EV designation percentages (surfaced in the final metrics).
@@ -833,8 +959,16 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const envCenterX = (edgeBbox[0] + edgeBbox[2]) / 2;
   const envCenterY = (edgeBbox[1] + edgeBbox[3]) / 2;
 
-  // Align building rotation to the longest edge
-  const edgeAngleRad = Math.atan2(edge.dir[1], edge.dir[0]);
+  // WO-1b: STREET-EDGE-FIRST. A derived frontage bearing (compass degrees,
+  // conformal in Mercator) aligns the massing to the actual street; the
+  // longest edge remains the fallback for parcels without one.
+  const frontBearingDeg = input.solverBrief?.frontEdge?.landlocked
+    ? null
+    : input.solverBrief?.frontEdge?.bearingDeg ?? null;
+  const edgeAngleRad = frontBearingDeg != null
+    ? ((90 - frontBearingDeg) * Math.PI) / 180
+    : Math.atan2(edge.dir[1], edge.dir[0]);
+  if (frontBearingDeg != null) briefFieldsUsed.push('frontEdgeBearing');
 
   // Calculate how many buildings can actually fit physically.
   // Regrid built-form priors (planner_context_v2, sample ≥ 5): local geometry
@@ -871,7 +1005,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   // EPSG:3857 areas so the ratio matches feasibility's coverage (Mercator cancels).
   // An explicitly requested numBuildings always wins over the coverage target.
   if (maxIterations === 0 && designParams.numBuildings == null) {
-    const maxCov = (zoning.maxCoveragePct ?? 60) / 100;
+    const maxCov = (effMaxCoveragePct ?? 60) / 100;
     // Coverage: the local p75 seeds the target when the user hasn't moved the
     // slider off its default — a user-set value overrides the soft prior, and
     // the legal maximum caps both.
@@ -947,6 +1081,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       count: need,
       buildingType,
       avoidFootprints: pinnedFootprints,
+      preferredBearingDeg: frontBearingDeg,
     });
     for (const bar of edgeBars) {
       initialBuildings.push(bar);
@@ -997,20 +1132,34 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     const coverage = envCorrectedM2 > 0 ? placedFootprintM2 / envCorrectedM2 : 0;
     if (coverage > 0) {
       // Ground floor 14ft + 10ft per upper floor ≤ maxHeightFt.
-      const maxFloorsByHeight = zoning.maxHeightFt
-        ? Math.max(1, Math.floor((zoning.maxHeightFt - 4) / 10))
+      const maxFloorsByHeight = effMaxHeightFt
+        ? Math.max(1, Math.floor((effMaxHeightFt - 4) / 10))
         : 100;
-      // Compliance cap: never let rounding push achieved FAR past zoning.maxFar
+      // Compliance cap: never let rounding push achieved FAR past the max FAR
       // (mirrors how the coverage-driven count caps at maxCoveragePct).
-      const maxFloorsByFar = zoning.maxFar != null
-        ? Math.max(1, Math.floor(zoning.maxFar / coverage + 1e-9))
+      const maxFloorsByFar = effMaxFar != null
+        ? Math.max(1, Math.floor(effMaxFar / coverage + 1e-9))
         : Infinity;
-      // Precedent stories prior (same rule as the server generator): p50–p75
-      // midpoint, min 2 for MF viability — a CAP on the legal/FAR-driven
-      // count, never a way to exceed it.
+      // WO-0d: COVERAGE CLAMP CLIMBS THE STORIES LADDER. When the footprint
+      // is coverage-capped, the way to the max-buildout GSF is UP — floors
+      // target ceil(maxGsf / placedFootprint), capped only by height/FAR.
+      // Precedent stories are FORM EVIDENCE and never cap quantity once a
+      // max-buildout target exists (same doctrine as the server generator).
+      const placedFootprintSqft = placedFootprintM2 * SQM_TO_SQFT_CONST;
+      const ladderStories = input.solverBrief?.maxBuildout?.atStories ?? null;
+      let targetFloors: number;
+      if (maxGsfSqft != null && maxGsfSqft > 0 && placedFootprintSqft > 0) {
+        targetFloors = Math.ceil(maxGsfSqft / placedFootprintSqft);
+        if (ladderStories != null && ladderStories > 0) {
+          targetFloors = Math.min(targetFloors, Math.max(1, Math.round(ladderStories)));
+        }
+      } else {
+        targetFloors = Math.round(targetFAR / coverage);
+      }
       let precedentFloorsCap = Infinity;
       const precStories = input.solverBrief?.precedent;
       if (
+        maxGsfSqft == null &&
         precStories?.storiesP50 != null &&
         precStories?.storiesP75 != null &&
         (precStories.sampleSize ?? 0) >= 5
@@ -1020,7 +1169,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       const floors = Math.max(1, Math.min(
         maxFloorsByHeight,
         maxFloorsByFar,
-        Math.round(targetFAR / coverage),
+        targetFloors,
         precedentFloorsCap
       ));
       // Pinned buildings keep their own floor count (dimensions are sovereign).
@@ -1034,11 +1183,12 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   const siteAreaM2 = areaM2(envelope);
   const siteAreaSqft = correctedAreaM2(envelope) * SQM_TO_SQFT;
   const maxReasonableUnits = Math.max(1, Math.floor(siteAreaSqft * 3 * 0.85 / 720));
-  const cached = { siteAreaM2: siteAreaM2, siteAreaSqft, maxReasonableUnits };
+  const cached = { siteAreaM2: siteAreaM2, siteAreaSqft, maxReasonableUnits, maxGsfSqft };
 
   // Context objective weights (when compiled) replace the hardcoded constants
   // for EVERY score in this run — SA acceptance, best tracking, and finals.
-  const weights = resolveScoreWeights(input.solverBrief);
+  // WO-0c: with a max-buildout target, capture becomes the primary component.
+  const weights = applyCapturePrimary(resolveScoreWeights(input.solverBrief), maxGsfSqft != null && maxGsfSqft > 0);
 
   // ── 3. Simulated annealing loop (fast — score only, no element building) ─
   let currentBuildings = cloneBuildings(initialBuildings);
@@ -1142,7 +1292,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   // alternatives are dropped and reported (never rendered).
   const rejectedReasons: string[] = [];
 
-  let bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec);
+  let bestResult = computeFullResult(envelope, bestBuildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec, maxGsfSqft);
   let bestSpecs = bestBuildings;
   let bestValidation = validatePlanElements(bestResult.elements);
 
@@ -1151,7 +1301,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     .slice(0, 3)
     .map(a => ({
       buildings: a.buildings,
-      full: computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec),
+      full: computeFullResult(envelope, a.buildings, parkingSpec, zoningLimits, parkingQuotas, weights, prec, maxGsfSqft),
     }))
     .map(a => ({ ...a, validation: validatePlanElements(a.full.elements) }));
 
@@ -1198,6 +1348,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       iterations: maxIterations,
       finalScore: 0,
       rejected: { count: rejectedReasons.length, reasons: rejectedReasons },
+      contract: input.solverBrief ? { briefFieldsUsed, legacyFieldsUsed } : undefined,
     };
   }
 
@@ -1212,6 +1363,7 @@ export function optimize(input: OptimizeInput): OptimizeResult {
     rejected: rejectedReasons.length
       ? { count: rejectedReasons.length, reasons: rejectedReasons }
       : undefined,
+    contract: input.solverBrief ? { briefFieldsUsed, legacyFieldsUsed } : undefined,
   };
 }
 
