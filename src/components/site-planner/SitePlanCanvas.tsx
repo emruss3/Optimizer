@@ -902,10 +902,22 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderNeighbors = useCallback((ctx: CanvasRenderingContext2D, zoom: number) => {
     if (!neighbors) return;
     ctx.save();
-    // Street casings first (widest, lightest)
+    // Street casings first (widest, lightest). HONESTY GATE: the roads
+    // dataset is a sparse OSM stub and the RPC's radius filter leaks —
+    // segments from blocks away must not paint a street where none is
+    // known. Only draw a road that actually approaches this parcel
+    // (within ~120 m of its bounds); absent data renders as absence.
+    const pb = processedGeometry?.bounds;
+    const nearParcel = (coords: number[][]): boolean => {
+      if (!pb) return true;
+      return coords.some(([x, y]) =>
+        x > pb.minX - 120 && x < pb.maxX + 120 && y > pb.minY - 120 && y < pb.maxY + 120
+      );
+    };
     for (const road of neighbors.roads) {
       const coords = road.line.coordinates;
       if (!coords || coords.length < 2) continue;
+      if (!nearParcel(coords)) continue;
       ctx.strokeStyle = 'rgba(226, 232, 240, 0.9)';
       ctx.lineWidth = 12; // metres — reads as a street body
       ctx.lineCap = 'round';
@@ -948,7 +960,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.stroke();
     }
     ctx.restore();
-  }, [neighbors]);
+  }, [neighbors, processedGeometry]);
 
   // Perimeter landscape strip + street trees along the classified front
   // edge(s), plus a curb-cut apron where the drive meets the street — the

@@ -221,6 +221,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Zero-overlap gate bookkeeping: one silent re-solve per gesture on the
   // server path; rejected worker candidates surface in the solves rail.
   const serverGeoRetryRef = useRef(false);
+  // Why the last server solve was rejected by the geometry gate (null = it
+  // wasn't). The auto-plan's worker fallback re-surfaces this AFTER the worker
+  // result lands, so a rejected server plan never silently becomes a worker
+  // plan with no explanation.
+  const serverRejectRef = useRef<string | null>(null);
   const [solveRejected, setSolveRejected] = useState<{ count: number; reasons: string[] } | null>(null);
   // Bumping this recompiles the context (the Retry button on the amber banner)
   const [compileNonce, setCompileNonce] = useState(0);
@@ -437,6 +442,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     product?: 'apartments' | 'townhomes';
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
+    serverRejectRef.current = null;
     const snapshot = plannerCtxRef.current;
     const effectiveContextId = opts.contextId !== undefined
       ? opts.contextId
@@ -543,6 +549,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         serverGeoRetryRef.current = false;
         return ok;
       }
+      console.warn(
+        `[server-plan] rejected by the geometry gate after retry: ${validation.reason}`,
+        validation.overlaps.slice(0, 4)
+      );
+      serverRejectRef.current = validation.reason;
       setViolations([{
         code: 'geometry-overlap',
         message: `Plan rejected: ${validation.reason}. Generate again for a new variation.`,
@@ -1427,10 +1438,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     void (async () => {
       // User pins carry through a re-plan (use switch, context refresh) —
       // same parcel, so they remain valid until geometry says otherwise.
-      const ok = await runServerMfPlan({ seed: 1, pins: mfPinsRef.current }).catch(() => false);
+      const ok = await runServerMfPlan({ seed: 1, pins: mfPinsRef.current }).catch(e => {
+        // A throw here is a client bug, not a solver verdict — it must never
+        // silently downgrade the plan to the worker (that hid every server
+        // plan behind a fallback once already).
+        console.error('[autoPlanMf] server massing path threw — falling back to the client solver:', e);
+        return false;
+      });
       if (!ok) {
+        const rejectedWhy = serverRejectRef.current;
         // handleGenerate sets the basis label from the settled context
-        handleGenerate(0).catch(() => undefined);
+        handleGenerate(0).then(() => {
+          // The worker result replaces the violations list wholesale — re-append
+          // the server rejection so the fallback is never silent: the rail says
+          // WHY this is a worker plan and not the server site system.
+          if (rejectedWhy) {
+            setViolations(v => [...v, {
+              code: 'server-plan-rejected',
+              message: `Server plan rejected by the geometry gate (${rejectedWhy}) — showing the client solver result instead.`,
+              severity: 'warning',
+            }]);
+          }
+        }).catch(() => undefined);
       }
     })();
     void ctx;

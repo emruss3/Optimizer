@@ -91,6 +91,32 @@ const typeLabel = (t: string): string =>
   : t;
 
 /**
+ * Design-grammar amenity carve-out: the server places the clubhouse ON the
+ * ground floor of its host bar (`amenity_program_ground_floor_v1`) — the
+ * amenity polygon is deliberately coincident with the host building because
+ * it is the same mass (its GSF is already subtracted from the bar's GFA
+ * server-side). A building-typed amenity FULLY CONTAINED in a non-amenity
+ * building is therefore legal by design. Anything short of full containment
+ * — a pool court leaking into a parking bay, two amenities colliding —
+ * remains a defect.
+ */
+function isGroundFloorCarveOut(
+  a: { el: Element; rings: Ring[] },
+  b: { el: Element; rings: Ring[] },
+  interM2: number
+): boolean {
+  const elUse = (s: { el: Element }) =>
+    (s.el.properties as { use?: string } | null | undefined)?.use;
+  const amen = elUse(a) === 'amenity' ? a : elUse(b) === 'amenity' ? b : null;
+  if (!amen) return false;
+  const host = amen === a ? b : a;
+  if (elUse(host) === 'amenity') return false;
+  if (amen.el.type !== 'building' || host.el.type !== 'building') return false;
+  const amenArea = multiPolyArea([amen.rings] as unknown as Ring[][]);
+  return amenArea > 0 && interM2 >= amenArea * 0.98;
+}
+
+/**
  * Pairwise intersection across the overlap-relevant element types.
  * Any pair intersecting by more than OVERLAP_TOLERANCE_M2 fails the plan.
  */
@@ -121,7 +147,7 @@ export function validatePlanElements(elements: Element[]): PlanValidation {
         // themselves a broken plan — treat as an overlap so the plan re-solves.
         areaM2 = OVERLAP_TOLERANCE_M2 + 1;
       }
-      if (areaM2 > OVERLAP_TOLERANCE_M2) {
+      if (areaM2 > OVERLAP_TOLERANCE_M2 && !isGroundFloorCarveOut(a, b, areaM2)) {
         overlaps.push({
           aId: a.el.id,
           aType: a.el.type,

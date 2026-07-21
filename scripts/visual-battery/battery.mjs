@@ -21,7 +21,9 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
   const page = await ctx.newPage();
   const errs = [];
   page.on('console', m => {
-    if (m.type() === 'error') errs.push(m.text().slice(0, 220));
+    const t = m.text();
+    if (process.env.ALL_CONSOLE === '1') errs.push(`[${m.type()}] ${t.slice(0, 300)}`);
+    else if (m.type() === 'error') errs.push(t.slice(0, 220));
   });
   page.on('pageerror', e => errs.push(String(e).slice(0, 220)));
   try {
