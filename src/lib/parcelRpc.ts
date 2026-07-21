@@ -20,7 +20,7 @@ import { createRpcParams, createBatchRpcParams, type OgcFid, type ParcelId } fro
  */
 export async function getParcelGeometry3857(ogcFid: OgcFid): Promise<any> {
   const params = createRpcParams(ogcFid, 'geometry');
-  const { data, error } = await sb.rpc('get_parcel_geometry_3857', params);
+  const { data, error } = await sb.rpc('get_parcel_geometry_3857', params); // legacy-display-ok: deprecated wrapper
   
   if (error) {
     console.error('Error fetching parcel geometry:', error);
@@ -52,7 +52,7 @@ export async function getParcelDetail(parcelId: ParcelId): Promise<any> {
  */
 export async function getBuildableEnvelope(parcelId: ParcelId): Promise<any> {
   const params = createRpcParams(parseInt(parcelId, 10), 'planner');
-  const { data, error } = await sb.rpc('get_buildable_envelope', params);
+  const { data, error } = await sb.rpc('get_buildable_envelope', params); // legacy-display-ok: deprecated wrapper
   
   if (error) {
     console.error('Error fetching buildable envelope:', error);
@@ -69,7 +69,7 @@ export async function getBuildableEnvelope(parcelId: ParcelId): Promise<any> {
 export async function getBuildableEnvelopes(parcelIds: ParcelId[]): Promise<any> {
   const ogcFids = parcelIds.map(id => parseInt(id, 10));
   const params = createBatchRpcParams(ogcFids);
-  const { data, error } = await sb.rpc('get_buildable_envelopes', params);
+  const { data, error } = await sb.rpc('get_buildable_envelopes', params); // legacy-display-ok: deprecated wrapper
   
   if (error) {
     console.error('Error fetching buildable envelopes:', error);

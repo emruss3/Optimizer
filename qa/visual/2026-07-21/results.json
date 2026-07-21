@@ -1,0 +1,55 @@
+{
+  "488278": {
+    "ok": true,
+    "advisory": false,
+    "evidence": {
+      "solvedBy": "server",
+      "basis": "Max GSF 54250 · achieved 45095 (83.1%) · 2 bars × 2 floors · 35 units @ 1288 GSF/unit · 69/53 stalls · clamp: none · binding: density(units) · access connected · score 0.416 · 1 clamp",
+      "violationCodes": [],
+      "envelopeSource": "brief_2274_true",
+      "utilizationPct": 83.1
+    },
+    "violations": []
+  },
+  "553450": {
+    "ok": true,
+    "advisory": false,
+    "evidence": {
+      "solvedBy": "server",
+      "basis": "Max GSF 136400 · achieved 134115 (98.3%) · 5 bars × 4 floors · 88 units @ 1524 GSF/unit · 164/132 stalls · clamp: none · binding: impervious_coverage · access connected · score 0.921",
+      "violationCodes": [],
+      "envelopeSource": "brief_2274_true",
+      "utilizationPct": 98.3
+    },
+    "violations": []
+  },
+  "667574": {
+    "ok": true,
+    "advisory": false,
+    "evidence": {
+      "solvedBy": "worker",
+      "basis": "161200 GSF @ 4 stories (V-A) = 40300 SF footprint = 599 ft of 67.3-ft bar -> preferred prior 3 building(s) x 200 ft. Frontage 348.2 ft -> street_bar_parking_behind.",
+      "violationCodes": [
+        "parkingShortfall",
+        "server-plan-rejected"
+      ],
+      "envelopeSource": "brief_2274_true",
+      "utilizationPct": 54.2
+    },
+    "violations": []
+  },
+  "669046": {
+    "ok": true,
+    "advisory": false,
+    "evidence": {
+      "solvedBy": "worker",
+      "basis": "116250 GSF @ 4 stories (V-A) = 29063 SF footprint = 432 ft of 67.3-ft bar -> preferred prior 2 building(s) x 216 ft. Frontage 0 ft -> court_scheme_easement_access.",
+      "violationCodes": [
+        "server-plan-rejected"
+      ],
+      "envelopeSource": "brief_2274_true",
+      "utilizationPct": 64.9
+    },
+    "violations": []
+  }
+}

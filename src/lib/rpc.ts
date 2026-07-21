@@ -31,7 +31,7 @@ export async function scorePad(
     max_far: opts?.maxFar ?? null,
     max_coverage_pct: opts?.maxCoveragePct ?? null
   };
-  const { data, error } = await sb.rpc('score_pad', payload as any);
+  const { data, error } = await sb.rpc('score_pad', payload as any); // legacy-display-ok: dead export
   if (error) throw error;
   return data as ScorePadResult;
 }

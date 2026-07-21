@@ -1,7 +1,25 @@
 {
-  "_rules": "Floors only ratchet UP. A server-behavior PR must refresh fixtures/mock_store.json AND raise (never lower) these floors to match. honest-refusal encodes a parcel whose CURRENT live response is geometrically defective: the gate asserts the rejection machinery fires loudly and the worker fallback renders — flip it to server-plan the moment the server output is fixed.",
-  "553450": { "mode": "server-plan", "minCapturePct": 98.0, "_basis": "2600 W Heiman — 5 bars x 4 floors, 98.3% measured 2026-07-21" },
-  "488278": { "mode": "server-plan", "minCapturePct": 83.0, "_basis": "1710 Meharry — 2 bars x 2 floors small-lot prior, 83.1% measured 2026-07-21" },
-  "667574": { "mode": "honest-refusal", "_basis": "2622 W Heiman — pool court x parking 22 m2 (upstream defect); flip to server-plan >= 98.5 when fixed" },
-  "669046": { "mode": "honest-refusal", "_basis": "1200 W H Davis — relaxation-ladder infill bars overlap 1,289 m2 (upstream regression); flip to server-plan >= 98.5 when fixed" }
+  "_rules": "Floors only ratchet UP. A server-behavior PR must refresh fixtures/mock_store.json AND raise (never lower) these floors to match. honest-refusal encodes a parcel whose CURRENT live response is geometrically defective: the gate asserts the rejection machinery fires loudly and the worker fallback renders \u2014 flip it to server-plan the moment the server output is fixed.",
+  "553450": {
+    "mode": "server-plan",
+    "minCapturePct": 98.0,
+    "_basis": "2600 W Heiman \u2014 5 bars x 4 floors, 98.3% measured 2026-07-21",
+    "requireBriefEnvelope": true
+  },
+  "488278": {
+    "mode": "server-plan",
+    "minCapturePct": 83.0,
+    "_basis": "1710 Meharry \u2014 2 bars x 2 floors small-lot prior, 83.1% measured 2026-07-21",
+    "requireBriefEnvelope": true
+  },
+  "667574": {
+    "mode": "honest-refusal",
+    "_basis": "2622 W Heiman \u2014 pool court x parking 22 m2 (upstream defect); flip to server-plan >= 98.5 when fixed",
+    "requireBriefEnvelope": true
+  },
+  "669046": {
+    "mode": "honest-refusal",
+    "_basis": "1200 W H Davis \u2014 relaxation-ladder infill bars overlap 1,289 m2 (upstream regression); flip to server-plan >= 98.5 when fixed",
+    "requireBriefEnvelope": true
+  }
 }

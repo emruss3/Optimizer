@@ -92,7 +92,7 @@ export class ParcelGeometryService {
     try {
       console.log('🔍 Fetching parcel geometry in EPSG:3857 for OGC_FID:', ogcFid);
       
-      const { data, error } = await supabase.rpc('get_parcel_geometry_3857', {
+      const { data, error } = await supabase.rpc('get_parcel_geometry_3857', { // legacy-display-ok: zero runtime consumers
         p_ogc_fid: ogcFid
       });
 

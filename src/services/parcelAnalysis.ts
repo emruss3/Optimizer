@@ -1,4 +1,4 @@
-// DEPRECATED (WO 2026-07-20 item 2c): get_buildable_envelope here serves
+// DEPRECATED (WO 2026-07-20 item 2c): get_buildable_envelope here serves (legacy-display-ok)
 // legacy demo/analysis surfaces only. The live planner solves on the
 // compiled brief envelope. Do not add new callers.
 // © 2025 ER Technologies. All rights reserved.
@@ -113,7 +113,7 @@ export class ParcelAnalysisService {
     try {
       console.log('🏗️ Calculating buildable envelope for parcel:', parcelId);
       
-      const { data, error } = await supabase.rpc('get_buildable_envelope', {
+      const { data, error } = await supabase.rpc('get_buildable_envelope', { // legacy-display-ok: deprecated demo-only service
         p_parcel_id: parcelId
       });
 
@@ -153,7 +153,7 @@ export class ParcelAnalysisService {
       console.log('📐 Pad geometry:', padGeometry);
       console.log('🅿️ Parking geometry:', parkingGeometry);
       
-      const { data, error } = await supabase.rpc('score_pad', {
+      const { data, error } = await supabase.rpc('score_pad', { // legacy-display-ok: deprecated demo-only service
         p_parcel_id: parcelId,
         p_pad_3857: padGeometry,
         p_parking_3857: parkingGeometry || null
@@ -260,7 +260,7 @@ export class ParcelAnalysisService {
     try {
       console.log(`🗺️ Fetching parcel geometry in SRID ${targetSRID} for:`, parcelId);
       
-      const { data, error } = await supabase.rpc('get_parcel_geometry_3857', {
+      const { data, error } = await supabase.rpc('get_parcel_geometry_3857', { // legacy-display-ok: deprecated demo-only service
         p_parcel_id: parcelId
       });
 

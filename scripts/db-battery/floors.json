@@ -1,0 +1,6 @@
+{
+  "_rules": "Per-parcel capture floors for the DB acceptance battery (gfa_sqft / fn_max_buildout.max_gsf, percent). Floors only ratchet UP, and raising one is a reviewed change — a solver PR that improves a parcel commits the new floor in the same PR. Evidence for the current values: measured live 2026-07-21 (98.3 / 83.1 / 47.8).",
+  "553450": 98.0,
+  "488278": 83.0,
+  "480089": 47.0
+}

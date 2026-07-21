@@ -314,7 +314,7 @@ export function ParcelAnalysisDemo({ className = '' }: ParcelAnalysisDemoProps) 
         <h3 className="text-gray-800 font-medium mb-3">📋 Usage Instructions</h3>
         <div className="text-sm text-gray-600 space-y-2">
           <p><strong>1. Fetch Parcel:</strong> Retrieves parcel data from the planner_join table</p>
-          <p><strong>2. Get Envelope:</strong> Calculates buildable envelope using get_buildable_envelope RPC</p>
+          <p><strong>2. Get Envelope:</strong> Calculates buildable envelope using get_buildable_envelope RPC</p>{/* legacy-display-ok: unmounted demo help text */}
           <p><strong>3. Score Pad:</strong> Scores a pad/polygon using score_pad RPC</p>
           <p><strong>Full Analysis:</strong> Runs all three steps in sequence</p>
           <p><strong>Custom Geometry:</strong> Provide GeoJSON polygons to score custom pads/parking areas</p>

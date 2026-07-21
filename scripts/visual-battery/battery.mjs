@@ -85,6 +85,11 @@ function judge(exp, ev) {
       errs.push(`expected the worker fallback to render, got solvedBy=${ev.solvedBy ?? 'none'}`);
     }
   }
+  // CC-3a: the legacy client-frame envelope construction must never serve a
+  // reference parcel — the brief's EPSG:2274-true envelope is the staging.
+  if (exp.requireBriefEnvelope && ev.envelopeSource !== 'brief_2274_true') {
+    errs.push(`expected envelopeSource=brief_2274_true, got ${ev.envelopeSource ?? 'none'} (legacy envelope path fired)`);
+  }
   return errs;
 }
 

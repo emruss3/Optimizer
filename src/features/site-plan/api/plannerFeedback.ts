@@ -26,6 +26,25 @@ export type PlannerFeedbackEvent =
   | 'parameter_changed';
 
 let authKnownAbsent = false;
+let authListenerArmed = false;
+
+/** The absent-auth cache must not outlive a sign-in: the user starting
+ *  anonymous and authenticating mid-session via the AuthChip is the NORMAL
+ *  first-run path, and a latched cache silently dropped every event for the
+ *  rest of the session (feedback_events stayed at zero). One listener,
+ *  armed lazily on first use. */
+function armAuthListener(): void {
+  if (authListenerArmed || !supabase) return;
+  authListenerArmed = true;
+  try {
+    supabase.auth.onAuthStateChange((_event: string, session: { user?: unknown } | null) => {
+      if (session?.user) authKnownAbsent = false;
+    });
+  } catch {
+    // Listener is an optimization; recordPlannerFeedback still re-checks
+    // getUser() whenever the cache is clear.
+  }
+}
 
 export async function recordPlannerFeedback(
   contextId: string | null | undefined,
@@ -36,6 +55,7 @@ export async function recordPlannerFeedback(
 ): Promise<void> {
   try {
     if (!supabase || !contextId) return;
+    armAuthListener();
     if (authKnownAbsent) return;
     const { data } = await supabase.auth.getUser();
     if (!data?.user) {

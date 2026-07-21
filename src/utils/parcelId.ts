@@ -2,8 +2,8 @@
  * Parcel ID standardization utilities
  * 
  * The app uses two different ID types:
- * - ogc_fid (number): Used for geometry RPCs like get_parcel_geometry_3857
- * - parcel_id (string): Used for planner RPCs like get_parcel_detail, get_buildable_envelope
+ * - ogc_fid (number): Used for geometry RPCs like get_parcel_geometry_3857 (legacy-display-ok: doc reference)
+ * - parcel_id (string): Used for planner RPCs like get_parcel_detail, get_buildable_envelope (legacy-display-ok: doc reference)
  * 
  * This module provides utilities to convert between them and ensure consistent usage.
  */
@@ -113,8 +113,8 @@ export function getRpcId(ogcFid: OgcFid, rpcType: 'geometry' | 'planner'): OgcFi
  * Constants for RPC parameter names
  */
 export const RPC_PARAMS = {
-  GEOMETRY: 'p_ogc_fid',      // For get_parcel_geometry_3857
-  PLANNER: 'p_parcel_id',     // For get_parcel_detail, get_buildable_envelope
+  GEOMETRY: 'p_ogc_fid',      // For get_parcel_geometry_3857 (legacy-display-ok: doc reference)
+  PLANNER: 'p_parcel_id',     // For get_parcel_detail, get_buildable_envelope (legacy-display-ok: doc reference)
   BBOX: 'p_parcel_ids'        // For batch operations
 } as const;
 

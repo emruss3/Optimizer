@@ -74,7 +74,7 @@ export function SupabaseIntegrationExample() {
         <div className="text-blue-600">  .single();</div>
         <br />
         <div className="text-green-600">// Envelope RPC</div>
-        <div className="text-blue-600">const {`{ data: env }`} = await supabase.rpc("get_buildable_envelope", {`{ p_parcel_id: parcel.parcel_id }`});</div>
+        <div className="text-blue-600">const {`{ data: env }`} = await supabase.rpc("get_buildable_envelope", {`{ p_parcel_id: parcel.parcel_id }`});</div>{/* legacy-display-ok */}
         <br />
         <div className="text-green-600">// Score RPC</div>
         <div className="text-blue-600">const {`{ data: score }`} = await supabase.rpc("score_pad", {`{`}</div>
