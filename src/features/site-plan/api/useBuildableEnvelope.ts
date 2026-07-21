@@ -26,7 +26,7 @@ type RpcMetrics = {
   hasZoning?: boolean;
 };
 
-export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
+export const useBuildableEnvelope = (parcel?: SelectedParcel | null, frontageBearingDeg?: number | null) => {
   const [status, setStatus] = useState<EnvelopeStatus>('loading');
   const [envelope, setEnvelope] = useState<any>(null);
   const [rpcMetrics, setRpcMetrics] = useState<RpcMetrics | null>(null);
@@ -113,7 +113,7 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
         let edgeClasses: EdgeClassification[] = [];
 
         if (parcelPoly3857) {
-          edgeClasses = classifyParcelEdges(parcelPoly3857, []);
+          edgeClasses = classifyParcelEdges(parcelPoly3857, [], frontageBearingDeg ?? null);
 
           const setbacksM: SetbackValues = {
             front: feetToMeters(setbacksFt.front),
@@ -163,7 +163,7 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null) => {
     return () => {
       cancelled = true;
     };
-  }, [parcel?.ogc_fid]);
+  }, [parcel?.ogc_fid, frontageBearingDeg]);
 
   return {
     status,

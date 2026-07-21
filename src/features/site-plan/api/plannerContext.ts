@@ -495,7 +495,10 @@ export function briefToWorkerBrief(
   /** WO-1b interim: directly-fetched fn_parcel_frontage result. Used ONLY
    *  while the brief's front_edge is still a placeholder — the compiled
    *  brief wins the moment the compiler maps real frontage into it. */
-  frontage?: import('./parcelFrontage').ParcelFrontage | null
+  frontage?: import('./parcelFrontage').ParcelFrontage | null,
+  /** WO3 interim: directly-fetched fn_massing_program result. The brief's
+   *  massing_program wins the moment the compiler composes it. */
+  massing?: import('./massingProgram').MassingProgram | null
 ): import('../../../engine/optimizer').WorkerSolverBrief {
   const priors = resp.solver_brief.precedent_priors;
   const target = priors.underwrite_target;
@@ -527,6 +530,32 @@ export function briefToWorkerBrief(
   const geometry = brief.geometry as
     | { front_edge_is_placeholder?: boolean; front_edge?: { bearing_deg?: number | null }; landlocked?: boolean }
     | undefined;
+  const massingRaw = (brief.massing_program as Record<string, unknown> | undefined) ?? undefined;
+  const mpSource = massingRaw
+    ? {
+        buildingCount: (massingRaw.building_count as number | null) ?? null,
+        barLengthFt: ((massingRaw.per_building as Record<string, unknown>)?.bar_length_ft as number | null) ?? null,
+        barDepthFt: ((massingRaw.per_building as Record<string, unknown>)?.bar_depth_ft as number | null) ?? null,
+        stories: (massingRaw.stories as number | null) ?? null,
+        parti: (massingRaw.parti as string | null) ?? null,
+        constructionType: ((massingRaw.construction_type as Record<string, unknown>)?.type as string | null) ?? null,
+        constructionMaxStories: ((massingRaw.construction_type as Record<string, unknown>)?.max_stories as number | null) ?? null,
+        rationale: (massingRaw.rationale as string | null) ?? null,
+        targetGsf: (massingRaw.target_gsf as number | null) ?? null,
+      }
+    : massing
+      ? {
+          buildingCount: massing.building_count ?? null,
+          barLengthFt: massing.per_building?.bar_length_ft ?? null,
+          barDepthFt: massing.per_building?.bar_depth_ft ?? null,
+          stories: massing.stories ?? null,
+          parti: massing.parti ?? null,
+          constructionType: massing.construction_type?.type ?? null,
+          constructionMaxStories: massing.construction_type?.max_stories ?? null,
+          rationale: massing.rationale ?? null,
+          targetGsf: massing.target_gsf ?? null,
+        }
+      : undefined;
   const briefHasRealFrontage = geometry?.front_edge_is_placeholder === false;
   const frontEdge = briefHasRealFrontage
     ? {
@@ -591,6 +620,8 @@ export function briefToWorkerBrief(
         }
       : undefined,
     frontEdge,
+    massingProgram: mpSource,
+    typeMix: priors.type_mix ?? null,
     generationAllowed: resp.generation_allowed,
     precedent: {
       storiesP50: quantityStories ?? priors.stories?.p50 ?? null,

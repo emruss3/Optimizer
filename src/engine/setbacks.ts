@@ -131,7 +131,11 @@ function findOppositeEdgeIndex(
  */
 export function classifyParcelEdges(
   parcelGeom: Polygon,
-  roadGeoms: { geom: LineString; name?: string }[]
+  roadGeoms: { geom: LineString; name?: string }[],
+  /** WO3-1d: derived street-frontage bearing (compass degrees). When set and
+   *  no road geometry decides, FRONT = the longest edge within ~25° of the
+   *  bearing (mod 180) — real directions replace the longest-edge guess. */
+  frontageBearingDeg?: number | null
 ): EdgeClassification[] {
   const ring = parcelGeom.coordinates[0];
   if (!ring || ring.length < 4) return [];
@@ -202,6 +206,22 @@ export function classifyParcelEdges(
     if (hit && hit.distance < minRoadDist) {
       minRoadDist = hit.distance;
       frontIdx = i;
+    }
+  }
+
+  // WO3-1d: with a real frontage bearing, FRONT = the longest edge aligned
+  // with the street (mod 180°, ±~25°) — directions are real, not guessed.
+  if (frontIdx === -1 && frontageBearingDeg != null && Number.isFinite(frontageBearingDeg)) {
+    const bearingRad = ((90 - frontageBearingDeg) * Math.PI) / 180;
+    let bestLen = -1;
+    for (let i = 0; i < n; i++) {
+      const e = edgeMeta[i];
+      const ang = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+      const align = Math.abs(Math.cos(ang - bearingRad));
+      if (align >= 0.9 && e.length > bestLen) {
+        bestLen = e.length;
+        frontIdx = i;
+      }
     }
   }
 

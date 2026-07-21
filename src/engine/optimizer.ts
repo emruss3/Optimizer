@@ -124,6 +124,22 @@ export interface WorkerSolverBrief {
     landlocked?: boolean;
     isPlaceholder?: boolean;
   };
+  /** WO3: the engine's COMPOSITION DIRECTIVE — build THIS program.
+   *  Building count comes from consolidation (never precedent count);
+   *  the worker honors count, bar dims, and stories like server v2. */
+  massingProgram?: {
+    buildingCount?: number | null;
+    barLengthFt?: number | null;
+    barDepthFt?: number | null;
+    stories?: number | null;
+    parti?: string | null;
+    constructionType?: string | null;
+    constructionMaxStories?: number | null;
+    rationale?: string | null;
+    targetGsf?: number | null;
+  };
+  /** Local precedent type mix (form/style evidence only). */
+  typeMix?: Record<string, number> | null;
 }
 
 export interface OptimizeResult {
@@ -977,17 +993,26 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   // uses. Legal constraints stay hard; priors never exceed them.
   const prec = input.solverBrief?.precedent;
   const hasPrecedentPrior = (prec?.sampleSize ?? 0) >= 5;
+  // WO3: the massing program is a DIRECTIVE, not a prior — its bar dims and
+  // building count win outright (precedents shape facade/style, never mass).
+  const mp = input.solverBrief?.massingProgram;
   // Depth: local median, clamped to the MF constructable range (45–72 ft —
   // double-loaded corridor depths that can actually be built).
   let defaultDepthFt = 60;
-  if (hasPrecedentPrior && prec?.depthP50Ft != null && prec.depthP50Ft > 0) {
+  if (mp?.barDepthFt != null && mp.barDepthFt > 0) {
+    defaultDepthFt = Math.min(80, Math.max(45, Math.round(mp.barDepthFt)));
+    briefFieldsUsed.push('barDepthFt');
+  } else if (hasPrecedentPrior && prec?.depthP50Ft != null && prec.depthP50Ft > 0) {
     defaultDepthFt = Math.min(72, Math.max(45, Math.round(prec.depthP50Ft)));
   }
   const defaultDepthM = defaultDepthFt * 0.3048;
   // Length: local 75th percentile clamped to 90–300 ft; when v2 length data
   // is absent, the v1 footprint-p90-at-depth heuristic remains the fallback.
   let defaultWidthFt = 200;
-  if (hasPrecedentPrior && prec?.lengthP75Ft != null && prec.lengthP75Ft > 0) {
+  if (mp?.barLengthFt != null && mp.barLengthFt > 0) {
+    defaultWidthFt = Math.min(320, Math.max(90, Math.round(mp.barLengthFt)));
+    briefFieldsUsed.push('barLengthFt');
+  } else if (hasPrecedentPrior && prec?.lengthP75Ft != null && prec.lengthP75Ft > 0) {
     defaultWidthFt = Math.min(300, Math.max(90, Math.round(prec.lengthP75Ft)));
   } else if (hasPrecedentPrior && prec?.footprintP90SqFt != null) {
     defaultWidthFt = Math.min(300, Math.max(90, Math.round(prec.footprintP90SqFt / defaultDepthFt)));
@@ -998,13 +1023,19 @@ export function optimize(input: OptimizeInput): OptimizeResult {
   // Buildings should use at most ~40% of envelope area (rest for parking, open space, circulation)
   const maxPhysicalBuildings = Math.max(1, Math.floor(envelopeCorrectedArea * 0.4 / buildingFootprintArea));
   let effectiveNumBuildings = Math.min(numBuildings, maxPhysicalBuildings);
+  // WO3: honor massingProgram.building_count (consolidation directive) —
+  // an explicit user numBuildings still wins; physical fit still caps.
+  if (mp?.buildingCount != null && mp.buildingCount > 0 && designParams.numBuildings == null) {
+    effectiveNumBuildings = Math.max(1, Math.min(maxPhysicalBuildings, Math.round(mp.buildingCount)));
+    briefFieldsUsed.push('buildingCount');
+  }
 
   // Constructive fast path: let target COVERAGE drive the building count (FAR
   // then drives floors below). Buildings sit in spaced grid cells, so a
   // coverage-driven count stays overlap-free — no scaling/clamp churn. Uses raw
   // EPSG:3857 areas so the ratio matches feasibility's coverage (Mercator cancels).
   // An explicitly requested numBuildings always wins over the coverage target.
-  if (maxIterations === 0 && designParams.numBuildings == null) {
+  if (maxIterations === 0 && designParams.numBuildings == null && mp?.buildingCount == null) {
     const maxCov = (effMaxCoveragePct ?? 60) / 100;
     // Coverage: the local p75 seeds the target when the user hasn't moved the
     // slider off its default — a user-set value overrides the soft prior, and
@@ -1146,7 +1177,8 @@ export function optimize(input: OptimizeInput): OptimizeResult {
       // Precedent stories are FORM EVIDENCE and never cap quantity once a
       // max-buildout target exists (same doctrine as the server generator).
       const placedFootprintSqft = placedFootprintM2 * SQM_TO_SQFT_CONST;
-      const ladderStories = input.solverBrief?.maxBuildout?.atStories ?? null;
+      const ladderStories = input.solverBrief?.massingProgram?.stories
+        ?? input.solverBrief?.maxBuildout?.atStories ?? null;
       let targetFloors: number;
       if (maxGsfSqft != null && maxGsfSqft > 0 && placedFootprintSqft > 0) {
         targetFloors = Math.ceil(maxGsfSqft / placedFootprintSqft);

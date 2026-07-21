@@ -276,3 +276,43 @@ describe('WO-0: brief-wins contract + capture-primary objective', () => {
     );
   });
 });
+
+describe('WO3: the massing program is a composition directive', () => {
+  it('honors building count, bar dims, and stories (553450 acceptance shape: 2 × 253 ft × 4 st)', () => {
+    // Envelope big enough for two 253-ft bars: 200m × 160m.
+    const bigEnv: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [X0, Y0], [X0 + 200, Y0], [X0 + 200, Y0 + 160], [X0, Y0 + 160], [X0, Y0],
+      ]],
+    };
+    const r = solveConstructive({
+      envelope: bigEnv, zoning, designParams, seed: 5,
+      solverBrief: {
+        generationAllowed: true,
+        maxBuildout: { maxGsf: 136400, atStories: 4 },
+        hardConstraints: { maxFar: 2.0, maxHeightFt: 70, maxCoveragePct: 60 },
+        massingProgram: {
+          buildingCount: 2,
+          barLengthFt: 253,
+          barDepthFt: 67.3,
+          stories: 4,
+          parti: 'street_bar_parking_behind',
+          constructionType: 'V-A',
+          constructionMaxStories: 4,
+          rationale: '136400 GSF @ 4 stories (V-A) → 2 building(s) × 253 ft.',
+          targetGsf: 136400,
+        },
+      },
+    });
+    expect(r.bestBuildings).toHaveLength(2);
+    const widthsFt = r.bestBuildings.map(b => Math.round(b.widthM / 0.3048)).sort((a, b) => b - a);
+    // The directive sizes bars at 253 ft; envelope fit may shorten one.
+    expect(widthsFt[0]).toBeGreaterThanOrEqual(200);
+    expect(widthsFt[0]).toBeLessThanOrEqual(260);
+    expect(Math.max(...r.bestBuildings.map(b => b.floors ?? 1))).toBe(4);
+    expect(r.contract!.briefFieldsUsed).toEqual(
+      expect.arrayContaining(['buildingCount', 'barLengthFt', 'barDepthFt'])
+    );
+  });
+});
