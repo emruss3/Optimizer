@@ -1,0 +1,137 @@
+{
+  "date": "2026-07-21",
+  "seed": "census-2026-07-21",
+  "n_per_stratum": 15,
+  "min_lot_sqft": 5000,
+  "method_note": "First census: run via the SQL channel, single unstratified draw (md5(ogc_fid||seed) over zoning ~ ^(RM|OR|MU)). 12/15 draws are degenerate slivers (max_gsf 1-2,690 sf) where refusal is correct but shaped as an error - the nightly runner samples a buildable stratum (sqft >= 5000) alongside the full universe for exactly this reason.",
+  "strata": {
+    "full": {
+      "results": [
+        {
+          "fid": 609035,
+          "outcome": "error",
+          "detail": "planner_unit_gsf_band_infeasible",
+          "max_gsf": 2690
+        },
+        {
+          "fid": 703383,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 1
+        },
+        {
+          "fid": 688520,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 1189
+        },
+        {
+          "fid": 580656,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 295
+        },
+        {
+          "fid": 385302,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 17
+        },
+        {
+          "fid": 553044,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 15
+        },
+        {
+          "fid": 421238,
+          "outcome": "verdict",
+          "detail": "planner_generation_not_allowed",
+          "max_gsf": 47
+        },
+        {
+          "fid": 399242,
+          "outcome": "ok",
+          "capture": 89.2,
+          "gfa": 301248,
+          "max_gsf": 337628,
+          "bars": 7
+        },
+        {
+          "fid": 594617,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 337
+        },
+        {
+          "fid": 673938,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 827
+        },
+        {
+          "fid": 556119,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 159
+        },
+        {
+          "fid": 633031,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 14
+        },
+        {
+          "fid": 598649,
+          "outcome": "error",
+          "detail": "planner_envelope_unplaceable",
+          "max_gsf": 1613
+        },
+        {
+          "fid": 687734,
+          "outcome": "exception",
+          "detail": "fn_massing_program line 35: upper bound of FOR loop cannot be null (via fn_compile_planner_context line 173)"
+        },
+        {
+          "fid": 390280,
+          "outcome": "error",
+          "detail": "planner_envelope_unbuildable_depth",
+          "max_gsf": 178
+        }
+      ],
+      "summary": {
+        "n": 15,
+        "ok": 1,
+        "error_rate_pct": 86.7,
+        "median_capture_pct": 89.2,
+        "clusters": [
+          {
+            "class": "error:planner_envelope_unbuildable_depth",
+            "count": 10
+          },
+          {
+            "class": "error:planner_unit_gsf_band_infeasible",
+            "count": 1
+          },
+          {
+            "class": "verdict",
+            "count": 1
+          },
+          {
+            "class": "ok",
+            "count": 1
+          },
+          {
+            "class": "error:planner_envelope_unplaceable",
+            "count": 1
+          },
+          {
+            "class": "exception",
+            "count": 1
+          }
+        ],
+        "micro_lots_max_gsf_lt_3000": 13
+      }
+    }
+  }
+}
