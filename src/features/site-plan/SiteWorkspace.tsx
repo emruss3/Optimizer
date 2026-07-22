@@ -22,6 +22,7 @@ import ResultsPanel from './ui/ResultsPanel';
 import Massing3D from './ui/Massing3D';
 import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
+import { CensusBanner } from './ui/CensusBanner';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, defaultUseFromZoningBase, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
@@ -630,7 +631,25 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const clampCount = flags.filter(f => f.includes('clamp')).length;
     const clampNote = clampCount > 0 ? ` · ${clampCount} clamp${clampCount === 1 ? '' : 's'}` : '';
     const scoreNote = typeof resp.score_total === 'number' ? ` · score ${resp.score_total}` : '';
-    setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}`);
+    // Stage-5 napkin honesty: when the solver relaxed the massing directive,
+    // the basis line says HOW it stayed in-family (or that it free-packed).
+    const relaxNote = (() => {
+      const cleaned = [...new Set(
+        flags
+          .filter(f => f.startsWith('massing_program_relaxed_') || f.startsWith('massing_program_free_pack'))
+          .map(f => f
+            .replace('massing_program_relaxed_', '')
+            .replace('massing_program_', '')
+            .replace(/_selected(_v\d+)?$/, '')
+            .replace(/_v\d+$/, '')
+            .replace(/_/g, ' '))
+      )];
+      if (!cleaned.length) return '';
+      // Free-pack is the LAST rung, not in-family — say which one it was.
+      const label = cleaned.some(c => c.includes('free pack')) ? 'relaxed' : 'in-family';
+      return ` · ${label}: ${cleaned.join(', ')}`;
+    })();
+    setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}${relaxNote}`);
     // A3: value the scheme against local sales — the margin ticks live
     loadMoney(serverMetrics?.totalBuiltSF, serverMetrics?.totalUnits);
     if (opts.persist !== false) {
@@ -1798,6 +1817,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   return (
     <div className="h-full min-h-0 flex flex-col bg-gray-100">
+      <CensusBanner />
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
       <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip

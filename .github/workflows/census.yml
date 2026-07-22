@@ -1,0 +1,49 @@
+name: Generation Census
+
+# The nightly health instrument (GENERATION_STRATEGY_v2): random-sample the
+# live generator in two strata (full universe + buildable lots), classify
+# every outcome, publish the table to the run summary and the census JSON as
+# an artifact. The census OBSERVES (exit 0); crashes can be made blocking
+# with CENSUS_GATE=1 once the exception count reaches zero.
+
+on:
+  schedule:
+    - cron: '43 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run census
+        env:
+          BATTERY_SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
+          BATTERY_SUPABASE_ANON_KEY: ${{ secrets.BATTERY_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$BATTERY_SUPABASE_URL" ] || [ -z "$BATTERY_SUPABASE_ANON_KEY" ]; then
+            echo "Census skipped: BATTERY_SUPABASE_URL / BATTERY_SUPABASE_ANON_KEY secrets not configured." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          CENSUS_OUT=census-out node scripts/census/run.mjs | tee census-log.txt
+          {
+            echo "## Generation census"
+            echo '```'
+            tail -30 census-log.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: census-${{ github.run_id }}
+          path: |
+            census-out/
+            census-log.txt
+          retention-days: 60

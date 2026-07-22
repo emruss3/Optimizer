@@ -35,21 +35,6 @@ jobs:
       - name: Unit tests
         run: npm run test
 
-      # DB acceptance battery (audit 2026-07-21 CC-1): live solver, read-only
-      # (p_persist=false), fails the merge on any unexpected error or any
-      # capture below scripts/db-battery/floors.json. ENFORCING once the
-      # secrets exist; loud skip until then (a missing secret must not fail
-      # every fork PR). Geometry validity is battery-gate.yml's job.
-      - name: DB acceptance battery (solver floors)
-        env:
-          BATTERY_SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
-          BATTERY_SUPABASE_ANON_KEY: ${{ secrets.BATTERY_SUPABASE_ANON_KEY }}
-        run: |
-          if [ -z "$BATTERY_SUPABASE_URL" ] || [ -z "$BATTERY_SUPABASE_ANON_KEY" ]; then
-            echo "::warning::DB battery SKIPPED — add BATTERY_SUPABASE_URL / BATTERY_SUPABASE_ANON_KEY repo secrets to enforce solver floors on every PR."
-            exit 0
-          fi
-          node scripts/db-battery/run.mjs
 
       - name: E2E tests
         run: |
@@ -75,3 +60,28 @@ jobs:
         # binary, not an npm package — the install 404s. Use npm audit as a
         # non-blocking advisory signal until a proper OSV action is wired up.
         run: npm audit --audit-level=high || true
+
+  # Solver floors as their OWN named check so its red is legible: build-test
+  # red = this diff is broken; solver-floors red = the LIVE solver is broken.
+  # POLICY: a solver-affecting PR never merges over a red here (and must
+  # refresh fixtures + ratchet floors when it improves things). A PR whose
+  # diff cannot affect solver outcomes MAY merge over a PRE-EXISTING red with
+  # the red acknowledged in the merge commit — blocking bookkeeping and
+  # instrumentation on live solver state is a deadlock, not a gate.
+  solver-floors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: DB acceptance battery (live solver vs committed floors)
+        env:
+          BATTERY_SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
+          BATTERY_SUPABASE_ANON_KEY: ${{ secrets.BATTERY_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$BATTERY_SUPABASE_URL" ] || [ -z "$BATTERY_SUPABASE_ANON_KEY" ]; then
+            echo "::warning::DB battery SKIPPED — add BATTERY_SUPABASE_URL / BATTERY_SUPABASE_ANON_KEY repo secrets to enforce solver floors on every PR."
+            exit 0
+          fi
+          node scripts/db-battery/run.mjs
