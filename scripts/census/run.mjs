@@ -5,12 +5,11 @@
 //   ok · verdict (legitimate refusal) · error (named planner error) ·
 //   exception (unhandled SQL/transport crash) · timeout
 //
-// Strata (the 2026-07-21 run's lesson): a raw random draw of this universe
-// is dominated by degenerate slivers (12/15 parcels with max_gsf < 3,000 sf
-// — remnant fabric where refusal is CORRECT); an unstratified error rate
-// measures Nashville's parcel fabric, not the solver. So:
+// Strata:
 //   full      — the honest ops picture (what any parcel click can hit)
-//   buildable — lot_sqft >= MIN_LOT_SQFT: the solver's real exam
+//   buildable — canonical fn_parcel_buildability verdict LIKE buildable%; the
+//               solver's real exam. MIN_LOT_SQFT is only a cheap prefilter,
+//               never the verdict itself.
 //
 // The census is an INSTRUMENT, not a gate: it always exits 0 (set
 // CENSUS_GATE=1 to fail on exceptions — crashes are never acceptable).
@@ -69,8 +68,23 @@ function seededPick(arr, n, seed) {
   return a.slice(0, n);
 }
 
+async function buildabilityVerdict(fid) {
+  const r = await rest('/rest/v1/rpc/fn_parcel_buildability', {
+    method: 'POST',
+    body: JSON.stringify({ p_ogc_fid: fid, p_typology: 'multifamily' }),
+  });
+  return {
+    fid,
+    ok: r.ok,
+    verdict: r.body?.verdict ?? null,
+    reason: r.body?.reason ?? null,
+  };
+}
+
 async function sampleStratum(name, minSqft) {
-  // Page of candidate fids via PostgREST; seeded local sample keeps CI stable.
+  // Page of candidate fids via PostgREST; seeded local sampling keeps runs
+  // deterministic. For the buildable stratum, sample a wider candidate pool
+  // and let the canonical engine verdict select the final N.
   const filter = minSqft ? `&sqft=gte.${minSqft}` : '';
   const r = await rest(`/rest/v1/parcels?select=ogc_fid&zoning=ilike.RM*${filter}&limit=2000`);
   const rows = Array.isArray(r.body) ? r.body : [];
@@ -78,7 +92,29 @@ async function sampleStratum(name, minSqft) {
     console.log(`stratum ${name}: no candidates returned (${r.status}) — skipping`);
     return [];
   }
-  return seededPick(rows.map(x => x.ogc_fid), N, `${SEED}:${name}`);
+
+  const all = rows.map(x => x.ogc_fid);
+  if (name !== 'buildable') return seededPick(all, N, `${SEED}:${name}`);
+
+  const candidateCount = Math.min(all.length, Math.max(N * 5, N + 40));
+  const candidates = seededPick(all, candidateCount, `${SEED}:${name}:candidates`);
+  const classified = await pool(
+    candidates,
+    buildabilityVerdict,
+    Math.max(6, Number(process.env.CENSUS_CONCURRENCY ?? 6))
+  );
+  const buildable = classified
+    .filter(x => x.ok && typeof x.verdict === 'string' && x.verdict.startsWith('buildable'))
+    .map(x => x.fid)
+    .slice(0, N);
+
+  if (buildable.length < N) {
+    console.log(
+      `stratum buildable: canonical filter produced ${buildable.length}/${N} parcels ` +
+      `from ${candidateCount} candidates`
+    );
+  }
+  return buildable;
 }
 
 async function solveOne(fid) {
@@ -96,7 +132,9 @@ async function solveOne(fid) {
     });
     if (!solve.ok) return { fid, outcome: 'exception', detail: `solve HTTP ${solve.status}: ${JSON.stringify(solve.body)?.slice(0, 160)}` };
     const err = solve.body?.error;
-    if (err === 'planner_generation_not_allowed') return { fid, outcome: 'verdict', detail: err };
+    if (err === 'planner_generation_not_allowed') {
+      return { fid, outcome: 'verdict', detail: solve.body?.reason ? `${err}:${solve.body.reason}` : err };
+    }
     if (err) return { fid, outcome: 'error', detail: err };
     const gfa = solve.body?.metrics?.gfa_sqft;
     const bars = solve.body?.buildings?.length ?? 0;
@@ -108,7 +146,15 @@ async function solveOne(fid) {
     });
     const maxGsf = mb.body?.max_gsf;
     const capture = typeof maxGsf === 'number' && maxGsf > 0 ? Math.round((gfa / maxGsf) * 1000) / 10 : null;
-    return { fid, outcome: 'ok', capture, gfa, max_gsf: maxGsf, bars };
+    return {
+      fid,
+      outcome: 'ok',
+      capture,
+      gfa,
+      max_gsf: maxGsf,
+      bars,
+      buildability: solve.body?.buildability?.verdict ?? null,
+    };
   } catch (e) {
     const msg = String(e);
     return { fid, outcome: msg.includes('abort') ? 'timeout' : 'exception', detail: msg.slice(0, 160) };
