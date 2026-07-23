@@ -80,3 +80,20 @@ html, body, #root {
   transform: translateX(100%);
   transition: opacity 300ms, transform 300ms;
 }
+/* Accessibility skip link: invisible until keyboard-focused (it was
+   rendering as stray "Skip to main content" text at the top of the app). */
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -3rem;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  background: #1d4ed8;
+  color: #fff;
+  border-radius: 0 0 0.5rem 0.5rem;
+  font-size: 0.875rem;
+  transition: top 120ms ease;
+}
+.skip-link:focus {
+  top: 0;
+}

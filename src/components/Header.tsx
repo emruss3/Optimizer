@@ -9,7 +9,6 @@ import { useActiveProject } from '../store/project';
 import Guard from './Guard';
 import ShareInviteDialog from './ShareInviteDialog';
 import AuthChip from './AuthChip';
-import { MessageCircle } from 'lucide-react';
 
 interface HeaderProps {
   onOpenUnifiedWorkspace?: () => void;
@@ -28,19 +27,6 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
   const { activeProjectId, activeProjectName } = useParcelSelection();
   const { set: setActiveProject, clear: clearActiveProject } = useActiveProject();
   const [showShareDialog, setShowShareDialog] = React.useState(false);
-  const [unreadComments, setUnreadComments] = React.useState(0);
-  const [showLandingPage, setShowLandingPage] = React.useState(false);
-  
-  // Mock unread comments - in real app would come from realtime subscription
-  React.useEffect(() => {
-    if (activeProjectId) {
-      // Simulate unread comments
-      setUnreadComments(Math.floor(Math.random() * 5));
-    } else {
-      setUnreadComments(0);
-    }
-  }, [activeProjectId]);
-  
   // Mock projects - in real app, this would come from Supabase
   const [showProjectMenu, setShowProjectMenu] = React.useState(false);
   const mockProjects = [
@@ -61,21 +47,18 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-4 flex-shrink-0">
-      <div className="flex items-center justify-between">
-        {/* Logo and Title */}
-        <div className="flex items-center space-x-3 min-w-0 flex-shrink-0">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <Map className="w-6 h-6 text-white" />
+    <header className="bg-white border-b border-gray-200 px-4 md:px-6 py-2.5 flex-shrink-0">
+      <div className="flex items-center justify-between gap-3">
+        {/* Brand — one calm line; the tagline belongs on the landing page */}
+        <div className="flex items-center space-x-2.5 min-w-0 flex-shrink-0">
+          <div className="bg-blue-600 p-1.5 rounded-lg">
+            <Map className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Parcel Intelligence</h1>
-            <p className="text-sm text-gray-600 hidden sm:block">Real Estate Investment Platform</p>
-          </div>
+          <h1 className="text-lg font-semibold text-gray-900 whitespace-nowrap">Parcel Intelligence</h1>
         </div>
 
         {/* Search Bar */}
-        <div className="flex-1 max-w-md mx-4 md:mx-8 hidden lg:block" data-testid="desktop-search">
+        <div className="flex-1 min-w-[240px] max-w-md mx-4 md:mx-6 hidden lg:block" data-testid="desktop-search">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -96,14 +79,10 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
         {/* Actions */}
         <div className="flex items-center space-x-1 md:space-x-3 flex-shrink-0 kpi-bar" data-testid="header-actions">
           {/* KPI Bar with flex-wrap for responsive behavior */}
-          <div className="hidden md:flex items-center space-x-2 text-sm text-gray-600 flex-wrap">
-            <span data-testid="location-indicator">{activeProjectId ? `Active: ${activeProjectName}` : 'Nashville Metro'}</span>
-            <span>•</span>
-            <span>Real-time Data</span>
-          </div>
-          
-          {/* Navigation Divider */}
-          <div className="hidden md:block w-px h-6 bg-gray-300 mx-2"></div>
+          <span className="hidden xl:inline text-sm text-gray-500 whitespace-nowrap" data-testid="location-indicator">
+            {activeProjectId ? `Active: ${activeProjectName}` : 'Nashville Metro'}
+          </span>
+          <div className="hidden xl:block w-px h-6 bg-gray-200 mx-1"></div>
           
           {/* Project dropdown */}
           <div className="relative">
@@ -165,7 +144,7 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
         {/* Unified Project Workflow button */}
         <button
           onClick={onOpenUnifiedProjectWorkflow}
-          className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-green-600 text-white hover:bg-green-700"
+          className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-blue-600 text-white hover:bg-blue-700"
           data-testid="unified-project-workflow-button"
           title="Open unified project workflow"
           aria-label="Open unified project workflow"
@@ -177,7 +156,7 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
         {/* Real Underwriting Workflow button */}
         <button
           onClick={onOpenRealUnderwritingWorkflow}
-          className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-purple-600 text-white hover:bg-purple-700"
+          className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100"
           data-testid="real-underwriting-workflow-button"
           title="Open real underwriting workflow"
           aria-label="Open real underwriting workflow"
@@ -186,17 +165,20 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
           <span className="text-sm hidden md:inline">Underwriting</span>
         </button>
 
-          {/* Debug: Workflow Connection Test button */}
-          <button 
-            onClick={onOpenWorkflowConnectionTest}
-            className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-gray-600 text-white hover:bg-gray-700"
-            data-testid="workflow-connection-test-button"
-            title="Test workflow connections"
-            aria-label="Test workflow connections"
-          >
-            <Command className="w-4 h-4" />
-            <span className="text-sm hidden md:inline">Test</span>
-          </button>
+          {/* Debug: workflow connection test — dev builds only, never chrome
+              a customer sees */}
+          {import.meta.env.DEV && (
+            <button
+              onClick={onOpenWorkflowConnectionTest}
+              className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+              data-testid="workflow-connection-test-button"
+              title="Test workflow connections (dev)"
+              aria-label="Test workflow connections"
+            >
+              <Command className="w-4 h-4" />
+              <span className="text-sm hidden md:inline">Test</span>
+            </button>
+          )}
 
           {/* Underwriting button */}
           <button 
@@ -261,51 +243,6 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
 
           <AuthChip />
           
-          {/* Command Palette button */}
-          <button 
-            onClick={() => setCommandPalette(true)}
-            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors focus-ring" 
-            aria-label="Command palette"
-            data-testid="command-palette-button"
-          >
-            <Command className="w-4 h-4" />
-          </button>
-          
-          {/* Comments notification button */}
-          {activeProjectId && (
-            <button 
-              className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors focus-ring"
-              aria-label="Comments"
-              data-testid="comments-button"
-            >
-              <MessageCircle className="w-4 h-4" />
-              {unreadComments > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
-                  {unreadComments > 9 ? '9+' : unreadComments}
-                </div>
-              )}
-            </button>
-          )}
-          
-          {/* Mobile search toggle */}
-          <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors lg:hidden focus-ring" aria-label="Toggle search" data-testid="mobile-search-toggle">
-            <Search className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-      
-      {/* Mobile search bar (hidden by default) */}
-      <div className="mt-4 lg:hidden hidden" id="mobile-search" data-testid="mobile-search">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by address, parcel ID, or coordinates..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            data-testid="mobile-search-input"
-            onClick={() => setCommandPalette(true)}
-            readOnly
-          />
         </div>
       </div>
       
