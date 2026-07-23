@@ -1237,6 +1237,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         setLotFitSummary('Generator returned no drawable lots for this parcel.');
         return;
       }
+      if (!gateNonGesturePlan(generated, 'Lot plan')) return;
       // Additive per the brief — but idempotent: a re-generate REPLACES the
       // previous lot fit (matching id prefixes) instead of stacking a second
       // subdivision on top of the first.

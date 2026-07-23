@@ -82,10 +82,22 @@ async function solveParcel(fid) {
   if (typeof gfa !== 'number' || !(solve.buildings?.length > 0)) {
     return { fid, error: `no plan produced (generation: ${solve.generation ?? 'unknown'})` };
   }
-  const mb = await rpc('fn_max_buildout', { p_ogc_fid: fid, p_typology: 'multifamily' });
+  // The frontier read is a sub-call of the verdict — one transient failure
+  // must not red the gate (the 2026-07-23 480089 false alarm). Retry once
+  // and LABEL the failure so transient vs shape-change is legible in CI.
+  let mb;
+  let mbErr = null;
+  for (let attempt = 0; attempt < 2 && mb?.max_gsf == null; attempt++) {
+    try {
+      mb = await rpc('fn_max_buildout', { p_ogc_fid: fid, p_typology: 'multifamily' });
+      mbErr = mb?.max_gsf == null ? 'response missing max_gsf' : null;
+    } catch (e) {
+      mbErr = String(e).slice(0, 120);
+    }
+  }
   const maxGsf = mb?.max_gsf;
   const capture = typeof maxGsf === 'number' && maxGsf > 0 ? (gfa / maxGsf) * 100 : null;
-  return { fid, gfa, maxGsf, capture, bars: solve.buildings.length };
+  return { fid, gfa, maxGsf, capture, mbErr, bars: solve.buildings.length };
 }
 
 const failures = [];
@@ -100,8 +112,8 @@ for (const fid of FIXED) {
     const floor = floors[String(fid)];
     const cap = r.capture == null ? null : Math.round(r.capture * 10) / 10;
     if (r.capture == null) {
-      failures.push(`${fid}: capture not computable (max_gsf missing)`);
-      console.log(`FAIL ${fid} — capture not computable`);
+      failures.push(`${fid}: capture not computable (fn_max_buildout: ${r.mbErr ?? 'unknown'})`);
+      console.log(`FAIL ${fid} — capture not computable (fn_max_buildout: ${r.mbErr ?? 'unknown'})`);
     } else if (r.capture < floor - 0.05) {
       failures.push(`${fid}: capture ${cap}% below the floor ${floor}%`);
       console.log(`FAIL ${fid} — capture ${cap}% < floor ${floor}% (gfa ${r.gfa} / max ${r.maxGsf}, ${r.bars} bars)`);
