@@ -45,6 +45,8 @@ import {
   type PlannerContextResponse,
 } from './api/plannerContext';
 import { fetchParcelFrontage, type ParcelFrontage } from './api/parcelFrontage';
+import { fetchParcelBuildability, isRefusal, type ParcelBuildability } from './api/parcelBuildability';
+import { RefusalCard } from './ui/RefusalCard';
 import { fetchMassingProgram, type MassingProgram } from './api/massingProgram';
 import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, type PlanLineage } from './ui/ContextLineage';
@@ -234,6 +236,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [maxBuildout, setMaxBuildout] = useState<MaxBuildout | null>(null);
   // Neighborhood context: neighbor parcels/buildings/streets (display-only)
   const [neighbors, setNeighbors] = useState<PlannerNeighbors | null>(null);
+  // J1: the engine's buildability verdict — a refused parcel is a first-class
+  // result (RefusalCard), fetched the moment the parcel opens.
+  const [buildability, setBuildability] = useState<ParcelBuildability | null>(null);
   // Live-drag pump (dynamic site plans): drag events coalesce latest-wins
   // into preview solves (persist=false); the release commits the candidate.
   const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
@@ -1465,6 +1470,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
+  useEffect(() => {
+    if (contextOgcFid == null) {
+      setBuildability(null);
+      return;
+    }
+    let cancelled = false;
+    fetchParcelBuildability(contextOgcFid).then(b => {
+      if (!cancelled) setBuildability(b);
+    });
+    return () => { cancelled = true; };
+  }, [contextOgcFid]);
+
   // Max-buildout envelope for multifamily contexts — the SF-first headline
   // and the KPI utilization stat. Fail-soft; absent for other typologies.
   useEffect(() => {
@@ -1800,12 +1817,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       basis: planBasis,
       violationCodes: violations.map(v => v.code),
       envelopeSource: rpcMetrics?.envelopeSource ?? null,
+      buildabilityVerdict: buildability?.verdict ?? null,
+      neighborsLoaded: neighbors
+        ? { parcels: neighbors.parcels.length, buildings: neighbors.buildings.length, roads: neighbors.roads.length }
+        : null,
       utilizationPct:
         !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -1818,6 +1839,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   return (
     <div className="h-full min-h-0 flex flex-col bg-gray-100">
       <CensusBanner />
+      {isRefusal(buildability) && product === 'apartments' && buildability && (
+        <RefusalCard
+          buildability={buildability}
+          onSwitchToTownhomes={() => handleProductChange('townhomes')}
+        />
+      )}
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
       <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip
