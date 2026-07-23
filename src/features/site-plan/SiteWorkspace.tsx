@@ -45,6 +45,10 @@ import {
   type PlannerContextResponse,
 } from './api/plannerContext';
 import { fetchParcelFrontage, type ParcelFrontage } from './api/parcelFrontage';
+import { fetchParcelBuildability, isRefusal, type ParcelBuildability } from './api/parcelBuildability';
+import { fetchSeedPlan, type SeedPlan } from './api/seedPlan';
+import { seedToElements } from '../../engine/seedToElements';
+import { RefusalCard } from './ui/RefusalCard';
 import { fetchMassingProgram, type MassingProgram } from './api/massingProgram';
 import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, type PlanLineage } from './ui/ContextLineage';
@@ -234,6 +238,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [maxBuildout, setMaxBuildout] = useState<MaxBuildout | null>(null);
   // Neighborhood context: neighbor parcels/buildings/streets (display-only)
   const [neighbors, setNeighbors] = useState<PlannerNeighbors | null>(null);
+  // J1: the engine's buildability verdict — a refused parcel is a first-class
+  // result (RefusalCard), fetched the moment the parcel opens.
+  const [buildability, setBuildability] = useState<ParcelBuildability | null>(null);
+  // Stage-1+2 seed plan (order-4 item 1): the engine's placed composition,
+  // drawn stage-ordered behind the Seed toggle.
+  const [seedPlan, setSeedPlan] = useState<SeedPlan | null>(null);
+  const [showSeed, setShowSeed] = useState(false);
   // Live-drag pump (dynamic site plans): drag events coalesce latest-wins
   // into preview solves (persist=false); the release commits the candidate.
   const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
@@ -1465,6 +1476,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
+  useEffect(() => {
+    if (contextOgcFid == null) {
+      setBuildability(null);
+      return;
+    }
+    let cancelled = false;
+    fetchParcelBuildability(contextOgcFid).then(b => {
+      if (!cancelled) setBuildability(b);
+    });
+    return () => { cancelled = true; };
+  }, [contextOgcFid]);
+
+  useEffect(() => {
+    if (contextOgcFid == null) {
+      setSeedPlan(null);
+      setShowSeed(false);
+      return;
+    }
+    let cancelled = false;
+    fetchSeedPlan(contextOgcFid).then(sp => {
+      if (!cancelled) setSeedPlan(sp);
+    });
+    return () => { cancelled = true; };
+  }, [contextOgcFid]);
+
   // Max-buildout envelope for multifamily contexts — the SF-first headline
   // and the KPI utilization stat. Fail-soft; absent for other typologies.
   useEffect(() => {
@@ -1789,6 +1825,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.designParameters, config.zoning]);
 
+  // Seed view: display swap only — the solver plan and its handlers are
+  // untouched underneath; toggling back restores them exactly.
+  const seedRender = useMemo(() => (seedPlan ? seedToElements(seedPlan) : null), [seedPlan]);
+  const seedViewOn = showSeed && !!seedRender && seedRender.elements.length > 0;
+  const displayElements = seedViewOn && seedRender ? seedRender.elements : elements;
+  const displayBasis = seedViewOn && seedRender
+    ? seedRender.basis + (seedRender.inFamily ? ` · in-family: ${seedRender.inFamily}` : '')
+    : planBasis;
+
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation
   // codes, the capture — instead of scraping pixels. Production bundles
@@ -1800,12 +1845,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       basis: planBasis,
       violationCodes: violations.map(v => v.code),
       envelopeSource: rpcMetrics?.envelopeSource ?? null,
+      buildabilityVerdict: buildability?.verdict ?? null,
+      seedAvailable: !!seedPlan,
+      seedShown: seedViewOn,
+      seedComposition: seedPlan?.composition ?? null,
+      neighborsLoaded: neighbors
+        ? { parcels: neighbors.parcels.length, buildings: neighbors.buildings.length, roads: neighbors.roads.length }
+        : null,
       utilizationPct:
         !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -1818,6 +1870,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   return (
     <div className="h-full min-h-0 flex flex-col bg-gray-100">
       <CensusBanner />
+      {isRefusal(buildability) && product === 'apartments' && buildability && (
+        <RefusalCard
+          buildability={buildability}
+          onSwitchToTownhomes={() => handleProductChange('townhomes')}
+        />
+      )}
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
       <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip
@@ -1863,6 +1921,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
+          {seedPlan && (
+            <button
+              data-testid="seed-toggle"
+              onClick={() => setShowSeed(v => !v)}
+              title="Stage 1+2 seed: the engine's placed composition (zones, spine, bays, single-L)"
+              className={`px-3 py-1.5 border-l border-gray-200 ${showSeed ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              Seed
+            </button>
+          )}
         </div>
         <button
           onClick={openExport}
@@ -1881,11 +1949,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       </div>
 
-      {(planBasis || plannerCtx || plannerLoading || planStale || generationBlocked) && (
+      {(displayBasis || plannerCtx || plannerLoading || planStale || generationBlocked) && (
         <div className="px-4 py-1.5 bg-white border-b border-gray-100 flex-shrink-0 space-y-1">
-          {planBasis && (
+          {displayBasis && (
             <div className="text-xs text-gray-600">
-              <span className="font-medium text-gray-700">Plan basis:</span> {planBasis}
+              <span className="font-medium text-gray-700">{seedViewOn ? 'Seed basis:' : 'Plan basis:'}</span> {displayBasis}
             </div>
           )}
           <ContextLineage
@@ -2024,7 +2092,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           {viewMode === '3d' ? (
             <SitePlannerErrorBoundary>
               <Massing3D
-                elements={elements}
+                elements={displayElements}
                 parcelGeometry={plannerParcel?.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined}
                 envelope={envelopeMeters ?? undefined}
                 neighbors={neighbors}
@@ -2038,7 +2106,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 suppressCurbCut={frontage?.landlocked === true}
                 neighbors={neighbors}
                 parcel={plannerParcel}
-                planElements={elements}
+                planElements={displayElements}
                 metrics={metrics || undefined}
                 selectedSolve={selectedSolve || undefined}
                 parkingViz={{
@@ -2135,7 +2203,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <div className="min-h-0 overflow-y-auto">
             {dockTab === 'tabulation' && (
               <TabulationPanel
-                elements={elements}
+                elements={displayElements}
                 metrics={metrics}
                 plannerCtx={plannerCtx}
                 acres={parcel.deeded_acres}
@@ -2180,7 +2248,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           planPng={exportPng}
           planBasis={planBasis}
           metrics={metrics}
-          elements={elements}
+          elements={displayElements}
           buildout={maxBuildout}
           currentStories={planLineage?.floors ?? null}
           plannerCtx={plannerCtx}

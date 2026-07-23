@@ -90,6 +90,20 @@ function judge(exp, ev) {
   if (exp.requireBriefEnvelope && ev.envelopeSource !== 'brief_2274_true') {
     errs.push(`expected envelopeSource=brief_2274_true, got ${ev.envelopeSource ?? 'none'} (legacy envelope path fired)`);
   }
+  // Render-path smoke (ops lesson from the buildings RLS deny-all): a layer
+  // that has data in the served responses must actually LOAD — an RLS change
+  // can never silently blank the neighborhood render again.
+  if (exp.requireNeighborLayers) {
+    const nl = ev.neighborsLoaded;
+    if (!nl) errs.push('neighbor layers never loaded (neighborsLoaded missing)');
+    else {
+      for (const layer of ['parcels', 'buildings', 'roads']) {
+        if (exp.requireNeighborLayers[layer] && !(nl[layer] > 0)) {
+          errs.push(`neighbor layer '${layer}' is EMPTY (RLS/data regression — expected > 0)`);
+        }
+      }
+    }
+  }
   return errs;
 }
 
@@ -129,6 +143,16 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_2d.png` });
     // Evidence hook (DEV builds): what actually rendered, from the workspace.
     const evidence = await page.evaluate(() => window.__planEvidence ?? null);
+    // Seed view (order-4 item 1): when the engine emits a placed seed, shoot
+    // the stage-ordered render too — the single-L artifact.
+    const seedToggle = page.getByTestId('seed-toggle');
+    if (await seedToggle.isVisible().catch(() => false)) {
+      await seedToggle.click();
+      await page.waitForTimeout(2500);
+      await page.screenshot({ path: `${OUT}/${p.ogc_fid}_seed.png` });
+      await seedToggle.click();
+      await page.waitForTimeout(800);
+    }
     // 3D massing
     await page.getByText('3D Massing', { exact: true }).first().click({ timeout: 10000 });
     await page.waitForTimeout(5000);
