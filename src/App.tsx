@@ -5,22 +5,12 @@ import React from 'react';
 import { useState } from 'react';
 import { Parcel } from './lib/supabase';  
 import Header from './components/Header';
-import MapPanel from './components/MapPanel';
-import ParcelDrawer from './components/ParcelDrawer';
 import LandingPage from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { UserOnboarding } from './components/UserOnboarding';
 import { LoadingCard, AnalysisLoading, Toast } from './components/LoadingStates';
-import { UnifiedWorkspace } from './components/UnifiedWorkspace';
 import { SmartNavigation } from './components/SmartNavigation';
-import { ProjectWorkflow } from './components/ProjectWorkflow';
-import { SimpleProjectManager } from './components/SimpleProjectManager';
-import { ConnectedProjectWorkflow } from './components/ConnectedProjectWorkflow';
-import { UnifiedProjectWorkflow } from './components/UnifiedProjectWorkflow';
-import { RealUnderwritingWorkflow } from './components/RealUnderwritingWorkflow';
 import { MapInteractionEnhancer } from './components/MapInteractionEnhancer';
-import { WorkflowAudit } from './components/WorkflowAudit';
-import { WorkflowConnectionTest } from './components/WorkflowConnectionTest';
 import { useProject } from './hooks/useProject';
 import { useActiveProject } from './store/project';
 import LeftNavigation from './components/LeftNavigation';
@@ -32,6 +22,21 @@ import AppGrid from './layout/AppGrid';
 import DrawerOverlay from './components/DrawerOverlay';
 import RealtimeComments from './components/RealtimeComments';
 
+// Shell-first performance (order-5 item 1): the landing page and header
+// paint from the light shell; mapbox+deck (~650 KB gz) and every workflow
+// island load on demand. The map chunk preloads on idle so entering the
+// app stays instant.
+const MapPanel = React.lazy(() => import('./components/MapPanel'));
+const ParcelDrawer = React.lazy(() => import('./components/ParcelDrawer'));
+const UnifiedWorkspace = React.lazy(() => import('./components/UnifiedWorkspace').then(m => ({ default: m.UnifiedWorkspace })));
+const ProjectWorkflow = React.lazy(() => import('./components/ProjectWorkflow').then(m => ({ default: m.ProjectWorkflow })));
+const SimpleProjectManager = React.lazy(() => import('./components/SimpleProjectManager').then(m => ({ default: m.SimpleProjectManager })));
+const ConnectedProjectWorkflow = React.lazy(() => import('./components/ConnectedProjectWorkflow').then(m => ({ default: m.ConnectedProjectWorkflow })));
+const UnifiedProjectWorkflow = React.lazy(() => import('./components/UnifiedProjectWorkflow').then(m => ({ default: m.UnifiedProjectWorkflow })));
+const RealUnderwritingWorkflow = React.lazy(() => import('./components/RealUnderwritingWorkflow').then(m => ({ default: m.RealUnderwritingWorkflow })));
+const WorkflowAudit = React.lazy(() => import('./components/WorkflowAudit').then(m => ({ default: m.WorkflowAudit })));
+const WorkflowConnectionTest = React.lazy(() => import('./components/WorkflowConnectionTest').then(m => ({ default: m.WorkflowConnectionTest })));
+
 // Skip to content for screen readers
 function SkipToContent() {
   return (
@@ -42,6 +47,12 @@ function SkipToContent() {
       Skip to main content
     </a>
   );
+}
+
+function preloadMapOnIdle() {
+  const kick = () => { void import('./components/MapPanel'); };
+  if ('requestIdleCallback' in window) (window as Window & { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(kick);
+  else setTimeout(kick, 1200);
 }
 
 function App() {
@@ -235,6 +246,8 @@ function App() {
 
 
   // Show landing page if no active project and landing page is enabled
+  React.useEffect(() => { preloadMapOnIdle(); }, []);
+
   if (showLandingPage && !activeProjectId) {
     return (
       <LandingPage 
@@ -245,6 +258,7 @@ function App() {
   }
 
   return (
+    <React.Suspense fallback={<div className="h-screen flex items-center justify-center text-sm text-gray-500">Loading workspace…</div>}>
     <ErrorBoundary>
       <div className="min-h-screen h-screen flex flex-col overflow-hidden bg-gray-50">
         <SkipToContent />
@@ -408,6 +422,7 @@ function App() {
       </div>
       </div>
     </ErrorBoundary>
+    </React.Suspense>
   );
 }
 

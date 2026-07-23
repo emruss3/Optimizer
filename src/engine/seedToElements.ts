@@ -118,10 +118,40 @@ export function seedToElements(seed: SeedPlan): { elements: Element[]; basis: st
     } as Element);
   });
 
-  // Stage 4 — the single L as ONE building outline (legs unioned), unit
-  // striping continuous because the canvas plates the merged footprint.
-  // Union the legs in CLEAN 2274 feet first — after reprojection the shared
-  // edge can misalign by millimetres and split the L into disjoint pieces.
+  // Stage 4 — one building outline per STRUCTURE. v2 seeds emit native
+  // single polygons ("zero union calls; gate on structures[]" — engine
+  // note); the leg-union + corner-weld below survives only as the fallback
+  // for pre-v2 seeds.
+  const structures = (seed.structures ?? []).filter(st => st?.geom_2274);
+  if (structures.length > 0) {
+    const leg1 = seed.seed?.leg1;
+    const wing = seed.seed?.wing;
+    structures.forEach((st, i) => {
+      const footprintSqft = st.footprint_sqft
+        ?? [leg1, wing].reduce((a, l) => a + (l ? l.length_ft * l.depth_ft : 0), 0);
+      const gsf = footprintSqft * stories;
+      const units = Math.max(1, Math.round(gsf / AVG_UNIT_SF));
+      const retention = st.envelope_retention_pct;
+      elements.push({
+        id: `seed-structure-${st.structure_id ?? i + 1}`,
+        type: 'building',
+        name: structures.length === 1
+          ? `${(seed.composition ?? 'seed mass').replace(/_/g, ' ')} × ${stories} st`
+          : `Structure ${st.structure_id ?? i + 1} × ${stories} st`,
+        geometry: to3857(st.geom_2274 as Polygon),
+        properties: {
+          areaSqFt: Math.round(footprintSqft),
+          floors: stories,
+          stories,
+          unitMix: generateUnitMixForCount(units),
+          use: 'residential',
+          color: '#3B82F6',
+          seedRetention: retention != null ? { structure: retention } : undefined,
+        },
+        metadata: meta,
+      } as Element);
+    });
+  } else {
   const legPolys2274: Polygon[] = [];
   for (const leg of [seed.seed?.leg1, seed.seed?.wing]) {
     if (leg?.geom_2274) legPolys2274.push(leg.geom_2274 as Polygon);
@@ -200,11 +230,29 @@ export function seedToElements(seed: SeedPlan): { elements: Element[]; basis: st
       } as Element);
     });
   }
+  }
+
+  // Fire lanes render as first-class geometry when the solver emits them.
+  (seed.fire_lanes ?? []).forEach((fl, i) => {
+    if (!fl?.geom_2274) return;
+    elements.push({
+      id: `seed-firelane-${i + 1}`,
+      type: 'circulation',
+      name: 'Fire lane',
+      geometry: to3857(fl.geom_2274 as Polygon),
+      properties: { color: '#F1D6D6', styleOverride: true, opacity: 0.55, strokeColor: '#D9A0A0', fireLane: true },
+      metadata: meta,
+    } as Element);
+  });
 
   // Napkin: the engine's own basis + the in-family vocabulary when clipped.
-  const retentions = [seed.seed?.leg1, seed.seed?.wing]
-    .filter((l): l is SeedLeg => !!l)
-    .map(l => ({ pct: l.envelope_retention_pct, name: l === seed.seed?.leg1 ? 'leg' : 'wing' }));
+  const retentions = structures.length > 0
+    ? structures
+        .filter(st => st.envelope_retention_pct != null)
+        .map((st, i) => ({ pct: st.envelope_retention_pct as number, name: `structure ${st.structure_id ?? i + 1}` }))
+    : [seed.seed?.leg1, seed.seed?.wing]
+        .filter((l): l is SeedLeg => !!l)
+        .map(l => ({ pct: l.envelope_retention_pct, name: l === seed.seed?.leg1 ? 'leg' : 'wing' }));
   const clipped = retentions.filter(r => r.pct < 90);
   const inFamily = clipped.length
     ? clipped.map(r => `${r.name} −${Math.round((100 - r.pct) * 10) / 10}%`).join(', ')

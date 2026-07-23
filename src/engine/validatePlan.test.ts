@@ -118,6 +118,18 @@ describe('validatePlanElements (ground-floor amenity carve-outs)', () => {
     expect(v.ok).toBe(false);
   });
 
+  it('rejects a drive aisle crossing a building — the Davis-frame case (order-5 item 4)', () => {
+    // "1 issue" must never render from a non-gesture path: circulation×building
+    // is a first-class overlap, and gateNonGesturePlan applies this validator
+    // to worker, fallback, saved-plan, and SF paths alike.
+    const v = validatePlanElements([
+      rect('bldg-1', 'building', 0, 0, 60, 20),
+      rect('aisle-1', 'circulation', 20, -5, 8, 40), // aisle straight through the bar
+    ]);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toMatch(/drive overlaps building|building overlaps drive/);
+  });
+
   it('still rejects plain building-on-building even when one is large enough to contain', () => {
     const v = validatePlanElements([
       rect('b1', 'building', 0, 0, 60, 30),

@@ -120,6 +120,14 @@ const PrecedentBasis: React.FC<{
   ].filter(Boolean).join(' · ');
 
   const relaxNote = sel ? selectionRelaxationNote(sel) : null;
+  // Order-5 item 3 (era guard made visible): when the engine flags the
+  // precedent evidence as legacy stock — 2-story form norms under a 4-story
+  // program — the evidence renders dimmed/struck, never silently authoritative.
+  // Activates the moment the compiler emits the flag; renders unchanged today.
+  const legacyStock =
+    sel?.mode === 'legacy_stock' ||
+    JSON.stringify(sel ?? {}).includes('legacy_stock') ||
+    JSON.stringify((precedent as { flags?: unknown }).flags ?? []).includes('legacy_stock');
   const typeMix = precedent.type_mix && Object.keys(precedent.type_mix).length > 0
     ? Object.entries(precedent.type_mix)
         .sort((a, b) => b[1] - a[1])
@@ -134,7 +142,9 @@ const PrecedentBasis: React.FC<{
   return (
     <div className="mt-3 pt-3 border-t border-gray-100">
       <div className="text-xs font-semibold text-gray-900 mb-0.5">Local precedent basis</div>
-      <p className="text-[11px] text-gray-500 mb-1.5 leading-snug">{headline}</p>
+      <p className="text-[11px] text-gray-500 mb-1.5 leading-snug">{legacyStock ? (
+            <span className="line-through opacity-60" title="Era guard: these form norms predate the program era — market corroboration only, excluded from composition">{headline}</span>
+          ) : headline}</p>
 
       {relaxNote && (
         <div className="mb-2 text-[11px] px-2 py-1.5 rounded bg-amber-50 text-amber-800 border border-amber-200 leading-snug">
