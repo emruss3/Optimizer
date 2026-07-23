@@ -25,7 +25,6 @@ declare
   b geometry;
   p1 geometry;
   p2 geometry;
-  route geometry;
   routes geometry[];
   corridor geometry;
   candidate geometry;
@@ -82,8 +81,9 @@ begin
 
     if obstacle is not null then
       for obstacle_piece in
-        select (ST_Dump(ST_CollectionExtract(obstacle,3))).geom g
-        order by ST_Distance((ST_Dump(ST_CollectionExtract(obstacle,3))).geom,ST_MakeLine(a,b))
+        select q.g
+        from (select (ST_Dump(ST_CollectionExtract(obstacle,3))).geom g) q
+        order by ST_Distance(q.g,ST_MakeLine(a,b))
       loop
         xmin:=ST_XMin(obstacle_piece.g)-margin;
         xmax:=ST_XMax(obstacle_piece.g)+margin;
