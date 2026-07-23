@@ -117,6 +117,14 @@ for (const fid of FIXED) {
       continue;
     }
     const floor = floors[String(fid)];
+    if (r.verdict) {
+      // A FLOOR parcel refusing is a floor regression, and it must say so —
+      // verdict records previously fell through to the capture check and
+      // printed the blind "unknown" (the 480089 mystery, solved).
+      failures.push(`${fid}: solver verdict '${r.verdict}' where floor ${floor}% expected`);
+      console.log(`FAIL ${fid} — verdict '${r.verdict}' where floor ${floor}% expected`);
+      continue;
+    }
     const cap = r.capture == null ? null : Math.round(r.capture * 10) / 10;
     if (r.capture == null) {
       failures.push(`${fid}: capture not computable (fn_max_buildout: ${r.mbErr ?? 'unknown'})`);
