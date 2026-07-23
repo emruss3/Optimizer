@@ -19,7 +19,6 @@ import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
-import Massing3D from './ui/Massing3D';
 import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { CensusBanner } from './ui/CensusBanner';
@@ -55,6 +54,7 @@ import ContextLineage, { resolveContextApplication, type PlanLineage } from './u
 import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
+const Massing3D = React.lazy(() => import('./ui/Massing3D'));
 
 /**
  * Diagnostics-only escape hatch: when '1', context-free solves render as
@@ -1639,18 +1639,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         if (cancelled) return;
       }
       const list = normalizePermittedUses(raw);
+      // Order-5 item 2a: the string-inference fallback is DELETED. When the
+      // RPC has no list, the selector shows only the compiled use (bootstrap
+      // default) — never uses inferred from a zoning-string prefix. The
+      // compile still proceeds; the rail says the list is unavailable.
       setPermittedUses(list);
-      if (!userPickedUseRef.current) {
-        const preferred =
-          pickDefaultUse(list) ?? defaultUseFromZoningBase(parcel.zoning);
-        if (preferred) {
-          if (list.length === 0) {
-            console.info(
-              `[use-default] permitted-uses unavailable — density-first default '${preferred}' inferred from zoning base '${parcel.zoning}'.`
-            );
-          }
-          if (preferred !== contextUse) setContextUse(preferred);
-        }
+      if (!userPickedUseRef.current && list.length > 0) {
+        const preferred = pickDefaultUse(list);
+        if (preferred && preferred !== contextUse) setContextUse(preferred);
+      }
+      if (list.length === 0) {
+        console.warn('[permitted-uses] list unavailable after retry — selector limited to the compiled use (no inference).');
       }
       setUseResolved(true);
     })();
@@ -2092,6 +2091,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           )}
           {viewMode === '3d' ? (
             <SitePlannerErrorBoundary>
+              <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-gray-500">Loading 3D…</div>}>
               <Massing3D
                 elements={displayElements}
                 parcelGeometry={plannerParcel?.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined}
@@ -2099,6 +2099,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 neighbors={neighbors}
                 edgeClassifications={edgeClassifications}
               />
+              </React.Suspense>
             </SitePlannerErrorBoundary>
           ) : (
             <SitePlannerErrorBoundary>

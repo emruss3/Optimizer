@@ -34,13 +34,16 @@ export default defineConfig({
         manualChunks(id) {
           // Dynamic imports should be separate chunks
           if (id.includes('node_modules')) {
-            if (id.includes('react-map-gl') || id.includes('mapbox-gl')) {
-              return 'map-vendor';
-            }
-            if (id.includes('@deck.gl')) {
-              return 'deck-vendor';
-            }
-            if (id.includes('react') || id.includes('react-dom')) {
+            // mapbox/react-map-gl also NOT manually chunked (same hoisting
+            // trap as @deck.gl): all importers are lazy, automatic chunking
+            // keeps the 445 KB gz behind the MapPanel island.
+            // @deck.gl deliberately NOT manually chunked: every importer is
+            // lazy (MapView overlays, Massing3D), and a manual chunk hoisted
+            // vite's preload helper into it — dragging 199 KB gz back into
+            // the initial graph. Automatic chunking keeps it behind lazy.
+            // Exact-package match: the old includes('react') swallowed
+            // react-map-gl (~600 KB) into the EAGER vendor chunk.
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
               return 'react-vendor';
             }
             if (id.includes('lucide-react')) {

@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { MAPBOX_TOKEN, MAP_STYLE, PARCELS_TILE_URL, NASHVILLE_CENTER } from '../lib/mapbox';
 import mapboxgl from 'mapbox-gl';
 import { useActiveProject } from '../store/project';

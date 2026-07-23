@@ -16,8 +16,20 @@ export interface SeedLeg {
   envelope_retention_pct: number;
 }
 
+export interface SeedStructure {
+  structure_id?: string | number | null;
+  geom_2274: Geom2274;
+  footprint_sqft?: number | null;
+  is_single_polygon?: boolean | null;
+  envelope_retention_pct?: number | null;
+}
+
 export interface SeedPlan {
   parcel_ogc_fid: number;
+  /** v2: native per-structure outlines — "zero union calls; gate on
+   *  structures[]" (engine note). Preferred over seed.leg1/wing. */
+  structures?: SeedStructure[] | null;
+  fire_lanes?: Array<{ geom_2274: Geom2274 }> | null;
   basis?: string | null;
   composition?: string | null;
   stories?: number | null;
@@ -58,8 +70,8 @@ export async function fetchSeedPlan(ogcFid: number, typology = 'multifamily'): P
       });
       if (error || !data || (data as { error?: string }).error) return null;
       const seed = data as SeedPlan;
-      // A seed without at least one placed leg draws nothing — treat as absent.
-      if (!seed.seed?.leg1?.geom_2274) return null;
+      // A seed with neither native structures nor a placed leg draws nothing.
+      if (!seed.structures?.[0]?.geom_2274 && !seed.seed?.leg1?.geom_2274) return null;
       return seed;
     } catch {
       return null;

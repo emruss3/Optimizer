@@ -212,6 +212,18 @@ const Massing3D: React.FC<{
         layers={layers}
         effects={effects}
         glOptions={{ preserveDrawingBuffer: true } as never}
+        // Order-5 item 2b: deck's device probe crashes on resize when the
+        // context is mid-recreate (reading 'maxTextureDimension2D' of
+        // undefined). A guarded onError keeps the probe failure from
+        // unmounting the view — the next frame re-acquires the device; any
+        // other error still surfaces.
+        onError={(err: Error) => {
+          if (String(err?.message ?? err).includes('maxTextureDimension2D')) {
+            console.warn('[Massing3D] transient device probe during resize — recovered.');
+            return;
+          }
+          console.error('[Massing3D]', err);
+        }}
         getTooltip={({ object }) =>
           object ? { text: (object as MassingPolygon).label } : null
         }
