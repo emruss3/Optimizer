@@ -39,14 +39,10 @@ export default function LeftNavigation() {
             <X className="w-5 h-5" />
           </button>
         )}
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Map className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900">Parcel</h1>
-            <p className="text-xs text-gray-600">Intelligence</p>
-          </div>
+        {/* The header owns the brand — repeating it here doubled the logo
+            stack (top bar + rail). The rail is navigation, labeled as such. */}
+        <div className="px-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+          Navigate
         </div>
       </div>
 
