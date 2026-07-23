@@ -90,6 +90,20 @@ function judge(exp, ev) {
   if (exp.requireBriefEnvelope && ev.envelopeSource !== 'brief_2274_true') {
     errs.push(`expected envelopeSource=brief_2274_true, got ${ev.envelopeSource ?? 'none'} (legacy envelope path fired)`);
   }
+  // Render-path smoke (ops lesson from the buildings RLS deny-all): a layer
+  // that has data in the served responses must actually LOAD — an RLS change
+  // can never silently blank the neighborhood render again.
+  if (exp.requireNeighborLayers) {
+    const nl = ev.neighborsLoaded;
+    if (!nl) errs.push('neighbor layers never loaded (neighborsLoaded missing)');
+    else {
+      for (const layer of ['parcels', 'buildings', 'roads']) {
+        if (exp.requireNeighborLayers[layer] && !(nl[layer] > 0)) {
+          errs.push(`neighbor layer '${layer}' is EMPTY (RLS/data regression — expected > 0)`);
+        }
+      }
+    }
+  }
   return errs;
 }
 
