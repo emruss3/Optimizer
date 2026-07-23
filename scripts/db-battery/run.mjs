@@ -1,8 +1,8 @@
 // DB acceptance battery — the SOLVER-side merge gate (audit 2026-07-21 CC-1).
 //
-// Runs the live generator (read-only: p_persist=false) for the three floor
-// parcels + one rotating cohort parcel, and fails on any unexpected error or
-// any capture below its recorded floor (floors.json — floors only ratchet UP).
+// Runs the live generator (read-only: p_persist=false) for the fixed floor
+// parcels + one rotating cohort parcel, and fails on any unexpected error,
+// capture regression, or reviewed composition regression. Floors only ratchet.
 // Capture = metrics.gfa_sqft / fn_max_buildout.max_gsf, computed from raw
 // numbers, never parsed from display strings.
 //
@@ -28,6 +28,15 @@ if (!URL_BASE || !ANON) {
 
 const floors = JSON.parse(fs.readFileSync(path.join(HERE, 'floors.json'), 'utf8'));
 const FIXED = Object.keys(floors).filter(k => /^\d+$/.test(k)).map(Number);
+
+function normalizeFloor(raw) {
+  if (typeof raw === 'number') return { minCapturePct: raw, maxBars: null };
+  if (!raw || typeof raw !== 'object') return { minCapturePct: null, maxBars: null };
+  return {
+    minCapturePct: Number.isFinite(Number(raw.minCapturePct)) ? Number(raw.minCapturePct) : null,
+    maxBars: Number.isFinite(Number(raw.maxBars)) ? Number(raw.maxBars) : null,
+  };
+}
 
 // One rotating cohort parcel per day (deterministic — no CI flake), asserted
 // for "no unexpected error" only: floors need a history before they exist.
@@ -97,16 +106,29 @@ for (const fid of FIXED) {
       console.log(`FAIL ${fid} — ${r.error}`);
       continue;
     }
-    const floor = floors[String(fid)];
+    if (r.verdict) {
+      failures.push(`${fid}: fixed floor parcel returned verdict ${r.verdict}`);
+      console.log(`FAIL ${fid} — fixed floor parcel returned verdict ${r.verdict}`);
+      continue;
+    }
+
+    const { minCapturePct, maxBars } = normalizeFloor(floors[String(fid)]);
     const cap = r.capture == null ? null : Math.round(r.capture * 10) / 10;
-    if (r.capture == null) {
+    if (minCapturePct == null) {
+      failures.push(`${fid}: invalid floor configuration`);
+      console.log(`FAIL ${fid} — invalid floor configuration`);
+    } else if (r.capture == null) {
       failures.push(`${fid}: capture not computable (max_gsf missing)`);
       console.log(`FAIL ${fid} — capture not computable`);
-    } else if (r.capture < floor - 0.05) {
-      failures.push(`${fid}: capture ${cap}% below the floor ${floor}%`);
-      console.log(`FAIL ${fid} — capture ${cap}% < floor ${floor}% (gfa ${r.gfa} / max ${r.maxGsf}, ${r.bars} bars)`);
+    } else if (r.capture < minCapturePct - 0.05) {
+      failures.push(`${fid}: capture ${cap}% below the floor ${minCapturePct}%`);
+      console.log(`FAIL ${fid} — capture ${cap}% < floor ${minCapturePct}% (gfa ${r.gfa} / max ${r.maxGsf}, ${r.bars} bars)`);
+    } else if (maxBars != null && r.bars > maxBars) {
+      failures.push(`${fid}: ${r.bars} bars exceeds the reviewed cap ${maxBars}`);
+      console.log(`FAIL ${fid} — ${r.bars} bars > cap ${maxBars} (capture ${cap}%)`);
     } else {
-      console.log(`OK   ${fid} — capture ${cap}% ≥ floor ${floor}% (gfa ${r.gfa} / max ${r.maxGsf}, ${r.bars} bars)`);
+      const barReceipt = maxBars == null ? `${r.bars} bars` : `${r.bars}/${maxBars} bars`;
+      console.log(`OK   ${fid} — capture ${cap}% ≥ floor ${minCapturePct}% (gfa ${r.gfa} / max ${r.maxGsf}, ${barReceipt})`);
     }
   } catch (e) {
     failures.push(`${fid}: ${String(e).slice(0, 200)}`);
