@@ -1,6 +1,7 @@
 {
-  "_rules": "Per-parcel capture floors for the DB acceptance battery (gfa_sqft / fn_max_buildout.max_gsf, percent). Floors only ratchet UP, and raising one is a reviewed change — a solver PR that improves a parcel commits the new floor in the same PR. Evidence for the current values: measured live 2026-07-21 (98.3 / 83.1 / 47.8).",
-  "553450": 98.0,
-  "488278": 83.0,
-  "480089": 47.0
+  "_rules": "Per-parcel acceptance floors for the live DB battery. Capture floors only ratchet up. Optional maxBars locks a proven composition result. Evidence measured live after I-8 totality on 2026-07-23.",
+  "553450": { "minCapturePct": 98.5 },
+  "488278": { "minCapturePct": 83.0 },
+  "480089": { "minCapturePct": 47.0 },
+  "669046": { "minCapturePct": 98.3, "maxBars": 3 }
 }
