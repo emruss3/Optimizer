@@ -107,6 +107,18 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
   // Get element color, opacity, and stroke based on type
   const getElementStyle = useCallback((element: Element): { color: string; opacity: number; stroke: boolean; strokeColor?: string } => {
+    // Styled honesty (order-4): elements may OPT IN to explicit styling
+    // (seed zones' subtle ground tints). Type defaults stay authoritative
+    // for everything else — no existing element changes appearance.
+    const po = element.properties as { styleOverride?: boolean; color?: string; opacity?: number; strokeColor?: string } | undefined;
+    if (po?.styleOverride && po.color) {
+      return {
+        color: po.color,
+        opacity: po.opacity ?? 0.5,
+        stroke: true,
+        strokeColor: po.strokeColor ?? '#B6C2CE',
+      };
+    }
     switch (element.type) {
       case 'greenspace':
         return { color: '#BBF7D0', opacity: 0.5, stroke: false };

@@ -143,6 +143,16 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_2d.png` });
     // Evidence hook (DEV builds): what actually rendered, from the workspace.
     const evidence = await page.evaluate(() => window.__planEvidence ?? null);
+    // Seed view (order-4 item 1): when the engine emits a placed seed, shoot
+    // the stage-ordered render too — the single-L artifact.
+    const seedToggle = page.getByTestId('seed-toggle');
+    if (await seedToggle.isVisible().catch(() => false)) {
+      await seedToggle.click();
+      await page.waitForTimeout(2500);
+      await page.screenshot({ path: `${OUT}/${p.ogc_fid}_seed.png` });
+      await seedToggle.click();
+      await page.waitForTimeout(800);
+    }
     // 3D massing
     await page.getByText('3D Massing', { exact: true }).first().click({ timeout: 10000 });
     await page.waitForTimeout(5000);
