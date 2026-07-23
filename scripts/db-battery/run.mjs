@@ -86,11 +86,18 @@ async function solveParcel(fid) {
   // must not red the gate (the 2026-07-23 480089 false alarm). Retry once
   // and LABEL the failure so transient vs shape-change is legible in CI.
   let mb;
-  let mbErr = null;
-  for (let attempt = 0; attempt < 2 && mb?.max_gsf == null; attempt++) {
+  let mbErr = 'not attempted';
+  for (let attempt = 0; attempt < 2 && mbErr !== null; attempt++) {
     try {
       mb = await rpc('fn_max_buildout', { p_ogc_fid: fid, p_typology: 'multifamily' });
-      mbErr = mb?.max_gsf == null ? 'response missing max_gsf' : null;
+      // Label the VALUE, not just absence: the 2026-07-23 18:12 red was an
+      // intermittently non-number max_gsf during live edits of the frontier
+      // fn — "unknown" hid it. A wrong type is an upstream contract break;
+      // we name it, never coerce it.
+      const v = mb?.max_gsf;
+      mbErr = typeof v === 'number' && v > 0
+        ? null
+        : `max_gsf=${JSON.stringify(v)} (${typeof v})`;
     } catch (e) {
       mbErr = String(e).slice(0, 120);
     }
