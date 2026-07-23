@@ -33,7 +33,7 @@ declare
   half_width numeric;
   margin numeric;
   xmin numeric; xmax numeric; ymin numeric; ymax numeric;
-  ax numeric; ay numeric; bx numeric; by numeric;
+  ax numeric; ay numeric; b_x numeric; b_y numeric;
   original_components integer;
   current_components integer;
   candidate_components integer;
@@ -68,15 +68,15 @@ begin
 
     a:=ST_ClosestPoint(main_component,other_component);
     b:=ST_ClosestPoint(other_component,main_component);
-    ax:=ST_X(a); ay:=ST_Y(a); bx:=ST_X(b); by:=ST_Y(b);
+    ax:=ST_X(a); ay:=ST_Y(a); b_x:=ST_X(b); b_y:=ST_Y(b);
     routes:='{}'::geometry[];
 
     routes:=routes || ST_SetSRID(ST_MakeLine(a,b),ST_SRID(base));
     routes:=routes || ST_SetSRID(ST_MakeLine(array[
-      a,ST_SetSRID(ST_MakePoint(bx,ay),ST_SRID(base)),b
+      a,ST_SetSRID(ST_MakePoint(b_x,ay),ST_SRID(base)),b
     ]),ST_SRID(base));
     routes:=routes || ST_SetSRID(ST_MakeLine(array[
-      a,ST_SetSRID(ST_MakePoint(ax,by),ST_SRID(base)),b
+      a,ST_SetSRID(ST_MakePoint(ax,b_y),ST_SRID(base)),b
     ]),ST_SRID(base));
 
     if obstacle is not null then
@@ -91,19 +91,19 @@ begin
         ymax:=ST_YMax(obstacle_piece.g)+margin;
 
         p1:=ST_SetSRID(ST_MakePoint(xmin,ay),ST_SRID(base));
-        p2:=ST_SetSRID(ST_MakePoint(xmin,by),ST_SRID(base));
+        p2:=ST_SetSRID(ST_MakePoint(xmin,b_y),ST_SRID(base));
         routes:=routes || ST_SetSRID(ST_MakeLine(array[a,p1,p2,b]),ST_SRID(base));
 
         p1:=ST_SetSRID(ST_MakePoint(xmax,ay),ST_SRID(base));
-        p2:=ST_SetSRID(ST_MakePoint(xmax,by),ST_SRID(base));
+        p2:=ST_SetSRID(ST_MakePoint(xmax,b_y),ST_SRID(base));
         routes:=routes || ST_SetSRID(ST_MakeLine(array[a,p1,p2,b]),ST_SRID(base));
 
         p1:=ST_SetSRID(ST_MakePoint(ax,ymin),ST_SRID(base));
-        p2:=ST_SetSRID(ST_MakePoint(bx,ymin),ST_SRID(base));
+        p2:=ST_SetSRID(ST_MakePoint(b_x,ymin),ST_SRID(base));
         routes:=routes || ST_SetSRID(ST_MakeLine(array[a,p1,p2,b]),ST_SRID(base));
 
         p1:=ST_SetSRID(ST_MakePoint(ax,ymax),ST_SRID(base));
-        p2:=ST_SetSRID(ST_MakePoint(bx,ymax),ST_SRID(base));
+        p2:=ST_SetSRID(ST_MakePoint(b_x,ymax),ST_SRID(base));
         routes:=routes || ST_SetSRID(ST_MakeLine(array[a,p1,p2,b]),ST_SRID(base));
       end loop;
 
@@ -112,10 +112,10 @@ begin
       ymin:=ST_YMin(obstacle)-margin;
       ymax:=ST_YMax(obstacle)+margin;
       routes:=routes
-        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(xmin,ay),ST_SRID(base)),ST_SetSRID(ST_MakePoint(xmin,by),ST_SRID(base)),b]),ST_SRID(base))
-        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(xmax,ay),ST_SRID(base)),ST_SetSRID(ST_MakePoint(xmax,by),ST_SRID(base)),b]),ST_SRID(base))
-        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(ax,ymin),ST_SRID(base)),ST_SetSRID(ST_MakePoint(bx,ymin),ST_SRID(base)),b]),ST_SRID(base))
-        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(ax,ymax),ST_SRID(base)),ST_SetSRID(ST_MakePoint(bx,ymax),ST_SRID(base)),b]),ST_SRID(base));
+        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(xmin,ay),ST_SRID(base)),ST_SetSRID(ST_MakePoint(xmin,b_y),ST_SRID(base)),b]),ST_SRID(base))
+        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(xmax,ay),ST_SRID(base)),ST_SetSRID(ST_MakePoint(xmax,b_y),ST_SRID(base)),b]),ST_SRID(base))
+        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(ax,ymin),ST_SRID(base)),ST_SetSRID(ST_MakePoint(b_x,ymin),ST_SRID(base)),b]),ST_SRID(base))
+        || ST_SetSRID(ST_MakeLine(array[a,ST_SetSRID(ST_MakePoint(ax,ymax),ST_SRID(base)),ST_SetSRID(ST_MakePoint(b_x,ymax),ST_SRID(base)),b]),ST_SRID(base));
     end if;
 
     best:=base;
