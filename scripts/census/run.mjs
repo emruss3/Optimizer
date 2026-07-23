@@ -16,7 +16,8 @@
 // CENSUS_GATE=1 to fail on exceptions — crashes are never acceptable).
 //
 // Env: BATTERY_SUPABASE_URL, BATTERY_SUPABASE_ANON_KEY (same as db-battery)
-//      CENSUS_N (default 15 per stratum) · CENSUS_SEED (default UTC date)
+//      CENSUS_N (default 150 per stratum) · CENSUS_SEED (default UTC date)
+//      CENSUS_TOKEN (persist to planner.census_run) · CENSUS_CONCURRENCY (default 6)
 //      CENSUS_OUT (default qa/census) · MIN_LOT_SQFT (default 5000)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,7 +28,7 @@ if (!URL_BASE || !ANON) {
   console.error('BATTERY_SUPABASE_URL / BATTERY_SUPABASE_ANON_KEY not set — census cannot run.');
   process.exit(2);
 }
-const N = Number(process.env.CENSUS_N ?? 15);
+const N = Number(process.env.CENSUS_N ?? 150);
 const SEED = process.env.CENSUS_SEED ?? new Date().toISOString().slice(0, 10);
 const OUT_DIR = process.env.CENSUS_OUT ?? 'qa/census';
 const MIN_LOT_SQFT = Number(process.env.MIN_LOT_SQFT ?? 5000);
@@ -131,15 +132,28 @@ function summarize(results) {
   };
 }
 
+// Small worker pool: 300-500 sequential live solves would run for hours;
+// six lanes keeps the nightly under ~40 min without hammering the pooler.
+async function pool(items, worker, width = Number(process.env.CENSUS_CONCURRENCY ?? 6)) {
+  const out = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(width, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      out[idx] = await worker(items[idx]);
+    }
+  }));
+  return out;
+}
+
 const census = { date: SEED, seed: SEED, n_per_stratum: N, min_lot_sqft: MIN_LOT_SQFT, strata: {} };
 for (const [name, minSqft] of [['full', null], ['buildable', MIN_LOT_SQFT]]) {
   const fids = await sampleStratum(name, minSqft);
-  const results = [];
-  for (const fid of fids) {
+  const results = await pool(fids, async fid => {
     const r = await solveOne(fid);
-    results.push(r);
     console.log(`[${name}] ${fid}: ${r.outcome}${r.detail ? ` — ${r.detail}` : ''}${r.capture != null ? ` — ${r.capture}%` : ''}`);
-  }
+    return r;
+  });
   census.strata[name] = { results, summary: summarize(results) };
 }
 
@@ -149,6 +163,23 @@ fs.writeFileSync(path.join(OUT_DIR, 'latest.json'), JSON.stringify(census, null,
 for (const [name, s] of Object.entries(census.strata)) {
   console.log(`\n== ${name}: ${s.summary.ok}/${s.summary.n} ok · error rate ${s.summary.error_rate_pct}% · median capture ${s.summary.median_capture_pct ?? 'n/a'}%`);
   for (const c of s.summary.clusters) console.log(`   ${c.count}× ${c.class}`);
+}
+
+// Persist to planner.census_run (the trend store) when the token is set —
+// the dev-build banner and trend page read fn_census_trend from here.
+if (process.env.CENSUS_TOKEN) {
+  const run = {
+    date: SEED, seed: SEED,
+    n_total: Object.values(census.strata).reduce((a, s) => a + s.results.length, 0),
+    summary: Object.fromEntries(Object.entries(census.strata).map(([k, v]) => [k, v.summary])),
+    results: Object.entries(census.strata).flatMap(([k, v]) => v.results.map(r => ({ ...r, stratum: k }))),
+  };
+  const rec = await rest('/rest/v1/rpc/fn_record_census_run', {
+    method: 'POST', body: JSON.stringify({ p_token: process.env.CENSUS_TOKEN, p_run: run }),
+  });
+  console.log(rec.ok ? 'census persisted to planner.census_run' : `census persistence FAILED: HTTP ${rec.status}`);
+} else {
+  console.log('CENSUS_TOKEN not set — run not persisted to planner.census_run (files/artifacts only).');
 }
 
 const exceptions = Object.values(census.strata).flatMap(s => s.results).filter(r => r.outcome === 'exception');

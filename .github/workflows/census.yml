@@ -26,6 +26,7 @@ jobs:
         env:
           BATTERY_SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
           BATTERY_SUPABASE_ANON_KEY: ${{ secrets.BATTERY_SUPABASE_ANON_KEY }}
+          CENSUS_TOKEN: ${{ secrets.CENSUS_TOKEN }}
         run: |
           if [ -z "$BATTERY_SUPABASE_URL" ] || [ -z "$BATTERY_SUPABASE_ANON_KEY" ]; then
             echo "Census skipped: BATTERY_SUPABASE_URL / BATTERY_SUPABASE_ANON_KEY secrets not configured." | tee -a "$GITHUB_STEP_SUMMARY"
