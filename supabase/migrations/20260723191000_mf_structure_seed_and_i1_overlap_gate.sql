@@ -21,7 +21,7 @@ immutable
 set search_path=pg_catalog,public,extensions
 as $function$
 declare
-  overlaps jsonb:='[]'::jsonb;
+  v_overlaps jsonb:='[]'::jsonb;
   a geometry;
   b geometry;
   area_sqft numeric;
@@ -40,7 +40,7 @@ begin
         if a && b then
           area_sqft:=coalesce(ST_Area(ST_Intersection(a,b)),0);
           if area_sqft>p_tolerance_sqft then
-            overlaps:=overlaps || jsonb_build_object(
+            v_overlaps:=v_overlaps || jsonb_build_object(
               'element_a','building','index_a',i,
               'element_b','building','index_b',j,
               'pair','building×building',
@@ -60,7 +60,7 @@ begin
       if p_parking is not null and not ST_IsEmpty(p_parking) and a && p_parking then
         area_sqft:=coalesce(ST_Area(ST_Intersection(a,p_parking)),0);
         if area_sqft>p_tolerance_sqft then
-          overlaps:=overlaps || jsonb_build_object(
+          v_overlaps:=v_overlaps || jsonb_build_object(
             'element_a','building','index_a',i,
             'element_b','parking',
             'pair','building×parking',
@@ -72,7 +72,7 @@ begin
       if p_drives is not null and not ST_IsEmpty(p_drives) and a && p_drives then
         area_sqft:=coalesce(ST_Area(ST_Intersection(a,p_drives)),0);
         if area_sqft>p_tolerance_sqft then
-          overlaps:=overlaps || jsonb_build_object(
+          v_overlaps:=v_overlaps || jsonb_build_object(
             'element_a','building','index_a',i,
             'element_b','circulation',
             'pair','building×circulation',
@@ -88,7 +88,7 @@ begin
      and p_parking && p_drives then
     area_sqft:=coalesce(ST_Area(ST_Intersection(p_parking,p_drives)),0);
     if area_sqft>p_tolerance_sqft then
-      overlaps:=overlaps || jsonb_build_object(
+      v_overlaps:=v_overlaps || jsonb_build_object(
         'element_a','parking',
         'element_b','circulation',
         'pair','parking×circulation',
@@ -98,7 +98,7 @@ begin
   end if;
 
   return jsonb_build_object(
-    'ok',jsonb_array_length(overlaps)=0,
+    'ok',jsonb_array_length(v_overlaps)=0,
     'law','I-1',
     'tolerance_sqft',p_tolerance_sqft,
     'pairs_checked',jsonb_build_array(
@@ -107,7 +107,7 @@ begin
       'building×circulation',
       'parking×circulation'
     ),
-    'overlaps',overlaps
+    'overlaps',v_overlaps
   );
 end
 $function$;
