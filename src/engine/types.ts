@@ -148,6 +148,20 @@ export interface SiteMetrics {
   /** Regime-comparison receipts when the dispatcher ran both complete
    *  solves (surface + tuck-under): both GSFs/errors, chosen, basis. */
   regimeComparison?: Record<string, unknown>;
+  /** Dual parking ratios (seed_v2 payload): adequacy — stalls as % of the
+   *  PLACED program's need. The honest number; ≥100 means the plan parks
+   *  what it actually built. */
+  parkingPctOfPlacedNeed?: number;
+  /** Ambition — stalls as % of the max-target program's need. */
+  parkingPctOfMaxNeed?: number;
+  /** Stalls the max-target program would require. */
+  parkingStallsTargetAtMax?: number;
+  /** Parking placement strategy the generator chose (e.g. rear_field_perp). */
+  parkingStrategy?: string;
+  /** True when parking capacity trimmed the unit count below the program. */
+  parkingLimited?: boolean;
+  /** The generator's own capture claim (% of max buildout), verbatim. */
+  capturePct?: number;
 }
 
 export interface FeasibilityViolation {

@@ -1,10 +1,15 @@
 // DB acceptance battery — the SOLVER-side merge gate (audit 2026-07-21 CC-1).
 //
-// Runs the live generator (read-only: p_persist=false) for the three floor
-// parcels + one rotating cohort parcel, and fails on any unexpected error or
-// any capture below its recorded floor (floors.json — floors only ratchet UP).
-// Capture = metrics.gfa_sqft / fn_max_buildout.max_gsf, computed from raw
-// numbers, never parsed from display strings.
+// TWO layers since order-6 (2026-07-28), matching the server split:
+//  1. CAPTURE FLOORS run against fn_generate_mf_site_plan_v2_search — the
+//     search core (deep/persist path) that SET those floors. floors.json
+//     floors only ratchet UP. Capture = metrics gfa / fn_max_buildout.max_gsf,
+//     computed from raw numbers, never parsed from display strings.
+//  2. SEED-DEFAULT SMOKE runs against fn_generate_mf_site_plan_v2 — the
+//     instant deterministic seed generator users actually hit first. Asserted
+//     for SHAPE and SANITY (no unexpected error, ≥1 structure, native single
+//     polygons, numeric gsf); its capture is advisory (metrics.capture_pct),
+//     not floored — an instant seed is not the deep solve.
 //
 // Scope note: this gate checks NUMBERS and ERRORS at the solver boundary.
 // Geometry validity (overlaps, containment) is the visual fixture-gate's job
@@ -62,14 +67,14 @@ async function rpc(fn, args, timeoutMs = 90_000) {
 // Verdict-class refusals are legitimate solver outputs, not battery failures.
 const ALLOWED_VERDICTS = new Set(['planner_generation_not_allowed']);
 
-async function solveParcel(fid) {
+async function solveParcel(fid, generatorFn = 'fn_generate_mf_site_plan_v2_search') {
   const compile = await rpc('fn_compile_planner_context', {
     p_ogc_fid: fid, p_use: 'multi_family', p_user_intent: null,
   });
   if (!compile || compile.error) {
     return { fid, error: `compile failed: ${compile?.error ?? 'empty response'}` };
   }
-  const solve = await rpc('fn_generate_mf_site_plan_v2', {
+  const solve = await rpc(generatorFn, {
     p_ogc_fid: fid, p_typology: 'multifamily', p_seed: 1, p_pins: null,
     p_parent: null, p_persist: false, p_context_id: compile.context_id,
   });
@@ -78,7 +83,8 @@ async function solveParcel(fid) {
     return { fid, error: `solver error: ${solve.error}` };
   }
   if (solve.error) return { fid, verdict: solve.error };
-  const gfa = solve.metrics?.gfa_sqft;
+  // Legacy search family reports metrics.gfa_sqft; seed family reports gsf.
+  const gfa = solve.metrics?.gfa_sqft ?? solve.metrics?.gsf;
   if (typeof gfa !== 'number' || !(solve.buildings?.length > 0)) {
     return { fid, error: `no plan produced (generation: ${solve.generation ?? 'unknown'})` };
   }
@@ -107,8 +113,46 @@ async function solveParcel(fid) {
   return { fid, gfa, maxGsf, capture, mbErr, bars: solve.buildings.length };
 }
 
+/** Layer 2: the seed DEFAULT (what users hit first) — shape + sanity, no
+ *  capture floor. Every failure path is named 'seed-default' so a red here
+ *  never reads as a search-core floor regression. */
+async function seedDefaultCheck(fid) {
+  const compile = await rpc('fn_compile_planner_context', {
+    p_ogc_fid: fid, p_use: 'multi_family', p_user_intent: null,
+  });
+  if (!compile || compile.error) return `compile failed: ${compile?.error ?? 'empty response'}`;
+  const solve = await rpc('fn_generate_mf_site_plan_v2', {
+    p_ogc_fid: fid, p_typology: 'multifamily', p_seed: 1, p_pins: null,
+    p_parent: null, p_persist: false, p_context_id: compile.context_id,
+  });
+  if (!solve) return 'empty response';
+  if (solve.error && !ALLOWED_VERDICTS.has(solve.error)) return `error: ${solve.error}`;
+  if (solve.error) return `verdict '${solve.error}' on a floor parcel`;
+  const structures = solve.buildings ?? [];
+  if (structures.length === 0) return 'no structures';
+  const broken = structures.find(b => b?.geom_2274?.type !== 'Polygon' || b?.is_single_polygon === false);
+  if (broken) {
+    return `structure ${broken.structure_id ?? '?'} not a native single polygon (type=${broken?.geom_2274?.type}, is_single_polygon=${broken?.is_single_polygon})`;
+  }
+  const gsf = solve.metrics?.gsf;
+  if (typeof gsf !== 'number' || gsf <= 0) return `metrics.gsf=${JSON.stringify(gsf)} (${typeof gsf})`;
+  const cap = solve.metrics?.capture_pct;
+  console.log(`OK   ${fid} seed-default — ${structures.length} structure(s), gsf ${gsf}${typeof cap === 'number' ? `, capture ${cap}% (advisory)` : ''}`);
+  return null;
+}
+
 const failures = [];
 for (const fid of FIXED) {
+  try {
+    const seedFail = await seedDefaultCheck(fid);
+    if (seedFail) {
+      failures.push(`${fid}: seed-default ${seedFail}`);
+      console.log(`FAIL ${fid} seed-default — ${seedFail}`);
+    }
+  } catch (e) {
+    failures.push(`${fid}: seed-default ${String(e).slice(0, 160)}`);
+    console.log(`FAIL ${fid} seed-default — ${String(e).slice(0, 160)}`);
+  }
   try {
     const r = await solveParcel(fid);
     if (r.error) {

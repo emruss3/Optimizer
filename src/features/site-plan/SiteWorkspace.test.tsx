@@ -442,37 +442,26 @@ describe('SiteWorkspace: pinned best-effort edits render with loud violations', 
   });
 });
 
-describe('SiteWorkspace: worker parity (fallback carries the ACTIVE brief)', () => {
-  it('when the server generators are unreachable, the worker solve receives Regrid priors and objective weights from the active context', async () => {
+describe('SiteWorkspace: failed server plan → error card, never the improvised worker plan (order-6 item 5c)', () => {
+  it('when the server generators are unreachable, the error card names the cause + Retry — and Retry re-solves into a real plan', async () => {
     compileMock.mockImplementation(async () => ctxResp('multi_family', 'ctx-mf'));
     genV2Mock.mockResolvedValue(null);     // v2 RPC unreachable
     genLegacyMock.mockResolvedValue(null); // legacy unreachable too
 
     render(<SiteWorkspace parcel={PARCEL} />);
 
-    await waitFor(() => expect(optimizeSiteMock).toHaveBeenCalled());
-    const brief = optimizeSiteMock.mock.calls[0][5] as Record<string, unknown>;
-    expect(brief).toMatchObject({
-      generationAllowed: true,
-      precedent: {
-        depthP50Ft: 99.8,
-        lengthP75Ft: 163.7,
-        coverageP75Pct: 31,
-        buildingCountP50: 6,
-        storiesP50: 2,
-        storiesP75: 2,
-        footprintP75SqFt: 9100,
-        footprintP90SqFt: 12000,
-        sampleSize: 5,
-        confidence: 'high',
-        selectionMode: 'exact_same_zoning',
-      },
-      programPrior: { averageUnitSqft: 950 },
-      objectiveWeights: { financial_return: 0.2, precedent_fit: 0.3 },
-    });
+    // Eric-decided (5c): the worker's improvised corner plan NEVER stands in
+    // for a failed server solve — the card says what failed instead.
+    const card = await screen.findByTestId('server-plan-error');
+    expect(card.textContent).toContain('The massing service did not respond');
+    expect(optimizeSiteMock).not.toHaveBeenCalled();
 
-    // The worker plan carried the active v2 context → honest "Context applied"
+    // Retry with the service back → the real server plan renders.
+    genV2Mock.mockResolvedValue(serverResp('ctx-mf'));
+    fireEvent.click(screen.getByTestId('server-plan-retry'));
+    await waitFor(() => expect(screen.queryByTestId('server-plan-error')).toBeNull());
     await waitFor(() => expect(screen.getByText('Context applied')).toBeTruthy());
+    expect(optimizeSiteMock).not.toHaveBeenCalled();
   });
 });
 

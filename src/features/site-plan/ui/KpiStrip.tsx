@@ -25,6 +25,7 @@ const Stat: React.FC<{ label: string; value: string; alert?: boolean }> = ({ lab
  *  plan hit a legal/parking wall — the badge must not read green. */
 const HARD_CLAMP_FLAGS: Record<string, string> = {
   parking_below_ratio: 'parking short',
+  parking_limited: 'parking-limited: units trimmed',
   floors_clamped_by_far: 'FAR-clamped',
   density_clamped_units: 'density-clamped',
   coverage_cap_reached: 'coverage-capped',
@@ -68,17 +69,48 @@ const KpiStrip: React.FC<{
   ];
   const constrained = clampReasons.length > 0;
 
+  // Dual parking ratios (seed_v2): adequacy (placed need — the honest
+  // number) beside ambition (max-target need), from the generator's own
+  // structured fields, never re-derived.
+  const pctPlaced = metrics.parkingPctOfPlacedNeed;
+  const pctMax = metrics.parkingPctOfMaxNeed;
+
   return (
     <div className="flex items-center gap-5 overflow-x-auto">
       <Stat label="Units" value={`${metrics.totalUnits ?? 0}`} />
-      <Stat label="FAR" value={(metrics.achievedFAR ?? 0).toFixed(2)} />
-      <Stat label="Coverage" value={`${(metrics.siteCoveragePct ?? 0).toFixed(0)}%`} />
+      {/* FAR/Coverage/Open at exactly 0 mean "not reported by this engine"
+          (the seed payload carries none and the client never re-measures) —
+          hide them rather than display fabricated zeros. */}
+      {(metrics.achievedFAR ?? 0) > 0 && (
+        <Stat label="FAR" value={metrics.achievedFAR.toFixed(2)} />
+      )}
+      {(metrics.siteCoveragePct ?? 0) > 0 && (
+        <Stat label="Coverage" value={`${metrics.siteCoveragePct.toFixed(0)}%`} />
+      )}
       <Stat
         label="Stalls"
         value={`${stallsProvided} / ${stallsRequired}`}
         alert={parkingShort}
       />
-      <Stat label="Open" value={`${(metrics.openSpacePct ?? 0).toFixed(0)}%`} />
+      {typeof pctPlaced === 'number' && (
+        <span
+          title={`Adequacy vs ambition: ${stallsProvided} stalls cover ${pctPlaced}% of the PLACED program's need (${metrics.stallsRequired ?? '?'} stalls)${
+            typeof pctMax === 'number'
+              ? ` and ${pctMax}% of the max-target need (${metrics.parkingStallsTargetAtMax ?? '?'} stalls)`
+              : ''
+          }${metrics.parkingStrategy ? ` · strategy: ${metrics.parkingStrategy.replace(/_/g, ' ')}` : ''}`}
+          className="flex items-center"
+        >
+          <Stat
+            label="Parking"
+            value={`${Math.round(pctPlaced)}% placed${typeof pctMax === 'number' ? ` · ${Math.round(pctMax)}% max` : ''}`}
+            alert={pctPlaced < 100}
+          />
+        </span>
+      )}
+      {(metrics.openSpacePct ?? 0) > 0 && (
+        <Stat label="Open" value={`${metrics.openSpacePct.toFixed(0)}%`} />
+      )}
       {/* Financial UI is parked by directive: the Yield-on-Cost chip is hidden
           but the computation stays live (SHOW_YIELD_CHIP flips it back on). */}
       {SHOW_YIELD_CHIP && investment && (
@@ -126,6 +158,15 @@ const KpiStrip: React.FC<{
           className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700 whitespace-nowrap"
         >
           ⚠ {utilizationPct.toFixed(0)}% of theoretical envelope
+        </div>
+      )}
+      {metrics.parkingLimited === true && (
+        <div
+          data-testid="parking-limited-chip"
+          title="Parking capacity capped the program: the generator trimmed units below the target to keep the plan parked. The dual ratios say how far."
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700 whitespace-nowrap"
+        >
+          parking-limited: units trimmed
         </div>
       )}
       {metrics.parkingRegime === 'tuck_under' && (

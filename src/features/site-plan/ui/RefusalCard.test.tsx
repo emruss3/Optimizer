@@ -34,4 +34,36 @@ describe('RefusalCard (J1 refusal-as-deliverable)', () => {
     expect(isRefusal({ ...base, verdict: 'buildable_easement_access' })).toBe(false);
     expect(isRefusal({ ...base, verdict: 'unbuildable_depth' })).toBe(true);
   });
+
+  it('renders the server-verified house switch when suggested_typology says so (order-6)', () => {
+    const onDraw = vi.fn();
+    render(
+      <RefusalCard
+        buildability={{
+          ...base,
+          verdict: 'unbuildable_area',
+          reason: '3076 sqft envelope < min multifamily footprint',
+          envelope_sqft: 3076,
+          suggested_typology: 'single_family',
+          suggestion_reason: 'envelope fits a house (3076 sqft, 28.8 ft wide)',
+        }}
+        onDrawSfSeed={onDraw}
+      />
+    );
+    const card = screen.getByTestId('refusal-card').textContent;
+    expect(card).toContain('envelope fits a house (3076 sqft, 28.8 ft wide)');
+    fireEvent.click(screen.getByTestId('sf-seed-switch'));
+    expect(onDraw).toHaveBeenCalledOnce();
+  });
+
+  it('never invents the house switch without the server suggestion', () => {
+    render(
+      <RefusalCard
+        buildability={{ ...base, verdict: 'unbuildable_area', reason: '1837 sqft envelope < min multifamily footprint', envelope_sqft: 1837 }}
+        onDrawSfSeed={vi.fn()}
+      />
+    );
+    expect(screen.queryByTestId('sf-seed-switch')).toBeNull();
+    expect(screen.getByTestId('refusal-card').textContent).toContain('the correct answer for this parcel is no');
+  });
 });

@@ -98,7 +98,9 @@ async function solveOne(fid) {
     const err = solve.body?.error;
     if (err === 'planner_generation_not_allowed') return { fid, outcome: 'verdict', detail: err };
     if (err) return { fid, outcome: 'error', detail: err };
-    const gfa = solve.body?.metrics?.gfa_sqft;
+    // Both payload families count as a plan: the legacy search core reports
+    // metrics.gfa_sqft; the seed_v2 default reports metrics.gsf.
+    const gfa = solve.body?.metrics?.gfa_sqft ?? solve.body?.metrics?.gsf;
     const bars = solve.body?.buildings?.length ?? 0;
     if (typeof gfa !== 'number' || bars === 0) {
       return { fid, outcome: 'error', detail: `no plan (generation: ${solve.body?.generation ?? 'unknown'})` };

@@ -363,3 +363,196 @@ describe('KpiStrip clamp-flag badge (work order item 2)', () => {
     expect(getByText('60%')).toBeTruthy();
   });
 });
+
+// ── seed_v2 payload family (order-6) ─────────────────────────────────────────
+// Live-shaped fixture mirroring fn_generate_mf_site_plan_v2 on 553450
+// (2026-07-28): native EPSG:2274 single-polygon structures, skeleton drives,
+// ONE parking object with structured dual ratios. Coordinates simplified but
+// in the real TN State Plane range so the 2274→4326→3857 path is exercised.
+import { seedFamilyPlanToElements, isSeedFamilyResponse, type SeedFamilyResponse } from './generateMfPlan';
+import { validatePlanElements } from '../../../engine/validatePlan';
+
+const rect2274 = (x: number, y: number, w: number, h: number) => ({
+  type: 'Polygon',
+  coordinates: [[[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]],
+});
+
+const SEED_RESP: SeedFamilyResponse = {
+  parcel_ogc_fid: 553450,
+  typology: 'multifamily',
+  seed: 1,
+  generator_version: 'seed_v2',
+  plan_basis:
+    '133136 GSF seed plan @ 4 st · 106.0% of 125550 max · 1 structure(s) · 75 units @ ~1550 GSF · 168/130 stalls (129.2% of placed need, 120.0% of max) · rear_field_perp · generator: seed_v2 · relaxed: none',
+  buildings: [{
+    structure_id: 1,
+    geom_2274: rect2274(1727000, 670000, 208, 160),
+    footprint_sqft: 33284,
+    gsf: 133136,
+    stories: 4,
+    composition_note: 'bars_connected_S_form',
+    is_single_polygon: true,
+  }],
+  drives: [{
+    entry_2274: { type: 'Point', coordinates: [1727100, 669800] },
+    spine_2274: { type: 'LineString', coordinates: [[1727100, 669810], [1727100, 669990]] },
+  }],
+  parking: {
+    bays: [
+      { geom_2274: rect2274(1727250, 670000, 120, 180), area_sqft: 23543 },
+      { geom_2274: rect2274(1727400, 670000, 110, 180), area_sqft: 21941 },
+    ],
+    stalls: 168,
+    strategy: 'rear_field_perp',
+    stalls_required: 130,
+    pct_of_placed_need: 129.2,
+    pct_of_max_need: 120,
+    stalls_required_at_placed: 130,
+    stalls_target_at_max: 140,
+  },
+  metrics: {
+    gsf: 133136, units: 75, stalls: 168, stories: 4, capture_pct: 106,
+    parking_limited: false,
+    mix: [
+      { pct: 10, type: 'studio', units: 7 },
+      { pct: 40, type: '1br', units: 30 },
+      { pct: 35, type: '2br', units: 26 },
+      { pct: 15, type: '3br', units: 11 },
+    ],
+  },
+  flags: ['seed_v2_deterministic'],
+};
+
+describe('seed_v2 payload family (order-6)', () => {
+  it('detects the family by native 2274 structures, never by flags', () => {
+    expect(isSeedFamilyResponse(SEED_RESP)).toBe(true);
+    expect(isSeedFamilyResponse(RESP)).toBe(false);
+    expect(isSeedFamilyResponse(null)).toBe(false);
+  });
+
+  it('renders one outline per connected S/C-form structure with engine areas + the server mix', () => {
+    const { elements, metrics, basis, flags } = seedFamilyPlanToElements(SEED_RESP);
+
+    const buildings = elements.filter(e => e.type === 'building');
+    expect(buildings).toHaveLength(1); // ONE connected structure = ONE outline
+    const b = buildings[0];
+    expect(b.id).toBe('mfgen-bldg-1');
+    expect(b.name).toBe('bars connected S form × 4 st');
+    expect(b.properties?.areaSqFt).toBe(33284); // EPSG:2274 truth, never re-measured
+    expect(b.properties?.floors).toBe(4);
+    // The SERVER's mix travels verbatim, not a client guess. Note the live
+    // mix rows sum to 74 while metrics.units says 75 (server-side rounding);
+    // we render the rows as given and never reconcile them client-side.
+    const mix = b.properties?.unitMix as Array<{ type: string; count: number }>;
+    expect(mix.reduce((s, e) => s + e.count, 0)).toBe(74);
+    expect(mix.find(e => e.type === 'studio')?.count).toBe(7);
+    expect(mix.find(e => e.type === '3br')?.count).toBe(11);
+
+    const bays = elements.filter(e => e.type === 'parking');
+    expect(bays).toHaveLength(2);
+    const bayStalls = bays.map(e => e.properties?.stalls as number);
+    expect(bayStalls[0] + bayStalls[1]).toBe(168); // apportioned by area share
+
+    const circ = elements.filter(e => e.type === 'circulation');
+    expect(circ.map(c => c.name).sort()).toEqual(['Entry', 'Spine drive']);
+
+    expect(metrics?.totalBuiltSF).toBe(133136);
+    expect(metrics?.totalUnits).toBe(75);
+    expect(metrics?.stallsProvided).toBe(168);
+    expect(metrics?.stallsRequired).toBe(130);
+    expect(metrics?.parkingPctOfPlacedNeed).toBe(129.2);
+    expect(metrics?.parkingPctOfMaxNeed).toBe(120);
+    expect(metrics?.parkingStallsTargetAtMax).toBe(140);
+    expect(metrics?.parkingStrategy).toBe('rear_field_perp');
+    expect(metrics?.parkingLimited).toBe(false);
+    expect(metrics?.capturePct).toBe(106);
+    expect(basis).toContain('129.2% of placed need');
+    expect(flags).toContain('seed_v2_deterministic');
+    expect(flags).not.toContain('parking_limited');
+
+    // The engine's own clean plan passes the client geometry gate — the
+    // family mapper introduces no fabricated overlaps.
+    expect(validatePlanElements(elements).ok).toBe(true);
+
+    // Every element carries the mfgen- prefix so a regenerate REPLACES.
+    expect(elements.every(isMfPlanElement)).toBe(true);
+  });
+
+  it('appends the parking_limited clamp flag when the generator says units were trimmed', () => {
+    const { metrics, flags } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      metrics: { ...SEED_RESP.metrics, parking_limited: true },
+    });
+    expect(metrics?.parkingLimited).toBe(true);
+    expect(flags).toContain('parking_limited');
+  });
+
+  it('apportions the server mix across structures by GSF share (largest remainder)', () => {
+    const { elements } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      buildings: [
+        { structure_id: 1, geom_2274: rect2274(1727000, 670000, 200, 100), footprint_sqft: 20000, gsf: 80000, stories: 4 },
+        { structure_id: 2, geom_2274: rect2274(1727300, 670000, 140, 100), footprint_sqft: 14000, gsf: 53136, stories: 4 },
+      ],
+    });
+    const buildings = elements.filter(e => e.type === 'building');
+    expect(buildings).toHaveLength(2);
+    const total = buildings
+      .flatMap(b => b.properties?.unitMix as Array<{ count: number }>)
+      .reduce((s, e) => s + e.count, 0);
+    expect(total).toBe(74); // the mix rows' own total — nothing lost to apportioning
+  });
+
+  it('renders the SF seed as a house + driveway under the sfseed- prefix', () => {
+    const sf: SeedFamilyResponse = {
+      parcel_ogc_fid: 393306,
+      typology: 'single_family',
+      generator_version: 'sf_seed_v1',
+      plan_basis: '1236 SF house @ 1 st · single_family as-of-right · envelope 3076 sqft (SF setbacks) · generator: sf_seed_v1 · relaxed: none',
+      buildings: [{ geom_2274: rect2274(1727000, 670000, 40, 31), footprint_sqft: 1236, gsf: 1236, stories: 1, is_single_polygon: true }],
+      drives: [{ geom_2274: rect2274(1727045, 670000, 12, 40), kind: 'driveway' }],
+      metrics: { gsf: 1236, units: 1, stories: 1 },
+      flags: ['sf_seed_v1_deterministic'],
+    };
+    const { elements, metrics, basis } = seedFamilyPlanToElements(sf, { idPrefix: 'sfseed', house: true });
+    const house = elements.find(e => e.type === 'building')!;
+    expect(house.id).toBe('sfseed-bldg-1');
+    expect(house.name).toBe('House · 1,236 sf');
+    const mix = house.properties?.unitMix as Array<{ type: string; count: number }>;
+    expect(mix).toHaveLength(1);
+    expect(mix[0].count).toBe(1);
+    const drive = elements.find(e => e.type === 'circulation')!;
+    expect(drive.name).toBe('Driveway');
+    expect(drive.id).toBe('sfseed-drive-1');
+    expect(metrics?.totalBuiltSF).toBe(1236);
+    expect(metrics?.totalUnits).toBe(1);
+    expect(basis).toContain('single_family as-of-right');
+    expect(validatePlanElements(elements).ok).toBe(true);
+  });
+});
+
+describe('KpiStrip dual parking ratios + parking-limited chip (order-6 item 3)', () => {
+  it('shows adequacy · ambition from the structured fields and hides unreported FAR/coverage', () => {
+    const { metrics } = seedFamilyPlanToElements(SEED_RESP);
+    const { getByText, queryByText } = render(
+      React.createElement(KpiStrip, { metrics, investment: null })
+    );
+    expect(getByText('168 / 130')).toBeTruthy();
+    expect(getByText('129% placed · 120% max')).toBeTruthy();
+    // FAR/Coverage/Open are NOT in the seed payload — no fabricated zeros.
+    expect(queryByText('FAR')).toBeNull();
+    expect(queryByText('Coverage')).toBeNull();
+    expect(queryByText(/parking-limited/)).toBeNull();
+  });
+
+  it('raises the amber parking-limited chip when the generator trimmed units', () => {
+    const { metrics } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      metrics: { ...SEED_RESP.metrics, parking_limited: true },
+    });
+    const { getByText } = render(
+      React.createElement(KpiStrip, { metrics, investment: null })
+    );
+    expect(getByText('parking-limited: units trimmed')).toBeTruthy();
+  });
+});
