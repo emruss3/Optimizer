@@ -28,6 +28,9 @@ const PARCELS = [
   { ogc_fid: 667574, address: '2622 W HEIMAN ST', zoning: 'RM40' },
   { ogc_fid: 669046, address: '1200 W H DAVIS DR', zoning: 'RM40' },
   { ogc_fid: 488278, address: '1710 MEHARRY BLVD', zoning: 'RM20' },
+  // Order-6 item 1: MF-refused parcel whose refusal carries the server-
+  // verified single-family suggestion — the tap must render the house.
+  { ogc_fid: 393306, address: '303 E PALESTINE AVE', zoning: 'RS10' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -75,15 +78,34 @@ function judge(exp, ev) {
       }
     }
   } else if (exp.mode === 'honest-refusal') {
-    // Current known-good behavior for a defective server response: the plan
-    // is rejected LOUDLY and the worker fallback renders. When the server is
-    // fixed, flip this parcel to server-plan and set its floor.
-    if (!(ev.violationCodes ?? []).includes('server-plan-rejected')) {
-      errs.push('expected a loud SERVER-PLAN-REJECTED violation (honest-refusal machinery)');
+    // Order-6 item 5c: a failed server plan is an ERROR CARD naming its
+    // cause — the worker fallback never renders in its place.
+    if (!ev.serverPlanError) {
+      errs.push('expected the server-plan error card (evidence.serverPlanError) to name the failure');
     }
-    if (ev.solvedBy !== 'worker') {
-      errs.push(`expected the worker fallback to render, got solvedBy=${ev.solvedBy ?? 'none'}`);
+    if (ev.solvedBy === 'worker') {
+      errs.push('the improvised worker plan rendered — order-6 item 5c forbids that path');
     }
+  } else if (exp.mode === 'sf-suggestion') {
+    // The MF refusal must carry the server-verified suggestion, and the tap
+    // must have rendered the house (the post-click evidence is judged).
+    if (!(ev.buildabilityVerdict ?? '').startsWith('unbuildable')) {
+      errs.push(`expected an MF refusal verdict, got ${ev.buildabilityVerdict ?? 'none'}`);
+    }
+    if (ev.suggestedTypology !== 'single_family') {
+      errs.push(`expected suggested_typology=single_family on the refusal, got ${ev.suggestedTypology ?? 'none'}`);
+    }
+    if (!ev._houseRendered) {
+      errs.push('the SF seed house did not render after the suggestion tap');
+    }
+  }
+  if (exp.mode === 'server-plan' && ev.serverPlanError) {
+    errs.push(`server-plan error card raised unexpectedly: ${ev.serverPlanError}`);
+  }
+  // Order-6 item 3: the generator said parking capacity trimmed units — the
+  // amber chip must say so on the strip.
+  if (exp.requireParkingLimitedChip && !ev._domParkingChip) {
+    errs.push('parking-limited chip missing (metrics.parking_limited=true in the served payload)');
   }
   // CC-3a: the legacy client-frame envelope construction must never serve a
   // reference parcel — the brief's EPSG:2274-true envelope is the staging.
@@ -141,8 +163,29 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
     await page.waitForSelector('canvas[data-export="site-plan"]', { timeout: 45000 });
     await page.waitForTimeout(12000);
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_2d.png` });
+    // Order-6 item 1: when the refusal card offers the server-verified house,
+    // tap it and shoot the render — the SF seed is the deliverable.
+    const sfSwitch = page.getByTestId('sf-seed-switch');
+    let houseRendered = false;
+    if (await sfSwitch.isVisible().catch(() => false)) {
+      await sfSwitch.click();
+      await page.waitForTimeout(4000);
+      await page.screenshot({ path: `${OUT}/${p.ogc_fid}_house.png` });
+      houseRendered = await page.evaluate(() =>
+        /sf_seed|single_family as-of-right/.test(window.__planEvidence?.basis ?? ''));
+    }
     // Evidence hook (DEV builds): what actually rendered, from the workspace.
-    const evidence = await page.evaluate(() => window.__planEvidence ?? null);
+    // DOM probes ride along: the parking-limited chip is a strip artifact the
+    // evidence object doesn't carry.
+    const evidence = await page.evaluate(() => {
+      const ev = window.__planEvidence ?? null;
+      if (!ev) return null;
+      return {
+        ...ev,
+        _domParkingChip: !!document.querySelector('[data-testid="parking-limited-chip"]'),
+      };
+    });
+    if (evidence) evidence._houseRendered = houseRendered;
     // Seed view (order-4 item 1): when the engine emits a placed seed, shoot
     // the stage-ordered render too — the single-L artifact.
     const seedToggle = page.getByTestId('seed-toggle');

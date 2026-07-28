@@ -453,8 +453,11 @@ describe('seed_v2 payload family (order-6)', () => {
     const bayStalls = bays.map(e => e.properties?.stalls as number);
     expect(bayStalls[0] + bayStalls[1]).toBe(168); // apportioned by area share
 
+    // The skeleton (centerline + entry point) renders as ONE unioned access-
+    // drive network, clipped against buildings/bays by construction.
     const circ = elements.filter(e => e.type === 'circulation');
-    expect(circ.map(c => c.name).sort()).toEqual(['Entry', 'Spine drive']);
+    expect(circ.length).toBeGreaterThan(0);
+    expect(circ.every(c => (c.name ?? '').startsWith('Access drive'))).toBe(true);
 
     expect(metrics?.totalBuiltSF).toBe(133136);
     expect(metrics?.totalUnits).toBe(75);

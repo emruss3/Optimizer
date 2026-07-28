@@ -12,6 +12,7 @@ import type { Element, SiteMetrics } from '../../../engine/types';
 import type { LineString, Point, Polygon, Position } from 'geojson';
 import { generateUnitMixForCount, UNIT_TYPE_DEFS, PARKING_RATIO_DEFAULTS, type UnitMixEntry } from '../../../engine/model';
 import { lineToRect } from '../../../engine/seedToElements';
+import { clipPolysToObstacles, unionPolys } from '../../../engine/validatePlan';
 import { geom2274To4326 } from '../../../utils/tnStatePlane';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { supabase } from '../../../lib/supabase';
@@ -468,51 +469,72 @@ export function seedFamilyPlanToElements(
     } as Element);
   });
 
+  // Drives. The engine's skeleton is a CENTERLINE + entry point — width is
+  // client-fabricated (24 ft buffer, apron marker). Fabricated geometry must
+  // become valid BY CONSTRUCTION before the zero-overlap gate sees it: the
+  // skeleton pieces union into one network (a junction is one drive, not two
+  // overlapping rectangles) and clip against buildings/bays — the engine's
+  // centerline legitimately passes under masses it placed after routing.
+  // REAL corridor polygons the engine emits (drives[].geom_2274) stay
+  // first-class: only defensively clipped, never invented.
+  const obstacles = [
+    ...structures.map(b => {
+      try { return seedTo3857(b.geom_2274 as Polygon); } catch { return null; }
+    }),
+    ...bays.map(b => {
+      try { return seedTo3857(b.geom_2274 as Polygon); } catch { return null; }
+    }),
+  ].filter((p): p is Polygon => p != null)
+    .map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] }));
+
+  const skeletonPolys: Array<{ type: 'Polygon'; coordinates: number[][][] }> = [];
   (resp.drives ?? []).forEach((dr, i) => {
     if (dr?.spine_2274) {
       try {
         const rect = lineToRect(seedTo3857(dr.spine_2274 as unknown as LineString), 7.3); // 24 ft drive
-        if (rect) {
-          elements.push({
-            id: `${prefix}-drive-spine-${i + 1}`,
-            type: 'circulation',
-            name: 'Spine drive',
-            geometry: rect,
-            properties: { color: '#94A3B8' },
-            metadata: meta,
-          } as Element);
-        }
+        if (rect) skeletonPolys.push({ type: 'Polygon', coordinates: rect.coordinates as number[][][] });
       } catch { /* skip malformed spine */ }
     }
     if (dr?.entry_2274) {
       try {
         const [ex, ey] = seedTo3857(dr.entry_2274 as unknown as Point).coordinates as Position;
         const w = 3.7, d = 3.0; // 12×10 ft apron marker at the curb
-        elements.push({
-          id: `${prefix}-drive-entry-${i + 1}`,
-          type: 'circulation',
-          name: 'Entry',
-          geometry: {
-            type: 'Polygon',
-            coordinates: [[[ex - w, ey - d], [ex + w, ey - d], [ex + w, ey + d], [ex - w, ey + d], [ex - w, ey - d]]],
-          },
-          properties: { color: '#CBD5E1', entry: true },
-          metadata: meta,
-        } as Element);
+        skeletonPolys.push({
+          type: 'Polygon',
+          coordinates: [[[ex - w, ey - d], [ex + w, ey - d], [ex + w, ey + d], [ex - w, ey + d], [ex - w, ey - d]]],
+        });
       } catch { /* skip malformed entry */ }
     }
     if (dr?.geom_2274) {
       try {
-        elements.push({
-          id: `${prefix}-drive-${i + 1}`,
-          type: 'circulation',
-          name: dr.kind === 'driveway' ? 'Driveway' : `Drive ${i + 1}`,
-          geometry: seedTo3857(dr.geom_2274 as Polygon),
-          properties: { color: '#94A3B8' },
-          metadata: meta,
-        } as Element);
+        const poly = seedTo3857(dr.geom_2274 as Polygon);
+        const clipped = clipPolysToObstacles(
+          [{ type: 'Polygon' as const, coordinates: poly.coordinates as number[][][] }],
+          obstacles,
+          2
+        );
+        clipped.forEach((piece, pi) => {
+          elements.push({
+            id: `${prefix}-drive-${i + 1}${pi > 0 ? `-${pi + 1}` : ''}`,
+            type: 'circulation',
+            name: dr.kind === 'driveway' ? 'Driveway' : `Drive ${i + 1}`,
+            geometry: piece as unknown as Polygon,
+            properties: { color: '#94A3B8' },
+            metadata: meta,
+          } as Element);
+        });
       } catch { /* skip malformed drive */ }
     }
+  });
+  clipPolysToObstacles(unionPolys(skeletonPolys), obstacles, 2).forEach((piece, i) => {
+    elements.push({
+      id: `${prefix}-drive-skel-${i + 1}`,
+      type: 'circulation',
+      name: i === 0 ? 'Access drive' : `Access drive ${i + 1}`,
+      geometry: piece as unknown as Polygon,
+      properties: { color: '#94A3B8' },
+      metadata: meta,
+    } as Element);
   });
 
   const gsf = num(m.gsf);
