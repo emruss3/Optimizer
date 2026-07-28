@@ -24,7 +24,8 @@ import ContextPanel from './ui/ContextPanel';
 import { CensusBanner } from './ui/CensusBanner';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, defaultUseFromZoningBase, type DesignContext } from './api/designContext';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
-import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
 import FlagsPanel from './ui/FlagsPanel';
@@ -223,6 +224,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     compileBlockedRef.current = reason;
     setCompileBlocked(reason);
   }, []);
+  // Order-6 item 5c (Eric-decided): a FAILED server plan shows an error card
+  // naming its cause + Retry — never the improvised worker corner plan. This
+  // is what makes distinct failures look distinct: compile failed (Retry
+  // screen) ≠ use not permitted (generation blocked) ≠ parcel refuses
+  // (RefusalCard) ≠ massing failed (THIS card).
+  const [serverPlanError, setServerPlanError] = useState<string | null>(null);
+  // The cause travels by ref from the failure site inside runServerMfPlan to
+  // whichever caller decides to show the card.
+  const serverFailCauseRef = useRef<string | null>(null);
   // Zero-overlap gate bookkeeping: one silent re-solve per gesture on the
   // server path; rejected worker candidates surface in the solves rail.
   const serverGeoRetryRef = useRef(false);
@@ -486,6 +496,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         message: `Use mismatch: the compiled context is '${snapshot.context.typology}' but the solver was asked for multifamily massing. Pick the multifamily use (or generate lots) instead.`,
         severity: 'error',
       }]);
+      serverFailCauseRef.current = `Use mismatch — the compiled context is '${snapshot.context.typology}', not multifamily. Pick the multifamily use and retry.`;
       return false;
     }
     let resp = effectiveContextId
@@ -506,7 +517,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       : null;
     // Townhomes have no legacy fallback: silently rendering apartments in
     // their place would misrepresent the selected product.
-    if (!resp && effectiveProduct === 'townhomes') return false;
+    if (!resp && effectiveProduct === 'townhomes') {
+      serverFailCauseRef.current = 'The townhome service did not respond.';
+      return false;
+    }
     if (resp?.error === 'planner_generation_not_allowed') {
       generationBlockedRef.current = true;
       setGenerationBlocked(true);
@@ -534,9 +548,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const legacyReplay = opts.contextId === null;
       if (!legacyReplay) {
         if (effectiveContextId) {
-          // The massing SERVICE is unreachable but the compiled context is in
-          // hand — return false so the caller's worker fallback solves on the
-          // SAME brief (worker parity). That path is grounded, not degraded.
+          // The massing SERVICE is unreachable. Order-6 item 5c: no caller
+          // improvises a worker plan in its place any more — the cause
+          // travels to the error card.
+          serverFailCauseRef.current = 'The massing service did not respond (transport failure).';
           return false;
         }
         // No compiled context at all: nothing may render. Block with Retry.
@@ -554,8 +569,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         persist: false,
       });
     }
-    if (!resp || !resp.buildings || resp.buildings.length === 0) return false;
-    const mapped = mfPlanToElements(resp);
+    if (!resp || !resp.buildings || resp.buildings.length === 0) {
+      serverFailCauseRef.current = resp
+        ? `The generator returned no plan${resp.generation ? ` — ${resp.generation}` : resp.error ? ` — ${resp.error}` : ''}.`
+        : 'The massing service did not respond.';
+      return false;
+    }
+    // Two payload families render here: the default seed generator (native
+    // EPSG:2274 structures[], dual parking ratios) and the legacy search
+    // core at *_search (4326 geoms, full metrics). Family-aware mapping.
+    const mapped = isSeedFamilyResponse(resp)
+      ? seedFamilyPlanToElements(resp)
+      : mfPlanToElements(resp);
 
     // Zero-overlap invariant: server plans are validated before they can
     // render, same as the worker path. An invalid candidate is re-solved once
@@ -580,9 +605,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         severity: 'error',
       }]);
       setPlanBasis(`Plan rejected: ${validation.reason}`);
+      serverFailCauseRef.current = `The plan failed the geometry gate after a retry: ${validation.reason}.`;
       return false;
     }
     serverGeoRetryRef.current = false;
+    serverFailCauseRef.current = null;
+    setServerPlanError(null);
     markDraft(degraded || !effectiveContextId);
 
     // Post-solve assertion: the generator's declared typology must match the
@@ -633,9 +661,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       scoreTotal: resp.score_total ?? null,
       scoreComponents: resp.score_components ?? null,
       flags,
-      buildings: mNum(resp.metrics?.bars),
-      floors: mNum(resp.metrics?.floors),
-      footprintSqft: mNum(resp.metrics?.footprint_sqft),
+      // Seed-family payloads name these differently (structures / stories /
+      // per-structure footprints) — fall through so the lineage strip stays
+      // populated for both families.
+      buildings: mNum(resp.metrics?.bars) ?? (resp.buildings?.length || null),
+      floors: mNum(resp.metrics?.floors) ?? mNum(resp.metrics?.stories),
+      footprintSqft: mNum(resp.metrics?.footprint_sqft)
+        ?? (resp.buildings?.length
+          ? resp.buildings.reduce((s, b) => s + (mNum((b as { footprint_sqft?: unknown }).footprint_sqft) ?? 0), 0) || null
+          : null),
     });
     setPlanStale(false);
     const parkingNote = flags.includes('parking_below_ratio') ? ' · ⚠ parking below target ratio' : '';
@@ -737,11 +771,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           parentId: activeCandidateId,
         });
         if (!ok) {
-          // Service unreachable mid-session: the CURRENT plan stays exactly as
-          // it is — say so rather than silently doing nothing.
+          // Regeneration failure mid-session: the CURRENT plan (a real server
+          // plan) stays exactly as it is — name the cause rather than
+          // silently doing nothing. No card here: a rendered plan + a loud
+          // warning beats blanking the canvas the user is working in.
           setViolations(v => [...v, {
             code: 'server-unreachable',
-            message: 'The massing service did not respond — the current plan is unchanged. Try again.',
+            message: `${serverFailCauseRef.current ?? 'The massing service did not respond.'} The current plan is unchanged — try again.`,
             severity: 'warning',
           }]);
         }
@@ -762,6 +798,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       );
       setPlanBasis('Single-family context — routing to lot fit (multifamily massing requires a multifamily use).');
       handleGenerateLots().catch(() => undefined);
+      return;
+    }
+    // Order-6 item 5c: with a compiled multifamily context in hand, massing is
+    // SERVER-ONLY. A prior server failure no longer drops this branch into the
+    // worker's improvised corner plan — Generate retries the server, and a
+    // failure shows the error card naming its cause.
+    if (boundSnapshot && boundSnapshot.context.typology === 'multifamily') {
+      setIsGenerating(true);
+      try {
+        const ok = await runServerMfPlan({ seed: mfSeedRef.current, pins: mfPinsRef.current });
+        if (!ok) {
+          setServerPlanError(serverFailCauseRef.current ?? 'The massing service did not respond.');
+        }
+      } finally {
+        setIsGenerating(false);
+      }
       return;
     }
     const ctx = ctxSettledRef.current;
@@ -1218,6 +1270,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     [config.zoning, config.designParameters, updateConfig]
   );
 
+  /**
+   * Zero-overlap gate for every NON-GESTURE render path — the same
+   * validatePlanElements matrix the server path runs (circulation×building
+   * included: the Davis frame). Gesture flows (drags/undo) stay render-loud
+   * by design — a mid-drag overlap is the user's hand, not a generator
+   * defect. Returns true when the plan may render; false blocks it LOUD.
+   *
+   * Honesty note: PR #86 shipped only the call site — this definition was
+   * missing, so the lot-fit path carried a latent ReferenceError and no
+   * non-server path was actually gated until now. Caught by order-6's tsc
+   * sweep; the repo has no typecheck gate (root tsconfig checks no files).
+   */
+  const gateNonGesturePlan = useCallback((generated: Element[], label: string): boolean => {
+    const v = validatePlanElements(generated);
+    if (v.ok) return true;
+    console.warn(`[${label}] rejected by the geometry gate: ${v.reason}`, v.overlaps.slice(0, 4));
+    setViolations(prev => [...prev, {
+      code: 'geometry-overlap',
+      message: `${label} rejected: ${v.reason}. Nothing was drawn — regenerate for a new variation.`,
+      severity: 'error' as const,
+    }]);
+    setPlanBasis(`Plan rejected: ${v.reason}`);
+    return false;
+  }, []);
+
   /** Brief Phase 2: market-grounded SF lot fit, appended to the plan. */
   const handleGenerateLots = useCallback(async () => {
     planModeRef.current = 'sf';
@@ -1254,7 +1331,57 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGeneratingLots(false);
     }
-  }, [contextOgcFid, elements, metrics, setPlanOutput]);
+  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan]);
+
+  /**
+   * Order-6 item 1: the RefusalCard's pre-verified typology switch. Where MF
+   * refuses but the server says a house fits (`suggested_typology`), one tap
+   * draws the single-family seed — house + driveway, engine EPSG:2274 truth
+   * through the same family mapper as the MF seed. A refused seed shows its
+   * verdict; a dead spinner is never the answer.
+   */
+  const handleDrawSfSeed = useCallback(async () => {
+    if (contextOgcFid == null) return;
+    setIsGenerating(true);
+    try {
+      const seed = await fetchSfSeed(contextOgcFid);
+      if (!seed || seed.error || !seed.buildings?.length) {
+        const why = seed?.error === 'sf_unbuildable'
+          ? `the single-family check refused — ${(seed.buildability as { reason?: string } | null)?.reason ?? 'unbuildable'}`
+          : 'the seed service did not respond';
+        setViolations(v => [...v, {
+          code: 'sf-seed',
+          message: `Could not draw the house: ${why}.`,
+          severity: 'warning',
+        }]);
+        return;
+      }
+      const mapped = seedFamilyPlanToElements(seed, { idPrefix: 'sfseed', house: true });
+      if (mapped.elements.length === 0) return;
+      if (!gateNonGesturePlan(mapped.elements, 'SF seed')) return;
+      planModeRef.current = 'sf';
+      const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
+      setPlanOutput([...base, ...mapped.elements], mapped.metrics ?? metrics);
+      setViolations([]);
+      setPlanLineage({
+        solvedBy: 'server',
+        contextId: null,
+        generatorVersion: seed.generator_version ?? 'sf_seed_v1',
+        flags: mapped.flags,
+        buildings: seed.buildings.length,
+        floors: typeof seed.metrics?.stories === 'number' ? seed.metrics.stories : null,
+        footprintSqft: seed.buildings.reduce(
+          (s, b) => s + (typeof b.footprint_sqft === 'number' ? b.footprint_sqft : 0), 0
+        ) || null,
+      });
+      setPlanStale(false);
+      setServerPlanError(null);
+      setPlanBasis(mapped.basis ?? 'Single-family seed — house + driveway');
+      void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'parameter_changed', null, { action: 'sf_seed_drawn' });
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan]);
 
   const handleAddBuilding = useCallback(async () => {
     if (!envelopeMeters) {
@@ -1444,6 +1571,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       compileBlockedRef.current = null;
       setCompileBlocked(null);
       serverGeoRetryRef.current = false;
+      serverFailCauseRef.current = null;
+      setServerPlanError(null);
       setSolveRejected(null);
       setMaxBuildout(null);
       setActiveCandidateId(null);
@@ -1517,39 +1646,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return () => { cancelled = true; };
   }, [contextOgcFid, plannerCtx?.context.typology]);
 
-  /** MF branch of the auto-plan: server site-system first (M2), client
-   *  constructive massing as the fail-soft fallback. */
+  /** MF branch of the auto-plan: the server site system, full stop.
+   *  Order-6 item 5c (Eric-decided): a failed server plan shows an error
+   *  card naming its cause + Retry — the worker's improvised corner plan
+   *  never stands in for it again. Distinct failures now look distinct. */
   const autoPlanMf = useCallback((ctx: DesignContext | null) => {
     planModeRef.current = 'mf';
     void (async () => {
       // User pins carry through a re-plan (use switch, context refresh) —
       // same parcel, so they remain valid until geometry says otherwise.
       const ok = await runServerMfPlan({ seed: 1, pins: mfPinsRef.current }).catch(e => {
-        // A throw here is a client bug, not a solver verdict — it must never
-        // silently downgrade the plan to the worker (that hid every server
-        // plan behind a fallback once already).
-        console.error('[autoPlanMf] server massing path threw — falling back to the client solver:', e);
+        // A throw here is a client bug, not a solver verdict — name it on
+        // the card rather than hiding it behind a different plan.
+        console.error('[autoPlanMf] server massing path threw:', e);
+        serverFailCauseRef.current = `Client error while rendering the server plan: ${String(e).slice(0, 160)}`;
         return false;
       });
-      if (!ok) {
-        const rejectedWhy = serverRejectRef.current;
-        // handleGenerate sets the basis label from the settled context
-        handleGenerate(0).then(() => {
-          // The worker result replaces the violations list wholesale — re-append
-          // the server rejection so the fallback is never silent: the rail says
-          // WHY this is a worker plan and not the server site system.
-          if (rejectedWhy) {
-            setViolations(v => [...v, {
-              code: 'server-plan-rejected',
-              message: `Server plan rejected by the geometry gate (${rejectedWhy}) — showing the client solver result instead.`,
-              severity: 'warning',
-            }]);
-          }
-        }).catch(() => undefined);
+      // runServerMfPlan returns true for HANDLED rejections (generation
+      // blocked, context-contract error, compile blocked) — those screens
+      // already name themselves. false = the card-worthy failures.
+      if (!ok && !generationBlockedRef.current && !compileBlockedRef.current) {
+        setServerPlanError(serverFailCauseRef.current ?? 'The massing service did not respond.');
       }
     })();
     void ctx;
-  }, [handleGenerate, runServerMfPlan]);
+  }, [runServerMfPlan]);
 
   /**
    * HBU-routed auto-plan: the resolved USE/TYPOLOGY decides WHAT gets planned
@@ -1846,6 +1967,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       violationCodes: violations.map(v => v.code),
       envelopeSource: rpcMetrics?.envelopeSource ?? null,
       buildabilityVerdict: buildability?.verdict ?? null,
+      suggestedTypology: buildability?.suggested_typology ?? null,
+      serverPlanError,
       seedAvailable: !!seedPlan,
       seedShown: seedViewOn,
       seedComposition: seedPlan?.composition ?? null,
@@ -1857,7 +1980,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -1874,7 +1997,43 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <RefusalCard
           buildability={buildability}
           onSwitchToTownhomes={() => handleProductChange('townhomes')}
+          onDrawSfSeed={
+            buildability.suggested_typology === 'single_family' ? handleDrawSfSeed : undefined
+          }
         />
+      )}
+      {/* Order-6 item 5c: a failed server plan is an ERROR CARD naming its
+          cause + Retry — never an improvised worker plan. Distinct from the
+          compile-blocked Retry screen (context unknown) and the generation-
+          blocked banner (use not permitted): this is "the rules are known,
+          the massing engine failed". */}
+      {serverPlanError && !compileBlocked && (
+        <div
+          data-testid="server-plan-error"
+          className="mx-4 mt-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900"
+        >
+          <div className="font-semibold">Server plan failed</div>
+          <div className="mt-1 text-xs text-red-800">{serverPlanError}</div>
+          <button
+            type="button"
+            data-testid="server-plan-retry"
+            onClick={() => {
+              setServerPlanError(null);
+              setIsGenerating(true);
+              runServerMfPlan({ seed: mfSeedRef.current, pins: mfPinsRef.current })
+                .then(ok => {
+                  if (!ok) {
+                    setServerPlanError(serverFailCauseRef.current ?? 'The massing service did not respond.');
+                  }
+                })
+                .catch(() => setServerPlanError(serverFailCauseRef.current ?? 'The massing service did not respond.'))
+                .finally(() => setIsGenerating(false));
+            }}
+            className="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
+        </div>
       )}
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
       <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">

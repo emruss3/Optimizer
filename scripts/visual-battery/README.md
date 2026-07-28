@@ -46,7 +46,16 @@ For each battery parcel, store the RPC responses under keys
 `two_family`), `fn_generate_mf_site_plan_v2` (`multifamily`),
 `fn_massing_program`, `fn_max_buildout`, `fn_parcel_frontage`,
 `fn_planner_neighbors`, `fn_mf_money`, `fn_resolve_permitted_uses`,
-`fn_list_mf_candidates`, `get_parcel_by_id`. With database access:
+`fn_list_mf_candidates`, `get_parcel_by_id`, `fn_seed_parking`
+(`multifamily`), and — for the sf-suggestion parcel —
+`fn_parcel_buildability`, `fn_generate_sf_seed`,
+`fn_generate_sf_site_plan`.
+
+**Same-vintage rule (2026-07-28 lesson):** `fn_generate_mf_site_plan_v2`
+and `fn_max_buildout` must be harvested TOGETHER — capture is
+plan.gsf / max_buildout.max_gsf, and a stale denominator against a fresh
+numerator red-flagged three parcels for a frontier drift that wasn't a
+client regression. With database access:
 
 ```sql
 select jsonb_build_object(

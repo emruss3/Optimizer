@@ -1,9 +1,9 @@
 {
-  "_rules": "Floors only ratchet UP. A server-behavior PR must refresh fixtures/mock_store.json AND raise (never lower) these floors to match. honest-refusal encodes a parcel whose CURRENT live response is geometrically defective: the gate asserts the rejection machinery fires loudly and the worker fallback renders \u2014 flip it to server-plan the moment the server output is fixed.",
+  "_rules": "Floors only ratchet UP. A server-behavior PR must refresh fixtures/mock_store.json AND raise (never lower) these floors to match. All four parcels flipped to server-plan on 2026-07-28: the seed_v2 default solves every one (667574/669046 were honest-refusals under the search core's defective output \u2014 upstream fixed). sf-suggestion asserts the RefusalCard typology switch: MF refusal carries the server-verified suggestion, the tap renders the house.",
   "553450": {
     "mode": "server-plan",
-    "minCapturePct": 98.0,
-    "_basis": "2600 W Heiman \u2014 5 bars x 4 floors, 98.3% measured 2026-07-21",
+    "minCapturePct": 98.5,
+    "_basis": "2600 W Heiman - seed_v2 1 structure @ 4 st, 124568/125550 = 99.2% frozen 2026-07-28 (was 106.0 twenty minutes earlier - live churn; over-105 now extinct)",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,
@@ -12,17 +12,19 @@
   },
   "488278": {
     "mode": "server-plan",
-    "minCapturePct": 83.0,
-    "_basis": "1710 Meharry \u2014 2 bars x 2 floors small-lot prior, 83.1% measured 2026-07-21",
+    "minCapturePct": 99.0,
+    "_basis": "1710 Meharry - seed_v2 1 structure @ 2 st, 54204/54250 = 99.9% frozen 2026-07-28 (old floor 83.0)",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,
       "buildings": true
-    }
+    },
+    "requireParkingLimitedChip": true
   },
   "667574": {
-    "mode": "honest-refusal",
-    "_basis": "2622 W Heiman \u2014 pool court x parking 22 m2 (upstream defect); flip to server-plan >= 98.5 when fixed",
+    "mode": "server-plan",
+    "minCapturePct": 99.5,
+    "_basis": "2622 W Heiman - flipped from honest-refusal 2026-07-28: seed_v2 solves it (147592/147250 = 100.2%)",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,
@@ -30,12 +32,18 @@
     }
   },
   "669046": {
-    "mode": "honest-refusal",
-    "_basis": "1200 W H Davis \u2014 relaxation-ladder infill bars overlap 1,289 m2 (upstream regression); flip to server-plan >= 98.5 when fixed",
+    "mode": "server-plan",
+    "minCapturePct": 89.0,
+    "_basis": "1200 W H Davis - flipped from honest-refusal 2026-07-28: seed_v2 solves it (96184/106950 = 89.9%, parking-limited true)",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,
       "buildings": true
-    }
+    },
+    "requireParkingLimitedChip": true
+  },
+  "393306": {
+    "mode": "sf-suggestion",
+    "_basis": "303 E Palestine Ave RS10 - MF refusal carries suggested_typology single_family ('envelope fits a house (3076 sqft, 28.8 ft wide)'); tap renders the 1,236 sf house + driveway (sf_seed_v1)"
   }
 }

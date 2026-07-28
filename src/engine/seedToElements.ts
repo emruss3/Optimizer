@@ -23,7 +23,7 @@ const to3857 = <T extends { type: string; coordinates: unknown }>(g: T): T =>
   feature4326To3857(geom2274To4326(g) as never) as T;
 
 /** Buffer a 2-point spine line into a drive rectangle (width in metres). */
-function lineToRect(line: LineString, widthM: number): Polygon | null {
+export function lineToRect(line: LineString, widthM: number): Polygon | null {
   const c = line.coordinates as Position[];
   if (!c || c.length < 2) return null;
   const [x1, y1] = c[0];

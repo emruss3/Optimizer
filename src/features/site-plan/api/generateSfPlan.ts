@@ -51,7 +51,9 @@ export interface SfPlanSummary {
  * previous fit instead of stacking a duplicate subdivision on the canvas.
  */
 export function isSfPlanElement(el: Pick<Element, 'id'>): boolean {
-  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-');
+  // 'sfseed-' = the server-verified single-family seed (house + driveway)
+  // drawn from the RefusalCard suggestion — same replace-on-regenerate class.
+  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-') || el.id.startsWith('sfseed-');
 }
 
 /** Parse a geom that may arrive as an object or a JSON string; 4326 → 3857. */

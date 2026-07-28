@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useCallback } from 'react';
+import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import DeckGL from '@deck.gl/react';
 import { OrbitView, LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core';
 import { PolygonLayer, PathLayer, ColumnLayer } from '@deck.gl/layers';
@@ -52,6 +52,21 @@ const Massing3D: React.FC<{
   /** Front-edge classifications (3857) — street trees plant along fronts */
   edgeClassifications?: EdgeClassification[];
 }> = ({ elements, parcelGeometry, envelope, neighbors, edgeClassifications }) => {
+  // Order-6 item 5b (second head of the same bug): during a resize/teardown
+  // race, luma's device probe reads `limits.maxTextureDimension2D` off an
+  // undefined device and throws UNCAUGHT — it never reaches DeckGL's onError
+  // (which already guards the routed form). Scoped window listener: recognize
+  // exactly that signature while the 3D view is mounted, recover quietly.
+  useEffect(() => {
+    const onWindowError = (ev: ErrorEvent) => {
+      if (String(ev.message ?? '').includes('maxTextureDimension2D')) {
+        console.warn('[Massing3D] transient device probe during resize — recovered.');
+        ev.preventDefault();
+      }
+    };
+    window.addEventListener('error', onWindowError);
+    return () => window.removeEventListener('error', onWindowError);
+  }, []);
   const { polygons, extent, groundPaths, contextPolygons, trees, floorLines, origin } = useMemo(
     () =>
       buildMassingData(elements, {

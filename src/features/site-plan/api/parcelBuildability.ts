@@ -16,7 +16,14 @@ export interface ParcelBuildability {
   envelope_sqft?: number | null;
   max_inscribed_width_ft?: number | null;
   bar_depth_required_ft?: number | null;
+  min_area_sqft?: number | null;
+  min_width_ft?: number | null;
   note?: string | null;
+  /** Present ONLY when the server pre-verified a narrower typology fits an
+   *  MF-refused parcel (order-6): 'single_family' → fn_generate_sf_seed. */
+  suggested_typology?: string | null;
+  /** e.g. "envelope fits a house (3126 sqft, 28.8 ft wide)" */
+  suggestion_reason?: string | null;
 }
 
 export function isRefusal(b: ParcelBuildability | null | undefined): boolean {

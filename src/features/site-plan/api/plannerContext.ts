@@ -655,6 +655,9 @@ const CONTEXT_AWARE_GENERATORS = new Set([
   'mf_context_v2',
   'mf_context_v2_regrid_typology_v1',
   'mf_max_gsf_v1',
+  // The deterministic seed default (order-6): the RPC REJECTS without a
+  // valid context_id — same contract gate as the search core.
+  'seed_v2',
 ]);
 
 export function isContextAwareGeneratorVersion(v: string | null | undefined): boolean {
@@ -669,7 +672,10 @@ export function planUsedActiveContext(
   return (
     !!activeContextId &&
     plan.context_id === activeContextId &&
-    plan.context_version === CONTEXT_VERSION_V2 &&
+    // seed_v2 payloads carry context_id but not context_version — an ABSENT
+    // version is tolerated only alongside a known context-aware generator; a
+    // WRONG version is still a mismatch.
+    (plan.context_version == null || plan.context_version === CONTEXT_VERSION_V2) &&
     isContextAwareGeneratorVersion(plan.generator_version)
   );
 }

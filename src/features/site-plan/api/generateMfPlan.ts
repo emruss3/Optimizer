@@ -9,7 +9,12 @@
  * the parcel outline uses, so alignment is guaranteed by construction.
  */
 import type { Element, SiteMetrics } from '../../../engine/types';
-import { generateUnitMixForCount } from '../../../engine/model';
+import type { LineString, Point, Polygon, Position } from 'geojson';
+import { generateUnitMixForCount, UNIT_TYPE_DEFS, PARKING_RATIO_DEFAULTS, type UnitMixEntry } from '../../../engine/model';
+import { lineToRect } from '../../../engine/seedToElements';
+import { clipPolysToObstacles, unionPolys } from '../../../engine/validatePlan';
+import { geom2274To4326 } from '../../../utils/tnStatePlane';
+import { feature4326To3857 } from '../../../utils/reproject';
 import { supabase } from '../../../lib/supabase';
 import { toCanvasPolygon } from './generateSfPlan';
 
@@ -263,6 +268,312 @@ export function mfPlanToElements(resp: MfPlanResponse): {
         [...new Set((resp.flags as unknown[]).filter((f): f is string => typeof f === 'string'))]
       : [],
   };
+}
+
+// ── seed_v2 payload family (order-6) ─────────────────────────────────────────
+// The DEFAULT fn_generate_mf_site_plan_v2 is the deterministic seed generator:
+// buildings arrive as ONE connected S/C-form polygon per structure in native
+// EPSG:2274 (`geom_2274`, `is_single_polygon`), drives as {entry_2274,
+// spine_2274} skeletons, parking as ONE object with structured dual ratios,
+// metrics as {gsf, units, stalls, stories, capture_pct, parking_limited, mix}.
+// The search core (deep/persist path) at fn_generate_mf_site_plan_v2_search
+// still returns the legacy family above — both must render.
+
+interface SeedFamilyGeom {
+  type: string;
+  coordinates: unknown;
+}
+export interface SeedFamilyStructure {
+  structure_id?: number | string | null;
+  geom_2274?: SeedFamilyGeom | null;
+  footprint_sqft?: number | null;
+  gsf?: number | null;
+  stories?: number | null;
+  composition_note?: string | null;
+  is_single_polygon?: boolean | null;
+  /** L-form seeds carry per-leg metadata for continuous unit striping. */
+  legs_meta?: unknown;
+}
+export interface SeedFamilyParking {
+  bays?: Array<{ geom_2274?: SeedFamilyGeom | null; area_sqft?: number | null }> | null;
+  stalls?: number | null;
+  strategy?: string | null;
+  stalls_required?: number | null;
+  /** Adequacy — stalls as % of the PLACED program's need (the honest number). */
+  pct_of_placed_need?: number | null;
+  /** Ambition — stalls as % of the max-target program's need. */
+  pct_of_max_need?: number | null;
+  stalls_required_at_placed?: number | null;
+  stalls_target_at_max?: number | null;
+}
+export interface SeedFamilyDrive {
+  entry_2274?: SeedFamilyGeom | null;
+  spine_2274?: SeedFamilyGeom | null;
+  geom_2274?: SeedFamilyGeom | null;
+  kind?: string | null;
+}
+export interface SeedFamilyResponse {
+  parcel_ogc_fid?: number;
+  typology?: string;
+  seed?: number;
+  context_id?: string;
+  generator_version?: string;
+  score_total?: number;
+  persisted?: boolean;
+  buildings?: SeedFamilyStructure[];
+  drives?: SeedFamilyDrive[];
+  parking?: SeedFamilyParking | null;
+  metrics?: {
+    gsf?: number | null;
+    units?: number | null;
+    stalls?: number | null;
+    stories?: number | null;
+    capture_pct?: number | null;
+    parking_limited?: boolean | null;
+    mix?: Array<{ pct?: number | null; type?: string | null; units?: number | null }> | null;
+  } | null;
+  buildability?: Record<string, unknown> | null;
+  plan_basis?: string;
+  flags?: unknown;
+  error?: string;
+  generation?: string;
+}
+
+/** Seed-family payloads carry native EPSG:2274 structures; legacy payloads
+ *  carry 4326 `geom`. The FIRST building decides — families never mix. */
+export function isSeedFamilyResponse(resp: MfPlanResponse | SeedFamilyResponse | null | undefined): resp is SeedFamilyResponse {
+  const b0 = resp?.buildings?.[0] as { geom_2274?: unknown } | undefined;
+  return !!b0?.geom_2274;
+}
+
+const seedTo3857 = <T extends SeedFamilyGeom>(g: T): T =>
+  feature4326To3857(geom2274To4326(g as never) as never) as T;
+
+/** Distribute the server's plan-level unit mix across structures by GSF share
+ *  (largest remainder per type, so totals stay exact). */
+function apportionMix(
+  mix: NonNullable<NonNullable<SeedFamilyResponse['metrics']>['mix']>,
+  shares: number[]
+): UnitMixEntry[][] {
+  const defs = new Map(UNIT_TYPE_DEFS.map(d => [d.type as string, d]));
+  const perStructure: UnitMixEntry[][] = shares.map(() => []);
+  for (const row of mix) {
+    const def = row.type != null ? defs.get(row.type) : undefined;
+    const total = Math.max(0, Math.round(row.units ?? 0));
+    if (!def || total === 0) continue;
+    const raw = shares.map(s => total * s);
+    const counts = raw.map(Math.floor);
+    let left = total - counts.reduce((a, b) => a + b, 0);
+    const order = raw
+      .map((r, i) => ({ i, frac: r - Math.floor(r) }))
+      .sort((a, b) => b.frac - a.frac);
+    for (const { i } of order) {
+      if (left <= 0) break;
+      counts[i] += 1;
+      left -= 1;
+    }
+    counts.forEach((count, i) => {
+      if (count > 0) {
+        perStructure[i].push({
+          type: def.type,
+          count,
+          avgSqft: def.avgSqft,
+          rentPerMonth: def.rentPerMonth,
+          parkingRatio: PARKING_RATIO_DEFAULTS[def.type],
+        });
+      }
+    });
+  }
+  return perStructure;
+}
+
+/**
+ * Map a seed-family response (default MF seed generator, SF seed) onto canvas
+ * elements + planner metrics. Geometry: EPSG:2274 feet → 4326 → 3857 (the
+ * canvas frame); every displayed AREA is the engine's own number.
+ */
+export function seedFamilyPlanToElements(
+  resp: SeedFamilyResponse,
+  opts: { idPrefix?: string; house?: boolean } = {}
+): { elements: Element[]; metrics: SiteMetrics | null; basis: string | null; flags: string[] } {
+  const prefix = opts.idPrefix ?? 'mfgen';
+  const now = new Date().toISOString();
+  const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
+  const elements: Element[] = [];
+  const m = resp.metrics ?? {};
+  const num = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
+
+  const structures = (resp.buildings ?? []).filter(b => b?.geom_2274);
+  const gsfShares = (() => {
+    const gsfs = structures.map(s => num(s.gsf) ?? num(s.footprint_sqft) ?? 0);
+    const total = gsfs.reduce((a, b) => a + b, 0);
+    return total > 0 ? gsfs.map(g => g / total) : structures.map(() => 1 / Math.max(1, structures.length));
+  })();
+  const mixes = m.mix?.length ? apportionMix(m.mix, gsfShares) : null;
+
+  structures.forEach((b, i) => {
+    let poly: Polygon;
+    try {
+      poly = seedTo3857(b.geom_2274 as Polygon);
+    } catch {
+      return; // one malformed geometry must not sink the plan
+    }
+    const stories = Math.max(1, Math.round(num(b.stories) ?? num(m.stories) ?? 3));
+    const footprint = num(b.footprint_sqft);
+    const gsf = num(b.gsf) ?? (footprint != null ? footprint * stories : null);
+    const unitsEst = Math.max(1, Math.round((gsf ?? 0) / AVG_UNIT_SF));
+    const composition = b.composition_note?.replace(/_/g, ' ') ?? null;
+    elements.push({
+      id: `${prefix}-bldg-${b.structure_id ?? i + 1}`,
+      type: 'building',
+      name: opts.house
+        ? `House · ${footprint != null ? Math.round(footprint).toLocaleString() : '?'} sf`
+        : `${composition ?? `Building ${b.structure_id ?? i + 1}`} × ${stories} st`,
+      geometry: poly,
+      properties: {
+        areaSqFt: footprint ?? undefined,
+        floors: stories,
+        stories,
+        unitMix: opts.house
+          ? [{ type: 'townhome' as const, count: 1, avgSqft: gsf ?? footprint ?? 0, rentPerMonth: 0, parkingRatio: 2.0 }]
+          : (mixes?.[i]?.length ? mixes[i] : generateUnitMixForCount(unitsEst)),
+        use: 'residential',
+        color: '#3B82F6',
+        ...(b.composition_note ? { compositionNote: b.composition_note } : {}),
+        ...(b.legs_meta != null ? { legsMeta: b.legs_meta } : {}),
+      },
+      metadata: meta,
+    } as Element);
+  });
+
+  const bays = resp.parking?.bays?.filter(b => b?.geom_2274) ?? [];
+  const totalBayArea = bays.reduce((a, b) => a + (num(b.area_sqft) ?? 0), 0);
+  const stallsTotal = num(resp.parking?.stalls) ?? num(m.stalls) ?? 0;
+  bays.forEach((b, i) => {
+    let poly: Polygon;
+    try {
+      poly = seedTo3857(b.geom_2274 as Polygon);
+    } catch {
+      return;
+    }
+    const share = totalBayArea > 0 ? (num(b.area_sqft) ?? 0) / totalBayArea : 1 / bays.length;
+    const stalls = Math.max(0, Math.round(stallsTotal * share));
+    elements.push({
+      id: `${prefix}-park-${i + 1}`,
+      type: 'parking',
+      name: stalls ? `Parking · ~${stalls} stalls` : 'Parking',
+      geometry: poly,
+      properties: { stalls, parkingSpaces: stalls, color: '#CBD5E1' },
+      metadata: meta,
+    } as Element);
+  });
+
+  // Drives. The engine's skeleton is a CENTERLINE + entry point — width is
+  // client-fabricated (24 ft buffer, apron marker). Fabricated geometry must
+  // become valid BY CONSTRUCTION before the zero-overlap gate sees it: the
+  // skeleton pieces union into one network (a junction is one drive, not two
+  // overlapping rectangles) and clip against buildings/bays — the engine's
+  // centerline legitimately passes under masses it placed after routing.
+  // REAL corridor polygons the engine emits (drives[].geom_2274) stay
+  // first-class: only defensively clipped, never invented.
+  const obstacles = [
+    ...structures.map(b => {
+      try { return seedTo3857(b.geom_2274 as Polygon); } catch { return null; }
+    }),
+    ...bays.map(b => {
+      try { return seedTo3857(b.geom_2274 as Polygon); } catch { return null; }
+    }),
+  ].filter((p): p is Polygon => p != null)
+    .map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] }));
+
+  const skeletonPolys: Array<{ type: 'Polygon'; coordinates: number[][][] }> = [];
+  (resp.drives ?? []).forEach((dr, i) => {
+    if (dr?.spine_2274) {
+      try {
+        const rect = lineToRect(seedTo3857(dr.spine_2274 as unknown as LineString), 7.3); // 24 ft drive
+        if (rect) skeletonPolys.push({ type: 'Polygon', coordinates: rect.coordinates as number[][][] });
+      } catch { /* skip malformed spine */ }
+    }
+    if (dr?.entry_2274) {
+      try {
+        const [ex, ey] = seedTo3857(dr.entry_2274 as unknown as Point).coordinates as Position;
+        const w = 3.7, d = 3.0; // 12×10 ft apron marker at the curb
+        skeletonPolys.push({
+          type: 'Polygon',
+          coordinates: [[[ex - w, ey - d], [ex + w, ey - d], [ex + w, ey + d], [ex - w, ey + d], [ex - w, ey - d]]],
+        });
+      } catch { /* skip malformed entry */ }
+    }
+    if (dr?.geom_2274) {
+      try {
+        const poly = seedTo3857(dr.geom_2274 as Polygon);
+        const clipped = clipPolysToObstacles(
+          [{ type: 'Polygon' as const, coordinates: poly.coordinates as number[][][] }],
+          obstacles,
+          2
+        );
+        clipped.forEach((piece, pi) => {
+          elements.push({
+            id: `${prefix}-drive-${i + 1}${pi > 0 ? `-${pi + 1}` : ''}`,
+            type: 'circulation',
+            name: dr.kind === 'driveway' ? 'Driveway' : `Drive ${i + 1}`,
+            geometry: piece as unknown as Polygon,
+            properties: { color: '#94A3B8' },
+            metadata: meta,
+          } as Element);
+        });
+      } catch { /* skip malformed drive */ }
+    }
+  });
+  clipPolysToObstacles(unionPolys(skeletonPolys), obstacles, 2).forEach((piece, i) => {
+    elements.push({
+      id: `${prefix}-drive-skel-${i + 1}`,
+      type: 'circulation',
+      name: i === 0 ? 'Access drive' : `Access drive ${i + 1}`,
+      geometry: piece as unknown as Polygon,
+      properties: { color: '#94A3B8' },
+      metadata: meta,
+    } as Element);
+  });
+
+  const gsf = num(m.gsf);
+  const units = num(m.units);
+  const stalls = num(m.stalls) ?? num(resp.parking?.stalls);
+  const stallsRequired = num(resp.parking?.stalls_required_at_placed) ?? num(resp.parking?.stalls_required);
+  const metrics: SiteMetrics | null = gsf
+    ? ({
+        totalBuiltSF: gsf,
+        // The seed payload doesn't report FAR/coverage/open-space and the
+        // client never re-measures — zeros here mean "not reported" and the
+        // KPI strip hides zero-valued stats rather than display fabricated 0s.
+        siteCoveragePct: 0,
+        achievedFAR: 0,
+        openSpacePct: 0,
+        parkingRatio: units && stalls != null ? stalls / units : 0,
+        totalUnits: units ?? undefined,
+        stallsProvided: stalls ?? undefined,
+        stallsRequired: stallsRequired ?? undefined,
+        violations: [],
+        warnings: [],
+        zoningCompliant: true,
+        parkingPctOfPlacedNeed: num(resp.parking?.pct_of_placed_need) ?? undefined,
+        parkingPctOfMaxNeed: num(resp.parking?.pct_of_max_need) ?? undefined,
+        parkingStallsTargetAtMax: num(resp.parking?.stalls_target_at_max) ?? undefined,
+        parkingStrategy: resp.parking?.strategy ?? undefined,
+        parkingLimited: m.parking_limited === true,
+        capturePct: num(m.capture_pct) ?? undefined,
+      } as SiteMetrics)
+    : null;
+
+  const flags = [
+    ...new Set([
+      ...(Array.isArray(resp.flags) ? (resp.flags as unknown[]).filter((f): f is string => typeof f === 'string') : []),
+      ...(m.parking_limited === true ? ['parking_limited'] : []),
+    ]),
+  ];
+
+  return { elements, metrics, basis: resp.plan_basis ?? null, flags };
 }
 
 export interface MfGenerateOptions {

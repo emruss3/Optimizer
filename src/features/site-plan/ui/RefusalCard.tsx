@@ -13,10 +13,17 @@ const TH_MIN_WIDTH_FT = 36;
 export const RefusalCard: React.FC<{
   buildability: ParcelBuildability;
   onSwitchToTownhomes?: () => void;
-}> = ({ buildability, onSwitchToTownhomes }) => {
+  /** Order-6: draw the server-verified single-family seed (house + driveway). */
+  onDrawSfSeed?: () => void;
+}> = ({ buildability, onSwitchToTownhomes, onDrawSfSeed }) => {
   const width = buildability.max_inscribed_width_ft;
   const barDepth = buildability.bar_depth_required_ft;
+  // The server only emits the suggestion when it has PRE-VERIFIED the SF
+  // envelope — the client never re-derives fit from widths.
+  const canSuggestHouse =
+    buildability.suggested_typology === 'single_family' && !!onDrawSfSeed;
   const canSuggestTownhome =
+    !canSuggestHouse &&
     buildability.verdict !== 'unbuildable_area' &&
     typeof width === 'number' && width >= TH_MIN_WIDTH_FT &&
     !!onSwitchToTownhomes;
@@ -38,7 +45,19 @@ export const RefusalCard: React.FC<{
             .{' '}
           </span>
         )}
-        {canSuggestTownhome ? (
+        {canSuggestHouse ? (
+          <>
+            {buildability.suggestion_reason ?? 'A single-family house fits this envelope.'}{' '}
+            <button
+              type="button"
+              data-testid="sf-seed-switch"
+              onClick={onDrawSfSeed}
+              className="font-semibold underline underline-offset-2 hover:text-amber-950"
+            >
+              Draw the house
+            </button>
+          </>
+        ) : canSuggestTownhome ? (
           <>
             A townhome row (≥{TH_MIN_WIDTH_FT} ft) would fit this envelope.{' '}
             <button
