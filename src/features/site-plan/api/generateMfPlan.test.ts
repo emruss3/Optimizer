@@ -559,3 +559,38 @@ describe('KpiStrip dual parking ratios + parking-limited chip (order-6 item 3)',
     expect(getByText('parking-limited: units trimmed')).toBeTruthy();
   });
 });
+
+describe('degenerate seed programs (2026-07-28 sweep finding)', () => {
+  it('never fabricates a unit count when the server sent an all-zero mix', () => {
+    // Live case 679082: 17,136 GSF single "unit", 0 stalls, mix all zeros —
+    // the old estimate invented 18 units beside metrics.units=1.
+    const { elements, metrics } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      parking: { ...SEED_RESP.parking, bays: [], stalls: 0, strategy: 'none', pct_of_placed_need: 0, pct_of_max_need: 0 },
+      metrics: {
+        ...SEED_RESP.metrics,
+        units: 1,
+        stalls: 0,
+        mix: [
+          { pct: 10, type: 'studio', units: 0 },
+          { pct: 40, type: '1br', units: 0 },
+          { pct: 35, type: '2br', units: 0 },
+          { pct: 15, type: '3br', units: 0 },
+        ],
+      },
+    });
+    const b = elements.find(e => e.type === 'building')!;
+    expect((b.properties?.unitMix as unknown[]).length).toBe(0); // verbatim, not invented
+    expect(metrics?.totalUnits).toBe(1);
+    expect(metrics?.stallsProvided).toBe(0);
+  });
+
+  it('still estimates units ONLY when the payload carries no mix at all', () => {
+    const { elements } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      metrics: { ...SEED_RESP.metrics, mix: null },
+    });
+    const b = elements.find(e => e.type === 'building')!;
+    expect((b.properties?.unitMix as unknown[]).length).toBeGreaterThan(0);
+  });
+});
