@@ -435,9 +435,13 @@ export function seedFamilyPlanToElements(
         areaSqFt: footprint ?? undefined,
         floors: stories,
         stories,
+        // When the server SENT a mix — even an all-zero one (the degenerate
+        // 1-unit/no-parking seeds found in the 2026-07-28 sweep) — it travels
+        // verbatim. The GFA-derived estimate exists only for payloads with NO
+        // mix at all: fabricating 18 units beside metrics.units=1 was a lie.
         unitMix: opts.house
           ? [{ type: 'townhome' as const, count: 1, avgSqft: gsf ?? footprint ?? 0, rentPerMonth: 0, parkingRatio: 2.0 }]
-          : (mixes?.[i]?.length ? mixes[i] : generateUnitMixForCount(unitsEst)),
+          : (mixes ? mixes[i] : generateUnitMixForCount(unitsEst)),
         use: 'residential',
         color: '#3B82F6',
         ...(b.composition_note ? { compositionNote: b.composition_note } : {}),
