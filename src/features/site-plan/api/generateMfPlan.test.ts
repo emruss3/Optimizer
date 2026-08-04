@@ -594,3 +594,13 @@ describe('degenerate seed programs (2026-07-28 sweep finding)', () => {
     expect((b.properties?.unitMix as unknown[]).length).toBeGreaterThan(0);
   });
 });
+
+describe('legacy mapper defense (Eric console crash 2026-08-04)', () => {
+  it('a seed-family payload misrouted into mfPlanToElements must not throw', () => {
+    // The stale pre-#89 build crashed on `(resp.parking ?? []).forEach` when
+    // parking arrived as the seed family's OBJECT. Family detection routes
+    // correctly upstream; the legacy mapper now also refuses to throw.
+    const r = mfPlanToElements(SEED_RESP as unknown as MfPlanResponse);
+    expect(Array.isArray(r.elements)).toBe(true);
+  });
+});

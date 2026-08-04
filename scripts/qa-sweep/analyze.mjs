@@ -9,9 +9,14 @@ import { createRequire } from 'node:module';
 const require = createRequire('/home/user/Optimizer/package.json');
 const polyclip = require('polygon-clipping').default ?? require('polygon-clipping');
 
+// argv: [harvest.json] [legacy_outlines.json] [outPrefix]
 const SCRATCH = path.dirname(fileURLToPath(import.meta.url));
-const rows = JSON.parse(fs.readFileSync(path.join(SCRATCH, 'sweep_all.json'), 'utf8'));
-const legacyOutlines = JSON.parse(fs.readFileSync(path.join(SCRATCH, 'legacy_outlines_4326.json'), 'utf8'));
+const HARVEST = process.argv[2] ?? path.join(SCRATCH, 'sweep_all.json');
+const OUTLINES = process.argv[3] ?? path.join(SCRATCH, 'legacy_outlines_4326.json');
+const OUT_PREFIX = process.argv[4] ?? path.join(path.dirname(HARVEST), 'sweep');
+const rows = JSON.parse(fs.readFileSync(HARVEST, 'utf8'));
+let legacyOutlines = {};
+try { legacyOutlines = JSON.parse(fs.readFileSync(OUTLINES, 'utf8')); } catch { /* none needed */ }
 
 const FT_PER_DEG_LAT = 364000; // ~ at 36.1N
 const ftPerDegLon = lat => Math.cos((lat * Math.PI) / 180) * 365228;
@@ -67,6 +72,18 @@ const svgs = [];
 
 for (const [fid, r] of Object.entries(rows)) {
   const plan = r.plan ?? {};
+  // Honest refusals (e.g. planner_no_feasible_massing_regime after the
+  // order-7 zero-stall reroute) are an OUTCOME, not a geometry case.
+  if (plan.error && !(plan.buildings?.length > 0)) {
+    results.push({ fid: Number(fid), family: 'refusal', structures: 0, gsf: null,
+      maxGsf: typeof r.max_gsf === 'number' ? r.max_gsf : null, capture: null,
+      captureClaim: null, stalls: null, stallsRequired: null, sqftPerStall: null,
+      parkingLimited: null, strategy: null, spineUnderBldgSqft: 0, entryToFrontFt: null,
+      issues: [`refusal: ${plan.error}`] });
+    svgs.push({ fid: Number(fid), capture: null, family: 'refusal',
+      svg: `<svg width="300" height="260" xmlns="http://www.w3.org/2000/svg" style="background:#fff"><text x="16" y="120" font-family="monospace" font-size="12" fill="#B45309">${fid} · REFUSED</text><text x="16" y="140" font-family="monospace" font-size="9" fill="#64748B">${String(plan.error).slice(0, 40)}</text></svg>` });
+    continue;
+  }
   const isSeed = !!plan.buildings?.[0]?.geom_2274;
   const family = isSeed ? 'seed_v2' : (plan.generator_version ?? 'legacy');
   const met = plan.metrics ?? {};
@@ -229,7 +246,7 @@ for (const [fid, r] of Object.entries(rows)) {
 }
 
 results.sort((a, b) => (a.capture ?? -1) - (b.capture ?? -1));
-fs.writeFileSync(path.join(SCRATCH, 'sweep_results.json'), JSON.stringify(results, null, 2));
+fs.writeFileSync(`${OUT_PREFIX}_results.json`, JSON.stringify(results, null, 2));
 
 svgs.sort((a, b) => (a.capture ?? -1) - (b.capture ?? -1));
 const html = `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -242,7 +259,7 @@ h1{font-size:16px} .grid{display:grid;grid-template-columns:repeat(4,310px);gap:
 <div class="legend">blue = building · grey = parking · tan = drives (legacy) · dashed = spine centerline · red = primary frontage + entry · ⚠ = misses the 95% bar, multi-structure, or geometry issue</div>
 <div class="grid">${svgs.map(s => `<div class="card">${s.svg}</div>`).join('')}</div>
 </body></html>`;
-fs.writeFileSync(path.join(SCRATCH, 'sweep_contact.html'), html);
+fs.writeFileSync(`${OUT_PREFIX}_contact.html`, html);
 
 // console summary
 const seedRows = results.filter(x => x.family === 'seed_v2');
