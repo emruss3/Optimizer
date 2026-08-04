@@ -64,7 +64,7 @@ interface EnterpriseSitePlannerProps {
   metrics?: SiteMetrics;
   activePlanId?: string;
   selectedSolve?: PlannerOutput;
-  parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number };
+  parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number; aisleWidthFt?: number };
   buildableEnvelope?: import('geojson').Polygon;
   /** Road-classified parcel edges (front/side/rear) for the setback overlay */
   edgeClassifications?: import('../engine/setbacks').EdgeClassification[];

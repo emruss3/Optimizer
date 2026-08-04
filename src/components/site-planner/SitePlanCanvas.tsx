@@ -27,7 +27,7 @@ interface SitePlanCanvasProps {
   gridState?: { enabled: boolean; snapToGrid: boolean; size: number };
   hoveredElement?: string | null;
   showLabels?: boolean;
-  parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number };
+  parkingViz?: { angleDeg: number; stallWidthFt: number; stallDepthFt: number; aisleWidthFt?: number };
   onElementClick?: (element: Element | null, event: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseDown?: (event: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseMove?: (event: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -415,12 +415,47 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.lineWidth = Math.max(0.75 / zoom, 0.3);
     ctx.globalAlpha = 0.9;
 
+    // Row bands across the band's DEPTH. Shallow bands (legacy courts,
+    // worker bays) are one stall row by construction and stripe full-depth.
+    // seed_v2 emits deep FIELDS (~60 ft: 18' row + 24' aisle + 18' row) —
+    // full-depth dividers there drew 9×60 ft "stalls" (Eric, 2026-08-04:
+    // "these aren't the size of parking spaces"). Deep bands now lay out as
+    // real modules: stall row / clear aisle / facing row, back-to-back
+    // repeating; any leftover reads as apron, never as a monster stall.
+    const stallDepth = feetToMeters(parkingViz.stallDepthFt);
+    const aisleW = feetToMeters(parkingViz.aisleWidthFt ?? 24);
+    const depth = lmaxY - lminY;
+    const rowBands: Array<[number, number]> = [];
+    if (depth <= stallDepth * 1.6 || stallDepth <= 0) {
+      rowBands.push([lminY, lmaxY]);
+    } else {
+      let y = lminY;
+      while (y + stallDepth <= lmaxY + 1e-6) {
+        rowBands.push([y, y + stallDepth]);
+        if (y + stallDepth + aisleW + stallDepth <= lmaxY + 1e-6) {
+          rowBands.push([y + stallDepth + aisleW, y + stallDepth + aisleW + stallDepth]);
+          y += stallDepth + aisleW + stallDepth; // next module is back-to-back
+        } else {
+          break;
+        }
+      }
+    }
+
     const startX = Math.ceil(lminX / stallWidth) * stallWidth;
-    for (let x = startX; x < lmaxX; x += stallWidth) {
+    for (const [y0, y1] of rowBands) {
+      // Row edges make the aisle read as clear pavement between rows
       ctx.beginPath();
-      ctx.moveTo(x, lminY);
-      ctx.lineTo(x, lmaxY);
+      ctx.moveTo(lminX, y0);
+      ctx.lineTo(lmaxX, y0);
+      ctx.moveTo(lminX, y1);
+      ctx.lineTo(lmaxX, y1);
       ctx.stroke();
+      for (let x = startX; x < lmaxX; x += stallWidth) {
+        ctx.beginPath();
+        ctx.moveTo(x, y0);
+        ctx.lineTo(x, y1);
+        ctx.stroke();
+      }
     }
 
     ctx.restore();
