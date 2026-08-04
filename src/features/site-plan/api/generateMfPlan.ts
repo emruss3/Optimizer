@@ -176,7 +176,11 @@ export function mfPlanToElements(resp: MfPlanResponse): {
     });
   });
 
-  (resp.parking ?? []).forEach((p, idx) => {
+  // Defensive family guard (Eric's 2026-08-04 console): a seed payload
+  // reaching this LEGACY mapper crashed on `.forEach` — parking is an OBJECT
+  // in the seed family. Family detection routes correctly upstream; if a
+  // mixed/unknown shape ever lands here anyway, skip rather than throw.
+  (Array.isArray(resp.parking) ? resp.parking : []).forEach((p, idx) => {
     const poly = toCanvasPolygon(p.geom);
     if (!poly) return;
     // Townhome "parking" is garage aprons — each dwelling parks itself off
