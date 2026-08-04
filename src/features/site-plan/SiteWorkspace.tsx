@@ -2273,7 +2273,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 parkingViz={{
                   angleDeg: metrics?.parkingAngleDeg ?? 0,
                   stallWidthFt: config.designParameters.parking.stallWidthFt,
-                  stallDepthFt: config.designParameters.parking.stallDepthFt
+                  stallDepthFt: config.designParameters.parking.stallDepthFt,
+                  aisleWidthFt: config.designParameters.parking.aisleWidthFt
                 }}
                 buildableEnvelope={envelopeMeters || undefined}
                 edgeClassifications={edgeClassifications}
