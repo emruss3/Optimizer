@@ -144,6 +144,33 @@ const MaxBuildoutHeadline: React.FC<{
           {buildout.entitlement_capacity.far_uncapped_for_mf ? ' · FAR uncapped for MF' : ''}
         </div>
       )}
+      {/* Order-8 audit honesty: the upper bound above is a SURFACE-parking
+          frontier (every stall costs ground). Where the engine's advisory
+          podium ceiling is materially higher, say so — a developer on an ORI
+          lot is otherwise told "100% capture" of a number 2.5× too low. */}
+      {buildout.structured_parking_ceiling &&
+        buildout.structured_parking_ceiling.gsf > buildout.max_gsf * 1.15 && (
+          <div
+            data-testid="structured-ceiling-chip"
+            title={buildout.structured_parking_ceiling.basis ?? 'Advisory ceiling with no parking land consumed'}
+            className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200"
+          >
+            surface-parking bound · podium ceiling {fmt(buildout.structured_parking_ceiling.gsf)} GSF
+            {buildout.structured_parking_ceiling.binding
+              ? ` (${bindingLabel(buildout.structured_parking_ceiling.binding)})`
+              : ''}
+            {' '}· structured parking not yet modeled
+          </div>
+        )}
+      {buildout.assumptions?.height_source === 'default_3_stories_height_missing' && (
+        <div
+          data-testid="height-missing-chip"
+          title="No height cap is on file for this district, so the frontier assumed 33 ft (3 stories). The real ceiling may be far higher."
+          className="mt-1 ml-1 inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-800 border border-red-200"
+        >
+          height cap missing for this district — 3-story default applied
+        </div>
+      )}
     </div>
   );
 };
