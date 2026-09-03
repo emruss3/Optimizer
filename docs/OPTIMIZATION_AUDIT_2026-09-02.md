@@ -460,3 +460,71 @@ instead of two on the water. None of these numbers were visible before.
 buffers beyond the NWI polygon, sewer availability. Each is the same pattern
 — a geometry layer the database fetches, held out or costed before a lot is
 drawn.
+
+## 11. The population, not the parcel — the subdivision sweep (2026-09-03)
+
+Eric: "Are you doing this for other parcels or just MDHA? … Everything we do
+needs to help train decision making for multiple parcels, not just a one off
+solve."
+
+Every parcel the plan-pattern layer would route to the subdivision generator
+— single-family or agricultural-residential zoning, land ≥ max(2 ac, 9 ×
+the district minimum lot), AR2a capped at 100 ac — was run through v1.1 and
+the outcome stored, numbers only, in `subdivision_sweep` (4,111 parcels;
+`qa/audits/2026-09-03/subdivision_sweep_v1_1.csv`). Two things come out of
+it: a **calibration** every parcel is now read against, and a ranked list of
+what the generator gets wrong.
+
+**Calibration in the product.** `fn_plan_pattern` now carries, for a
+subdivision parcel, what the generator achieved on parcels like it — same
+zoning base, half to twice the acreage: the count, median and quartile lots
+per acre, median land split, median held-out share, refusal rate, network
+mix. The pattern panel shows it under "Calibration · parcels like this
+one", so 33 lots (2.5 lots/ac) on 2400 W Heiman is read against 36 R6
+parcels of 6.6–26.3 ac with a median 3.2 lots/ac (quartiles 2.9–3.4) — the
+gap is the 22% the greenway takes, which those parcels mostly do not carry. The nightly DB battery gates the generator the
+same way it gates the multifamily solver: a floor parcel (550510: ≥ 30 lots,
+≥ 20% held out, hazards ingested) and a rotating single-family cohort.
+
+**What the population says.**
+
+| Slice | Parcels | Solved | Median lots | Median lots/ac | Median ROW | Median unassigned |
+|---|---|---|---|---|---|---|
+| All | 4,111 | 3,862 (94%) | 5 | 0.76 | 19.4% | 26.6% |
+| R6 | 129 | 125 | 14 | 2.96 | 24.2% | 12.1% |
+| R8 | 133 | 123 | 12 | 2.19 | 24.0% | 16.5% |
+| RS5 / RS7.5 | 161 | 149 | 19 / 8 | 3.33 / 2.32 | 23–24% | 11–19% |
+| R10 / RS10 | 976 | 881 | 6 | 1.52 | 22–23% | 20–21% |
+| R15 / RS15 / R20 / RS20 | 1,390 | 1,302 | 6 | 0.8–1.1 | 17–21% | 21–25% |
+| R40 / RS40 / R80 / RS80 (estate) | 377 | 363 | 3–5 | 0.08–0.36 | 17–18% | 31–40% |
+| AR2a (≤ 100 ac) | 932 | 906 | 1 | 0.05 | 18.2% | 42.9% |
+| Regular outline (fill > 0.85) | 779 | 737 | 6 | 1.26 | 20.1% | 12.9% |
+| Irregular outline (fill < 0.70) | 2,334 | 2,183 | 4 | 0.42 | 19.4% | 33.5% |
+
+Refusals: 221 parcels mostly floodplain or wetland (honest zeros — 54% of
+the population touches a hazard, median 8% of the parcel where it does), 28
+too narrow for a street and a lot, no exceptions after the valid-geometry
+hardening. Networks: 1,467 spines (median ROW 17.5%), 1,286 ladders (19.9%),
+897 grids (20.2%), 212 single-loaded. Access: 34% of parcels had no street
+read on any edge and were given through-access with a flag — the parcel
+fabric cannot tell a railroad from a road.
+
+**What it gets wrong, ranked by lost lots — the next levers, from evidence
+instead of one parcel:**
+
+1. **Irregular outlines** (57% of the population): whole-lot and
+   complete-front rules leave a third of the land unassigned. An
+   outline-following lot fit at block ends — lots that bend with the
+   boundary — is the single largest lever.
+2. **Estate and rural lots** (AR2a, R40–RS80): 400-ft-wide lots on a
+   through-street grid is the wrong module; these subdivide as flag lots on a
+   shared drive or a cul-de-sac loop. A separate estate module.
+3. **Access reading**: a road-centerline layer would replace the parcel-fabric
+   guess and remove the "assumed both ends" flag from a third of parcels.
+4. **ROW share**: R6/R8 parcels sit at 24% ROW against the civil's ~22%; the
+   600-ft block cap is worth relaxing to 800 ft on narrow-lot districts once
+   Metro's block-length rule is in the ordinance machine.
+
+The sweep re-runs in batches (`fn_subdivision_sweep_next`) whenever the
+generator changes, so every rule change is measured on the population before
+it is believed.

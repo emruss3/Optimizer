@@ -58,7 +58,9 @@ sf-suggestion parcel — `fn_parcel_buildability`, `fn_generate_sf_seed`,
 `fn_generate_sf_site_plan`; for the subdivision parcel
 `fn_generate_subdivision` (key suffix empty: the default scheme passes only
 `p_ogc_fid`). `fn_plan_pattern` and `fn_generate_subdivision` are one
-vintage: the pattern's alignment verdict describes that generator.
+vintage: the pattern's alignment verdict describes that generator, and the
+pattern's `calibration` block is a snapshot of `subdivision_sweep` — harvest
+all three after a sweep, never separately.
 
 **Same-vintage rule (2026-07-28 lesson):** `fn_generate_mf_site_plan_v2`
 and `fn_max_buildout` must be harvested TOGETHER — capture is
