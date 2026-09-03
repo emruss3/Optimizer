@@ -21,6 +21,10 @@ const committedFull = (committed as { date?: string; strata?: Record<string, { s
 
 export const CensusBanner: React.FC = () => {
   const [trend, setTrend] = useState<TrendRow[] | null>(null);
+  // Collapsed by default: the census is a dev diagnostic, and a red line at
+  // the top of every page read as an alarm about the plan below it (Eric,
+  // 2026-09-03: "a ton of stuff happening on this page"). One click opens it.
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!import.meta.env.DEV || !supabase) return;
     let cancelled = false;
@@ -42,6 +46,19 @@ export const CensusBanner: React.FC = () => {
   const walk = trend && trend.length > 1
     ? [...trend].reverse().map(t => t.summary?.full?.error_rate_pct).filter(v => v != null).join(' → ')
     : null;
+  if (!open) {
+    return (
+      <div
+        data-testid="census-banner"
+        className="px-4 py-0.5 text-[11px] border-b border-gray-200 bg-gray-50 text-gray-500 flex items-center gap-3"
+      >
+        <span>Census {date} · {full.ok}/{full.n} ok{exceptions > 0 ? ` · ${exceptions} exception${exceptions === 1 ? '' : 's'}` : ''} · dev only</span>
+        <button type="button" onClick={() => setOpen(true)} className="underline decoration-dotted hover:text-gray-700">
+          details
+        </button>
+      </div>
+    );
+  }
   return (
     <div
       data-testid="census-banner"
@@ -49,6 +66,9 @@ export const CensusBanner: React.FC = () => {
         exceptions > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'
       }`}
     >
+      <button type="button" onClick={() => setOpen(false)} className="underline decoration-dotted" title="Collapse">
+        hide
+      </button>
       <span className="font-semibold">Census {date}</span>
       <span>{full.ok}/{full.n} ok (full universe)</span>
       {top && (

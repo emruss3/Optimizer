@@ -663,16 +663,22 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         ctx.closePath();
         ctx.clip();
 
+        // A floor plate, not a barcode (Eric, 2026-09-03: "the colored
+        // building doesn't make any sense from an actual multifamily
+        // layout"): units are a pale tint of their type, the demising walls
+        // are the dark lines, and the corridor between the two banks is a
+        // clear strip — the double-loaded plan a civil would recognise.
         for (const u of plate.units) {
           ctx.fillStyle = UNIT_COLORS[u.type] ?? '#E2E8F0';
-          ctx.globalAlpha = 0.9;
-          ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-          ctx.lineWidth = 1 / zoom;
+          ctx.globalAlpha = 0.38;
           ctx.beginPath();
           ctx.moveTo(u.ring[0][0], u.ring[0][1]);
           for (let i = 1; i < u.ring.length; i++) ctx.lineTo(u.ring[i][0], u.ring[i][1]);
           ctx.closePath();
           ctx.fill();
+          ctx.globalAlpha = 0.9;
+          ctx.strokeStyle = 'rgba(51,65,85,0.7)';
+          ctx.lineWidth = 0.9 / zoom;
           ctx.stroke();
         }
 
@@ -725,13 +731,20 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           }
         }
 
-        // Corridor centreline over the plate
+        // The corridor: a clear strip between the two unit banks (world width,
+        // ~5.5 ft) with the centreline dashed over it.
         const corridor = corridorLine(coords);
         if (corridor) {
-          ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)';
-          ctx.lineWidth = 1.5 / zoom;
-          ctx.setLineDash([4 / zoom, 3 / zoom]);
           ctx.globalAlpha = 1;
+          ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+          ctx.lineWidth = 1.7;
+          ctx.beginPath();
+          ctx.moveTo(corridor[0][0], corridor[0][1]);
+          ctx.lineTo(corridor[1][0], corridor[1][1]);
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)';
+          ctx.lineWidth = 1.2 / zoom;
+          ctx.setLineDash([4 / zoom, 3 / zoom]);
           ctx.beginPath();
           ctx.moveTo(corridor[0][0], corridor[0][1]);
           ctx.lineTo(corridor[1][0], corridor[1][1]);
@@ -829,7 +842,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const text = `${stalls}`;
+    // Say what the number is: a bare "25" on a grey rectangle read as a
+    // building bay (Eric, 2026-09-03: "building w/ 25, 25, 25, 18").
+    const text = `${stalls} stall${stalls === 1 ? '' : 's'}`;
     const w = ctx.measureText(text).width + 8 / zoom;
     const h = fontSize * 1.5;
     ctx.fillStyle = 'rgba(255,255,255,0.85)';

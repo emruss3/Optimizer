@@ -619,3 +619,55 @@ three streets end in cul-de-sacs at the stream, the other four run through,
 should move off it, not stop (the largest losses above); the road-centerline
 layer (§11) would replace the assumed-end pick with a read one; the estate
 module (§11).
+
+## 13. The multifamily page says what is being built (2026-09-03)
+
+Eric, on 2600 W Heiman (RM40): "There is a ton of stuff happening on this
+page; it's hard to follow, and I have no clue what's actually being built
+(building w/ 25, 25, 25, 18). The colored building doesn't make any sense
+from an actually multifamily layout."
+
+Three things were true. The page led with receipts — a red census line, the
+KPI strip, the solver's basis string (`133595 GSF seed plan @ 5 st · 99.1% of
+134850 max · 1 structure(s) · 76 units @ ~1547 GSF · 118/132 stalls (90.8% of
+placed need, 78.1% of max) · side_rows · generator: seed_v2 …`), the context
+lineage, the highest-and-best strip, the capacity card — and nowhere a
+sentence. The parking bays carried a bare number in the same grey as the
+building, so four rectangles labelled 25, 25, 25 and 18 read as a building.
+And the floor plate was drawn as saturated per-type stripes across the whole
+bar — a barcode, not a plan.
+
+**What changed.**
+
+1. **A headline above the plan, in words, read off the plan the engine
+   returned** (`BuiltHeadline.tsx`): "76 apartments in one 5-story building ·
+   133,595 GSF · 118 stalls (1.6 per unit)", and under it "One connected
+   S-form bar with a parking field behind it · 8 studios, 30 one-beds, 26
+   two-beds, 12 three-beds". Nothing is re-measured: units, GSF and stalls
+   are the engine's metrics; the composition and the parking words are the
+   generator's own notes (`bars_connected_S_form`, `rear_field_perp`) put
+   into English; the mix is the server's rows. The solver's basis line stays
+   under it as the audit trail. The subdivision and the house seed keep their
+   own lines.
+2. **Buildings are named by what they are** — "Apartments · 5 stories · 76
+   units" on the sheet, not "bars connected S form × 5 st". The composition
+   token still travels in the element for the headline and the receipts.
+3. **Parking bays say "25 stalls"**, never "25".
+4. **The floor plate is drawn as a plan**: units a pale tint of their type,
+   the demising walls the dark lines, the corridor a clear 5.5-ft strip
+   between the two banks with the centreline dashed over it, the cores
+   hatched as before.
+5. **The dev census line is collapsed** to one grey line ("Census 2026-07-21
+   · 1/15 ok · 1 exception · dev only · details"). It is a diagnostic about
+   the population, not about the plan on the screen, and in red it read as
+   one.
+
+Render (fixture mode, the committed 553450 response, which is an older
+vintage than the live one Eric saw — 70 units on 4 stories):
+`qa/audits/2026-09-03/heiman_2600_mf_legibility_screen.png`.
+
+**Still open from the same critique.** The stack under the headline —
+context lineage, highest-and-best, the capacity card with its stories
+table — is the analysis the earlier audits asked for, and it is still a lot
+of page. The next step is one "Analysis" disclosure so the sentence and the
+plan come first and the receipts open on demand.

@@ -20,9 +20,16 @@ not just a one off solve").
   land left unserved (sqft), the served length, and whether the plan stops at
   a greenway / picked its end on an assumption. Source table:
   `public.subdivision_sweep`; the v1.1 rows are kept in
-  `public.subdivision_sweep_v1_1` for the A/B.
+  `public.subdivision_sweep_v1_1` for the A/B — a scratch snapshot made by
+  hand (`create table … as select * from subdivision_sweep` before the
+  re-run), not a migration; drop it when the comparison is no longer needed.
 - `mdha_subdivision_v1_2_greenway_stop_screen.png` — 2400 W Heiman on v1.2:
   the spine enters from the 2518 W Heiman end, takes a 102-ft stream culvert
   and ends in a cul-de-sac at the AE floodplain (271-ft crossing declined);
   34 lots, 4 paired courts, 20.0% ROW. The v1 and v1.1 renders live in
   `../2026-09-02/`.
+- `heiman_2600_mf_legibility_screen.png` — 2600 W Heiman (RM40, 553450)
+  after §13: the "what is being built" headline above the plan, the building
+  named by stories and units, parking bays labelled in stalls, the floor
+  plate drawn as a double-loaded plan, the dev census line collapsed.
+  Fixture mode (the committed 553450 response: 70 units on 4 stories).
