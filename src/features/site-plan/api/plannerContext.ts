@@ -6,7 +6,7 @@
  * audited public RPC contract; planner.* tables remain private.
  */
 import { supabase } from '../../../lib/supabase';
-import type { DesignContext } from './designContext';
+import { normalizeSetbacksOrdinance, normalizeHeightPlane, type DesignContext } from './designContext';
 
 // ── Shared value shapes ──────────────────────────────────────────────────────
 
@@ -432,6 +432,18 @@ export function plannerContextToDesignContext(resp: PlannerContextResponse): Des
     maxCoveragePct: asCv(buildingCoverage),
     maxBuildingCoveragePct: asCv(buildingCoverage),
     maxImperviousPct: asCv(legal.max_impervious_pct),
+    // Order-8 receipts (engine-lane H2): ordinance setbacks beside the design
+    // setbacks, and the height plane as the ordinance states it. Tolerant —
+    // the compiler publishes these under legal.* when it carries them.
+    setbacksOrdinance: normalizeSetbacksOrdinance(
+      (legal as unknown as Record<string, unknown>).setbacks_ordinance
+        ?? (resp.context as unknown as Record<string, unknown>).setbacks_ordinance
+    ),
+    heightPlane: normalizeHeightPlane(
+      (legal as unknown as Record<string, unknown>).height_plane
+        ?? (resp.context as unknown as Record<string, unknown>).height_plane
+        ?? (resp.solver_brief.hard_constraints as unknown as Record<string, unknown>).height_plane
+    ),
     parkingStrategy: parking.strategy ?? resp.context.parking_strategy ?? undefined,
     parking: {
       ratio: parking.ratio ?? undefined,

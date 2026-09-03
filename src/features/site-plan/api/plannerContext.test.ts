@@ -355,3 +355,28 @@ describe('flag translation', () => {
     expect(describeContextFlag('some_new_backend_flag')).toBe('some new backend flag');
   });
 });
+
+describe('order-8 receipts through the compiled context (forward-compatible)', () => {
+  it('carries legal.setbacks_ordinance and legal.height_plane into the display context', () => {
+    const resp = {
+      ...RESP,
+      context: {
+        typology: 'multifamily',
+        legal: {
+          zoning_base: 'CS',
+          setbacks: { front: { value: 27.5, source: 'ordinance' }, side: { value: 0, source: 'ordinance' }, rear: { value: 20, source: 'ordinance' } },
+          setbacks_ordinance: { front: { value: 15, source: 'ordinance' }, rear: { value: 20, source: 'ordinance' } },
+          height_plane: { law: '30 ft at the setback lines, then 1.5H:1V', height_at_setback_ft: 30, slope_h: 1.5, slope_v: 1 },
+        },
+      },
+    } as unknown as PlannerContextResponse;
+    const ctx = plannerContextToDesignContext(resp);
+    expect(ctx.setbackFrontFt?.value).toBe(27.5);
+    expect(ctx.setbacksOrdinance?.front?.value).toBe(15);
+    expect(ctx.heightPlane?.law).toContain('1.5H:1V');
+    expect(ctx.heightPlane?.heightAtSetbackFt).toBe(30);
+    // Today's live payloads carry neither field — nothing is fabricated.
+    expect(plannerContextToDesignContext(RESP).setbacksOrdinance).toBeUndefined();
+    expect(plannerContextToDesignContext(RESP).heightPlane).toBeUndefined();
+  });
+});
