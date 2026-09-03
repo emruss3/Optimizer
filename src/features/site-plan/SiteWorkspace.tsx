@@ -2075,6 +2075,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       subdivisionLots: subdivisionSummary?.lots ?? null,
       subdivisionNetwork: subdivisionSummary?.network ?? null,
       subdivisionPctRow: subdivisionSummary?.pctRow ?? null,
+      subdivisionPctHazard: subdivisionSummary?.pctHazard ?? null,
+      subdivisionHazardCoverage: subdivisionSummary?.hazardCoverage ?? null,
       subdivisionScheme: subdivisionSummary ? subdivisionScheme : null,
       commercialAllowableGsf:
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'

@@ -73,8 +73,16 @@ export function SubdivisionPanel({
         </dd>
         <dt className="text-slate-500">Land</dt>
         <dd>{land || '—'}</dd>
+        <dt className="text-slate-500">Held out</dt>
+        <dd data-testid="subdivision-hazard">
+          {summary.hazardCoverage === 'ingested'
+            ? (summary.pctHazard != null && summary.pctHazard > 0
+                ? `${summary.pctHazard}% greenway · floodplain ${summary.floodplainHeldOutPct ?? 0}% · wetland ${summary.wetlandHeldOutPct ?? 0}%`
+                : 'no floodplain or wetland on the parcel')
+            : <span className="text-amber-700">flood / wetland layers not ingested here yet</span>}
+        </dd>
         <dt className="text-slate-500">Courts</dt>
-        <dd>{summary.courts} · rear alleys</dd>
+        <dd>{summary.courts} · one every block · rear alleys</dd>
         <dt className="text-slate-500">Access</dt>
         <dd>{summary.accessMode ?? '—'}</dd>
         {summary.densityDuAc != null && (

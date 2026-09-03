@@ -37,6 +37,14 @@ export interface SubdivisionPolygon {
   at?: string;
 }
 
+/** A held-out hazard piece: FEMA floodplain / floodway or an NWI wetland (25-ft buffer). */
+export interface SubdivisionHazard extends SubdivisionPolygon {
+  kind?: 'floodplain' | 'floodway' | 'wetland' | string;
+  zone?: string | null;
+  subtype?: string | null;
+  buffer_ft?: number | null;
+}
+
 export interface SubdivisionLot {
   lot: number;
   street?: string;
@@ -70,6 +78,13 @@ export interface SubdivisionMetrics {
   gross_density_du_ac?: number;
   parcel_acres?: number;
   floodplain_100yr_pct?: number;
+  /** v1.1: held-out hazards (FEMA SFHA + NWI wetlands) and whether the layers cover this area */
+  hazard_sqft?: number;
+  floodplain_sqft?: number;
+  wetland_sqft?: number;
+  pct_land_hazard?: number;
+  hazard_layer_coverage?: 'ingested' | 'not_ingested' | string;
+  parcel_sqft?: number;
   [k: string]: unknown;
 }
 
@@ -94,6 +109,8 @@ export interface SubdivisionResponse {
   alleys?: SubdivisionPolygon[];
   courts?: SubdivisionPolygon[];
   amenity?: SubdivisionPolygon | null;
+  /** v1.1: floodplain / floodway / wetland pieces held out of the lot pattern (drawn as greenway) */
+  hazards?: SubdivisionHazard[];
   reserves?: SubdivisionPolygon[];
   lots?: SubdivisionLot[];
   metrics?: SubdivisionMetrics;
@@ -127,6 +144,12 @@ export interface SubdivisionSummary {
   pctOpen: number | null;
   densityDuAc: number | null;
   floodplainPct: number | null;
+  /** v1.1: % of the parcel held out as greenway (floodplain + wetland), from real geometry */
+  pctHazard: number | null;
+  floodplainHeldOutPct: number | null;
+  wetlandHeldOutPct: number | null;
+  /** 'ingested' = FEMA/NWI tiles cover this area; 'not_ingested' = only the parcel-level FEMA fraction is known */
+  hazardCoverage: string | null;
   accessMode: string | null;
   flags: string[];
   basis: string;
@@ -269,16 +292,37 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
     });
   }
 
+  // Held-out hazards read as GREENWAY — the one thing a plan must never put a lot on.
+  (resp.hazards ?? []).forEach((h, i) => {
+    const kind = h.kind ?? 'floodplain';
+    const label = kind === 'floodway' ? 'Floodway' : kind === 'wetland' ? 'Wetland' : 'Floodplain';
+    polygons2274To3857(h.geom_2274).forEach((poly, j) => {
+      elements.push({
+        id: `${SUBDIVISION_ID_PREFIX}hazard-${i + 1}${j > 0 ? `-${j + 1}` : ''}`,
+        type: 'greenspace',
+        name: `${label}${h.zone ? ` (${h.zone})` : ''}`,
+        geometry: poly,
+        properties: props({
+          areaSqFt: h.area_sqft ?? undefined, kind: 'greenway', hazardKind: kind, zone: h.zone ?? undefined,
+          subtype: h.subtype ?? undefined, bufferFt: h.buffer_ft ?? undefined,
+          styleOverride: true, color: '#99F6E4', opacity: 0.7, strokeColor: '#0D9488',
+        }),
+        metadata: meta,
+      });
+    });
+  });
+
+  // Residual land is UNASSIGNED, not an amenity: neutral, no green.
   (resp.reserves ?? []).forEach((r, i) => {
     polygons2274To3857(r.geom_2274).forEach((poly, j) => {
       elements.push({
         id: `${SUBDIVISION_ID_PREFIX}reserve-${i + 1}${j > 0 ? `-${j + 1}` : ''}`,
         type: 'greenspace',
-        name: 'Reserve',
+        name: 'Unassigned',
         geometry: poly,
         properties: props({
           areaSqFt: r.area_sqft ?? undefined, kind: 'reserve',
-          styleOverride: true, color: '#DCFCE7', opacity: 0.5, strokeColor: '#BBF7D0',
+          styleOverride: true, color: '#F1F5F9', opacity: 0.35, strokeColor: '#CBD5E1',
         }),
         metadata: meta,
       });
@@ -287,7 +331,8 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
 
   const m = resp.metrics ?? {};
   const parcelSqft = num(m.parcel_sqft);
-  const openSqft = (num(m.court_area_sqft) ?? 0) + (num(m.amenity_sqft) ?? 0) + (num(m.residual_sqft) ?? 0);
+  const openSqft = (num(m.court_area_sqft) ?? 0) + (num(m.amenity_sqft) ?? 0) + (num(m.hazard_sqft) ?? 0);
+  const pctOf = (v: number | null) => (v != null && parcelSqft && parcelSqft > 0 ? Math.round((v / parcelSqft) * 1000) / 10 : null);
   return {
     elements,
     summary: {
@@ -305,6 +350,10 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
       pctOpen: parcelSqft && parcelSqft > 0 ? Math.round((openSqft / parcelSqft) * 1000) / 10 : null,
       densityDuAc: num(m.gross_density_du_ac),
       floodplainPct: num(m.floodplain_100yr_pct),
+      pctHazard: num(m.pct_land_hazard),
+      floodplainHeldOutPct: pctOf(num(m.floodplain_sqft)),
+      wetlandHeldOutPct: pctOf(num(m.wetland_sqft)),
+      hazardCoverage: typeof m.hazard_layer_coverage === 'string' ? m.hazard_layer_coverage : null,
       accessMode: resp.access?.mode ?? null,
       flags: stringFlags(resp.flags),
       basis: resp.plan_basis ?? '',
@@ -319,8 +368,13 @@ export function subdivisionSummaryLine(s: SubdivisionSummary): string {
   const land = s.pctRow != null && s.pctLots != null ? ` · ${s.pctRow}% ROW / ${s.pctLots}% lots` : '';
   const bd = s.buildableDepthFt != null ? ` · buildable depth ${s.buildableDepthFt} ft` : '';
   const dens = s.densityDuAc != null ? ` · ${s.densityDuAc} du/ac gross` : '';
-  const flood = s.floodplainPct != null && s.floodplainPct > 0 ? ` · ⚠ ${s.floodplainPct}% floodplain not carved` : '';
-  return `${s.lots} lots${dims} on a ${net} (${s.streets} street${s.streets === 1 ? '' : 's'}, ${s.courts} court${s.courts === 1 ? '' : 's'}, rear alleys)${land}${bd}${dens}${flood}`;
+  // Hazards: real geometry when the FEMA/NWI tiles cover the area; otherwise the honest warning.
+  const hazard = s.hazardCoverage === 'ingested'
+    ? (s.pctHazard != null && s.pctHazard > 0
+        ? ` · ${s.pctHazard}% held out as greenway (floodplain ${s.floodplainHeldOutPct ?? 0}%, wetland ${s.wetlandHeldOutPct ?? 0}%)`
+        : ' · no floodplain or wetland on the parcel')
+    : (s.floodplainPct != null && s.floodplainPct > 0 ? ` · ⚠ ${s.floodplainPct}% floodplain not carved (layer not ingested here)` : '');
+  return `${s.lots} lots${dims} on a ${net} (${s.streets} street${s.streets === 1 ? '' : 's'}, ${s.courts} court${s.courts === 1 ? '' : 's'}, rear alleys)${land}${bd}${dens}${hazard}`;
 }
 
 /** Fail-soft RPC: null (with a console warning) when the service is unreachable. A

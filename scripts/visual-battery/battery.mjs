@@ -127,6 +127,16 @@ function judge(exp, ev) {
     if (typeof exp.maxPctRow === 'number' && !(ev.subdivisionPctRow <= exp.maxPctRow)) {
       errs.push(`ROW takes ${ev.subdivisionPctRow ?? '?'}% of the land, over the ${exp.maxPctRow}% ceiling`);
     }
+    // v1.1: floodplain and wetlands are HELD OUT from real geometry — a parcel with
+    // hazards must show them carved (coverage ingested, % held out at or above the floor).
+    if (typeof exp.minPctHazard === 'number') {
+      if (ev.subdivisionHazardCoverage !== 'ingested') {
+        errs.push(`hazard layers not ingested for the parcel (coverage=${ev.subdivisionHazardCoverage ?? 'none'}) — the flood/wetland carve did not run`);
+      }
+      if (!(ev.subdivisionPctHazard >= exp.minPctHazard)) {
+        errs.push(`held-out hazard ${ev.subdivisionPctHazard ?? 'none'}% below the ${exp.minPctHazard}% floor (floodplain/wetland must be carved)`);
+      }
+    }
     if (!ev._domSubdivision) errs.push('neighbourhood plan panel not rendered');
     if ((ev.violationCodes ?? []).includes('server-plan-rejected')) {
       errs.push('the subdivision was rejected by the geometry gate (overlapping pavement/lots)');

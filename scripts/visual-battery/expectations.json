@@ -58,11 +58,12 @@
   },
   "550510": {
     "mode": "subdivision",
-    "minLots": 50,
+    "minLots": 30,
     "network": "spine",
     "maxPctRow": 25,
+    "minPctHazard": 20,
     "requirePlanPattern": "subdivision_row_spine",
     "requirePatternAligned": true,
-    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac, 2381x250 ft): the subdivision generator draws the civil's organization — one 55-ft through-street on the long axis, double-loaded 80x75 lots with 20-ft rear alleys, 4 courts, through-access assumed at both ends (stubs to TSU / 2518 W Heiman) — 52 lots frozen 2026-09-03 (floor 50; the 25-ft SP scheme gives 148). Flipped from plan-pattern (aligned=false) the day the generator shipped."
+    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac, 2381x250 ft): the subdivision generator draws the civil's organization — one 55-ft through-street on the long axis, double-loaded 80x75 lots with 20-ft rear alleys, courts on a 600-ft block rhythm, through-access assumed at both ends (stubs to TSU / 2518 W Heiman). v1.1 (2026-09-03) HOLDS OUT the real FEMA AE floodplain (15.1%) and the riverine wetland + 25-ft buffer (10.4%) = 22.2% greenway, zero lots inside it: 33 lots at R6 (floor re-based 52 → 30 because the definition changed — the old count sat on the floodplain; the 25-ft SP scheme gives 122, SP + 10% amenity 101). minPctHazard asserts the carve actually ran (coverage ingested)."
   }
 }

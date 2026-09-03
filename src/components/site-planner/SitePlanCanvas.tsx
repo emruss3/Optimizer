@@ -1175,8 +1175,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['Street (public ROW)', '#A9B4C0'],
           ['Alley', '#D5DCE4'],
           ['Lot', '#F8FAFC'],
-          ['Court / reserve', '#BBF7D0'],
+          ['Greenway (floodplain / wetland)', '#99F6E4'],
+          ['Court', '#BBF7D0'],
           ['Amenity', '#86EFAC'],
+          ['Unassigned land', '#F1F5F9'],
           ['Front setback', '#2563EB'],
           ['Rear setback', '#D97706'],
           ['Side setback', '#64748B'],
@@ -1197,7 +1199,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     const pad = 8;
     const rowH = 16;
-    const boxW = 132;
+    const boxW = isSubdivision ? 196 : 132;
     const boxH = entries.length * rowH + pad * 2 - 4;
     const x = 12;
     const y = cssH - boxH - 12;
