@@ -394,4 +394,69 @@ amenity a stronger green; the "Neighbourhood plan" panel states lots,
 network, lot dimensions, buildable depth, land split, access, density and
 every flag in plain words; the plan-basis line is the generator's own
 sentence. Still open from §7: the legend has no ROW/alley/court vocabulary,
-and the floodplain is a flag, not a held-out layer.
+and the floodplain is a flag, not a held-out layer. (Both closed in §10.)
+
+## 10. Hazards held out, open space with intent — generator v1.1 (2026-09-03)
+
+Eric, on the v1 render: "This isn't a good site plan. You just cut a road
+straight through the middle, and colored random squares as 'amenities'. You
+didn't take into account wetlands, flood plains, etc."
+
+Two of the three are fair and are fixed here; the third is the site. A
+250-ft-wide strip has exactly one organization — the civil drew the same
+spine — but the v1 courts were placed by a lot counter and the residual
+slivers were painted the same green as the amenity, so the plan read as
+"random squares". And the floodplain was a flag, not geometry, because the
+database had none.
+
+**Real hazard geometry, fetched by the database itself.** The agent sandbox
+cannot reach FEMA or USFWS, but Postgres can: the `http` extension pages the
+FEMA NFHL flood-hazard layer (S_FLD_HAZ_AR, SFHA only — floodway included;
+the county-sized X zones are never carved so never fetched) and the USFWS
+National Wetlands Inventory into `hazard_flood_2274` / `hazard_wetland_2274`
+over a 6 × 6 county tile queue. Run 2026-09-03: 6,422 flood features and
+9,596 wetland features across all 72 tiles, no stuck tile. Coverage is
+tracked per tile, so a parcel whose tiles are not ingested says so instead of
+pretending.
+
+**What v1.1 does differently.**
+
+1. Floodplain (A/AE/AH/AO/V/VE) and wetlands (with a 25-ft buffer) are held
+   out before a lot is drawn: lots, alleys and courts sit only on the
+   developable remainder; the held-out pieces come back as greenway polygons
+   with their zone; a street that crosses one says so with the crossing length
+   (a culvert or a bridge, for the civil to price). A parcel that is mostly
+   hazard is refused with the reason.
+2. The amenity goes beside the greenway when the site has one (a window search
+   along the axis for the most developable ground touching the held-out
+   land), otherwise at the head. Courts sit on a block rhythm — a mid-block
+   green every 600 ft on both faces of the street — not on a lot count.
+3. Estate lots (district minimum ≥ 40,000 sf) get no alleys.
+4. Residual land is drawn as "Unassigned" in neutral grey, never green; the
+   legend on a subdivision reads Street / Alley / Lot / Greenway / Court /
+   Amenity / Unassigned.
+
+**MDHA, 2400 W Heiman, v1.1** — `qa/audits/2026-09-02/mdha_subdivision_v1_1_hazards_screen.png`:
+
+| | v1 (no carve) | v1.1 (held out) | Civil |
+|---|---|---|---|
+| Held out | flag only (FEMA 15%) | 22.2% greenway: AE floodplain 15.1%, riverine wetland R4SBC + buffer 10.4% | floodplain + greenway held out |
+| District lots 80×75 | 52 | 33, 5 courts on a 600-ft rhythm, 0 lots in the greenway | — |
+| SP townhomes 25 ft | 163 | 122 | 102 (08/21) |
+| SP 25 ft + amenity 10% | 148 | 101 lots + 57,300-sf amenity beside the greenway | 69 + amenity (08/30) |
+| Street crossing | — | Street A crosses the held-out land for 373 ft (culvert/bridge) | — |
+
+The SP counts now sit where the civil's do, for the same reason: the land the
+civil held out is held out. The battery gate asserts it (`minPctHazard`:
+coverage ingested and ≥ 20% held out on 550510); the lot floor was re-based
+from 52 to 30 because the definition changed, and the file says so.
+
+**What the greenway does to the ten other parcels.** 4678 Lickton Pike loses
+17 lots to 7.9% held out; 1404 Pleasant Hill Rd loses 4 of 9 to a wetland
+(15.2%); 4999 Clarksville Hwy is 63.7% floodplain and now yields zero lots
+instead of two on the water. None of these numbers were visible before.
+
+**Still not modelled:** topography (steep slopes), tree canopy, stream
+buffers beyond the NWI polygon, sewer availability. Each is the same pattern
+— a geometry layer the database fetches, held out or costed before a lot is
+drawn.

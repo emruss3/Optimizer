@@ -2,5 +2,13 @@
   "_rules": "Per-parcel capture floors for the DB acceptance battery (gfa_sqft / fn_max_buildout.max_gsf, percent). Floors only ratchet UP, and raising one is a reviewed change — a solver PR that improves a parcel commits the new floor in the same PR. Evidence for the current values: measured live 2026-07-21 (98.3 / 83.1 / 47.8).",
   "553450": 98.0,
   "488278": 83.0,
-  "480089": 47.0
+  "480089": 47.0,
+  "subdivision": {
+    "_rules": "Subdivision generator floors (fn_generate_subdivision_safe, default scheme). minLots ratchets UP; minPctHazard asserts the FEMA/NWI carve ran (coverage must be 'ingested'). A generator PR that changes the definition (as v1.1 did by holding hazards out) re-bases the floor in the same PR and says so.",
+    "550510": {
+      "minLots": 30,
+      "minPctHazard": 20,
+      "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac): v1.1 2026-09-03 — 33 lots @ 80x75 on one 55-ft spine with 22.2% held out (AE floodplain 15.1%, riverine wetland 10.4%)"
+    }
+  }
 }

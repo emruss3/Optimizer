@@ -185,6 +185,50 @@ for (const fid of FIXED) {
   }
 }
 
+// Layer 3 (2026-09-03): the SUBDIVISION generator — fn_generate_subdivision_safe on
+// the floor parcels in floors.json.subdivision (lot floor ratchets UP; the hazard
+// carve must have run: coverage 'ingested', % held out ≥ the floor), plus one
+// rotating single-family cohort parcel (sf_cohort.json) asserted for "no
+// unexpected error" and "hazard layers ingested" only.
+const SUBDIV_ALLOWED = new Set(['parcel_too_narrow_for_a_street_and_a_lot', 'parcel_mostly_in_flood_hazard_or_wetland']);
+async function subdivisionCheck(fid, floor) {
+  const r = await rpc('fn_generate_subdivision_safe', { p_ogc_fid: fid });
+  if (!r) return 'empty response';
+  if (r.error && String(r.error).startsWith('exception:')) return `generator exception: ${String(r.error).slice(0, 140)}`;
+  if (r.error && !SUBDIV_ALLOWED.has(r.error)) return `error: ${r.error}`;
+  const m = r.metrics ?? {};
+  if (m.hazard_layer_coverage !== 'ingested') return `hazard layers not ingested for the parcel (coverage=${m.hazard_layer_coverage ?? 'none'})`;
+  if (floor) {
+    if (r.error) return `refused ('${r.error}') on a floor parcel`;
+    if (!(m.lots >= floor.minLots)) return `lots ${m.lots} below the floor ${floor.minLots}`;
+    if (typeof floor.minPctHazard === 'number' && !(m.pct_land_hazard >= floor.minPctHazard)) {
+      return `held-out hazard ${m.pct_land_hazard}% below the floor ${floor.minPctHazard}% (the floodplain/wetland carve did not hold)`;
+    }
+  }
+  return null;
+}
+const subdivFloors = floors.subdivision ?? {};
+for (const fid of Object.keys(subdivFloors).filter(k => /^\d+$/.test(k)).map(Number)) {
+  try {
+    const fail = await subdivisionCheck(fid, subdivFloors[String(fid)]);
+    if (fail) { failures.push(`${fid}: subdivision ${fail}`); console.log(`FAIL ${fid} subdivision — ${fail}`); }
+    else console.log(`OK   ${fid} subdivision — lots ≥ ${subdivFloors[String(fid)].minLots}, hazards held out ≥ ${subdivFloors[String(fid)].minPctHazard}%`);
+  } catch (e) {
+    failures.push(`${fid}: subdivision ${String(e).slice(0, 160)}`);
+    console.log(`FAIL ${fid} subdivision — ${String(e).slice(0, 160)}`);
+  }
+}
+try {
+  const sfCohort = JSON.parse(fs.readFileSync(path.join(HERE, 'sf_cohort.json'), 'utf8')).fids;
+  const sfPick = sfCohort[(Number(process.env.COHORT_INDEX ?? dayOfYear)) % sfCohort.length];
+  const fail = await subdivisionCheck(sfPick, null);
+  if (fail) { failures.push(`sf cohort ${sfPick}: ${fail}`); console.log(`FAIL sf cohort ${sfPick} — ${fail}`); }
+  else console.log(`OK   sf cohort ${sfPick} — subdivision generator answered with hazards ingested (advisory, no floor yet)`);
+} catch (e) {
+  failures.push(`sf cohort: ${String(e).slice(0, 200)}`);
+  console.log(`FAIL sf cohort — ${String(e).slice(0, 200)}`);
+}
+
 // Rotating cohort parcel: error-check only.
 try {
   const r = await solveParcel(cohortPick);

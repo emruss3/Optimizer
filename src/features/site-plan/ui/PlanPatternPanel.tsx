@@ -42,6 +42,29 @@ export const PlanPatternPanel: React.FC<{ plan: PlanPattern }> = ({ plan }) => {
           Alternate: {plan.alternates.map(patternLabel).join(' · ')}
         </div>
       )}
+      {plan.calibration && plan.calibration.n > 0 && (
+        <div className="mt-2" data-testid="plan-pattern-calibration">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500">Calibration · parcels like this one</div>
+          <div className="mt-0.5 text-[11px] text-gray-700">
+            {plan.calibration.n} parcels
+            {plan.calibration.band?.zoning ? ` zoned ${plan.calibration.band.zoning}` : ''}
+            {plan.calibration.band?.acres_lo != null && plan.calibration.band?.acres_hi != null
+              ? `, ${plan.calibration.band.acres_lo}–${plan.calibration.band.acres_hi} ac` : ''}
+            {plan.calibration.median_du_ac != null
+              ? ` · median ${plan.calibration.median_du_ac} lots/ac` +
+                (plan.calibration.p25_du_ac != null && plan.calibration.p75_du_ac != null
+                  ? ` (${plan.calibration.p25_du_ac}–${plan.calibration.p75_du_ac})` : '')
+              : ''}
+            {plan.calibration.median_pct_row != null ? ` · ROW ${plan.calibration.median_pct_row}%` : ''}
+            {plan.calibration.median_pct_lots != null ? ` · lots ${plan.calibration.median_pct_lots}%` : ''}
+            {plan.calibration.median_pct_hazard != null ? ` · held out ${plan.calibration.median_pct_hazard}%` : ''}
+            {plan.calibration.refused_pct != null ? ` · ${plan.calibration.refused_pct}% refused` : ''}
+          </div>
+          {plan.calibration.basis && (
+            <div className="text-[10px] text-gray-500" title={plan.calibration.generator_version ?? ''}>{plan.calibration.basis}</div>
+          )}
+        </div>
+      )}
       {plan.exemplars && plan.exemplars.length > 0 && (
         <div className="mt-2">
           <div className="text-[10px] uppercase tracking-wide text-gray-500">Precedent plans</div>

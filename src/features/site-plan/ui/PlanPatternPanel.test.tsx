@@ -33,6 +33,29 @@ describe('PlanPatternPanel (plan-organization layer)', () => {
     expect(text).toContain('subdivision generator pending');
   });
 
+  it('reads the parcel against its population: the sweep calibration line', () => {
+    render(
+      <PlanPatternPanel
+        plan={{
+          ...MDHA,
+          generator_alignment: { generator: 'fn_generate_subdivision', aligned: true, note: 'draws it' },
+          calibration: {
+            n: 38, band: { zoning: 'R6', acres_lo: 6.6, acres_hi: 26.3 }, refused_pct: 5.3,
+            median_du_ac: 3.1, p25_du_ac: 2.2, p75_du_ac: 4.0, median_pct_row: 21.5, median_pct_lots: 48.2, median_pct_hazard: 4.0,
+            basis: '38 sweep parcels zoned R6 between 6.6 and 26.3 ac',
+          },
+        }}
+      />
+    );
+    const cal = screen.getByTestId('plan-pattern-calibration').textContent ?? '';
+    expect(cal).toContain('38 parcels zoned R6, 6.6–26.3 ac');
+    expect(cal).toContain('median 3.1 lots/ac (2.2–4)');
+    expect(cal).toContain('ROW 21.5%');
+    expect(cal).toContain('held out 4%');
+    expect(cal).toContain('5.3% refused');
+    expect(screen.getByTestId('plan-pattern-alignment').textContent).toBe('generator follows this');
+  });
+
   it('shows the green chip when the generator follows the pattern', () => {
     render(
       <PlanPatternPanel
