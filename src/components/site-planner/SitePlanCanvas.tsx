@@ -835,6 +835,18 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     cx /= n;
     cy /= n;
 
+    // Screen-space room inside the bay (text is axis-aligned)
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const [x, y] = coords[i];
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const roomPx = (maxX - minX) * zoom;
+    if (roomPx < 34 || (maxY - minY) * zoom < 14) return;
+
     const fontSize = 11 / zoom;
     ctx.save();
     ctx.translate(cx, cy);
@@ -843,8 +855,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     // Say what the number is: a bare "25" on a grey rectangle read as a
-    // building bay (Eric, 2026-09-03: "building w/ 25, 25, 25, 18").
-    const text = `${stalls} stall${stalls === 1 ? '' : 's'}`;
+    // building bay (Eric, 2026-09-03: "building w/ 25, 25, 25, 18"). A bay
+    // too narrow for the word gets the parking glyph instead ("P · 25").
+    const full = `${stalls} stall${stalls === 1 ? '' : 's'}`;
+    const text = ctx.measureText(full).width * zoom + 10 <= roomPx ? full : `P · ${stalls}`;
     const w = ctx.measureText(text).width + 8 / zoom;
     const h = fontSize * 1.5;
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -1328,10 +1342,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         renderBuildingDetail(ctx, element, viewport.zoom);
       }
 
-      // Stall dividers + per-bay counts on parking (from the solver)
+      // Stall dividers on parking (from the solver); the per-bay counts draw
+      // in a pass of their own after every element, so a building drawn
+      // later never covers a label.
       if (element.type === 'parking' || element.type === 'parking-bay') {
         renderParkingStripes(ctx, element, viewport.zoom);
-        renderBayCount(ctx, element, viewport.zoom);
       }
 
       // Name the drive on the sheet. Open-space areas are identified by the
@@ -1364,6 +1379,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         renderRotationHandle(ctx, center.x, center.y, handleX, handleY, viewport.zoom);
       }
     });
+
+    // Per-bay stall counts over every element (a bay's label must never sit
+    // under the building drawn after it)
+    for (const element of sortedElements) {
+      if (element.type === 'parking' || element.type === 'parking-bay') {
+        renderBayCount(ctx, element, viewport.zoom);
+      }
+    }
 
     // Render parcel boundary (dashed line, on top of everything)
     if (processedGeometry) {

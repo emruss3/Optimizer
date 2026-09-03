@@ -431,7 +431,12 @@ export function seedFamilyPlanToElements(
     // generator's composition token ("bars connected S form × 5 st" read as
     // noise on the sheet; Eric, 2026-09-03). The token still travels in
     // properties.compositionNote for the headline and the receipts.
-    const unitsHere = mixes ? mixes[i].reduce((s, e) => s + e.count, 0) : unitsEst;
+    // One structure carries the engine's own unit count (the headline reads
+    // the same number); several share the server's mix by GSF. The mix rows
+    // can sum one short of the engine's count (server-side rounding) — the
+    // sheet must not show 69 under a headline that says 70.
+    const mixUnits = mixes ? mixes[i].reduce((s, e) => s + e.count, 0) : null;
+    const unitsHere = structures.length === 1 ? (num(m.units) ?? mixUnits ?? unitsEst) : (mixUnits ?? unitsEst);
     elements.push({
       id: `${prefix}-bldg-${b.structure_id ?? i + 1}`,
       type: 'building',
