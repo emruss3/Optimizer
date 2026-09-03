@@ -22,6 +22,12 @@ its expectation:
   (`server-plan-rejected` violation present) and the worker fallback
   renders. Flip the parcel to `server-plan` the moment the server output is
   fixed.
+- `"mode": "subdivision"` (2026-09-03) — a subdivision-pattern parcel must
+  render the NEIGHBOURHOOD the server drew (`fn_generate_subdivision`:
+  through-streets on the long axis, rear alleys, whole lots, courts) with
+  `subdivisionLots ≥ minLots` (floors ratchet UP), the expected `network`
+  (`spine` / `ladder` / `grid`), ROW at or under `maxPctRow` of the land,
+  the neighbourhood panel in the DOM, and no geometry-gate rejection.
 
 **The ritual**: a PR that changes server behavior must refresh the fixtures
 (below) and raise the floors in the same PR. A solver improvement that
@@ -47,9 +53,12 @@ For each battery parcel, store the RPC responses under keys
 `fn_massing_program`, `fn_max_buildout`, `fn_parcel_frontage`,
 `fn_planner_neighbors`, `fn_mf_money`, `fn_resolve_permitted_uses`,
 `fn_list_mf_candidates`, `get_parcel_by_id`, `fn_seed_parking`
-(`multifamily`), and — for the sf-suggestion parcel —
-`fn_parcel_buildability`, `fn_generate_sf_seed`,
-`fn_generate_sf_site_plan`.
+(`multifamily`), `fn_plan_pattern` (`multifamily`), and — for the
+sf-suggestion parcel — `fn_parcel_buildability`, `fn_generate_sf_seed`,
+`fn_generate_sf_site_plan`; for the subdivision parcel
+`fn_generate_subdivision` (key suffix empty: the default scheme passes only
+`p_ogc_fid`). `fn_plan_pattern` and `fn_generate_subdivision` are one
+vintage: the pattern's alignment verdict describes that generator.
 
 **Same-vintage rule (2026-07-28 lesson):** `fn_generate_mf_site_plan_v2`
 and `fn_max_buildout` must be harvested TOGETHER — capture is

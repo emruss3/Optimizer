@@ -57,9 +57,12 @@
     "requirePlanPattern": "retail_full_plate"
   },
   "550510": {
-    "mode": "plan-pattern",
+    "mode": "subdivision",
+    "minLots": 50,
+    "network": "spine",
+    "maxPctRow": 25,
     "requirePlanPattern": "subdivision_row_spine",
-    "requirePatternAligned": false,
-    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac): the plan-pattern layer must say ROW-spine subdivision with rear alleys (civil concepts 08/21 102 lots / 08/30 69 lots) and admit the lot generator does not draw it yet"
+    "requirePatternAligned": true,
+    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac, 2381x250 ft): the subdivision generator draws the civil's organization — one 55-ft through-street on the long axis, double-loaded 80x75 lots with 20-ft rear alleys, 4 courts, through-access assumed at both ends (stubs to TSU / 2518 W Heiman) — 52 lots frozen 2026-09-03 (floor 50; the 25-ft SP scheme gives 148). Flipped from plan-pattern (aligned=false) the day the generator shipped."
   }
 }

@@ -245,7 +245,7 @@ subdivisions, retail or podium schemes, and no place where the product says
 
 | Parcel | Pattern | Generator |
 |---|---|---|
-| 2400 W Heiman (MDHA, R6, 13.15 ac) | ROW-spine subdivision with rear alleys — precedent: MDHA 08/21, 08/30 | **not yet** — strip slicing, no street network |
+| 2400 W Heiman (MDHA, R6, 13.15 ac) | ROW-spine subdivision with rear alleys — precedent: MDHA 08/21, 08/30 | **follows** (2026-09-03, §9) — `fn_generate_subdivision` draws the spine, alleys, lots, courts |
 | 2405 12th Ave S (CS) | Retail full plate (alt: stacked two-tenant) — precedent: Bradley single/two-tenant | **not yet** — no retail generator |
 | 55 Music Sq E · 1917 Broadway (ORI · MUI-A) | Podium parking, liner units, tower above | **not yet** — surface frontier |
 | 2600 W Heiman · 2622 W Heiman (RM40, ≥2.2 aspect / ≥3 ac) | Perpendicular bars framing courts | **not yet** — seed draws one S-form bar; courts live in the search core |
@@ -253,13 +253,14 @@ subdivisions, retail or podium schemes, and no place where the product says
 | 1710 Meharry (RM20, 1.76 ac) | Bar on the frontage, field behind | follows |
 | 303 E Palestine (RS10) | One house on the lot | follows |
 
-**What it does not do yet:** the generators do not *consume* the pattern.
-That is the engine-lane build in priority order: (1) the subdivision
-generator (street spine, blocks, alleys, lot depth, floodplain carve —
-acceptance: the MDHA sheets), (2) a structured-parking frontier and a podium
-composition for `podium_tower` parcels, (3) the court parti in the seed,
-(4) retail massing. Until then the layer is a promise the product states out
-loud, with the precedent that proves it, instead of a box in the corner.
+**What it does not do yet:** the multifamily and retail generators do not
+*consume* the pattern. The subdivision generator now does (§9). The
+engine-lane build in priority order: (1) a structured-parking frontier and a
+podium composition for `podium_tower` parcels, (2) the court parti in the
+seed, (3) retail massing, (4) the floodplain carve (a geometry layer — the
+generator can only flag the parcel-level FEMA fraction today). Until then the
+layer is a promise the product states out loud, with the precedent that
+proves it, instead of a box in the corner.
 
 ## 7. Our MDHA render vs the civil's concepts — how to be better
 
@@ -299,7 +300,98 @@ follows the pattern.
 On suburban density-bound land the tool optimizes truthfully (frontier = legal
 max, seed ≥95% on most). On urban intensive land it optimizes against the
 wrong ceiling — a surface-parking bound at 21–43% of the legal one — and on
-subdivision land it produces lot counts without producing lots. The data
-gap that made a fifth of the universe compile with no caps is closed; the
-frontier now confesses its parking assumption and publishes the podium
-ceiling; the two generator problems are named with their acceptance cases.
+subdivision land it produced lot counts without producing lots until §9. The
+data gap that made a fifth of the universe compile with no caps is closed;
+the frontier now confesses its parking assumption and publishes the podium
+ceiling; the subdivision generator draws the neighbourhood; the multifamily
+court/podium problems are named with their acceptance cases.
+
+## 9. The subdivision generator — the civil's organization on any parcel (2026-09-03)
+
+Eric: "The design you came up with is nothing like what our civil designed …
+Those [two MDHA sheets] should be used as an example of how to design a
+neighborhood across any parcel of size, not just this one."
+
+**What shipped.** `fn_generate_subdivision(p_ogc_fid, …)` reads the two
+sheets as *principles* and derives the network from the parcel's own shape,
+in the parcel's oriented frame (x along the long axis, y across):
+
+1. **Streets first.** Through-streets on the long axis at a pitch of
+   ROW + two lot depths + alley (blocks back to back). How many fit across
+   the short axis, at what lot depth, is solved from the width with lots as
+   the objective (faces × frontage ÷ the width the district minimum needs at
+   that depth; a shallower lot must beat a deeper one by 8%). A 250-ft strip
+   gets one spine at 75-ft lots; a 900-ft tract gets two streets of 100×150
+   lots rather than three of 145×105.
+2. **Cross connectors** every ≤ 600 ft when there are two or more
+   through-streets (ladder / grid) — no block longer than the max.
+3. **Double-loaded lots, rear alleys** behind every row; alleys at the outer
+   edges too when the width allows (front-loaded outer rows are flagged).
+4. **Courts** every 12 lots, both faces of a street at the same station.
+5. **Amenity at the head** of the site when the scheme asks for it
+   (the 08/30 trade).
+6. **Access** from the unshared boundary at an end of the long axis, with a
+   street test — a parcel across the edge within a ROW-width gap (15–90 ft)
+   is a street; a 104-ft gap is the CSX corridor, not a frontage. A dead-end
+   spine over 750 ft gets a cul-de-sac bulb; a side-only frontage gets an
+   entrance connector; nothing read → through-access assumed and flagged,
+   with the neighbours across each end named (the 08/21 sheet's stub to the
+   campus).
+7. **Whole lots only**, or an irregular lot whose front edge is complete and
+   which still holds ≥ 60% of nominal and the district minimum. Every lot
+   carries a buildable depth after front/rear setbacks. No two ROW pieces
+   overlap (the client's geometry gate would reject them).
+
+Floodplain is flagged from the parcel-level FEMA fraction, not carved — the
+one thing the sheets do that the tool cannot yet, for want of a geometry
+layer. The plan-pattern layer now says **generator follows this** for both
+subdivision patterns (`subdivision_row_spine` under 550 ft of short axis,
+`subdivision_street_grid` above), and the client draws the result — ROW,
+alleys, lots, courts, amenity, reserves — with a "Neighbourhood plan" panel
+and a scheme switch (district lots / SP townhomes 25 ft / SP + amenity 10%).
+
+**MDHA, 2400 W Heiman (R6, 13.15 ac, 2,381 × 250 ft)** —
+`qa/audits/2026-09-02/mdha_subdivision_screen.png`:
+
+| Scheme | Lots | Courts | Amenity | ROW / alleys / lots / residual | Gross du/ac |
+|---|---|---|---|---|---|
+| District lots (R6 6,000 sf → 80×75) | 52 | 4 | — | 22.3% / 15.5% / 56.3% / 1.6% | 3.95 |
+| SP townhomes 25×75 | 163 | 12 | — | 22.3% / 15.6% / 54.9% / 0.7% | 12.4 |
+| SP 25 ft + amenity 10% (37,300 sf at the head) | 148 | 12 | 37,317 sf | 22.3% / 14.6% / 50.1% / 0.1% | 11.25 |
+
+Against the civil's 102 (08/21) and 69 + amenity (08/30): the same
+organization — one 55-ft spine on the long axis, double-loaded rows, 20-ft
+rear alleys, courts every 12 — and higher counts because the 15% AE
+floodplain and the railroad greenway are not yet carved; that is exactly the
+gap the flags name. Buildable depth is 35 ft on every lot (75 − 20 − 20); the
+old strip generator's 80 "lots" had −19 ft.
+
+**Ten other single-family parcels, 2–50 ac, default scheme (same day):**
+
+| Parcel | Zoning · ac · OBB ft | Network | Lots | Lot ft | ROW / lots / residual | Notes |
+|---|---|---|---|---|---|---|
+| 4678 Lickton Pike 667934 | R15 · 49.8 · 2925×902 | ladder, 2 through + 4 cross | 87 (8 irregular) | 100×150 | 15.9% / 67.7% / 8.5% | access from the start end (street read) |
+| 219 Stewarts Ferry Pike 602825 | R10 · 17.0 · 1323×724 | ladder, 2 + 2 | 36 (10 irregular) | 85×120 | 23.5% / 51.3% / 22.4% | irregular outline (fill 0.77) |
+| 2018 Old Murfreesboro Pike 662275 | R10 · 11.3 · 1214×628 | ladder + entrance connector | 21 | 95×110 | 28.6% / 45.5% / 20.8% | street on a long side only |
+| 1404 Pleasant Hill Rd 605697 | R15 · 4.65 · 707×346 | spine | 9 | 120×125 | 16.0% / 66.6% / 7.4% | |
+| 0 Skyline Ridge Dr 674582 | RS10 · 4.47 · 510×390 | spine | 10 | 85×120 | 14.2% / 64.2% / 13.1% | access assumed both ends |
+| 300 Rural Hill Ct 698955 | R10 · 2.39 · 527×249 | spine | 5 | 135×75 | 23.8% / 49.2% / 17.5% | depth cut to 75 to fit 249 ft |
+| 8346 Highway 70 662383 | R40 · 5.44 · 945×276 | single-loaded edge street | 5 | 185×220 | 12.9% / 86.4% / 0.7% | pattern says house_on_lot (under the 6-lot floor) |
+| 1293 Currey Rd 633045 | RS10 · 2.94 · ~1273×100 | — | 0 | — | — | refused: too narrow for a street and a lot |
+| 4999 Clarksville Hwy 406234 | RS15 · 2.22 · 396×275 | spine | 2 | 170×90 | 22% / 31% / 41% | under the floor → house_on_lot |
+| Parcel 681127 | R15 · 3.34 · 599×347 | spine | 2 | 120×125 | 20.5% / 20.3% / 57.6% | irregular outline: the honest answer is 2 lots + 58% unassigned |
+
+What the sweep says: the network choice tracks width (spine under ~550 ft,
+ladder/grid above), the lot objective keeps district-proportioned lots,
+the ROW share sits at 14–24% on regular parcels, and the weak results are
+the irregular outlines, where whole/irregular-lot rules leave 20–58% of land
+unassigned — the next lever is an outline-following lot fit at the block
+ends, not a different network.
+
+**UX / UI, what changed on the screen.** The canvas draws the ROW as
+pavement, alleys lighter, lots as lot lines, courts and reserves green, the
+amenity a stronger green; the "Neighbourhood plan" panel states lots,
+network, lot dimensions, buildable depth, land split, access, density and
+every flag in plain words; the plan-basis line is the generator's own
+sentence. Still open from §7: the legend has no ROW/alley/court vocabulary,
+and the floodplain is a flag, not a held-out layer.

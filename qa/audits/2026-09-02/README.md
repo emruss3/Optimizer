@@ -9,6 +9,11 @@ the MDHA property at 2400 W Heiman St, ogc_fid 550510).
   80. The architect's sheets show 102 / 69 lots on a 55-ft ROW with alleys.
 - `mdha_2400_w_heiman_lotfit_payload.json` — the fn_generate_sf_site_plan
   payload + parcel outline (4326) behind that render.
+- `mdha_subdivision_screen.png` (2026-09-03) — the same parcel drawn by
+  `fn_generate_subdivision`: one 55-ft through-street on the long axis,
+  double-loaded 80 x 75 lots with 20-ft rear alleys, 4 courts, 52 lots at R6
+  (163 at the 25-ft SP scheme; 148 with a 10% amenity at the head). The
+  pattern panel now says "generator follows this". Audit doc §9.
 - `ten_parcel_prefix_rows.json` — the nine multifamily audit parcels BEFORE
   the fixes: frontier vs independent structured-parking ceiling vs seed vs
   deep search.
