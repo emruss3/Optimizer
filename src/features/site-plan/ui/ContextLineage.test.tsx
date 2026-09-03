@@ -107,6 +107,17 @@ describe('resolveContextApplication (the six honest states)', () => {
     expect(resolveContextApplication(args({ compiling: true, activeContext: null, lineage: null }))).toBe('compiling');
   });
 
+  it('a server generator that read the standards straight from the ordinance resolver is "standards-direct", not "unavailable"', () => {
+    // The subdivision generator (2026-09-03): district setbacks / min lot area
+    // via fn_resolve_design_context, no compiled brief consumed.
+    const direct: PlanLineage = { solvedBy: 'server', contextId: null, generatorVersion: 'subdivision_v1', standardsDirect: true };
+    expect(resolveContextApplication(args({ lineage: direct }))).toBe('standards-direct');
+    expect(resolveContextApplication(args({ lineage: direct, activeContext: null }))).toBe('standards-direct');
+    // blocked / stale still win; a worker plan never gets the label
+    expect(resolveContextApplication(args({ lineage: direct, blocked: true }))).toBe('blocked');
+    expect(resolveContextApplication(args({ lineage: { ...direct, solvedBy: 'worker' } }))).toBe('unavailable');
+  });
+
   it('no context or no plan yet → unavailable, never current-authoritative', () => {
     expect(resolveContextApplication(args({ activeContext: null }))).toBe('unavailable');
     expect(resolveContextApplication(args({ lineage: null }))).toBe('unavailable');
@@ -160,6 +171,7 @@ describe('<ContextLineage> (decision explanation near Plan Basis)', () => {
     const cases: Array<[string, RegExp]> = [
       ['compiling', /Compiling local context/],
       ['applied-fallback', /Context applied with fallback evidence/],
+      ['standards-direct', /District standards applied directly/],
       ['unavailable', /Context not verified — no authoritative plan basis/],
       ['blocked', /Generation blocked by legal or physical constraints/],
       ['stale', /Plan is stale — selected use or context has changed/],

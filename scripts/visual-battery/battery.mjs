@@ -111,6 +111,26 @@ function judge(exp, ev) {
     if (!ev._houseRendered) {
       errs.push('the SF seed house did not render after the suggestion tap');
     }
+  } else if (exp.mode === 'subdivision') {
+    // 2026-09-03: a subdivision-pattern parcel renders the NEIGHBOURHOOD the
+    // server drew — streets first, rear alleys, whole lots, courts — never
+    // strips sliced across the parcel. Lot floors only ratchet UP.
+    if (ev.solvedBy !== 'server') {
+      errs.push(`expected the server subdivision to render, got solvedBy=${ev.solvedBy ?? 'none'}`);
+    }
+    if (!(ev.subdivisionLots >= (exp.minLots ?? 1))) {
+      errs.push(`subdivision lots ${ev.subdivisionLots ?? 'none'} below the floor ${exp.minLots ?? 1}`);
+    }
+    if (exp.network && ev.subdivisionNetwork !== exp.network) {
+      errs.push(`expected a '${exp.network}' street network, got '${ev.subdivisionNetwork ?? 'none'}'`);
+    }
+    if (typeof exp.maxPctRow === 'number' && !(ev.subdivisionPctRow <= exp.maxPctRow)) {
+      errs.push(`ROW takes ${ev.subdivisionPctRow ?? '?'}% of the land, over the ${exp.maxPctRow}% ceiling`);
+    }
+    if (!ev._domSubdivision) errs.push('neighbourhood plan panel not rendered');
+    if ((ev.violationCodes ?? []).includes('server-plan-rejected')) {
+      errs.push('the subdivision was rejected by the geometry gate (overlapping pavement/lots)');
+    }
   }
   // Plan-organization layer: every gated parcel must resolve the expected
   // pattern, and the alignment verdict must be honest where asserted.
@@ -208,6 +228,7 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
         _domCommercialCard: !!document.querySelector('[data-testid="commercial-capacity-card"]'),
         _domPlanPattern: !!document.querySelector('[data-testid="plan-pattern-panel"]'),
         _domSfSwitch: !!document.querySelector('[data-testid="sf-seed-switch"]'),
+        _domSubdivision: !!document.querySelector('[data-testid="subdivision-panel"]'),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;

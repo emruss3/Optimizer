@@ -24,12 +24,17 @@ export interface PlanLineage {
   footprintSqft?: number | null;
   /** True when the worker solve actually carried the active context's brief */
   workerUsedActiveContext?: boolean;
+  /** True when a server generator read the district standards straight from
+   *  the ordinance resolver (fn_resolve_design_context) instead of consuming
+   *  the compiled planner brief — the subdivision generator does this. */
+  standardsDirect?: boolean;
 }
 
 export type ContextApplicationState =
   | 'compiling'
   | 'applied'
   | 'applied-fallback'
+  | 'standards-direct'
   | 'unavailable'
   | 'blocked'
   | 'stale';
@@ -46,6 +51,10 @@ export function resolveContextApplication(args: {
   if (blocked) return 'blocked';
   if (planStale) return 'stale';
   if (compiling && !activeContext) return 'compiling';
+  // A server generator that took the district standards straight from the
+  // ordinance resolver has an authoritative basis (the standards are the
+  // same ones the brief compiles from) — it just never consumed the brief.
+  if (lineage?.solvedBy === 'server' && lineage.standardsDirect === true) return 'standards-direct';
   if (!activeContext || !lineage) return 'unavailable';
 
   const applied =
@@ -105,6 +114,7 @@ const STATE_STYLE: Record<ContextApplicationState, { label: string; cls: string 
   compiling: { label: 'Compiling local context…', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
   applied: { label: 'Context applied', cls: 'bg-green-50 text-green-700 border-green-200' },
   'applied-fallback': { label: 'Context applied with fallback evidence', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+  'standards-direct': { label: 'District standards applied directly — ordinance resolver, not the compiled brief', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
   unavailable: { label: 'Context not verified — no authoritative plan basis', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
   blocked: { label: 'Generation blocked by legal or physical constraints', cls: 'bg-red-50 text-red-700 border-red-200' },
   stale: { label: 'Plan is stale — selected use or context has changed', cls: 'bg-amber-50 text-amber-800 border-amber-200' },

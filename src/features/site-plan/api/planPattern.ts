@@ -33,6 +33,7 @@ export interface PlanPattern {
 /** Deal-language names for the pattern keys. */
 export const PATTERN_LABELS: Record<string, string> = {
   subdivision_row_spine: 'Subdivision on a public ROW spine with rear alleys',
+  subdivision_street_grid: 'Subdivision on a street grid with rear alleys',
   townhome_rows_on_spine: 'Townhome rows on a ROW spine',
   house_on_lot: 'One house on the lot',
   duplex_on_lot: 'Duplex on the lot',

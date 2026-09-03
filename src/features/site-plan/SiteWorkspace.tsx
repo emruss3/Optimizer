@@ -27,6 +27,11 @@ import { CommercialCapacityCard } from './ui/CommercialCapacityCard';
 import { fetchPlanPattern, type PlanPattern } from './api/planPattern';
 import { PlanPatternPanel } from './ui/PlanPatternPanel';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
+import {
+  generateSubdivision, subdivisionToElements, subdivisionSummaryLine,
+  type SubdivisionParams, type SubdivisionSummary,
+} from './api/generateSubdivision';
+import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/SubdivisionPanel';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
@@ -184,6 +189,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // ── SF lot generator (brief Phase 2) ─────────────────────────────────────
   const [isGeneratingLots, setIsGeneratingLots] = useState(false);
   const [lotFitSummary, setLotFitSummary] = useState<string | null>(null);
+  // Subdivision generator (2026-09-03): the neighbourhood the server drew and
+  // the scheme it was asked for (district lots / SP 25-ft / SP + amenity).
+  const [subdivisionSummary, setSubdivisionSummary] = useState<SubdivisionSummary | null>(null);
+  const [subdivisionScheme, setSubdivisionScheme] = useState<SubdivisionScheme>('district');
+  const subdivisionParamsRef = useRef<SubdivisionParams>({});
 
   // ── HBU / regime plan routing ─────────────────────────────────────────────
   // What we planned and WHY, shown under the KPI bar ("Plan basis: …").
@@ -1304,7 +1314,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return false;
   }, []);
 
-  /** Brief Phase 2: market-grounded SF lot fit, appended to the plan. */
+  /**
+   * Brief Phase 2: market-grounded SF lot fit, appended to the plan.
+   *
+   * 2026-09-03: on a subdivision-pattern parcel (the plan-organization layer
+   * says `subdivision_*`) the NEIGHBOURHOOD generator draws the civil's
+   * organization instead — streets first, rear alleys, whole lots on every
+   * street face, courts, an amenity on request — never strips sliced across
+   * the parcel. The pattern lookup is cached, so this costs no extra RPC.
+   */
   const handleGenerateLots = useCallback(async () => {
     planModeRef.current = 'sf';
     if (contextOgcFid == null) {
@@ -1313,6 +1331,62 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     setIsGeneratingLots(true);
     try {
+      const pattern = await fetchPlanPattern(contextOgcFid).catch(() => null);
+      if (pattern?.pattern?.startsWith('subdivision')) {
+        const sub = await generateSubdivision(contextOgcFid, subdivisionParamsRef.current);
+        if (!sub) {
+          setLotFitSummary('Subdivision generator unavailable — backend RPC not reachable.');
+          return;
+        }
+        if (sub.error) {
+          setSubdivisionSummary(null);
+          setLotFitSummary(`Subdivision generator refused: ${sub.error.replace(/_/g, ' ')}.`);
+          return;
+        }
+        const { elements: drawn, summary: subSummary } = subdivisionToElements(sub);
+        if (drawn.length === 0) {
+          setLotFitSummary('Subdivision generator returned no drawable streets or lots for this parcel.');
+          return;
+        }
+        if (!gateNonGesturePlan(drawn, 'Subdivision plan')) return;
+        const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
+        // KPI strip: a subdivision's numbers are lots and land, not GSF and
+        // stalls — the server's counts travel verbatim; nothing is re-measured.
+        const subMetrics = {
+          totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0,
+          openSpacePct: subSummary.pctOpen ?? 0,
+          totalUnits: subSummary.lots,
+          unitMixSummary:
+            `${subSummary.lots} lots` +
+            (subSummary.lotWidthFt != null && subSummary.lotDepthFt != null ? ` · ${subSummary.lotWidthFt}×${subSummary.lotDepthFt} ft` : ''),
+          zoningCompliant: (subSummary.buildableDepthFt ?? 0) > 0,
+          violations: [] as string[],
+          warnings: subSummary.flags,
+          optimizationStatus: sub.generator_version ?? 'subdivision_v1',
+        } as NonNullable<typeof metrics>;
+        setPlanOutput([...base, ...drawn], subMetrics);
+        setSubdivisionSummary(subSummary);
+        setViolations([]);
+        setPlanLineage({
+          solvedBy: 'server',
+          contextId: null,
+          generatorVersion: sub.generator_version ?? 'subdivision_v1',
+          flags: subSummary.flags,
+          buildings: 0,
+          floors: null,
+          footprintSqft: null,
+          // The generator reads the district standards straight from the
+          // ordinance resolver (fn_resolve_design_context), not the compiled
+          // planner brief — say so instead of "not verified".
+          standardsDirect: true,
+        });
+        setPlanStale(false);
+        setServerPlanError(null);
+        setPlanBasis(subSummary.basis || subdivisionSummaryLine(subSummary));
+        setLotFitSummary(subdivisionSummaryLine(subSummary));
+        return;
+      }
+      setSubdivisionSummary(null);
       const resp = await generateSfSitePlan(contextOgcFid);
       if (!resp) {
         setLotFitSummary('Lot generator unavailable — backend RPC not reachable.');
@@ -1341,6 +1415,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setIsGeneratingLots(false);
     }
   }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan]);
+
+  /** Scheme switch on the neighbourhood panel: re-draws with the scheme's
+   *  parameters (district lots / SP 25-ft townhomes / SP + amenity 10%). */
+  const handleSubdivisionScheme = useCallback((scheme: SubdivisionScheme) => {
+    setSubdivisionScheme(scheme);
+    subdivisionParamsRef.current = schemeParams(scheme);
+    handleGenerateLots().catch(() => undefined);
+  }, [handleGenerateLots]);
 
   /**
    * Order-6 item 1: the RefusalCard's pre-verified typology switch. Where MF
@@ -1990,6 +2072,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       nonResidentialLot: nonResidentialOnly,
       planPattern: planPattern?.pattern ?? null,
       planPatternAligned: planPattern?.generator_alignment?.aligned ?? null,
+      subdivisionLots: subdivisionSummary?.lots ?? null,
+      subdivisionNetwork: subdivisionSummary?.network ?? null,
+      subdivisionPctRow: subdivisionSummary?.pctRow ?? null,
+      subdivisionScheme: subdivisionSummary ? subdivisionScheme : null,
       commercialAllowableGsf:
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
           ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
@@ -2005,7 +2091,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -2212,6 +2298,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         {!leftRailCollapsed && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
           {planPattern && <PlanPatternPanel plan={planPattern} />}
+          {subdivisionSummary && (
+            <SubdivisionPanel
+              summary={subdivisionSummary}
+              scheme={subdivisionScheme}
+              onScheme={handleSubdivisionScheme}
+              busy={isGeneratingLots}
+            />
+          )}
           <ContextPanel
             context={plannerCtx ? plannerContextToDesignContext(plannerCtx) : null}
             precedent={plannerCtx?.solver_brief.precedent_priors}

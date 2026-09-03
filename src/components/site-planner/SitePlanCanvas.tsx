@@ -1165,19 +1165,35 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['2 Bed · 1,100 SF', UNIT_COLORS['2br']],
           ['3 Bed · 1,600 SF', UNIT_COLORS['3br']],
         ];
-    const entries: Array<[string, string]> = [
-      ...unitRows,
-      ['Core / stairs', '#94A3B8'],
-      ['Parking', '#E2E8F0'],
-      ['Drive / aisle', '#CBD5E1'],
-      ['Open space', '#BBF7D0'],
-      ['Amenity / pool', '#F59E0B'],
-      // Setback edge key — colors must match renderEdgeSetbacks exactly
-      ['Front setback', '#2563EB'],
-      ['Rear setback', '#D97706'],
-      ['Side setback', '#64748B'],
-    ];
-    if (hasLots) entries.push(['Lot line', '#F8FAFC']);
+    // A subdivision is streets, alleys, lots and courts — the apartment mix
+    // and parking vocabulary would misdescribe it (audit §7b: "the legend
+    // has no vocabulary for ROW, alley, courtyard"). Colors match the
+    // subdivision mapper's style overrides.
+    const isSubdivision = elements.some(e => e.id.startsWith('subdiv-'));
+    const entries: Array<[string, string]> = isSubdivision
+      ? [
+          ['Street (public ROW)', '#A9B4C0'],
+          ['Alley', '#D5DCE4'],
+          ['Lot', '#F8FAFC'],
+          ['Court / reserve', '#BBF7D0'],
+          ['Amenity', '#86EFAC'],
+          ['Front setback', '#2563EB'],
+          ['Rear setback', '#D97706'],
+          ['Side setback', '#64748B'],
+        ]
+      : [
+          ...unitRows,
+          ['Core / stairs', '#94A3B8'],
+          ['Parking', '#E2E8F0'],
+          ['Drive / aisle', '#CBD5E1'],
+          ['Open space', '#BBF7D0'],
+          ['Amenity / pool', '#F59E0B'],
+          // Setback edge key — colors must match renderEdgeSetbacks exactly
+          ['Front setback', '#2563EB'],
+          ['Rear setback', '#D97706'],
+          ['Side setback', '#64748B'],
+        ];
+    if (hasLots && !isSubdivision) entries.push(['Lot line', '#F8FAFC']);
 
     const pad = 8;
     const rowH = 16;
