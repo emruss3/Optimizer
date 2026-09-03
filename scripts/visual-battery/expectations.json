@@ -8,7 +8,8 @@
     "requireNeighborLayers": {
       "parcels": true,
       "buildings": true
-    }
+    },
+    "requirePlanPattern": "court_scheme_perpendicular_bars"
   },
   "488278": {
     "mode": "server-plan",
@@ -19,7 +20,8 @@
       "parcels": true,
       "buildings": true
     },
-    "requireParkingLimitedChip": true
+    "requireParkingLimitedChip": true,
+    "requirePlanPattern": "bar_on_frontage_rear_field"
   },
   "667574": {
     "mode": "server-plan",
@@ -29,7 +31,8 @@
     "requireNeighborLayers": {
       "parcels": true,
       "buildings": true
-    }
+    },
+    "requirePlanPattern": "court_scheme_perpendicular_bars"
   },
   "669046": {
     "mode": "server-plan",
@@ -40,14 +43,23 @@
       "parcels": true,
       "buildings": true
     },
-    "requireParkingLimitedChip": true
+    "requireParkingLimitedChip": true,
+    "requirePlanPattern": "landlocked_axis_bar"
   },
   "393306": {
     "mode": "sf-suggestion",
-    "_basis": "303 E Palestine Ave RS10 - MF refusal carries suggested_typology single_family ('envelope fits a house (3076 sqft, 28.8 ft wide)'); tap renders the 1,236 sf house + driveway (sf_seed_v1)"
+    "_basis": "303 E Palestine Ave RS10 - MF refusal carries suggested_typology single_family ('envelope fits a house (3076 sqft, 28.8 ft wide)'); tap renders the 1,236 sf house + driveway (sf_seed_v1)",
+    "requirePlanPattern": "house_on_lot"
   },
   "408571": {
     "mode": "commercial-capacity",
-    "_basis": "2405 12th Ave S (CS, 0.198 ac) - no residential use as-of-right; the card states the FAR-0.6 allowable area (5,173 SF, the architect built to 5,171); no house/apartment plan offered"
+    "_basis": "2405 12th Ave S (CS, 0.198 ac) - no residential use as-of-right; the card states the FAR-0.6 allowable area (5,173 SF, the architect built to 5,171); no house/apartment plan offered",
+    "requirePlanPattern": "retail_full_plate"
+  },
+  "550510": {
+    "mode": "plan-pattern",
+    "requirePlanPattern": "subdivision_row_spine",
+    "requirePatternAligned": false,
+    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac): the plan-pattern layer must say ROW-spine subdivision with rear alleys (civil concepts 08/21 102 lots / 08/30 69 lots) and admit the lot generator does not draw it yet"
   }
 }

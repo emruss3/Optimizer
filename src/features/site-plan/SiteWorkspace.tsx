@@ -24,6 +24,8 @@ import ContextPanel from './ui/ContextPanel';
 import { CensusBanner } from './ui/CensusBanner';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, isNonResidentialOnly, defaultUseFromZoningBase, type DesignContext } from './api/designContext';
 import { CommercialCapacityCard } from './ui/CommercialCapacityCard';
+import { fetchPlanPattern, type PlanPattern } from './api/planPattern';
+import { PlanPatternPanel } from './ui/PlanPatternPanel';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
@@ -255,6 +257,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Order-8: the parcel permits commercial/industrial but NO residential use
   // as-of-right — the massing engines cannot serve it; the capacity card can.
   const [nonResidentialOnly, setNonResidentialOnly] = useState(false);
+  // Plan-organization layer (fn_plan_pattern): how this site should be
+  // organized, with precedent plans and an honest generator-alignment verdict.
+  const [planPattern, setPlanPattern] = useState<PlanPattern | null>(null);
   // Stage-1+2 seed plan (order-4 item 1): the engine's placed composition,
   // drawn stage-ordered behind the Seed toggle.
   const [seedPlan, setSeedPlan] = useState<SeedPlan | null>(null);
@@ -1619,6 +1624,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     fetchParcelBuildability(contextOgcFid).then(b => {
       if (!cancelled) setBuildability(b);
     });
+    setPlanPattern(null);
+    fetchPlanPattern(contextOgcFid).then(pp => {
+      if (!cancelled) setPlanPattern(pp);
+    });
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
@@ -1979,6 +1988,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       suggestedTypology: buildability?.suggested_typology ?? null,
       serverPlanError,
       nonResidentialLot: nonResidentialOnly,
+      planPattern: planPattern?.pattern ?? null,
+      planPatternAligned: planPattern?.generator_alignment?.aligned ?? null,
       commercialAllowableGsf:
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
           ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
@@ -2200,6 +2211,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
         {!leftRailCollapsed && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
+          {planPattern && <PlanPatternPanel plan={planPattern} />}
           <ContextPanel
             context={plannerCtx ? plannerContextToDesignContext(plannerCtx) : null}
             precedent={plannerCtx?.solver_brief.precedent_priors}
