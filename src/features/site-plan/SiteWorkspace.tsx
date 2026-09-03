@@ -2077,6 +2077,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       subdivisionPctRow: subdivisionSummary?.pctRow ?? null,
       subdivisionPctHazard: subdivisionSummary?.pctHazard ?? null,
       subdivisionHazardCoverage: subdivisionSummary?.hazardCoverage ?? null,
+      // v1.2: where the streets stop (boundary | greenway) and the held-out land they cross
+      subdivisionStreetEnds: subdivisionSummary?.streetEnds ?? null,
+      subdivisionCrossingFt: subdivisionSummary?.crossingFt ?? null,
+      subdivisionDeclinedCrossingFt: subdivisionSummary?.declinedCrossingFt ?? null,
       subdivisionScheme: subdivisionSummary ? subdivisionScheme : null,
       commercialAllowableGsf:
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'

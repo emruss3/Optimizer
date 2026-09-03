@@ -13,5 +13,16 @@ not just a one off solve").
   density, access reading, refusal reason. Numbers only — the geometry is
   regenerated on demand. Source table: `public.subdivision_sweep`
   (re-runnable in batches via `fn_subdivision_sweep_next`).
-- The MDHA v1.1 render lives beside the v1 one in `../2026-09-02/`
-  (`mdha_subdivision_v1_1_hazards_screen.png`).
+- `subdivision_sweep_v1_2.csv` — the same population re-run through
+  generator v1.2 (§12: streets stop at the greenway unless through-access is
+  read; assumed access enters from the end with the least crossing; paired
+  courts). Adds the greenway crossing taken and declined (ft), the developable
+  land left unserved (sqft), the served length, and whether the plan stops at
+  a greenway / picked its end on an assumption. Source table:
+  `public.subdivision_sweep`; the v1.1 rows are kept in
+  `public.subdivision_sweep_v1_1` for the A/B.
+- `mdha_subdivision_v1_2_greenway_stop_screen.png` — 2400 W Heiman on v1.2:
+  the spine enters from the 2518 W Heiman end, takes a 102-ft stream culvert
+  and ends in a cul-de-sac at the AE floodplain (271-ft crossing declined);
+  34 lots, 4 paired courts, 20.0% ROW. The v1 and v1.1 renders live in
+  `../2026-09-02/`.

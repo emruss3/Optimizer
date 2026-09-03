@@ -528,3 +528,94 @@ instead of one parcel:**
 The sweep re-runs in batches (`fn_subdivision_sweep_next`) whenever the
 generator changes, so every rule change is measured on the population before
 it is believed.
+
+## 12. Streets stop at the greenway — generator v1.2 (2026-09-03)
+
+Eric, on the v1.1 render: "You just cut a road straight through the middle."
+
+§10 held the floodplain and the wetland out of the lots and called the
+through-street "the site". It was not. Street A still ran the full 2,381 ft,
+373 ft of it through the AE floodplain and the stream, to reach an end where
+no street had been read — a bridge built on an assumption. v1.2 makes the
+street answer to the greenway.
+
+**What v1.2 does differently.**
+
+1. **Each through-street is walked from its access end along its own
+   centreline.** A greenway crossing is taken only when the developable land
+   beyond it, in that street's row band, is worth it: two lots' worth for a
+   crossing up to 60 ft (a buffer finger or a swale — a culvert), one lot more
+   per further 30 ft (a 270-ft floodplain fill wants nine lots behind it; the
+   lot is capped at an R15 lot so estate districts are judged on land, not on
+   2-acre lots). The street stops before the first crossing that is not worth
+   it, with a cul-de-sac; two neighbouring streets of a ladder or grid that
+   stop at the same greenway are closed by a loop connector. The land beyond
+   is unserved — never lotted, reported in square feet, drawn Unassigned.
+   Every crossing taken is priced in the flags (culvert / bridge).
+2. **Assumed access picks the end with the least crossing.** With no street
+   read on any edge and a greenway on the axis, the plan no longer assumes
+   stubs at both ends: it enters from the end that serves the most developable
+   land for the least crossing and says what the other end would cost. A
+   dead-end over 750 ft names the neighbour sharing the most boundary as the
+   second connection to negotiate.
+3. **Courts are a pair at the same station.** Each face takes the lot slot
+   nearest the station — exact on a regular parcel, within half a lot where a
+   greenway carves one face — without leaving its own lot grid, so no lot is
+   lost to the court; a court is a whole number of lots wide; none sits within
+   150 ft of a crossing its street takes or of its greenway end — the greenway
+   is that block's green. (Two earlier drafts snapped the courts to a shared
+   grid; they aligned exactly and cost 5–15% of the lots on carved parcels.
+   That trade was not worth it.)
+4. **Lots only where the street reaches:** each face's lot strip is clipped to
+   its street's served range plus the bulb.
+
+**MDHA, 2400 W Heiman, v1.2** —
+`qa/audits/2026-09-03/mdha_subdivision_v1_2_greenway_stop_screen.png`:
+
+| | v1.1 | v1.2 |
+|---|---|---|
+| Access | assumed at both ends (stubs to TSU and 2518 W Heiman) | from the 2518 W Heiman end: 102 ft of crossing (an 85-ft stream culvert, a 17-ft buffer finger) against 373 ft from the Ed Temple end |
+| Street A | 2,321 ft, through the floodplain (373-ft crossing) | 1,990 ft; stops at the AE floodplain with a cul-de-sac — the 271-ft crossing would have reached 3,071 sf |
+| Dead end | — | 2,055 ft, over the 750-ft rule: a second connection is needed, e.g. via 2700 W Heiman St (1,542 ft of shared boundary) |
+| District lots 80×75 | 33 · 5 courts · 22.3% ROW | 34 · 4 paired courts · 20.0% ROW |
+| SP townhomes 25 ft | 122 | 119 |
+| SP 25 ft + amenity 10% | 101 + 57,300 sf | 94 + 57,224 sf beside the greenway |
+| Through-access forced at both ends | 33 | 33 — the court change is yield-neutral |
+
+The battery gate asserts it (`requireGreenwayStop`: the network stops at a
+greenway; `maxCrossingFt: 150`: a culvert, never a bridge on an assumed
+access), and the lot floor ratchets 30 → 33. The neighbourhood panel and the
+plan-basis line say where the street stops, what it crosses, and who could
+give the second connection.
+
+**The population, re-swept on v1.2 (4,111 parcels;
+`qa/audits/2026-09-03/subdivision_sweep_v1_2.csv`; the v1.1 numbers stay in
+`subdivision_sweep_v1_1.csv`).** No exceptions, the same 249 refusals. 797
+plans now stop at a greenway; 376 plans that assumed through-access enter
+from one end; the plans with a street through held-out land fall from 1,519
+to 1,009, and the crossings still taken total 314,138 ft against 427,644 ft
+declined — 1,078 ac of developable land is left unserved rather than reached
+by a road through a floodplain. Lots 45,001 → 43,924 (−2.4%): 2,648 parcels
+unchanged, 402 up, 1,061 down. On the 1,873 parcels with no hazard the count
+moves only where the court rule places a court v1.1 skipped (+450 courts
+population-wide, one lot each: 19,109 → 18,592). The largest losses are
+streams that run along a street line for thousands of feet — 405868 (R15,
+197 ac) 143 → 115 with 6,828 ft of crossing declined; 679506 (R10, 23 ac)
+20 → 7 — where v1.1 drew the street in the stream; the honest count is lower,
+and moving the street off the stream is the next lever. Median ROW 19.4% →
+18.8%. The calibration 2400 W Heiman is read against (36 R6 parcels of
+6.6–26.3 ac) is now v1.2's: median 3.23 lots/ac, quartiles 2.86–3.43; the
+parcel's 2.59 sits under the band because 22% of it is greenway.
+
+**The ten other parcels** are unchanged except 2018 Old Murfreesboro Pike
+(17 → 16, one more court) and 1404 Pleasant Hill Rd (5 → 4: the street ends
+in a cul-de-sac before a 72-ft wetland crossing that would have reached
+10,463 sf). A grid the first draft of this rule wrecked — 82 ac of R8
+(659603), seven streets, a stream across three of them — keeps its 131 lots:
+three streets end in cul-de-sacs at the stream, the other four run through,
+5.0 ac beyond the stream stays unserved.
+
+**Next levers, from the population:** a street that runs along a stream
+should move off it, not stop (the largest losses above); the road-centerline
+layer (§11) would replace the assumed-end pick with a read one; the estate
+module (§11).

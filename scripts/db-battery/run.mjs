@@ -204,6 +204,11 @@ async function subdivisionCheck(fid, floor) {
     if (typeof floor.minPctHazard === 'number' && !(m.pct_land_hazard >= floor.minPctHazard)) {
       return `held-out hazard ${m.pct_land_hazard}% below the floor ${floor.minPctHazard}% (the floodplain/wetland carve did not hold)`;
     }
+    // v1.2: the streets stop at the greenway unless through-access is read — the held-out land
+    // they cross stays under the ceiling (a culvert, never a bridge on an assumed access)
+    if (typeof floor.maxCrossingFt === 'number' && !(Number(m.greenway_crossing_ft ?? 0) <= floor.maxCrossingFt)) {
+      return `streets cross ${m.greenway_crossing_ft} ft of held-out land, over the ${floor.maxCrossingFt}-ft ceiling (the street ran through the greenway)`;
+    }
   }
   return null;
 }

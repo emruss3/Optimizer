@@ -85,6 +85,20 @@ export function SubdivisionPanel({
         <dd>{summary.courts} · one every block · rear alleys</dd>
         <dt className="text-slate-500">Access</dt>
         <dd>{summary.accessMode ?? '—'}</dd>
+        {(summary.streetEnds.start === 'greenway' || summary.streetEnds.end === 'greenway' || (summary.crossingFt != null && summary.crossingFt > 0)) && (
+          <>
+            <dt className="text-slate-500">Greenway</dt>
+            <dd data-testid="subdivision-greenway">
+              {[
+                summary.streetEnds.start === 'greenway' || summary.streetEnds.end === 'greenway'
+                  ? `street stops at the greenway${summary.declinedCrossingFt != null && summary.declinedCrossingFt > 0 ? ` (${summary.declinedCrossingFt}-ft crossing declined)` : ''}`
+                  : null,
+                summary.crossingFt != null && summary.crossingFt > 0 ? `${summary.crossingFt}-ft crossing (culvert / bridge)` : null,
+                summary.secondConnection ? `second connection via ${summary.secondConnection}` : null,
+              ].filter(Boolean).join(' · ')}
+            </dd>
+          </>
+        )}
         {summary.densityDuAc != null && (
           <>
             <dt className="text-slate-500">Density</dt>

@@ -28,6 +28,10 @@ its expectation:
   `subdivisionLots ≥ minLots` (floors ratchet UP), the expected `network`
   (`spine` / `ladder` / `grid`), ROW at or under `maxPctRow` of the land,
   the neighbourhood panel in the DOM, and no geometry-gate rejection.
+  `minPctHazard` asserts the FEMA/NWI carve ran (v1.1); `requireGreenwayStop`
+  asserts the streets STOP at a greenway (a cul-de-sac or a loop) and
+  `maxCrossingFt` caps the held-out land they cross — a culvert, never a
+  bridge on an assumed access (v1.2).
 
 **The ritual**: a PR that changes server behavior must refresh the fixtures
 (below) and raise the floors in the same PR. A solver improvement that

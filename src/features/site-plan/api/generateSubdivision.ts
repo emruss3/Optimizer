@@ -23,10 +23,14 @@ export type Geom2274 = Polygon | MultiPolygon | { type: string; coordinates: unk
 
 export interface SubdivisionStreet {
   name?: string;
-  /** through (long-axis street) | cross (connector) | connector (entrance) | cul_de_sac */
+  /** through (long-axis street) | cross (connector — a 'Loop' closes a ladder at a greenway) | connector (entrance) | cul_de_sac */
   kind?: string;
   width_ft?: number;
   length_ft?: number;
+  /** v1.2: length of held-out land this street crosses (a culvert or a bridge to price) */
+  hazard_crossing_ft?: number;
+  /** v1.2: what each end of a through-street meets — boundary | greenway | cul_de_sac */
+  ends?: { start?: string; end?: string };
   geom_2274?: Geom2274 | null;
   centerline_2274?: unknown;
 }
@@ -85,6 +89,11 @@ export interface SubdivisionMetrics {
   pct_land_hazard?: number;
   hazard_layer_coverage?: 'ingested' | 'not_ingested' | string;
   parcel_sqft?: number;
+  /** v1.2: the street network stops at the greenway unless through-access is read */
+  served_length_ft?: number;
+  greenway_crossing_ft?: number;
+  declined_crossing_ft?: number;
+  unserved_sqft?: number;
   [k: string]: unknown;
 }
 
@@ -93,6 +102,14 @@ export interface SubdivisionAccess {
   basis?: string;
   across_start_end?: string | null;
   across_end_end?: string | null;
+  /** v1.2: what the served range meets at each end of the long axis — boundary | greenway */
+  ends?: { start?: string; end?: string };
+  greenway_crossing_ft?: number;
+  declined_crossing_ft?: number;
+  /** v1.2: when access was assumed, what entering from the other end would have cost */
+  alternative?: { end?: string; crossing_ft?: number; served_sqft?: number; across?: string | null } | null;
+  /** v1.2: a dead-end over 750 ft names the neighbour sharing the most boundary */
+  second_connection?: { via?: string; shared_ft?: number } | null;
   [k: string]: unknown;
 }
 
@@ -151,6 +168,13 @@ export interface SubdivisionSummary {
   /** 'ingested' = FEMA/NWI tiles cover this area; 'not_ingested' = only the parcel-level FEMA fraction is known */
   hazardCoverage: string | null;
   accessMode: string | null;
+  /** v1.2: held-out land the streets cross (ft, a culvert/bridge to price) and the crossing declined */
+  crossingFt: number | null;
+  declinedCrossingFt: number | null;
+  /** v1.2: what the street network meets at each end of the long axis (boundary | greenway) */
+  streetEnds: { start: string | null; end: string | null };
+  /** v1.2: the neighbour named for a second connection when the plan dead-ends over 750 ft */
+  secondConnection: string | null;
   flags: string[];
   basis: string;
 }
@@ -355,6 +379,13 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
       wetlandHeldOutPct: pctOf(num(m.wetland_sqft)),
       hazardCoverage: typeof m.hazard_layer_coverage === 'string' ? m.hazard_layer_coverage : null,
       accessMode: resp.access?.mode ?? null,
+      crossingFt: num(m.greenway_crossing_ft) ?? num(resp.access?.greenway_crossing_ft),
+      declinedCrossingFt: num(m.declined_crossing_ft) ?? num(resp.access?.declined_crossing_ft),
+      streetEnds: {
+        start: typeof resp.access?.ends?.start === 'string' ? resp.access.ends.start : null,
+        end: typeof resp.access?.ends?.end === 'string' ? resp.access.ends.end : null,
+      },
+      secondConnection: typeof resp.access?.second_connection?.via === 'string' ? resp.access.second_connection.via : null,
       flags: stringFlags(resp.flags),
       basis: resp.plan_basis ?? '',
     },
@@ -374,7 +405,13 @@ export function subdivisionSummaryLine(s: SubdivisionSummary): string {
         ? ` · ${s.pctHazard}% held out as greenway (floodplain ${s.floodplainHeldOutPct ?? 0}%, wetland ${s.wetlandHeldOutPct ?? 0}%)`
         : ' · no floodplain or wetland on the parcel')
     : (s.floodplainPct != null && s.floodplainPct > 0 ? ` · ⚠ ${s.floodplainPct}% floodplain not carved (layer not ingested here)` : '');
-  return `${s.lots} lots${dims} on a ${net} (${s.streets} street${s.streets === 1 ? '' : 's'}, ${s.courts} court${s.courts === 1 ? '' : 's'}, rear alleys)${land}${bd}${dens}${hazard}`;
+  // v1.2: the streets stop at the greenway unless through-access is read; a crossing taken is a culvert/bridge to price
+  const stops = s.streetEnds.start === 'greenway' || s.streetEnds.end === 'greenway';
+  const greenway = (stops
+      ? ` · street stops at the greenway${s.declinedCrossingFt != null && s.declinedCrossingFt > 0 ? ` (${s.declinedCrossingFt}-ft crossing declined)` : ''}`
+      : '')
+    + (s.crossingFt != null && s.crossingFt > 0 ? ` · ${s.crossingFt}-ft greenway crossing (culvert/bridge)` : '');
+  return `${s.lots} lots${dims} on a ${net} (${s.streets} street${s.streets === 1 ? '' : 's'}, ${s.courts} court${s.courts === 1 ? '' : 's'}, rear alleys)${land}${bd}${dens}${hazard}${greenway}`;
 }
 
 /** Fail-soft RPC: null (with a console warning) when the service is unreachable. A

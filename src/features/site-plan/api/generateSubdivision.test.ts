@@ -19,9 +19,15 @@ const RESP: SubdivisionResponse = {
   generator_version: 'subdivision_v1',
   pattern: 'subdivision_row_spine',
   network: 'spine',
-  access: { mode: 'both', basis: 'assumed_both_ends_no_street_read_on_any_edge' },
+  access: {
+    mode: 'end', basis: 'assumed_end_end_no_street_read_least_greenway_crossing',
+    // v1.2: the street stops at the greenway at the start end; the crossing it did take is priced
+    ends: { start: 'greenway', end: 'boundary' }, greenway_crossing_ft: 102, declined_crossing_ft: 271,
+    alternative: { end: 'start', crossing_ft: 373, served_sqft: 445868, across: '1686 ED TEMPLE BLVD' },
+    second_connection: { via: '2700 W HEIMAN ST', shared_ft: 1542 },
+  },
   streets: [
-    { name: 'Street A', kind: 'through', width_ft: 55, length_ft: 300, geom_2274: rect(0, 100, 300, 55) },
+    { name: 'Street A', kind: 'through', width_ft: 55, length_ft: 300, hazard_crossing_ft: 102, ends: { start: 'cul_de_sac', end: 'boundary' }, geom_2274: rect(0, 100, 300, 55) },
     // a cross connector emitted minus the through-street: two pieces
     {
       name: 'Cross 1', kind: 'cross', width_ft: 55, length_ft: 200,
@@ -49,6 +55,7 @@ const RESP: SubdivisionResponse = {
     pct_land_in_row: 22.3, pct_land_in_lots: 56.3, pct_land_residual: 1.6, gross_density_du_ac: 3.95,
     floodplain_100yr_pct: 15, parcel_sqft: 572831, court_area_sqft: 6000, amenity_sqft: 4500, residual_sqft: 3000,
     hazard_sqft: 18000, floodplain_sqft: 12000, wetland_sqft: 6000, pct_land_hazard: 3.1, hazard_layer_coverage: 'ingested',
+    greenway_crossing_ft: 102, declined_crossing_ft: 271, unserved_sqft: 4696,
   },
   plan_basis: '52 lots @ 80×75 ft on 1 55-ft through-street · generator subdivision_v1',
   flags: ['floodplain_not_carved_no_geometry_layer', 42, 'access_assumed_both_ends_stubs_to_neighbours'],
@@ -82,7 +89,12 @@ describe('subdivisionToElements (neighbourhood generator → canvas)', () => {
     expect(summary.lots).toBe(2);
     expect(summary.network).toBe('spine');
     expect(summary.flags).toEqual(['floodplain_not_carved_no_geometry_layer', 'access_assumed_both_ends_stubs_to_neighbours']);
-    expect(summary.accessMode).toBe('both');
+    expect(summary.accessMode).toBe('end');
+    // v1.2: where the streets stop, what they cross, who could give the second connection
+    expect(summary.streetEnds).toEqual({ start: 'greenway', end: 'boundary' });
+    expect(summary.crossingFt).toBe(102);
+    expect(summary.declinedCrossingFt).toBe(271);
+    expect(summary.secondConnection).toBe('2700 W HEIMAN ST');
     // open land = courts + amenity + held-out greenway over the parcel, from server areas
     expect(summary.pctOpen).toBe(Math.round(((6000 + 4500 + 18000) / 572831) * 1000) / 10);
     expect(summary.pctHazard).toBe(3.1);
@@ -115,6 +127,23 @@ describe('subdivisionToElements (neighbourhood generator → canvas)', () => {
     // with the hazard layers ingested the line states what was held out, never the old warning
     expect(line).toContain('3.1% held out as greenway (floodplain 2.1%, wetland 1%)');
     expect(line).not.toContain('not carved');
+    // v1.2: the street stops at the greenway and the crossing it took is named for pricing
+    expect(line).toContain('street stops at the greenway (271-ft crossing declined)');
+    expect(line).toContain('102-ft greenway crossing (culvert/bridge)');
+  });
+
+  it('says nothing about the greenway when the streets run through and cross nothing', () => {
+    const { summary } = subdivisionToElements({
+      ...RESP,
+      access: { mode: 'both', basis: 'street_across_unshared_boundary_at_end_of_long_axis', ends: { start: 'boundary', end: 'boundary' }, greenway_crossing_ft: 0, declined_crossing_ft: 0 },
+      metrics: { ...RESP.metrics, greenway_crossing_ft: 0, declined_crossing_ft: 0, unserved_sqft: 0 },
+    });
+    expect(summary.streetEnds).toEqual({ start: 'boundary', end: 'boundary' });
+    expect(summary.crossingFt).toBe(0);
+    expect(summary.secondConnection).toBeNull();
+    const line = subdivisionSummaryLine(summary);
+    expect(line).not.toContain('greenway crossing');
+    expect(line).not.toContain('stops at the greenway');
   });
 
   it('warns honestly when the hazard layers do not cover the parcel yet', () => {
