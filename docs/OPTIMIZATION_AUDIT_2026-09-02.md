@@ -210,7 +210,91 @@ What the product did with that before this audit:
 
 Shipped: `fn_resolve_permitted_uses` derives commercial permission from the ordinance's `mixed_nonres` row when the Regrid flag lacks it (basis published: `ordinance_mixed_nonres_row:CS`); `pickDefaultUse` never returns a non-compilable use; a commercial-only lot renders the **CommercialCapacityCard** — "Commercial lot · CS — retail / office permitted as-of-right; no residential use is. Allowable floor area 5,173 SF (FAR 0.6 × 8,622 SF lot) · height 30 ft · impervious 90% …" — and never a house switch; battery mode `commercial-capacity` pins it. The retail massing engine itself (full-plate vs stacked two-tenant, UZO parking exemptions) is a new product for the engine lane; the ceiling it must hit is already on the card.
 
-## 6. One-line answer
+## 6. The plan-organization layer — "not a box in the corner of the lot"
+
+Eric (2026-09-03): "I thought we had plans that helped drive context for the
+best way to site plan. We need to know the best way to organize a plan, not
+fit what's buildable as a box in the corner of the lot."
+
+**What existed.** The context engine's plan knowledge was (a) precedent
+*statistics* from Regrid footprints (median/p75 footprint, stories, length,
+coverage, buildings per site) and (b) a parti vocabulary inside
+`fn_massing_program` for multifamily bars only (`street_bar_parking_behind`,
+`L_scheme_bar_on_frontage_wing_deep`, `perpendicular_bars_court_to_street`)
+plus the seed's composition/strategy notes. No exemplar plans, nothing for
+subdivisions, retail or podium schemes, and no place where the product says
+*how this site should be organized*.
+
+**What shipped (2026-09-03).**
+
+- `site_plan_exemplar` — a library of real plans with structured organizing
+  principles, seeded with the four architect sheets (MDHA 102-lot ROW-spine
+  subdivision; MDHA 69 + amenity; 2405 12th Ave single-tenant full plate;
+  two-tenant stacked). RLS on, read policy shipped with it.
+- `fn_plan_pattern(p_ogc_fid, p_typology)` — resolves the pattern for a
+  parcel from product, lot size, shape (OBB aspect), frontage/landlocked and
+  parking regime: `subdivision_row_spine`, `house_on_lot`,
+  `bar_on_frontage_rear_field`, `court_scheme_perpendicular_bars`,
+  `podium_tower`, `landlocked_axis_bar`, `retail_full_plate` /
+  `retail_stacked_two_tenant`; returns principles, the matching exemplars,
+  the selection basis, and an **honest generator-alignment verdict**.
+- Client: the "How to organize this site" panel at the top of the Design
+  Context column (pattern, principles, precedent plans, green "generator
+  follows this" / amber "generator: not yet" + why); evidence fields; the
+  battery gates the pattern on all seven parcels.
+
+| Parcel | Pattern | Generator |
+|---|---|---|
+| 2400 W Heiman (MDHA, R6, 13.15 ac) | ROW-spine subdivision with rear alleys — precedent: MDHA 08/21, 08/30 | **not yet** — strip slicing, no street network |
+| 2405 12th Ave S (CS) | Retail full plate (alt: stacked two-tenant) — precedent: Bradley single/two-tenant | **not yet** — no retail generator |
+| 55 Music Sq E · 1917 Broadway (ORI · MUI-A) | Podium parking, liner units, tower above | **not yet** — surface frontier |
+| 2600 W Heiman · 2622 W Heiman (RM40, ≥2.2 aspect / ≥3 ac) | Perpendicular bars framing courts | **not yet** — seed draws one S-form bar; courts live in the search core |
+| 1200 W H Davis (landlocked) | Axis bar, easement access | follows |
+| 1710 Meharry (RM20, 1.76 ac) | Bar on the frontage, field behind | follows |
+| 303 E Palestine (RS10) | One house on the lot | follows |
+
+**What it does not do yet:** the generators do not *consume* the pattern.
+That is the engine-lane build in priority order: (1) the subdivision
+generator (street spine, blocks, alleys, lot depth, floodplain carve —
+acceptance: the MDHA sheets), (2) a structured-parking frontier and a podium
+composition for `podium_tower` parcels, (3) the court parti in the seed,
+(4) retail massing. Until then the layer is a promise the product states out
+loud, with the precedent that proves it, instead of a box in the corner.
+
+## 7. Our MDHA render vs the civil's concepts — how to be better
+
+Side-by-side in `qa/audits/2026-09-02/mdha_compare.png` (our app screen vs
+the 08/21 and 08/30 sheets).
+
+**Layout.** Theirs is organized by movement first: a 55-ft public ROW down
+the long axis, lots hung off it in double-loaded rows, private alleys
+taking the garages, courtyards breaking the rows, the greenway on the
+railroad edge, the floodplain and wetlands simply not built on, a
+connectivity stub to the campus. Ours is organized by arithmetic: slice the
+envelope into 6,000-sqft strips and count them. The strips have no street
+to front, no alley to park from, 21 ft of depth against 40 ft of setbacks,
+and they cover the floodplain. Their 102 or 69 lots are buildable; our 80
+are not.
+
+**UX / UI.** What the screen said before this work: "80 lots · lot target
+6,000 SF" with nothing to tell a developer that none of them stand up —
+the failure mode Eric named, capacity dressed as a plan. What it says now:
+the pattern panel names the ROW-spine subdivision, lists the principles,
+cites the two civil concepts as precedent, and admits the generator does
+not draw it yet. Still to fix on the screen itself: (a) the lot-fit napkin
+must read like a subdivision — lots · ROW length · land in streets ·
+buildable depth per lot — and refuse to count lots with no buildable
+depth; (b) the canvas legend has no vocabulary for ROW, alley, courtyard,
+greenway or floodplain, so even a correct plan could not be drawn honestly
+in it; (c) the floodplain (15% AE on this parcel) should render as a held-out
+layer before any lot is placed; (d) the use selector briefly shows "Two
+Family" on an SF-only lot while the compile settles — a permitted-use list
+should never display a use the parcel does not have; (e) the H&B strip's
+"Single Family · lot fit" pill reads as solved; it should read as the
+pattern ("ROW-spine subdivision · not yet drawn") until the generator
+follows the pattern.
+
+## 8. One-line answer
 
 On suburban density-bound land the tool optimizes truthfully (frontier = legal
 max, seed ≥95% on most). On urban intensive land it optimizes against the

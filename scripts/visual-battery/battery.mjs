@@ -33,6 +33,9 @@ const PARCELS = [
   { ogc_fid: 393306, address: '303 E PALESTINE AVE', zoning: 'RS10' },
   // Order-8 audit: commercial-only lot (CS) — the capacity card, never a house.
   { ogc_fid: 408571, address: '2405 12TH AVE S', zoning: 'CS' },
+  // Plan-pattern layer: the MDHA subdivision parcel — the pattern must be named
+  // and the generator's non-alignment admitted.
+  { ogc_fid: 550510, address: '2400 W HEIMAN ST', zoning: 'R6' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -109,6 +112,15 @@ function judge(exp, ev) {
       errs.push('the SF seed house did not render after the suggestion tap');
     }
   }
+  // Plan-organization layer: every gated parcel must resolve the expected
+  // pattern, and the alignment verdict must be honest where asserted.
+  if (exp.requirePlanPattern && ev.planPattern !== exp.requirePlanPattern) {
+    errs.push(`expected plan pattern '${exp.requirePlanPattern}', got '${ev.planPattern ?? 'none'}'`);
+  }
+  if (typeof exp.requirePatternAligned === 'boolean' && ev.planPatternAligned !== exp.requirePatternAligned) {
+    errs.push(`expected generator alignment ${exp.requirePatternAligned}, got ${ev.planPatternAligned}`);
+  }
+  if (exp.requirePlanPattern && !ev._domPlanPattern) errs.push('plan-pattern panel not rendered');
   if (exp.mode === 'server-plan' && ev.serverPlanError) {
     errs.push(`server-plan error card raised unexpectedly: ${ev.serverPlanError}`);
   }
@@ -194,6 +206,7 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
         ...ev,
         _domParkingChip: !!document.querySelector('[data-testid="parking-limited-chip"]'),
         _domCommercialCard: !!document.querySelector('[data-testid="commercial-capacity-card"]'),
+        _domPlanPattern: !!document.querySelector('[data-testid="plan-pattern-panel"]'),
         _domSfSwitch: !!document.querySelector('[data-testid="sf-seed-switch"]'),
       };
     });
