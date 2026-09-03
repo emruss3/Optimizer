@@ -184,7 +184,11 @@ describe('pickDefaultUse (zoning-grounded default)', () => {
   });
 
   it('falls back to the first listed use, and null when empty', () => {
-    expect(pickDefaultUse(['commercial'])).toBe('commercial');
+    // Order-8: a non-compilable use is never the default (the compiler has no
+    // 'commercial' typology; the workspace shows the capacity card instead).
+    expect(pickDefaultUse(['commercial'])).toBeNull();
+    expect(pickDefaultUse(['industrial', 'commercial'])).toBeNull();
+    expect(pickDefaultUse(['commercial', 'single_family'])).toBe('single_family');
     expect(pickDefaultUse([])).toBeNull();
   });
 });

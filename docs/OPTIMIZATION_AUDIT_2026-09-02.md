@@ -189,7 +189,28 @@ unchanged by construction (verified live).
 
 ---
 
-## 5. One-line answer
+## 5. Retail benchmark — 2405 12th Ave S vs two architect massings
+
+Eric's second pair of sheets (The Bradley Projects, `2405_12th_Ave__Single_Tenant_Massing.pdf`, `…Two_Tenant_Massing.pdf`) is a **retail** product on a 12South commercial lot:
+
+| Sheet | Program | Parking |
+|---|---|---|
+| Zoning summary (both) | CS · UZO overlay · site 8,619 SF · **FAR 0.60 → allowable 5,171 SF** · ISR 0.90 · front 15 ft then 1.5H:1V plane · side none · rear 20 ft · height 30 ft at setback lines | UZO: retail first 2,000 SF exempt then 1/200; restaurant first 1,000 exempt then 1/150 → ~12 spaces at full build |
+| Single-tenant | one-story 5,170 SF retail building — 100% of the allowable | on/off-site per UZO |
+| Two-tenant | 3,508 SF retail ground + 1,663 SF restaurant/bar 2nd floor + 1,506 SF roof terrace = 5,171 SF, elevator, egress | 5 spaces on site + shared access easement |
+
+Both schemes are the same optimum — **FAR × lot** — in two configurations. Our data agrees on the ceiling to within a rounding error: ogc_fid 408571, CS, 8,622 sqft measured, `entitlement_capacity.max_gfa_sqft = 5,173` (FAR 0.60, height 30 ft, ISR 0.90, front/rear 20 ft — the ordinance row `17.12.020C`; the sheet's 15-ft front is the UZO variant).
+
+What the product did with that before this audit:
+
+1. **Called the lot industrial-only.** Regrid's per-polygon `permitted_land_uses_as_of_right` for this CS polygon reads `industrial_uses_permitted` (sibling CS polygons carry the commercial token), and `fn_resolve_permitted_uses` trusted it. Across the county, **20,115 parcels** in districts whose ordinance rows permit commercial (CS 5,316; MUL 1,839; CL 1,273; ORI 1,128; MUL-A 1,673; MUG-A 719; MUI-A 650; …) were flagged non-commercial.
+2. **Defaulted the planner to a use it cannot compile** ('industrial' → "unknown typology") → the enterprise gate blanked the canvas.
+3. **Suggested a house** (the MF refusal card's SF switch) on a lot where no residential use is permitted as-of-right.
+4. Has **no retail massing engine** at all (`typology_spec` = single_family, multifamily).
+
+Shipped: `fn_resolve_permitted_uses` derives commercial permission from the ordinance's `mixed_nonres` row when the Regrid flag lacks it (basis published: `ordinance_mixed_nonres_row:CS`); `pickDefaultUse` never returns a non-compilable use; a commercial-only lot renders the **CommercialCapacityCard** — "Commercial lot · CS — retail / office permitted as-of-right; no residential use is. Allowable floor area 5,173 SF (FAR 0.6 × 8,622 SF lot) · height 30 ft · impervious 90% …" — and never a house switch; battery mode `commercial-capacity` pins it. The retail massing engine itself (full-plate vs stacked two-tenant, UZO parking exemptions) is a new product for the engine lane; the ceiling it must hit is already on the card.
+
+## 6. One-line answer
 
 On suburban density-bound land the tool optimizes truthfully (frontier = legal
 max, seed ≥95% on most). On urban intensive land it optimizes against the

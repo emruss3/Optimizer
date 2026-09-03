@@ -268,12 +268,30 @@ export function toContextTypology(use: string): string {
  */
 const USE_PRIORITY = ['multi_family', 'multifamily', 'two_family', 'single_family'];
 
+/** Uses the planner can actually COMPILE (typology_spec rows exist). */
+const COMPILABLE_USES = new Set(['multi_family', 'multifamily', 'mf', 'two_family', 'duplex', 'single_family', 'sf']);
+
+/** Non-residential as-of-right uses the product recognizes but cannot mass yet. */
+export const NON_RESIDENTIAL_USES = new Set(['commercial', 'industrial']);
+
 export function pickDefaultUse(uses: string[]): string | null {
   if (uses.length === 0) return null;
   for (const u of USE_PRIORITY) {
     if (uses.includes(u)) return u;
   }
-  return uses[0];
+  // Order-8 audit (2405 12th Ave, CS): a commercial-only lot used to default
+  // to 'commercial' / 'industrial', which the compiler rejects ("unknown
+  // typology") — the enterprise gate then blanked the canvas. A non-compilable
+  // use is never the default; the workspace shows the commercial capacity
+  // card instead.
+  return uses.find(u => COMPILABLE_USES.has(u)) ?? null;
+}
+
+/** True when the parcel permits no residential use as-of-right but does
+ *  permit commercial/industrial — the case the massing engines cannot serve. */
+export function isNonResidentialOnly(uses: string[]): boolean {
+  if (uses.length === 0) return false;
+  return !uses.some(u => COMPILABLE_USES.has(u)) && uses.some(u => NON_RESIDENTIAL_USES.has(u));
 }
 
 /**

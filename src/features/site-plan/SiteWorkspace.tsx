@@ -22,7 +22,8 @@ import ResultsPanel from './ui/ResultsPanel';
 import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { CensusBanner } from './ui/CensusBanner';
-import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, defaultUseFromZoningBase, type DesignContext } from './api/designContext';
+import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, isNonResidentialOnly, defaultUseFromZoningBase, type DesignContext } from './api/designContext';
+import { CommercialCapacityCard } from './ui/CommercialCapacityCard';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
@@ -251,6 +252,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // J1: the engine's buildability verdict — a refused parcel is a first-class
   // result (RefusalCard), fetched the moment the parcel opens.
   const [buildability, setBuildability] = useState<ParcelBuildability | null>(null);
+  // Order-8: the parcel permits commercial/industrial but NO residential use
+  // as-of-right — the massing engines cannot serve it; the capacity card can.
+  const [nonResidentialOnly, setNonResidentialOnly] = useState(false);
   // Stage-1+2 seed plan (order-4 item 1): the engine's placed composition,
   // drawn stage-ordered behind the Seed toggle.
   const [seedPlan, setSeedPlan] = useState<SeedPlan | null>(null);
@@ -1765,6 +1769,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // default) — never uses inferred from a zoning-string prefix. The
       // compile still proceeds; the rail says the list is unavailable.
       setPermittedUses(list);
+      // Order-8 audit (2405 12th Ave, CS): a commercial-only lot keeps the
+      // bootstrap compile (which returns the ordinance caps with
+      // generation_allowed=false) and shows the capacity card — it never
+      // defaults to a use the compiler cannot type ('commercial').
+      setNonResidentialOnly(isNonResidentialOnly(list));
       if (!userPickedUseRef.current && list.length > 0) {
         const preferred = pickDefaultUse(list);
         if (preferred && preferred !== contextUse) setContextUse(preferred);
@@ -1969,6 +1978,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       buildabilityVerdict: buildability?.verdict ?? null,
       suggestedTypology: buildability?.suggested_typology ?? null,
       serverPlanError,
+      nonResidentialLot: nonResidentialOnly,
+      commercialAllowableGsf:
+        nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
+          ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
+          : null,
       seedAvailable: !!seedPlan,
       seedShown: seedViewOn,
       seedComposition: seedPlan?.composition ?? null,
@@ -1993,12 +2007,39 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   return (
     <div className="h-full min-h-0 flex flex-col bg-gray-100">
       <CensusBanner />
-      {isRefusal(buildability) && product === 'apartments' && buildability && (
+      {/* Order-8: on a commercial-only lot the multifamily refusal (and its
+          "draw the house" switch) is the wrong conversation — no residential
+          use is permitted. The capacity card carries the deal number instead. */}
+      {nonResidentialOnly && plannerCtx && (
+        <CommercialCapacityCard
+          zoning={(parcel.zoning as string | undefined) ?? plannerCtx.context.zoning_base ?? null}
+          uses={permittedUses}
+          lotSqft={
+            typeof plannerCtx.context.entitlement_capacity?.lot_sqft === 'number'
+              ? (plannerCtx.context.entitlement_capacity.lot_sqft as number)
+              : null
+          }
+          maxFar={plannerCtx.solver_brief.hard_constraints.max_far ?? null}
+          maxHeightFt={plannerCtx.solver_brief.hard_constraints.max_height_ft ?? null}
+          maxImperviousPct={plannerCtx.solver_brief.hard_constraints.max_impervious_pct ?? null}
+          frontSetbackFt={plannerCtx.solver_brief.hard_constraints.front_setback_ft ?? null}
+          rearSetbackFt={plannerCtx.solver_brief.hard_constraints.rear_setback_ft ?? null}
+          allowableGsf={
+            typeof plannerCtx.context.entitlement_capacity?.max_gfa_sqft === 'number'
+              ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
+              : null
+          }
+        />
+      )}
+      {!nonResidentialOnly && isRefusal(buildability) && product === 'apartments' && buildability && (
         <RefusalCard
           buildability={buildability}
           onSwitchToTownhomes={() => handleProductChange('townhomes')}
           onDrawSfSeed={
-            buildability.suggested_typology === 'single_family' ? handleDrawSfSeed : undefined
+            buildability.suggested_typology === 'single_family' &&
+            (permittedUses.length === 0 || permittedUses.includes('single_family'))
+              ? handleDrawSfSeed
+              : undefined
           }
         />
       )}
