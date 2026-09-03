@@ -50,6 +50,17 @@ export interface EntitlementCapacity {
   basis?: string;
 }
 
+/** Order-8 audit: the frontier's advisory ceiling with NO parking land
+ *  consumed (podium/structured) — height, FAR, density and ISR caps only.
+ *  The published max_gsf is a SURFACE-parking bound; on intensive districts
+ *  this ceiling is 2–2.5× higher and is what a podium-parked scheme reaches. */
+export interface StructuredParkingCeiling {
+  gsf: number;
+  stories?: number;
+  binding?: string;
+  basis?: string;
+}
+
 /** Normalized client contract. Compatibility aliases and hard band are present. */
 export interface MaxBuildout {
   contract_version?: string;
@@ -68,6 +79,9 @@ export interface MaxBuildout {
   entitlement_capacity?: EntitlementCapacity;
   assumptions?: Record<string, unknown>;
   note?: string;
+  /** 'surface_parking' on every frontier published today. */
+  frontier_basis?: string;
+  structured_parking_ceiling?: StructuredParkingCeiling;
 }
 
 type JsonObject = Record<string, unknown>;
@@ -270,6 +284,18 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
   const entitlement = asObject(raw.entitlement_capacity);
   const assumptions = asObject(raw.assumptions);
   const note = asText(raw.note);
+  const frontierBasis = asText(raw.frontier_basis);
+  const ceilingRaw = asObject(raw.structured_parking_ceiling);
+  const ceilingGsf = asFiniteNumber(ceilingRaw?.gsf);
+  const structuredCeiling: StructuredParkingCeiling | null =
+    ceilingGsf != null && ceilingGsf > 0
+      ? {
+          gsf: ceilingGsf,
+          ...(asFiniteNumber(ceilingRaw?.stories) != null ? { stories: asFiniteNumber(ceilingRaw?.stories) as number } : {}),
+          ...(asText(ceilingRaw?.binding) ? { binding: asText(ceilingRaw?.binding) as string } : {}),
+          ...(asText(ceilingRaw?.basis) ? { basis: asText(ceilingRaw?.basis) as string } : {}),
+        }
+      : null;
 
   return {
     parcel_ogc_fid: parcelOgcFid,
@@ -288,6 +314,8 @@ export function normalizeMaxBuildout(value: unknown): MaxBuildout | null {
     ...(entitlement ? { entitlement_capacity: entitlement as EntitlementCapacity } : {}),
     ...(assumptions ? { assumptions } : {}),
     ...(note ? { note } : {}),
+    ...(frontierBasis ? { frontier_basis: frontierBasis } : {}),
+    ...(structuredCeiling ? { structured_parking_ceiling: structuredCeiling } : {}),
   };
 }
 
