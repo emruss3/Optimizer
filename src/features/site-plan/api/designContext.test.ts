@@ -184,7 +184,11 @@ describe('pickDefaultUse (zoning-grounded default)', () => {
   });
 
   it('falls back to the first listed use, and null when empty', () => {
-    expect(pickDefaultUse(['commercial'])).toBe('commercial');
+    // Order-8: a non-compilable use is never the default (the compiler has no
+    // 'commercial' typology; the workspace shows the capacity card instead).
+    expect(pickDefaultUse(['commercial'])).toBeNull();
+    expect(pickDefaultUse(['industrial', 'commercial'])).toBeNull();
+    expect(pickDefaultUse(['commercial', 'single_family'])).toBe('single_family');
     expect(pickDefaultUse([])).toBeNull();
   });
 });
@@ -270,5 +274,27 @@ describe('normalizePermittedUses — LIVE fn_resolve_permitted_uses shape', () =
     expect(normalizePermittedUses({ feasible_uses: ['single_family'] })).toEqual(['single_family']);
     expect(normalizePermittedUses(['multi_family'])).toEqual(['multi_family']);
     expect(normalizePermittedUses(null)).toEqual([]);
+  });
+});
+
+describe('order-8 receipts: setbacks_ordinance + height_plane (forward-compatible)', () => {
+  it('normalizes the ordinance setbacks beside the design setbacks and the height-plane law', async () => {
+    const { normalizeDesignContext, normalizeHeightPlane, normalizeSetbacksOrdinance } = await import('./designContext');
+    const ctx = normalizeDesignContext({
+      zoning_base: 'CS',
+      setbacks: { front: { value: 27.5, source: 'ordinance' }, side: { value: 0, source: 'ordinance' }, rear: { value: 20, source: 'ordinance' } },
+      setbacks_ordinance: { front: { value: 15, source: 'ordinance' }, rear: { value: 20, source: 'ordinance' } },
+      height_plane: { law: '30 ft at the setback lines, then 1.5 horizontal to 1.0 vertical', height_at_setback_ft: 30, slope_h: 1.5, slope_v: 1, source: '17.12.020C' },
+    })!;
+    expect(ctx.setbacksOrdinance?.front?.value).toBe(15);
+    expect(ctx.setbacksOrdinance?.rear?.value).toBe(20);
+    expect(ctx.setbacksOrdinance?.side).toBeUndefined();
+    expect(ctx.heightPlane?.law).toContain('1.5 horizontal');
+    expect(ctx.heightPlane?.heightAtSetbackFt).toBe(30);
+    expect(ctx.heightPlane?.slopeHorizontal).toBe(1.5);
+    // absent in today's live payloads → undefined, never fabricated
+    expect(normalizeSetbacksOrdinance(undefined)).toBeUndefined();
+    expect(normalizeHeightPlane(null)).toBeUndefined();
+    expect(normalizeHeightPlane('30 ft then 1.5H:1V')?.law).toBe('30 ft then 1.5H:1V');
   });
 });

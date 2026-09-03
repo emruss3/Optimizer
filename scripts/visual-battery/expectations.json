@@ -45,5 +45,9 @@
   "393306": {
     "mode": "sf-suggestion",
     "_basis": "303 E Palestine Ave RS10 - MF refusal carries suggested_typology single_family ('envelope fits a house (3076 sqft, 28.8 ft wide)'); tap renders the 1,236 sf house + driveway (sf_seed_v1)"
+  },
+  "408571": {
+    "mode": "commercial-capacity",
+    "_basis": "2405 12th Ave S (CS, 0.198 ac) - no residential use as-of-right; the card states the FAR-0.6 allowable area (5,173 SF, the architect built to 5,171); no house/apartment plan offered"
   }
 }

@@ -31,6 +31,8 @@ const PARCELS = [
   // Order-6 item 1: MF-refused parcel whose refusal carries the server-
   // verified single-family suggestion — the tap must render the house.
   { ogc_fid: 393306, address: '303 E PALESTINE AVE', zoning: 'RS10' },
+  // Order-8 audit: commercial-only lot (CS) — the capacity card, never a house.
+  { ogc_fid: 408571, address: '2405 12TH AVE S', zoning: 'CS' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -86,6 +88,14 @@ function judge(exp, ev) {
     if (ev.solvedBy === 'worker') {
       errs.push('the improvised worker plan rendered — order-6 item 5c forbids that path');
     }
+  } else if (exp.mode === 'commercial-capacity') {
+    // Order-8: a commercial-only lot shows the capacity card with the FAR
+    // ceiling and never offers a residential plan.
+    if (!ev.nonResidentialLot) errs.push('expected nonResidentialLot=true (permitted uses carry no residential use)');
+    if (!(ev.commercialAllowableGsf > 0)) errs.push('expected the FAR-derived allowable area on the capacity card');
+    if (!ev._domCommercialCard) errs.push('commercial capacity card not rendered');
+    if (ev._domSfSwitch) errs.push('a "draw the house" switch rendered on a lot with no residential use');
+    if (ev.solvedBy) errs.push(`a plan rendered (solvedBy=${ev.solvedBy}) where no residential use is permitted`);
   } else if (exp.mode === 'sf-suggestion') {
     // The MF refusal must carry the server-verified suggestion, and the tap
     // must have rendered the house (the post-click evidence is judged).
@@ -183,6 +193,8 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
       return {
         ...ev,
         _domParkingChip: !!document.querySelector('[data-testid="parking-limited-chip"]'),
+        _domCommercialCard: !!document.querySelector('[data-testid="commercial-capacity-card"]'),
+        _domSfSwitch: !!document.querySelector('[data-testid="sf-seed-switch"]'),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;

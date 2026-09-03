@@ -280,8 +280,36 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
           <Row label="Front setback" v={context.setbackFrontFt} unit="ft" />
           <Row label="Side setback" v={context.setbackSideFt} unit="ft" />
           <Row label="Rear setback" v={context.setbackRearFt} unit="ft" />
+          {/* Order-8 receipts: when the design setback differs from the
+              ordinance setback (plane inset), show the ordinance number
+              beside it — every number carries its receipt. */}
+          {context.setbacksOrdinance && (
+            <div data-testid="setbacks-ordinance-receipt" className="text-[11px] text-gray-500 pl-2 -mt-0.5 mb-1">
+              ordinance:{' '}
+              {(['front', 'side', 'rear'] as const)
+                .map(k => {
+                  const v = context.setbacksOrdinance?.[k];
+                  return v && v.value != null ? `${k} ${v.value} ft` : null;
+                })
+                .filter(Boolean)
+                .join(' · ')}
+              {' '}— design setbacks = ordinance + height-plane inset
+            </div>
+          )}
           <Row label="Max FAR" v={context.maxFar} />
           <Row label="Max height" v={context.maxHeightFt} unit="ft" />
+          {context.heightPlane?.law && (
+            <div
+              data-testid="height-plane-receipt"
+              title={context.heightPlane.source ? `Source: ${context.heightPlane.source}` : 'Height plane as the ordinance states it'}
+              className="text-[11px] text-gray-500 pl-2 -mt-0.5 mb-1"
+            >
+              height plane: {context.heightPlane.law}
+              {context.heightPlane.heightAtSetbackFt != null && context.heightPlane.slopeHorizontal != null && context.heightPlane.slopeVertical != null
+                ? ` (${context.heightPlane.heightAtSetbackFt} ft at the setback line, then ${context.heightPlane.slopeHorizontal}H:${context.heightPlane.slopeVertical}V)`
+                : ''}
+            </div>
+          )}
           <Row label="Max density" v={context.maxDensityDuAc} unit="DU/ac" />
           <Row label="Max building coverage" v={buildingCoverage} unit="%" />
           <Row label="Max impervious surface" v={context.maxImperviousPct} unit="%" />

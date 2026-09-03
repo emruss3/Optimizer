@@ -56,6 +56,20 @@ export interface DesignContext {
   maxImperviousPct?: ContextValue;
   /** e.g. 'surface' | 'structured' — derived from the regime */
   parkingStrategy?: string;
+  /** Order-8 receipts: the ORDINANCE setback beside the design setback the
+   *  planner actually used ("ordinance + plane inset"). Present only when the
+   *  compiler publishes setbacks_ordinance. */
+  setbacksOrdinance?: { front?: ContextValue; side?: ContextValue; rear?: ContextValue };
+  /** Order-8 receipts: "height at setback line + slope" as the ordinance
+   *  states it (e.g. "30 ft at the setback lines, then 1.5H:1V") — the
+   *  semantic a lookup-grade vendor flattens into one number. */
+  heightPlane?: {
+    law?: string;
+    heightAtSetbackFt?: number;
+    slopeHorizontal?: number;
+    slopeVertical?: number;
+    source?: string;
+  };
   /** Stall/aisle geometry + ratio from typology_spec */
   parking?: ContextParking;
   /** Backend warning flags (flood zone, review triggers, …) → warning chips */
@@ -148,6 +162,8 @@ export function normalizeDesignContext(json: unknown): DesignContext | null {
     maxBuildingCoveragePct: buildingCoverage,
     maxImperviousPct: imperviousCoverage,
     parkingStrategy: (pick(o, 'parking_strategy', 'parkingStrategy') as string) ?? undefined,
+    setbacksOrdinance: normalizeSetbacksOrdinance(pick(o, 'setbacks_ordinance', 'setbacksOrdinance')),
+    heightPlane: normalizeHeightPlane(pick(o, 'height_plane', 'heightPlane')),
     parking: normalizeParking(pick(o, 'parking')),
     flags: normalizeFlags(pick(o, 'flags', 'warnings')),
     permittedUses: normalizePermittedUses(pick(o, 'permitted_uses', 'permittedUses')),
@@ -157,6 +173,33 @@ export function normalizeDesignContext(json: unknown): DesignContext | null {
   const hasAnything =
     ctx.zoningBase || ctx.setbackFrontFt || ctx.maxFar || ctx.maxHeightFt || ctx.maxDensityDuAc;
   return hasAnything ? ctx : null;
+}
+
+/** Tolerant reader for the ordinance-setback receipt block. */
+export function normalizeSetbacksOrdinance(json: unknown): DesignContext['setbacksOrdinance'] {
+  if (json == null || typeof json !== 'object') return undefined;
+  const o = json as Record<string, unknown>;
+  const out = { front: cv(o.front), side: cv(o.side), rear: cv(o.rear) };
+  return out.front || out.side || out.rear ? out : undefined;
+}
+
+/** Tolerant reader for the height-plane receipt ("height at setback line + slope"). */
+export function normalizeHeightPlane(json: unknown): DesignContext['heightPlane'] {
+  if (json == null) return undefined;
+  if (typeof json === 'string') return json.trim() ? { law: json.trim() } : undefined;
+  if (typeof json !== 'object') return undefined;
+  const o = json as Record<string, unknown>;
+  const n = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined;
+  const law = typeof o.law === 'string' && o.law.trim() ? o.law.trim() : undefined;
+  const plane = {
+    law,
+    heightAtSetbackFt: n(pick(o, 'height_at_setback_ft', 'heightAtSetbackFt', 'base_height_ft')),
+    slopeHorizontal: n(pick(o, 'slope_h', 'slope_horizontal', 'horizontal')),
+    slopeVertical: n(pick(o, 'slope_v', 'slope_vertical', 'vertical')),
+    source: typeof o.source === 'string' ? o.source : undefined,
+  };
+  return law || plane.heightAtSetbackFt != null ? plane : undefined;
 }
 
 const num = (v: ContextValue | undefined): number | undefined => {
@@ -268,12 +311,30 @@ export function toContextTypology(use: string): string {
  */
 const USE_PRIORITY = ['multi_family', 'multifamily', 'two_family', 'single_family'];
 
+/** Uses the planner can actually COMPILE (typology_spec rows exist). */
+const COMPILABLE_USES = new Set(['multi_family', 'multifamily', 'mf', 'two_family', 'duplex', 'single_family', 'sf']);
+
+/** Non-residential as-of-right uses the product recognizes but cannot mass yet. */
+export const NON_RESIDENTIAL_USES = new Set(['commercial', 'industrial']);
+
 export function pickDefaultUse(uses: string[]): string | null {
   if (uses.length === 0) return null;
   for (const u of USE_PRIORITY) {
     if (uses.includes(u)) return u;
   }
-  return uses[0];
+  // Order-8 audit (2405 12th Ave, CS): a commercial-only lot used to default
+  // to 'commercial' / 'industrial', which the compiler rejects ("unknown
+  // typology") — the enterprise gate then blanked the canvas. A non-compilable
+  // use is never the default; the workspace shows the commercial capacity
+  // card instead.
+  return uses.find(u => COMPILABLE_USES.has(u)) ?? null;
+}
+
+/** True when the parcel permits no residential use as-of-right but does
+ *  permit commercial/industrial — the case the massing engines cannot serve. */
+export function isNonResidentialOnly(uses: string[]): boolean {
+  if (uses.length === 0) return false;
+  return !uses.some(u => COMPILABLE_USES.has(u)) && uses.some(u => NON_RESIDENTIAL_USES.has(u));
 }
 
 /**
