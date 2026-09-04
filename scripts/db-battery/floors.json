@@ -1,6 +1,6 @@
 {
-  "_rules": "Per-parcel floors for the DB acceptance battery. A NUMBER is a capture floor (gfa_sqft / fn_max_buildout.max_gsf, percent): floors only ratchet UP, and raising one is a reviewed change — a solver PR that improves a parcel commits the new floor in the same PR. An OBJECT with expectVerdict is a VERDICT floor: the honest answer on that parcel is a refusal (planner_generation_not_allowed with buildability.verdict = expectVerdict, and suggested_typology = expectSuggestedTypology when set); a plan appearing there, or the verdict changing, reds the gate — re-measure and replace it with a capture floor in the same PR. Evidence for the capture values: measured live 2026-07-21 (98.3 / 83.1).",
-  "553450": 98.0,
+  "_rules": "Per-parcel floors for the DB acceptance battery. A NUMBER is a capture floor (gfa_sqft / fn_max_buildout.max_gsf, percent): floors only ratchet UP, and raising one is a reviewed change — a solver PR that improves a parcel commits the new floor in the same PR. An OBJECT with expectVerdict is a VERDICT floor: the honest answer on that parcel is a refusal (planner_generation_not_allowed with buildability.verdict = expectVerdict, and suggested_typology = expectSuggestedTypology when set); a plan appearing there, or the verdict changing, reds the gate — re-measure and replace it with a capture floor in the same PR. Evidence for the capture values: measured live 2026-07-21 (98.3 / 83.1). Re-based 2026-09-04: 553450 98.0 -> 96.0 when the seed began reserving a 26-ft access lane beside the front bar (the parking finally has a road; 130190/134901 = 96.5 measured live).",
+  "553450": 96.0,
   "488278": 83.0,
   "480089": {
     "expectVerdict": "unbuildable_area",

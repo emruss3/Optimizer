@@ -120,6 +120,19 @@ const STATE_STYLE: Record<ContextApplicationState, { label: string; cls: string 
   stale: { label: 'Plan is stale — selected use or context has changed', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
 };
 
+/** The short form of the state, for the one-line plan-basis row. */
+export function contextStateLabel(state: ContextApplicationState): string {
+  switch (state) {
+    case 'compiling': return 'compiling context…';
+    case 'applied': return 'context applied';
+    case 'applied-fallback': return 'context applied · fallback evidence';
+    case 'standards-direct': return 'district standards applied directly';
+    case 'unavailable': return 'context not verified';
+    case 'blocked': return 'generation blocked';
+    case 'stale': return 'plan stale — use or context changed';
+  }
+}
+
 /** Visible evidence → decision → result lineage next to Plan Basis. */
 const ContextLineage: React.FC<{
   state: ContextApplicationState;

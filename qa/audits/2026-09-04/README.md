@@ -33,3 +33,19 @@ elevations, etc.").
 Fixture mode (the committed `fn_parcel_topo` responses); the live path was
 verified on the database directly (first fetch 24.6 s on the 13-ac parcel,
 1.5 s on the 2.8-ac one, cached afterwards).
+
+## 2622 W Heiman — a road to the parking (§16)
+
+- `heiman_2622_mf_access_before.png` — the served plan as Eric saw it
+  (geometry drawn from the fixture): the E-shaped bar across the whole
+  frontage, three rear bays, and the 127-ft drive spine through the front
+  bar that stopped inside the building.
+- `heiman_2622_mf_access_after_screen.png` — the app after the seed change,
+  fixture mode: the 26-ft access lane down the left side from the curb, the
+  aisle strip serving the side rows, every bay reached; the floorplate read
+  as bars with a corridor in each; the plan-basis row folded to one line so
+  the canvas is the page.
+- `heiman_2622_mf_access_after_zoom.png` — zoomed: the corridors and cores
+  per bar, units a bank deep, the drive at the bay heads.
+- `heiman_2600_mf_access_after_screen.png` — 2600 W Heiman on the same
+  change: lane on the right, 96.5% capture (was 99.2% with no road).

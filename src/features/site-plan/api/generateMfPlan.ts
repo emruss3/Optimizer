@@ -314,7 +314,18 @@ export interface SeedFamilyDrive {
   entry_2274?: SeedFamilyGeom | null;
   spine_2274?: SeedFamilyGeom | null;
   geom_2274?: SeedFamilyGeom | null;
+  /** 'access' = the seed's drive network (2026-09-04): lane from the curb,
+   *  aisle strip along the building, connectors to every bay head */
   kind?: string | null;
+  area_sqft?: number | null;
+  lane_ft?: number | null;
+}
+/** 2026-09-04: where the seed reserved the access lane. */
+export interface SeedFamilyAccess {
+  side?: string | null;
+  lane_ft?: number | null;
+  lane_fit_left?: number | null;
+  lane_fit_right?: number | null;
 }
 export interface SeedFamilyResponse {
   parcel_ogc_fid?: number;
@@ -326,6 +337,7 @@ export interface SeedFamilyResponse {
   persisted?: boolean;
   buildings?: SeedFamilyStructure[];
   drives?: SeedFamilyDrive[];
+  access?: SeedFamilyAccess | null;
   parking?: SeedFamilyParking | null;
   metrics?: {
     gsf?: number | null;
@@ -506,13 +518,19 @@ export function seedFamilyPlanToElements(
 
   const skeletonPolys: Array<{ type: 'Polygon'; coordinates: number[][][] }> = [];
   (resp.drives ?? []).forEach((dr, i) => {
-    if (dr?.spine_2274) {
+    // 2026-09-04: a drive that carries its REAL polygon (the seed's access
+    // network — lane from the curb, aisle strip along the building,
+    // connectors to the bay heads) IS the drive; its spine and entry are then
+    // the centreline and the curb point, not geometry to fabricate a second
+    // rectangle from.
+    const hasPolygon = !!dr?.geom_2274;
+    if (dr?.spine_2274 && !hasPolygon) {
       try {
         const rect = lineToRect(seedTo3857(dr.spine_2274 as unknown as LineString), 7.3); // 24 ft drive
         if (rect) skeletonPolys.push({ type: 'Polygon', coordinates: rect.coordinates as number[][][] });
       } catch { /* skip malformed spine */ }
     }
-    if (dr?.entry_2274) {
+    if (dr?.entry_2274 && !hasPolygon) {
       try {
         const [ex, ey] = seedTo3857(dr.entry_2274 as unknown as Point).coordinates as Position;
         const w = 3.7, d = 3.0; // 12×10 ft apron marker at the curb
@@ -534,9 +552,22 @@ export function seedFamilyPlanToElements(
           elements.push({
             id: `${prefix}-drive-${i + 1}${pi > 0 ? `-${pi + 1}` : ''}`,
             type: 'circulation',
-            name: dr.kind === 'driveway' ? 'Driveway' : `Drive ${i + 1}`,
+            name: dr.kind === 'driveway'
+              ? 'Driveway'
+              : dr.kind === 'access'
+                ? (i === 0 && pi === 0 ? 'Access drive' : `Access drive ${i + 1}${pi > 0 ? `-${pi + 1}` : ''}`)
+                : `Drive ${i + 1}`,
             geometry: piece as unknown as Polygon,
-            properties: { color: '#94A3B8' },
+            properties: {
+              // pavement, a shade darker than the striped bays so the road reads as a road
+              styleOverride: true,
+              color: dr.kind === 'access' ? '#9AA8B8' : '#94A3B8',
+              opacity: 0.9,
+              strokeColor: '#7B8794',
+              kind: dr.kind ?? 'drive',
+              ...(typeof dr.lane_ft === 'number' ? { widthFt: dr.lane_ft } : {}),
+              ...(resp.access?.side ? { accessSide: resp.access.side } : {}),
+            },
             metadata: meta,
           } as Element);
         });

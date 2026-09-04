@@ -2,8 +2,8 @@
   "_rules": "Floors only ratchet UP. A server-behavior PR must refresh fixtures/mock_store.json AND raise (never lower) these floors to match. All four parcels flipped to server-plan on 2026-07-28: the seed_v2 default solves every one (667574/669046 were honest-refusals under the search core's defective output — upstream fixed). sf-suggestion asserts the RefusalCard typology switch: MF refusal carries the server-verified suggestion, the tap renders the house.",
   "553450": {
     "mode": "server-plan",
-    "minCapturePct": 98.5,
-    "_basis": "2600 W Heiman - seed_v2 1 structure @ 4 st, 124568/125550 = 99.2% frozen 2026-07-28 (was 106.0 twenty minutes earlier - live churn; over-105 now extinct)",
+    "minCapturePct": 96.0,
+    "_basis": "2600 W Heiman - seed_v2 S-form @ 4 st. 2026-09-04: the seed reserves a 26-ft access lane on the right side before sizing the bars (Eric: 'random parking, with no road to get to it'), so the front bar gives up ~28 ft and capture re-bases 99.2 -> 96.5 (130190/134901). The lane runs from the curb to the rear rows, an aisle strip serves the side rows, all 5 bays are reached (requireAccess). Frozen 2026-07-28 at 99.2 before this; a plan whose parking can be reached beats one that captured 100% on paper.",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,
@@ -11,19 +11,21 @@
     },
     "requirePlanPattern": "court_scheme_perpendicular_bars",
     "requireTopo": true,
-    "_topo": "2026-09-04 civil sheet: the DEM layer must load on a massing parcel too (873 samples, 45 contours, 417.5-440.1 ft); no street to profile here."
+    "_topo": "2026-09-04 civil sheet: the DEM layer must load on a massing parcel too (873 samples, 45 contours, 417.5-440.1 ft); no street to profile here.",
+    "requireAccess": true
   },
   "488278": {
     "mode": "server-plan",
     "minCapturePct": 99.0,
-    "_basis": "1710 Meharry - seed_v2 1 structure @ 2 st, 54204/54250 = 99.9% frozen 2026-07-28 (old floor 83.0)",
+    "_basis": "1710 Meharry - seed_v2 1 structure. 2026-09-04 re-capture (access lane on the right): 54244/54250 = 100.0%, 30 units, 66 stalls in 3 bays each reached — the served payload is no longer parking-limited, so the chip assertion (from the 2026-07-28 capture, 2 st, parking_limited=true) is retired with it; requireAccess takes its place.",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,
       "buildings": true
     },
-    "requireParkingLimitedChip": true,
-    "requirePlanPattern": "bar_on_frontage_rear_field"
+    "requirePlanPattern": "bar_on_frontage_rear_field",
+    "requireAccess": true,
+    "_access": "2026-09-04: lane on the right, 100% capture kept, 66 stalls in 3 bays each reached (three drive pieces: the lane and two connectors)."
   },
   "667574": {
     "mode": "server-plan",
@@ -34,7 +36,9 @@
       "parcels": true,
       "buildings": true
     },
-    "requirePlanPattern": "court_scheme_perpendicular_bars"
+    "requirePlanPattern": "court_scheme_perpendicular_bars",
+    "requireAccess": true,
+    "_access": "2026-09-04: lane on the left (fit 0.93), 158285 GSF / 100.1% (the placer recovered the lost bar length in depth), 171 stalls in 4 side rows, all reached from one connected network (requireAccess)."
   },
   "669046": {
     "mode": "server-plan",
