@@ -819,6 +819,74 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
   }, []);
 
+  // Held-out land is called out on the sheet itself, not only in the legend
+  // (Eric, 2026-09-04: "You're showing wetlands and floodplains in white.
+  // Shouldn't they be called out?"): a diagonal hatch — the map convention for
+  // a floodplain — and a label naming the zone, on every greenway piece big
+  // enough to carry one.
+  const renderGreenwayCallout = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
+    const p = element.properties as
+      | { kind?: string; hazardKind?: string; zone?: string; subtype?: string; bufferFt?: number }
+      | undefined;
+    if (!p || p.kind !== 'greenway') return;
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 4) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let cx = 0, cy = 0;
+    const n = coords.length - 1;
+    for (let i = 0; i < n; i++) {
+      const [x, y] = coords[i];
+      cx += x; cy += y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    cx /= n; cy /= n;
+
+    // Hatch, clipped to the piece: 45°, ~8 px apart on screen
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(coords[0][0], coords[0][1]);
+    for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
+    ctx.closePath();
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(13, 148, 136, 0.5)';
+    ctx.lineWidth = 0.8 / zoom;
+    const h = maxY - minY;
+    const step = Math.max(8 / zoom, 2);
+    for (let d = minX - h; d < maxX + h; d += step) {
+      ctx.beginPath();
+      ctx.moveTo(d, minY);
+      ctx.lineTo(d + h, maxY);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Label when the piece is big enough on screen to carry it
+    if (Math.min(maxX - minX, maxY - minY) * zoom < 36 || Math.max(maxX - minX, maxY - minY) * zoom < 90) return;
+    const label = p.hazardKind === 'wetland'
+      ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''} · ${p.bufferFt ?? 25}-ft buffer`
+      : p.hazardKind === 'floodway'
+        ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
+        : `${p.zone ? `${p.zone} ` : ''}floodplain`;
+    const fontSize = 11 / zoom;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, -1);
+    ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = ctx.measureText(label).width + 8 / zoom;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, -fontSize * 0.75, w, fontSize * 1.5, 2 / zoom);
+    ctx.fill();
+    ctx.fillStyle = '#0F766E';
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }, []);
+
   // Per-bay stall count (the engine computes these; show them like TestFit does)
   const renderBayCount = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     const stalls = element.properties?.parkingSpaces as number | undefined;
@@ -1381,10 +1449,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     });
 
     // Per-bay stall counts over every element (a bay's label must never sit
-    // under the building drawn after it)
+    // under the building drawn after it); the held-out greenway is hatched and
+    // named in the same pass so a lot or a street drawn later never hides it.
     for (const element of sortedElements) {
       if (element.type === 'parking' || element.type === 'parking-bay') {
         renderBayCount(ctx, element, viewport.zoom);
+      }
+      if (element.type === 'greenspace') {
+        renderGreenwayCallout(ctx, element, viewport.zoom);
       }
     }
 
@@ -1419,7 +1491,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (draftMode) {
       renderDraftWatermark(ctx, canvas.width / dpr, canvas.height / dpr);
     }
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, draftMode, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderDimensions, renderScaleBar, renderLegend, renderNorthArrow, renderDraftWatermark, renderNeighbors, renderLandscape, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, draftMode, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderGreenwayCallout, renderDimensions, renderScaleBar, renderLegend, renderNorthArrow, renderDraftWatermark, renderNeighbors, renderLandscape, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

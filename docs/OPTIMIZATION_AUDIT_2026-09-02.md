@@ -588,6 +588,16 @@ access), and the lot floor ratchets 30 → 33. The neighbourhood panel and the
 plan-basis line say where the street stops, what it crosses, and who could
 give the second connection.
 
+Eric, 2026-09-04, on the sheet: "You're showing wetlands and floodplains in
+white. Shouldn't they be called out?" They were — in this branch's client,
+as the teal "Greenway (floodplain / wetland)" fill — but the build on his
+screen was `main`, whose client predates the hazard payload and draws
+nothing where the greenway is. Merging this branch is the fix for that. On
+top of the fill, the held-out land is now called out on the sheet itself:
+a diagonal hatch (the map convention for a floodplain) and a label naming
+the zone ("AE floodplain", "Wetland (riverine) · 25-ft buffer") on every
+piece big enough to carry one.
+
 **The population, re-swept on v1.2 (4,111 parcels;
 `qa/audits/2026-09-03/subdivision_sweep_v1_2.csv`; the v1.1 numbers stay in
 `subdivision_sweep_v1_1.csv`).** No exceptions, the same 249 refusals. 797
