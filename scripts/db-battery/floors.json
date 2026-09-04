@@ -1,8 +1,12 @@
 {
-  "_rules": "Per-parcel capture floors for the DB acceptance battery (gfa_sqft / fn_max_buildout.max_gsf, percent). Floors only ratchet UP, and raising one is a reviewed change — a solver PR that improves a parcel commits the new floor in the same PR. Evidence for the current values: measured live 2026-07-21 (98.3 / 83.1 / 47.8).",
+  "_rules": "Per-parcel floors for the DB acceptance battery. A NUMBER is a capture floor (gfa_sqft / fn_max_buildout.max_gsf, percent): floors only ratchet UP, and raising one is a reviewed change — a solver PR that improves a parcel commits the new floor in the same PR. An OBJECT with expectVerdict is a VERDICT floor: the honest answer on that parcel is a refusal (planner_generation_not_allowed with buildability.verdict = expectVerdict, and suggested_typology = expectSuggestedTypology when set); a plan appearing there, or the verdict changing, reds the gate — re-measure and replace it with a capture floor in the same PR. Evidence for the capture values: measured live 2026-07-21 (98.3 / 83.1).",
   "553450": 98.0,
   "488278": 83.0,
-  "480089": 47.0,
+  "480089": {
+    "expectVerdict": "unbuildable_area",
+    "expectSuggestedTypology": "single_family",
+    "_basis": "619 N 5th St (RM20, 0.39 ac, a 320 x 57 ft strip). The 47% capture floor was measured 2026-07-21, before the buildability verdict (2026-07-23) existed; since then the gate has been red on this parcel on every run (acknowledged in the #92 and #96 merge commits). The verdict is right: the height-control-plane inset makes the multifamily design setbacks 27.5 / 12.5 ft (ordinance 20 / 5), which leaves a 32-ft-wide, 3,752-sf envelope under the 4,038-sf minimum multifamily footprint; a house fits (8,010-sf envelope, 31.5 ft wide) and is suggested. 2026-09-04."
+  },
   "subdivision": {
     "_rules": "Subdivision generator floors (fn_generate_subdivision_safe, default scheme). minLots ratchets UP; minPctHazard asserts the FEMA/NWI carve ran (coverage must be 'ingested'). A generator PR that changes the definition (as v1.1 did by holding hazards out) re-bases the floor in the same PR and says so.",
     "550510": {
