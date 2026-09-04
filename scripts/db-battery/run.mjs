@@ -67,6 +67,22 @@ async function rpc(fn, args, timeoutMs = 90_000) {
 // Verdict-class refusals are legitimate solver outputs, not battery failures.
 const ALLOWED_VERDICTS = new Set(['planner_generation_not_allowed']);
 
+// A floor is a capture percentage (number) or a VERDICT floor (object with
+// expectVerdict): the honest answer on that parcel is the refusal, and the
+// gate asserts the refusal's buildability verdict (+ suggested typology).
+const isVerdictFloor = f => f != null && typeof f === 'object' && typeof f.expectVerdict === 'string';
+function verdictMismatch(floor, solve) {
+  const b = solve?.buildability ?? {};
+  if (solve?.error !== 'planner_generation_not_allowed') {
+    return `expected the refusal (buildability verdict '${floor.expectVerdict}'), got ${solve?.error ? `error '${solve.error}'` : 'a plan'} — re-measure and replace the verdict floor with a capture floor`;
+  }
+  if (b.verdict !== floor.expectVerdict) return `expected buildability verdict '${floor.expectVerdict}', got '${b.verdict ?? 'none'}'`;
+  if (floor.expectSuggestedTypology && b.suggested_typology !== floor.expectSuggestedTypology) {
+    return `expected suggested_typology '${floor.expectSuggestedTypology}', got '${b.suggested_typology ?? 'none'}'`;
+  }
+  return null;
+}
+
 async function solveParcel(fid, generatorFn = 'fn_generate_mf_site_plan_v2_search') {
   const compile = await rpc('fn_compile_planner_context', {
     p_ogc_fid: fid, p_use: 'multi_family', p_user_intent: null,
@@ -82,7 +98,7 @@ async function solveParcel(fid, generatorFn = 'fn_generate_mf_site_plan_v2_searc
   if (solve.error && !ALLOWED_VERDICTS.has(solve.error)) {
     return { fid, error: `solver error: ${solve.error}` };
   }
-  if (solve.error) return { fid, verdict: solve.error };
+  if (solve.error) return { fid, verdict: solve.error, solve };
   // Legacy search family reports metrics.gfa_sqft; seed family reports gsf.
   const gfa = solve.metrics?.gfa_sqft ?? solve.metrics?.gsf;
   if (typeof gfa !== 'number' || !(solve.buildings?.length > 0)) {
@@ -116,7 +132,7 @@ async function solveParcel(fid, generatorFn = 'fn_generate_mf_site_plan_v2_searc
 /** Layer 2: the seed DEFAULT (what users hit first) — shape + sanity, no
  *  capture floor. Every failure path is named 'seed-default' so a red here
  *  never reads as a search-core floor regression. */
-async function seedDefaultCheck(fid) {
+async function seedDefaultCheck(fid, floor) {
   const compile = await rpc('fn_compile_planner_context', {
     p_ogc_fid: fid, p_use: 'multi_family', p_user_intent: null,
   });
@@ -126,6 +142,12 @@ async function seedDefaultCheck(fid) {
     p_parent: null, p_persist: false, p_context_id: compile.context_id,
   });
   if (!solve) return 'empty response';
+  if (isVerdictFloor(floor)) {
+    const bad = verdictMismatch(floor, solve);
+    if (bad) return bad;
+    console.log(`OK   ${fid} seed-default — refused as expected: '${floor.expectVerdict}'${floor.expectSuggestedTypology ? `, suggests ${floor.expectSuggestedTypology}` : ''}`);
+    return null;
+  }
   if (solve.error && !ALLOWED_VERDICTS.has(solve.error)) return `error: ${solve.error}`;
   if (solve.error) return `verdict '${solve.error}' on a floor parcel`;
   const structures = solve.buildings ?? [];
@@ -144,7 +166,7 @@ async function seedDefaultCheck(fid) {
 const failures = [];
 for (const fid of FIXED) {
   try {
-    const seedFail = await seedDefaultCheck(fid);
+    const seedFail = await seedDefaultCheck(fid, floors[String(fid)]);
     if (seedFail) {
       failures.push(`${fid}: seed-default ${seedFail}`);
       console.log(`FAIL ${fid} seed-default — ${seedFail}`);
@@ -161,6 +183,19 @@ for (const fid of FIXED) {
       continue;
     }
     const floor = floors[String(fid)];
+    if (isVerdictFloor(floor)) {
+      // The honest answer on this parcel is the refusal — assert the verdict
+      // itself, so a plan appearing (the parcel became buildable) or the
+      // verdict changing is as loud as a capture regression.
+      const bad = verdictMismatch(floor, r.verdict ? r.solve : { error: null });
+      if (bad) {
+        failures.push(`${fid}: ${bad}`);
+        console.log(`FAIL ${fid} — ${bad}`);
+      } else {
+        console.log(`OK   ${fid} — refused as expected: '${floor.expectVerdict}'${floor.expectSuggestedTypology ? `, suggests ${floor.expectSuggestedTypology}` : ''}`);
+      }
+      continue;
+    }
     if (r.verdict) {
       // A FLOOR parcel refusing is a floor regression, and it must say so —
       // verdict records previously fell through to the capture check and

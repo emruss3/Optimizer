@@ -681,3 +681,25 @@ context lineage, highest-and-best, the capacity card with its stories
 table — is the analysis the earlier audits asked for, and it is still a lot
 of page. The next step is one "Analysis" disclosure so the sentence and the
 plan come first and the receipts open on demand.
+
+## 14. The solver-floors gate was red for a month on one parcel (2026-09-04)
+
+The live DB battery (`scripts/db-battery`) had been red on 619 N 5th St
+(480089, RM20, 0.39 ac) on every run since the buildability verdict layer
+landed on 2026-07-23 — acknowledged in the #92 and #96 merge commits and
+carried over into #97. Its floor, 47% capture, was measured on 2026-07-21,
+two days before the verdict existed.
+
+The verdict is right. The parcel is a 320 × 57 ft strip; the height-control
+plane (Table 17.12.020B: walls 7.5 ft inside the setback line may rise to
+45 ft) turns the ordinance setbacks of 20 / 5 ft into design setbacks of
+27.5 / 12.5 ft, which leaves a 32-ft-wide, 3,752-sf envelope — under the
+4,038-sf minimum multifamily footprint. A house fits (8,010-sf envelope,
+31.5 ft wide) and the refusal suggests it, exactly as the fixture gate
+already asserts on 303 E Palestine.
+
+So the floor became a **verdict floor**: `floors.json` now says the honest
+answer on 480089 is the refusal (`buildability.verdict = unbuildable_area`,
+`suggested_typology = single_family`), and both battery layers assert it. A
+plan appearing there, or the verdict changing, reds the gate as loudly as a
+capture regression — and says to re-measure and put a capture floor back.
