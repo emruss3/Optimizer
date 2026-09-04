@@ -118,7 +118,11 @@ begin
     'near_sqft', round(v_near), 'crossings', v_cross);
 end
 $$;
-revoke execute on function public.fn_subdiv_serve(geometry, numeric[], numeric[], boolean, numeric, numeric, numeric, numeric, numeric) from public, anon, authenticated;
+-- The generator runs as its caller (the app's anon/authenticated role), so a
+-- helper it calls must be executable by that role — like fn_subdiv_world. Pure
+-- geometry, no table access. (Revoking it here broke every plan in the app
+-- with "permission denied for function fn_subdiv_serve"; Eric, 2026-09-04.)
+grant execute on function public.fn_subdiv_serve(geometry, numeric[], numeric[], boolean, numeric, numeric, numeric, numeric, numeric) to anon, authenticated;
 
 create or replace function public.fn_generate_subdivision(
   p_ogc_fid integer,
