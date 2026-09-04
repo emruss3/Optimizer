@@ -15,14 +15,14 @@ export const PlanPatternPanel: React.FC<{ plan: PlanPattern; defaultOpen?: boole
   const aligned = align?.aligned === true;
   return (
     <div data-testid="plan-pattern-panel" className="bg-white border border-gray-200 rounded-lg px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <span className="text-[10px] uppercase tracking-wide text-gray-500 mr-2">How to organize this site</span>
-          <span data-testid="plan-pattern-name" className="text-sm font-semibold text-gray-900">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500">How to organize this site</div>
+          <div data-testid="plan-pattern-name" className="text-sm font-semibold text-gray-900 leading-snug">
             {patternLabel(plan.pattern)}
-          </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 pt-3">
           <span
             data-testid="plan-pattern-alignment"
             title={align?.note ?? ''}
