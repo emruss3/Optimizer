@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { PlanPatternPanel } from './PlanPatternPanel';
 import { patternLabel, type PlanPattern } from '../api/planPattern';
 
@@ -23,19 +23,27 @@ const MDHA: PlanPattern = {
 };
 
 describe('PlanPatternPanel (plan-organization layer)', () => {
-  it('names the pattern, lists principles and precedent plans, and is honest about the generator', () => {
+  it('is one line by default — the pattern and the chip — and opens the detail on request', () => {
     render(<PlanPatternPanel plan={MDHA} />);
     expect(screen.getByTestId('plan-pattern-name').textContent).toBe('Subdivision on a public ROW spine with rear alleys');
     expect(screen.getByTestId('plan-pattern-alignment').textContent).toBe('generator: not yet');
-    const text = screen.getByTestId('plan-pattern-panel').textContent ?? '';
+    // collapsed: no principles, no precedents on the page
+    expect(screen.queryByTestId('plan-pattern-details')).toBeNull();
+    const collapsed = screen.getByTestId('plan-pattern-panel').textContent ?? '';
+    expect(collapsed).not.toContain('MDHA concept 08/21');
+    expect(collapsed).not.toContain('garages off the alley');
+    fireEvent.click(screen.getByTestId('plan-pattern-toggle'));
+    const text = screen.getByTestId('plan-pattern-details').textContent ?? '';
     expect(text).toContain('rear alleys');
     expect(text).toContain('MDHA concept 08/21 — 102 lots');
     expect(text).toContain('subdivision generator pending');
+    expect(screen.getByTestId('plan-pattern-toggle').textContent).toBe('hide');
   });
 
-  it('reads the parcel against its population: the sweep calibration line', () => {
+  it('reads the parcel against its population: the sweep calibration line (in the detail)', () => {
     render(
       <PlanPatternPanel
+        defaultOpen
         plan={{
           ...MDHA,
           generator_alignment: { generator: 'fn_generate_subdivision', aligned: true, note: 'draws it' },
