@@ -190,6 +190,20 @@ function judge(exp, ev) {
       }
     }
   }
+  // 2026-09-04 civil sheet: the topography must LOAD and render (contours in
+  // the canvas frame). On a subdivision every through-street must carry a
+  // profile and spot grades — the DEM fetch, the fn_parcel_topo grant and the
+  // centreline travelling on the street elements are all on that path.
+  if (exp.requireTopo) {
+    const t = ev.topoLoaded;
+    if (!t) errs.push('topography never loaded (topoLoaded missing — fn_parcel_topo unreachable or refused)');
+    else if (!(t.contours > 0)) errs.push(`topography loaded with no contours (${t.samples ?? '?'} samples)`);
+    if (exp.mode === 'subdivision') {
+      if (!(ev.profileStreets > 0)) errs.push('no through-street profile built (centreline missing from the street elements?)');
+      if (!(ev.sheetAnnotations?.spots > 0)) errs.push('no spot grades written on the plan (stations without a grade)');
+      if (ev.sheetTitle !== 'CONCEPT LAYOUT PLAN') errs.push(`title block reads '${ev.sheetTitle ?? 'none'}', expected CONCEPT LAYOUT PLAN`);
+    }
+  }
   return errs;
 }
 

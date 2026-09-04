@@ -108,6 +108,12 @@ interface EnterpriseSitePlannerProps {
   suppressCurbCut?: boolean;
   /** Neighborhood context (parcels/buildings/streets), canvas-frame 3857 */
   neighbors?: import('../features/site-plan/api/neighbors').PlannerNeighbors | null;
+  /** Existing topography (USGS 3DEP contours), canvas-frame 3857 */
+  topo?: import('../features/site-plan/api/parcelTopo').ParcelTopoView | null;
+  /** Civil-sheet callouts (stations, spot grades, R.O.W. / alley / radius) */
+  annotations?: import('../features/site-plan/api/sheetAnnotations').SheetAnnotation[];
+  /** Title block drawn in the sheet's corner */
+  sheet?: import('../features/site-plan/api/sheetAnnotations').SheetTitleBlock | null;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -131,7 +137,10 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   staticPlan = false,
   draftMode = false,
   suppressCurbCut,
-  neighbors = null
+  neighbors = null,
+  topo = null,
+  annotations,
+  sheet = null
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
   // run unconditionally on every render. The `!parcel` guard lives just before
@@ -1248,6 +1257,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             draftMode={draftMode}
             suppressCurbCut={suppressCurbCut}
             neighbors={neighbors}
+            topo={topo}
+            annotations={annotations}
+            sheet={sheet}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
