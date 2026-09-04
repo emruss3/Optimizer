@@ -813,3 +813,105 @@ centreline on the street elements are all on that path.
    detention pad at the low corner would come from the same grid and the same
    honesty rule.
 4. **Cross-sections** at stations, from the same grid.
+
+## 16. A road to the parking, a plan inside the building, a page that is the canvas (2026-09-04)
+
+Eric, on 2622 W Heiman (667574, RM40, 3.2 ac): "Way too much happening
+here. The layout makes no sense, it's not how a multifamily building would
+function. You have a random parking, with no road to get to it. The internal
+space in the building doesn't have corridors, room sizes are wrong etc. The
+actual UX/UI of the page makes it difficult to see the site planner, there
+is a ton of data."
+
+Four faults, each real, each with a different owner.
+
+### The parking had no road (server)
+
+The seed (`fn_site_skeleton_v2_bars` → `fn_connect_bars` → `fn_seed_parking`,
+which existed only in the database — no migration in the repo defined them)
+sized the front bar to fill the whole frontage, put three 60-ft rear bays
+behind the E-shaped building, and emitted a 127-ft "spine" from the frontage
+midpoint that ran straight through the front bar and stopped inside the
+connector, 90 ft short of the bays. The client clipped that spine against
+the building, so the field rendered with no access at all — exactly what
+Eric saw.
+
+`20260904120000_mf_seed_access_drive.sql` captures the two functions it
+changes and makes the road:
+
+- **The placer reserves an access lane** before sizing the bars: the
+  fire-lane width from `fn_site_standards` (26 ft) plus 2 ft clear of the
+  building, measured from the parcel line (pavement may sit in the side
+  setback), from the frontage to the far end, on whichever side the lane
+  strip lies most inside the parcel. The skeleton's entry moves to the
+  lane's centre on the curb and the spine runs down the lane. Landlocked
+  parcels keep the axis entry — their access is an easement the fabric
+  does not show.
+- **The parking seed builds the network**: the side lane from the curb to
+  just past the last bay's head, the aisle strip between the building and
+  the bays that serve off it, and a straight connector for any bay whose
+  head (the open end of its internal aisle) is still off the network. Bays
+  never sit in the lane; the network never sits under the building or over
+  a stall. It is served as `drives[]` with real polygons; the client draws
+  them as the drive and no longer fabricates a rectangle from the spine.
+- **The dispatcher** serves the network, falling back to the skeleton for a
+  seed without one.
+
+| parcel | lane | capture before → after | stalls | bays reached |
+|---|---|---|---|---|
+| 2622 W Heiman (667574) | left, fit 0.93 | 100.2% → 100.1% | 169 → 171 | 4 / 4, one connected network |
+| 2600 W Heiman (553450) | right, fit 0.75 | 99.2% → 96.5% | 187 → 105 | 5 / 5 |
+| 1710 Meharry (488278) | right, fit 0.92 | 99.9% → 100.0% | 66 | 3 / 3 (the lane and two connectors) |
+| 1200 W H Davis (669046) | none (landlocked) | unchanged | — | skeleton only |
+
+On 2622 W Heiman the placer recovered the lost bar length in depth, so the
+road cost nothing; on 2600 W Heiman it cost 2.7 points of capture and 82
+stalls that had been drawn where the lane now runs. A plan whose parking
+can be reached beats one that captured 100% on paper: the fixture floor and
+the DB-battery floor for 553450 re-base to 96 with that note, and
+`requireAccess` now asserts — from the rendered elements, so the seed, the
+mapper and the geometry gate are all on the path — that a drive reaches the
+parcel line and a drive touches every bay.
+
+### The building had no corridors (client)
+
+`computeFloorplate` sliced the bounding box of the WHOLE footprint: an
+E-shaped bar 324 × 220 ft became one box with two 107-ft-deep banks, so the
+units were slivers a few feet wide and a hundred deep, and the one corridor
+ran through the courtyards. The footprint is now read as the bars it is made
+of — a strip sweep in the oriented frame, merged where the span holds, along
+whichever axis reads it in fewer bars (an E is a spine and three arms along
+x, five overlapping pieces along y) — and every bar gets its own
+double-loaded corridor, cores at its free ends only (a junction has none;
+the corridor runs on), and units exactly a bank deep: on a 66-ft bar that is
+30-ft-deep units 18 ft (studio) to 53 ft (3 bed) wide. Genuinely angled
+footprints fall back to the box.
+
+### The page buried the planner (client)
+
+On a 980-px window the canvas started 750 px down: census line, KPI strip,
+headline, plan basis, the context-lineage card, the highest-and-best strip,
+the max-buildout card with its stories ladder and chips. The basis, the
+lineage, the comparator and the ladder now fold into ONE row —
+"Plan basis · 158,285 GSF seed plan @ 5 st · 100.1% of max · context applied
+· 158,100 GSF upper bound · 100% capture" — that opens on demand; a blocked
+or stale state opens it itself. The canvas is the page.
+
+### The console shouted (client)
+
+Three red "[use-binding] server solve: refusing to mass 'apartments' under a
+'single_family' compiled context" errors per visit: the boot placeholder use
+compiled as single-family while the permitted-uses lookup was still
+resolving (or had failed), and the auto-plan asked the multifamily solver
+anyway because the zoning tiebreaker said "massing path". Now a
+single-family context on multifamily land that the user did not pick plans
+nothing and waits for the multifamily compile, a failed lookup defaults the
+use from the zoning base, and a single-family use the user DID pick routes
+to the lot fit instead of tripping the guard.
+
+### Still open
+
+The building's organization is the generator's E-shape with courts opening
+sideways; the pattern layer says the site wants perpendicular bars framing
+courts to the street and admits the generator does not follow it yet. That
+is the next generator step, and a bigger one than the road.

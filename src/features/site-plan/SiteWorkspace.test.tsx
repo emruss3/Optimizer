@@ -309,10 +309,12 @@ describe('SiteWorkspace: selected-use transition owns exactly one context', () =
     await waitFor(() => expect(screen.getByText(/67 exact-use RM40 precedents · high confidence/)).toBeTruthy());
     expect(screen.queryByText(/5 exact-use RM40 precedents/)).toBeNull();
     // USE-BINDING INVARIANT: a single_family compiled context must NEVER
-    // ground multifamily massing (2600 W Heiman shipped exactly that). The
-    // MF generator is refused for BOTH snapshots; the error violation
-    // auto-surfaces the docked Flags tab (3b) with the refusal chip.
-    await waitFor(() => expect(screen.getByText('use-binding')).toBeTruthy());
+    // ground multifamily massing (2600 W Heiman shipped exactly that). Since
+    // 2026-09-04 the workspace does not even ask: a use the user PICKED as
+    // single-family routes to the lot fit, so the MF generator is called for
+    // NEITHER snapshot and no refusal chip has to be raised.
+    await waitFor(() => expect(genSfMock).toHaveBeenCalled());
+    expect(screen.queryByText('use-binding')).toBeNull();
     expect(genV2Mock).not.toHaveBeenCalledWith(669046, 'ctx-sf', expect.anything());
     expect(genV2Mock).not.toHaveBeenCalledWith(669046, 'ctx-mf', expect.anything());
   });
@@ -328,6 +330,8 @@ describe('SiteWorkspace: selected-use transition owns exactly one context', () =
 
     // First compile settles → server generation on the active snapshot
     await waitFor(() => expect(genV2Mock).toHaveBeenCalledWith(669046, 'ctx-mf', expect.anything()));
+    // 2026-09-04: the lineage sits inside the collapsed plan-basis row — open it
+    fireEvent.click(await screen.findByTestId('plan-basis-toggle'));
     await waitFor(() => expect(screen.getByText('Context applied')).toBeTruthy());
     // MF precedent basis is on screen (5 exact precedents, Regrid dimensions)
     expect(screen.getByText(/5 exact-use RM40 precedents · high confidence/)).toBeTruthy();
@@ -460,6 +464,8 @@ describe('SiteWorkspace: failed server plan → error card, never the improvised
     genV2Mock.mockResolvedValue(serverResp('ctx-mf'));
     fireEvent.click(screen.getByTestId('server-plan-retry'));
     await waitFor(() => expect(screen.queryByTestId('server-plan-error')).toBeNull());
+    // 2026-09-04: the lineage sits inside the collapsed plan-basis row — open it
+    fireEvent.click(await screen.findByTestId('plan-basis-toggle'));
     await waitFor(() => expect(screen.getByText('Context applied')).toBeTruthy());
     expect(optimizeSiteMock).not.toHaveBeenCalled();
   });

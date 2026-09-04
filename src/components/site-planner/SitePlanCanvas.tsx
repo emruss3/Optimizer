@@ -6,7 +6,7 @@ import type { Element } from '../../engine/types';
 import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
 import { feetToMeters, metersToFeet } from '../../engine/units';
-import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut, townhomeSlices } from './planRendering';
+import { computeUnitTicks, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut, townhomeSlices } from './planRendering';
 import { computeFloorplate, UNIT_COLORS } from './unitLayout';
 import type { EdgeClassification } from '../../engine/setbacks';
 import type { ParcelTopoView } from '../../features/site-plan/api/parcelTopo';
@@ -839,23 +839,23 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           }
         }
 
-        // The corridor: a clear strip between the two unit banks (world width,
-        // ~5.5 ft) with the centreline dashed over it.
-        const corridor = corridorLine(coords);
-        if (corridor) {
+        // The corridors: one clear strip per double-loaded bar (world width,
+        // ~5.5 ft) with the centreline dashed over it — they meet at the
+        // junctions of an L, U or E the way a real plan's corridors do.
+        for (const [a, b] of plate.corridors) {
           ctx.globalAlpha = 1;
           ctx.strokeStyle = 'rgba(255,255,255,0.92)';
           ctx.lineWidth = 1.7;
           ctx.beginPath();
-          ctx.moveTo(corridor[0][0], corridor[0][1]);
-          ctx.lineTo(corridor[1][0], corridor[1][1]);
+          ctx.moveTo(a[0], a[1]);
+          ctx.lineTo(b[0], b[1]);
           ctx.stroke();
           ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)';
           ctx.lineWidth = 1.2 / zoom;
           ctx.setLineDash([4 / zoom, 3 / zoom]);
           ctx.beginPath();
-          ctx.moveTo(corridor[0][0], corridor[0][1]);
-          ctx.lineTo(corridor[1][0], corridor[1][1]);
+          ctx.moveTo(a[0], a[1]);
+          ctx.lineTo(b[0], b[1]);
           ctx.stroke();
           ctx.setLineDash([]);
         }
@@ -1392,7 +1392,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ...unitRows,
           ['Core / stairs', '#94A3B8'],
           ['Parking', '#E2E8F0'],
-          ['Drive / aisle', '#CBD5E1'],
+          ['Drive / aisle', '#9AA8B8'],
           ['Open space', '#BBF7D0'],
           ['Amenity / pool', '#F59E0B'],
           // Setback edge key — colors must match renderEdgeSetbacks exactly

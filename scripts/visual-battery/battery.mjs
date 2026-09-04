@@ -190,6 +190,20 @@ function judge(exp, ev) {
       }
     }
   }
+  // 2026-09-04 (Eric, 2622 W Heiman: "random parking, with no road to get to
+  // it"): a multifamily plan's parking must have a road — a drive that
+  // reaches the parcel line and a drive at every bay. Read from the rendered
+  // elements, so the seed's lane, the client mapper and the geometry gate are
+  // all on the path.
+  if (exp.requireAccess) {
+    const a = ev.mfAccess;
+    if (!a) errs.push('access check missing (mfAccess evidence absent)');
+    else {
+      if (!a.curb) errs.push('no drive reaches the parcel line — the parking has no road from the street');
+      if (!(a.bays > 0)) errs.push('no parking bays rendered');
+      else if (a.served < a.bays) errs.push(`${a.bays - a.served} of ${a.bays} parking bays have no drive at them`);
+    }
+  }
   // 2026-09-04 civil sheet: the topography must LOAD and render (contours in
   // the canvas frame). On a subdivision every through-street must carry a
   // profile and spot grades — the DEM fetch, the fn_parcel_topo grant and the

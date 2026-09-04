@@ -119,3 +119,71 @@ describe('computeFloorplate', () => {
     expect(computeFloorplate(bar(), [], 3).units).toHaveLength(0);
   });
 });
+
+// 2026-09-04 (Eric, 2622 W Heiman): the plate is the BARS of the footprint,
+// not the bounding box of the whole shape.
+describe('computeFloorplate — bars of an L, E, or slab', () => {
+  const dims = (u: { ring: number[][] }): [number, number] => {
+    const xs = u.ring.map(p => p[0]);
+    const ys = u.ring.map(p => p[1]);
+    return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+  };
+  // a 20 m bar: (20 − 1.7 m corridor) / 2 = 9.15 m banks
+  const BANK = (20 - 1.7) / 2;
+  // an E: a 20 m spine 100 m tall with three 20 m arms
+  const E = [[0, 0], [100, 0], [100, 20], [20, 20], [20, 40], [80, 40], [80, 60], [20, 60], [20, 80], [90, 80], [90, 100], [0, 100], [0, 0]];
+  // an L: a 20 × 70 spine with an 80 m arm
+  const L = [[0, 0], [80, 0], [80, 20], [20, 20], [20, 70], [0, 70], [0, 0]];
+
+  it('reads an E as a spine and three arms, each with its own corridor', () => {
+    const fp = computeFloorplate(E, mix, 3);
+    expect(fp.bars).toHaveLength(4);
+    expect(fp.corridors).toHaveLength(4);
+    // cores at the free ends only: two on the spine, one on each arm's far end
+    expect(fp.cores).toHaveLength(5);
+    // every unit is exactly a bank deep (across its bar) and a type wide along
+    // it — never a 100 m sliver across the whole shape
+    for (const u of fp.units) {
+      const [w, h] = dims(u);
+      const deep = Math.abs(w - BANK) < 0.05 ? h : Math.abs(h - BANK) < 0.05 ? w : null;
+      expect(deep).not.toBeNull();
+      expect(deep as number).toBeGreaterThanOrEqual(3);
+      expect(deep as number).toBeLessThan(20);
+    }
+    expect(fp.units.length).toBeGreaterThan(20);
+  });
+
+  it('reads an L as two bars and skips the core at the junction', () => {
+    const fp = computeFloorplate(L, mix, 3);
+    expect(fp.bars).toHaveLength(2);
+    expect(fp.corridors).toHaveLength(2);
+    expect(fp.cores).toHaveLength(3);
+  });
+
+  it('a corridor runs along each bar, not across the courtyard', () => {
+    const fp = computeFloorplate(E, mix, 3);
+    // the spine's corridor is vertical at x = 10; the arms' are horizontal at y = 10 / 50 / 90
+    const vertical = fp.corridors.filter(([a, b]) => Math.abs(a[0] - b[0]) < 1e-6);
+    const horizontal = fp.corridors.filter(([a, b]) => Math.abs(a[1] - b[1]) < 1e-6);
+    expect(vertical).toHaveLength(1);
+    expect(Math.abs(vertical[0][0][0] - 10)).toBeLessThan(1e-6);
+    expect(horizontal.map(([a]) => Math.round(a[1])).sort((p, q) => p - q)).toEqual([10, 50, 90]);
+  });
+
+  it('units of a plain bar are bank-deep and type-wide', () => {
+    const fp = computeFloorplate(bar(61, 20), mix, 3);
+    expect(fp.bars).toHaveLength(1);
+    for (const u of fp.units) {
+      const [w, h] = dims(u);
+      expect(h).toBeCloseTo(BANK, 1);
+      expect(w).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('a slanted footprint still yields one bar of units', () => {
+    const para = [[0, 0], [61, 0], [71, 18], [10, 18], [0, 0]];
+    const fp = computeFloorplate(para, mix, 3);
+    expect(fp.bars).toHaveLength(1);
+    expect(fp.units.length).toBeGreaterThan(4);
+  });
+});
