@@ -703,3 +703,113 @@ answer on 480089 is the refusal (`buildability.verdict = unbuildable_area`,
 `suggested_typology = single_family`), and both battery layers assert it. A
 plan appearing there, or the verdict changing, reds the gate as loudly as a
 capture regression — and says to re-measure and put a capture floor back.
+
+## 15. A civil sheet, not a diagram — existing topography and the layout sheet's vocabulary (2026-09-04)
+
+Eric, on the merged v1.2 plan of 2400 W Heiman: "The output looks
+rudimentary. This should look like a full civil set with elevations, etc."
+
+He is right about what was missing. A civil concept set carries, beyond the
+geometry: existing contours with index labels, spot grades, stations along
+each centreline, the right-of-way width written on the street, the
+cul-de-sac radius, lot numbers with their dimensions, a title block that
+states the basis of every line, and a plan-and-profile of each street. Our
+sheet had streets, lots, courts and a hatched greenway, and nothing else.
+Everything else a civil set carries — design grades, cut/fill, storm,
+utilities, cross-sections — is the civil's *design*, and inventing it would
+be the "colored random squares" mistake in a different costume. So this
+section adds the existing conditions and the sheet's vocabulary, and stops
+there, saying so on the sheet.
+
+### Topography from USGS 3DEP
+
+`fn_parcel_topo_fetch(ogc_fid)` samples the USGS 3DEP 1-m DEM through the
+`http` extension: the ImageServer `getSamples` endpoint, called as a
+multipoint POST in chunks of 900 points (a polygon request caps at ~1,000
+samples over the bounding box, which is why it is done this way), on a
+20-ft grid over the parcel plus a 100-ft margin, in EPSG:2274 feet, NAVD88.
+The samples are stored as a PostGIS raster in `parcel_topo` with the slope
+statistics (`st_slope`, percent) and cached for 180 days.
+`fn_parcel_topo(ogc_fid)` (the only thing the app calls; SECURITY DEFINER,
+granted to the app roles, fetching on a miss) serves 1-ft contours with an
+index every 5 ft (`st_contour`, clipped to 60 ft beyond the parcel,
+simplified 1 ft), the sample grid, and the statistics.
+
+| parcel | samples | contours | elevation (ft) | mean / max slope | first fetch | payload |
+|---|---|---|---|---|---|---|
+| 2400 W Heiman (550510, 13.15 ac) | 2,789 | 154 | 406.6–444.6 | 5.4% / 31.8% | 24.6 s | 148 KB |
+| 2600 W Heiman (553450, 2.8 ac) | 873 | 45 | 417.5–440.1 | 2.8% / 19.3% | 1.5 s | 34 KB |
+
+The 31.8% on 2400 W Heiman is the stream bank inside the held-out greenway —
+the DEM sees the same thing the FEMA and NWI layers said.
+
+### On the sheet
+
+- **Contours** screened over the plan the way a civil sheet carries existing
+  conditions: minor lines thin and light, index lines heavier and labelled
+  along the line with a halo. Minor contours drop out when they would crowd
+  closer than 4 px on screen at the parcel's mean slope (a hillside at fit
+  zoom would otherwise be a smear); index labels need 24 px between index
+  lines. A **Topo** toggle beside 2D / 3D turns the layer off.
+- **Stations** every 100 ft along each through-street, ticked across the
+  centreline, with the existing grade every 200 ft and at both ends
+  ("EG 431.2") — the DEM's value, bilinear between the four samples around
+  the point, never estimated. The callouts have zoom floors so the fit view
+  stays a plan and not a smear (the first render had every label on at
+  once): ticks from about 1" = 630', station text from 1" = 315', grades and
+  alley widths from 1" = 260', lot dimensions once a lot is ~44 px wide.
+  Renders at fit, 1" = 212' and 1" = 145' are in `qa/audits/2026-09-04/`.
+- **Callouts**: "STREET A · 55' PUBLIC R.O.W." between two ticks near the
+  middle of the street, "20' ALLEY" on the larger alleys, "R = 50'" at the
+  bulb.
+- **Lot numbers** at every lot, with frontage × depth and area once the lot
+  is roomy enough on screen to carry them.
+- **Title block** (top-left): project, the sheet title (CONCEPT LAYOUT PLAN
+  for a subdivision, CONCEPT SITE PLAN for massing, EXISTING CONDITIONS
+  before a plan), zoning / acreage / lots / network / R.O.W., the DEM and its
+  interval, datum and grid, the elevation range and slopes, the hazard layers
+  and the share held out, the crossing taken, "not a survey", the on-screen
+  scale, the date, and CONCEPT — NOT FOR CONSTRUCTION.
+- **Profile tab** under the canvas: existing grade along every
+  through-street, stations on the x-axis, NAVD88 feet on the y-axis, the
+  vertical exaggeration stated, the overall and steepest 25-ft grades, and the
+  held-out land the street crosses. On a parcel with no street it reports the
+  site's elevation range and slopes instead.
+
+The through-street's centreline now travels with the street element
+(`centerline2274`), which is what the stations, the spot grades and the
+profile are built on; the client does no geometry of its own beyond walking
+that line.
+
+### What is honest about it, and what it is not
+
+Every elevation on the sheet is the DEM's. The DEM is not a survey — a 1-m
+lidar-derived model is good to roughly a foot vertically, contours from a
+20-ft sample grid are smoother than survey contours, and the sheet says so.
+There is no design profile, no proposed contour, no cut/fill: the existing
+grade is drawn and the design is left to the civil, which the profile panel
+states. The lot dimensions are the generator's numbers, not a plat.
+
+### Gate
+
+`requireTopo` on 2400 W Heiman and 2600 W Heiman in the fixture battery: the
+layer must load and render contours; on the subdivision the spine must carry
+a profile and spot grades and the title block must read CONCEPT LAYOUT PLAN.
+The `fn_parcel_topo` responses for both parcels are committed fixtures. The
+DEM fetch, the function grant (the `fn_subdiv_serve` lesson) and the
+centreline on the street elements are all on that path.
+
+### Next
+
+1. **Grade-aware generation.** The generator can now know the slope under a
+   street: a steepest existing grade over the ordinance maximum should flag
+   the street, and lots on a bank steeper than ~25% should be refused the way
+   the greenway is. The sweep can carry mean / max slope per parcel now that
+   the fetch is cheap and cached.
+2. **A design profile** is a real civil task (PVIs, K-values, the maximum
+   grade); proposing one is possible from this grid but must be labelled as
+   ours, not read as the civil's.
+3. **Storm.** The low point of each profile is where the water goes; a
+   detention pad at the low corner would come from the same grid and the same
+   honesty rule.
+4. **Cross-sections** at stations, from the same grid.

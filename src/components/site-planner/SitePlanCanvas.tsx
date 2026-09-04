@@ -9,6 +9,104 @@ import { feetToMeters, metersToFeet } from '../../engine/units';
 import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut, townhomeSlices } from './planRendering';
 import { computeFloorplate, UNIT_COLORS } from './unitLayout';
 import type { EdgeClassification } from '../../engine/setbacks';
+import type { ParcelTopoView } from '../../features/site-plan/api/parcelTopo';
+import type { SheetAnnotation, SheetTitleBlock } from '../../features/site-plan/api/sheetAnnotations';
+
+const NO_ANNOTATIONS: SheetAnnotation[] = [];
+
+/** Fold an angle (radians) into (-π/2, π/2] so text along it reads upright. */
+function uprightAngle(a: number): number {
+  let r = a;
+  while (r > Math.PI) r -= 2 * Math.PI;
+  while (r < -Math.PI) r += 2 * Math.PI;
+  if (r > Math.PI / 2) r -= Math.PI;
+  else if (r < -Math.PI / 2) r += Math.PI;
+  return r;
+}
+
+function polylineLength(line: number[][]): number {
+  let L = 0;
+  for (let i = 1; i < line.length; i++) L += Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+  return L;
+}
+
+/** Point and direction at distance `s` along a polyline (world units). */
+function alongPolyline(line: number[][], s: number): { x: number; y: number; angle: number } {
+  let acc = 0;
+  for (let i = 1; i < line.length; i++) {
+    const [ax, ay] = line[i - 1];
+    const [bx, by] = line[i];
+    const len = Math.hypot(bx - ax, by - ay);
+    if (len <= 0) continue;
+    if (s <= acc + len || i === line.length - 1) {
+      const t = Math.min(1, Math.max(0, (s - acc) / len));
+      return { x: ax + (bx - ax) * t, y: ay + (by - ay) * t, angle: Math.atan2(by - ay, bx - ax) };
+    }
+    acc += len;
+  }
+  return { x: line[0][0], y: line[0][1], angle: 0 };
+}
+
+/** Greedy word wrap for the current ctx.font. */
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const words = text.split(' ');
+  const out: string[] = [];
+  let line = '';
+  for (const w of words) {
+    const probe = line ? `${line} ${w}` : w;
+    if (line && ctx.measureText(probe).width > maxW) {
+      out.push(line);
+      line = w;
+    } else {
+      line = probe;
+    }
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+/**
+ * Screen-sized text anchored in the world frame (which is y-up), rotated
+ * along `angle` and kept upright. A halo (stroke) keeps it legible over line
+ * work; a pill (box) lifts it off pavement. Centred on the anchor; `dy` in
+ * world units moves it off the line (negative = up on screen).
+ */
+function drawSheetText(
+  ctx: CanvasRenderingContext2D,
+  zoom: number,
+  x: number,
+  y: number,
+  angle: number,
+  text: string,
+  o: { fontPx: number; weight: number; fill: string; halo?: string; pill?: string; dy?: number; baseline?: CanvasTextBaseline },
+): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, -1);
+  ctx.rotate(-uprightAngle(angle));
+  const size = o.fontPx / zoom;
+  ctx.font = `${o.weight} ${size}px Inter, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = o.baseline ?? 'middle';
+  const dy = o.dy ?? 0;
+  if (o.pill) {
+    const w = ctx.measureText(text).width + 8 / zoom;
+    const h = size * 1.5;
+    ctx.fillStyle = o.pill;
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, dy - h / 2, w, h, 2 / zoom);
+    ctx.fill();
+  }
+  if (o.halo) {
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3 / zoom;
+    ctx.strokeStyle = o.halo;
+    ctx.strokeText(text, 0, dy);
+  }
+  ctx.fillStyle = o.fill;
+  ctx.fillText(text, 0, dy);
+  ctx.restore();
+}
 
 interface SitePlanCanvasProps {
   elements: Element[];
@@ -41,6 +139,13 @@ interface SitePlanCanvasProps {
   /** Neighborhood context (canvas-frame 3857): grey parcels, existing
    *  building outlines, street edges — the plan reads in its block. */
   neighbors?: import('../../features/site-plan/api/neighbors').PlannerNeighbors | null;
+  /** Existing topography (USGS 3DEP): contours in the canvas frame, drawn
+   *  over the plan like a civil sheet's existing-conditions layer. */
+  topo?: ParcelTopoView | null;
+  /** Civil-sheet callouts: stations, spot grades, R.O.W. / alley / radius. */
+  annotations?: SheetAnnotation[];
+  /** Title block (screen-space, top-left). */
+  sheet?: SheetTitleBlock | null;
 }
 
 export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
@@ -66,7 +171,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   onWheel,
   cursor,
   draftMode = false,
-  neighbors = null
+  neighbors = null,
+  topo = null,
+  annotations = NO_ANNOTATIONS,
+  sheet = null
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -1293,15 +1401,21 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['Side setback', '#64748B'],
         ];
     if (hasLots && !isSubdivision) entries.push(['Lot line', '#F8FAFC']);
+    // Existing contours are line work, keyed as a line (the 'contour' colour
+    // token draws a sample stroke instead of a swatch).
+    if (topo && topo.contours.length > 0) entries.push(['Existing contour · 1 ft (index 5 ft)', 'contour']);
 
     const pad = 8;
     const rowH = 16;
-    const boxW = isSubdivision ? 196 : 132;
+    ctx.save();
+    ctx.font = '500 10px Inter, system-ui, sans-serif';
+    let labelW = 0;
+    for (const [label] of entries) labelW = Math.max(labelW, ctx.measureText(label).width);
+    const boxW = Math.max(isSubdivision ? 196 : 132, Math.ceil(labelW) + pad * 2 + 16);
     const boxH = entries.length * rowH + pad * 2 - 4;
     const x = 12;
     const y = cssH - boxH - 12;
 
-    ctx.save();
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
     ctx.strokeStyle = '#E5E7EB';
     ctx.lineWidth = 1;
@@ -1310,22 +1424,31 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.fill();
     ctx.stroke();
 
-    ctx.font = '500 10px Inter, system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     entries.forEach(([label, color], i) => {
       const rowY = y + pad + i * rowH + rowH / 2 - 2;
-      ctx.fillStyle = color;
-      ctx.strokeStyle = '#94A3B8';
-      ctx.beginPath();
-      ctx.roundRect(x + pad, rowY - 5, 10, 10, 2);
-      ctx.fill();
-      ctx.stroke();
+      if (color === 'contour') {
+        ctx.strokeStyle = 'rgba(120, 72, 32, 0.75)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x + pad, rowY + 3);
+        ctx.quadraticCurveTo(x + pad + 5, rowY - 6, x + pad + 10, rowY - 2);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = color;
+        ctx.strokeStyle = '#94A3B8';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x + pad, rowY - 5, 10, 10, 2);
+        ctx.fill();
+        ctx.stroke();
+      }
       ctx.fillStyle = '#475569';
       ctx.fillText(label, x + pad + 16, rowY);
     });
     ctx.restore();
-  }, [elements]);
+  }, [elements, topo]);
 
   // Screen-space scale bar (drawn after the world transform is popped)
   const renderScaleBar = useCallback((ctx: CanvasRenderingContext2D, zoom: number, cssW: number, cssH: number) => {
@@ -1352,6 +1475,189 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.fillText(`${ft} ft`, (x1 + x2) / 2, y - 4);
     ctx.restore();
   }, []);
+
+  // Existing topography (USGS 3DEP 1-m DEM): 1-ft contours screened over the
+  // plan the way a civil sheet carries existing conditions — minor lines thin
+  // and light, index (5-ft) lines heavier and labelled along the line. Minor
+  // contours drop out when they would crowd closer than ~4 px on screen (a
+  // hillside at fit zoom); index labels need ~24 px between index lines.
+  const renderTopo = useCallback((ctx: CanvasRenderingContext2D, zoom: number) => {
+    if (!topo || topo.contours.length === 0) return;
+    const slope = Math.max(0.5, topo.meanSlopePct ?? 5);
+    // screen px between 1-ft contours at the mean slope (run per ft of rise = 100/slope ft)
+    const minorPx = zoom * (100 / slope) * 0.3048;
+    const drawMinor = minorPx >= 4;
+    const labelIndex = minorPx * 5 >= 24;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const c of topo.contours) {
+      if (!c.index && !drawMinor) continue;
+      ctx.strokeStyle = c.index ? 'rgba(120, 72, 32, 0.55)' : 'rgba(120, 72, 32, 0.28)';
+      ctx.lineWidth = (c.index ? 1.1 : 0.6) / zoom;
+      ctx.beginPath();
+      for (const line of c.lines) {
+        if (line.length < 2) continue;
+        ctx.moveTo(line[0][0], line[0][1]);
+        for (let i = 1; i < line.length; i++) ctx.lineTo(line[i][0], line[i][1]);
+      }
+      ctx.stroke();
+    }
+    if (labelIndex) {
+      for (const c of topo.contours) {
+        if (!c.index) continue;
+        // label the longest piece at its midpoint, along the line
+        let best: number[][] | null = null;
+        let bestLen = 0;
+        for (const line of c.lines) {
+          const L = polylineLength(line);
+          if (L > bestLen) { bestLen = L; best = line; }
+        }
+        if (!best || bestLen * zoom < 70) continue;
+        const at = alongPolyline(best, bestLen / 2);
+        drawSheetText(ctx, zoom, at.x, at.y, at.angle, String(Math.round(c.elevationFt)), {
+          fontPx: 9.5, weight: 600, fill: 'rgba(120, 72, 32, 0.95)', halo: 'rgba(249, 250, 251, 0.95)',
+        });
+      }
+    }
+    ctx.restore();
+  }, [topo]);
+
+  // Civil-sheet callouts: station ticks along each through-street with the
+  // station above the line and the existing grade below it, the R.O.W. name
+  // between ticks, alley widths, the cul-de-sac radius. World-anchored,
+  // screen-sized, each with its own zoom floor so nothing piles up at fit.
+  const renderAnnotations = useCallback((ctx: CanvasRenderingContext2D, zoom: number) => {
+    if (annotations.length === 0) return;
+    ctx.save();
+    for (const a of annotations) {
+      if (a.minZoom != null && zoom < a.minZoom) continue;
+      const angle = a.angle ?? 0;
+      if (a.kind === 'station') {
+        const nx = -Math.sin(angle);
+        const ny = Math.cos(angle);
+        const h = 5 / zoom;
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(a.x - nx * h, a.y - ny * h);
+        ctx.lineTo(a.x + nx * h, a.y + ny * h);
+        ctx.stroke();
+        if (zoom >= (a.labelMinZoom ?? 0)) {
+          drawSheetText(ctx, zoom, a.x, a.y, angle, a.text, {
+            fontPx: 9, weight: 500, fill: '#334155', halo: 'rgba(255,255,255,0.9)', dy: -7 / zoom, baseline: 'bottom',
+          });
+        }
+      } else if (a.kind === 'spot') {
+        drawSheetText(ctx, zoom, a.x, a.y, angle, a.text, {
+          fontPx: 9, weight: 500, fill: '#7C2D12', halo: 'rgba(255,255,255,0.9)', dy: 7 / zoom, baseline: 'top',
+        });
+      } else if (a.kind === 'label') {
+        drawSheetText(ctx, zoom, a.x, a.y, angle, a.text, { fontPx: 9.5, weight: 700, fill: '#1F2937', pill: 'rgba(255,255,255,0.85)' });
+      } else {
+        drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 9.5, weight: 600, fill: '#1F2937', pill: 'rgba(255,255,255,0.85)' });
+      }
+    }
+    ctx.restore();
+  }, [annotations]);
+
+  // Lot numbers at the centroid of every generated lot, with the frontage ×
+  // depth and area once the lot is roomy on screen — the plat's vocabulary.
+  const renderLotTag = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
+    if (element.type !== 'other' || !/^Lot \d+$/.test(element.name ?? '')) return;
+    const coords = element.geometry?.coordinates?.[0];
+    if (!coords || coords.length < 4) return;
+    let cx = 0, cy = 0;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const n = coords.length - 1;
+    for (let i = 0; i < n; i++) {
+      const [x, y] = coords[i];
+      cx += x; cy += y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    cx /= n; cy /= n;
+    const screenW = (maxX - minX) * zoom;
+    const screenH = (maxY - minY) * zoom;
+    if (Math.min(screenW, screenH) < 14 || Math.max(screenW, screenH) < 26) return;
+    const roomy = Math.min(screenW, screenH) >= 44 && Math.max(screenW, screenH) >= 78;
+    const num = (element.name ?? '').replace('Lot ', '');
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, -1);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${11 / zoom}px Inter, system-ui, sans-serif`;
+    ctx.fillStyle = '#334155';
+    ctx.fillText(num, 0, roomy ? -6 / zoom : 0);
+    if (roomy) {
+      const p = element.properties as { widthFt?: number; depthFt?: number; areaSqFt?: number } | undefined;
+      const dims = typeof p?.widthFt === 'number' && typeof p?.depthFt === 'number'
+        ? `${Math.round(p.widthFt)}' × ${Math.round(p.depthFt)}'`
+        : '';
+      const area = typeof p?.areaSqFt === 'number' && p.areaSqFt > 0 ? `${Math.round(p.areaSqFt).toLocaleString()} SF` : '';
+      ctx.font = `500 ${8.5 / zoom}px Inter, system-ui, sans-serif`;
+      ctx.fillStyle = '#64748B';
+      if (dims) ctx.fillText(dims, 0, 5 / zoom);
+      if (area) ctx.fillText(area, 0, 15 / zoom);
+    }
+    ctx.restore();
+  }, []);
+
+  // Screen-space title block (top-right, beside the north arrow, clear of
+  // the building inspector at top-left): the project, the sheet title, the
+  // basis of every line on it, the on-screen scale and the date — and the
+  // line every concept sheet carries: NOT FOR CONSTRUCTION.
+  const renderTitleBlock = useCallback((ctx: CanvasRenderingContext2D, zoom: number, cssW: number) => {
+    if (!sheet) return;
+    const pad = 10;
+    const y = 12;
+    const maxW = Math.min(320, Math.max(200, cssW * 0.3));
+    const rows: Array<{ text: string; font: string; color: string; h: number; gap: number }> = [];
+    ctx.save();
+    const add = (text: string, size: number, weight: number, color: string, gap = 0) => {
+      const font = `${weight} ${size}px Inter, system-ui, sans-serif`;
+      ctx.font = font;
+      wrapText(ctx, text, maxW).forEach((t, i) => rows.push({ text: t, font, color, h: Math.round(size * 1.3), gap: i === 0 ? gap : 0 }));
+    };
+    // 1 in on screen = 96 px = 96/zoom m
+    const scaleFt = Math.round((96 / zoom) * 3.28084);
+    add(sheet.project, 12, 700, '#0F172A');
+    add(sheet.title, 10, 700, '#1E3A8A', 2);
+    if (sheet.subtitle) add(sheet.subtitle, 10, 500, '#475569', 1);
+    sheet.notes.forEach((note, i) => add(note, 8.5, 400, '#64748B', i === 0 ? 5 : 1));
+    add(`SCALE 1" = ${scaleFt}' on screen · ${sheet.date}`, 9, 500, '#475569', 5);
+    add('CONCEPT — NOT FOR CONSTRUCTION', 9.5, 700, '#B45309', 2);
+    let boxW = 0;
+    for (const r of rows) {
+      ctx.font = r.font;
+      boxW = Math.max(boxW, ctx.measureText(r.text).width);
+    }
+    boxW = Math.ceil(boxW) + pad * 2;
+    const boxH = rows.reduce((s, r) => s + r.h + r.gap, 0) + pad * 2 - 2;
+    // right-aligned, leaving the north arrow its 50 px
+    const x = Math.max(12, cssW - 52 - boxW);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.strokeStyle = '#E5E7EB';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(x, y, boxW, boxH, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    let cy = y + pad;
+    for (const r of rows) {
+      cy += r.gap;
+      ctx.font = r.font;
+      ctx.fillStyle = r.color;
+      ctx.fillText(r.text, x + pad, cy);
+      cy += r.h;
+    }
+    ctx.restore();
+  }, [sheet]);
 
   // Render function
   const render = useCallback(() => {
@@ -1448,6 +1754,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       }
     });
 
+    // Existing contours over the plan, under every callout (a civil sheet
+    // screens existing conditions across the whole drawing).
+    renderTopo(ctx, viewport.zoom);
+
     // Per-bay stall counts over every element (a bay's label must never sit
     // under the building drawn after it); the held-out greenway is hatched and
     // named in the same pass so a lot or a street drawn later never hides it.
@@ -1477,6 +1787,13 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       });
     }
 
+    // Lot numbers (dimensions when roomy), then the sheet callouts —
+    // stations, grades, R.O.W. — on top of everything but the measure line.
+    for (const element of sortedElements) {
+      renderLotTag(ctx, element, viewport.zoom);
+    }
+    renderAnnotations(ctx, viewport.zoom);
+
     // Render measurement line
     if (measurementState?.isMeasuring && measurementState.startPoint && measurementState.endPoint) {
       renderMeasurement(ctx, measurementState.startPoint, measurementState.endPoint, viewport.zoom);
@@ -1488,10 +1805,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     renderScaleBar(ctx, viewport.zoom, canvas.width / dpr, canvas.height / dpr);
     renderLegend(ctx, canvas.height / dpr, elements.some(e => e.type === 'other'));
     renderNorthArrow(ctx, canvas.width / dpr);
+    renderTitleBlock(ctx, viewport.zoom, canvas.width / dpr);
     if (draftMode) {
       renderDraftWatermark(ctx, canvas.width / dpr, canvas.height / dpr);
     }
-  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, draftMode, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderGreenwayCallout, renderDimensions, renderScaleBar, renderLegend, renderNorthArrow, renderDraftWatermark, renderNeighbors, renderLandscape, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel]);
+  }, [elements, selectedElements, viewport.zoom, viewport.panX, viewport.panY, processedGeometry, buildableEnvelope, isVertexEditing, selectedVertex, measurementState, gridState, hoveredElement, showLabels, draftMode, renderParcelBoundary, renderBuildableEnvelope, renderEdgeSetbacks, renderElement, renderBuildingDetail, renderBayCount, renderGreenwayCallout, renderDimensions, renderScaleBar, renderLegend, renderNorthArrow, renderDraftWatermark, renderNeighbors, renderLandscape, renderZoneLabel, renderParkingStripes, renderVertexHandles, renderResizeHandles, renderRotationHandle, renderGrid, renderMeasurement, renderElementLabel, renderTopo, renderAnnotations, renderLotTag, renderTitleBlock]);
 
   // Handle mouse move for hover detection
   const handleMouseMoveInternal = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {

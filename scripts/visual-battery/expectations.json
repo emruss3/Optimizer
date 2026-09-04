@@ -1,5 +1,5 @@
 {
-  "_rules": "Floors only ratchet UP. A server-behavior PR must refresh fixtures/mock_store.json AND raise (never lower) these floors to match. All four parcels flipped to server-plan on 2026-07-28: the seed_v2 default solves every one (667574/669046 were honest-refusals under the search core's defective output \u2014 upstream fixed). sf-suggestion asserts the RefusalCard typology switch: MF refusal carries the server-verified suggestion, the tap renders the house.",
+  "_rules": "Floors only ratchet UP. A server-behavior PR must refresh fixtures/mock_store.json AND raise (never lower) these floors to match. All four parcels flipped to server-plan on 2026-07-28: the seed_v2 default solves every one (667574/669046 were honest-refusals under the search core's defective output — upstream fixed). sf-suggestion asserts the RefusalCard typology switch: MF refusal carries the server-verified suggestion, the tap renders the house.",
   "553450": {
     "mode": "server-plan",
     "minCapturePct": 98.5,
@@ -9,7 +9,9 @@
       "parcels": true,
       "buildings": true
     },
-    "requirePlanPattern": "court_scheme_perpendicular_bars"
+    "requirePlanPattern": "court_scheme_perpendicular_bars",
+    "requireTopo": true,
+    "_topo": "2026-09-04 civil sheet: the DEM layer must load on a massing parcel too (873 samples, 45 contours, 417.5-440.1 ft); no street to profile here."
   },
   "488278": {
     "mode": "server-plan",
@@ -66,6 +68,8 @@
     "maxCrossingFt": 150,
     "requirePlanPattern": "subdivision_row_spine",
     "requirePatternAligned": true,
-    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac, 2381x250 ft): the subdivision generator draws the civil's organization — one 55-ft through-street on the long axis, double-loaded 80x75 lots with 20-ft rear alleys, courts on a 600-ft block rhythm. v1.1 (2026-09-03) HOLDS OUT the real FEMA AE floodplain (15.1%) and the riverine wetland + 25-ft buffer (10.4%) = 22.2% greenway, zero lots inside it. v1.2 (2026-09-03) STOPS THE STREET AT THE GREENWAY: no street is read on any edge, so the plan enters from the 2518 W Heiman end (a 102-ft stream culvert), declines the 271-ft floodplain crossing that would have reached 3,071 sf, and ends in a cul-de-sac — 34 lots (floor ratcheted 30 → 33), 20.0% ROW, 4 paired courts; the 25-ft SP scheme gives 119, SP + 10% amenity 94. requireGreenwayStop + maxCrossingFt assert the street stops (a culvert, never a bridge on a guess); minPctHazard asserts the carve ran (coverage ingested)."
+    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac, 2381x250 ft): the subdivision generator draws the civil's organization — one 55-ft through-street on the long axis, double-loaded 80x75 lots with 20-ft rear alleys, courts on a 600-ft block rhythm. v1.1 (2026-09-03) HOLDS OUT the real FEMA AE floodplain (15.1%) and the riverine wetland + 25-ft buffer (10.4%) = 22.2% greenway, zero lots inside it. v1.2 (2026-09-03) STOPS THE STREET AT THE GREENWAY: no street is read on any edge, so the plan enters from the 2518 W Heiman end (a 102-ft stream culvert), declines the 271-ft floodplain crossing that would have reached 3,071 sf, and ends in a cul-de-sac — 34 lots (floor ratcheted 30 → 33), 20.0% ROW, 4 paired courts; the 25-ft SP scheme gives 119, SP + 10% amenity 94. requireGreenwayStop + maxCrossingFt assert the street stops (a culvert, never a bridge on a guess); minPctHazard asserts the carve ran (coverage ingested).",
+    "requireTopo": true,
+    "_topo": "2026-09-04 civil sheet: USGS 3DEP 1-m DEM sampled on a 20-ft grid (2,789 samples, 154 one-ft contours, 406.6-444.6 ft, mean slope 5.4%) must load and render, the spine must carry a profile with stations and spot grades — the DEM fetch, the fn_parcel_topo grant and the centreline on the street elements are all on that path."
   }
 }

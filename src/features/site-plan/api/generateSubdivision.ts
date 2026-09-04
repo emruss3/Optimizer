@@ -239,6 +239,10 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
 
   (resp.streets ?? []).forEach((s, i) => {
     const kind = s.kind ?? 'through';
+    // The centreline travels with the street (EPSG:2274 feet) so the sheet can
+    // station it, spot its existing grade, and profile it against the topography.
+    const cl = s.centerline_2274 as { type?: string; coordinates?: unknown } | undefined;
+    const centerline2274 = cl?.type === 'LineString' && Array.isArray(cl.coordinates) ? cl.coordinates : undefined;
     polygons2274To3857(s.geom_2274).forEach((poly, j) => {
       elements.push({
         id: `${SUBDIVISION_ID_PREFIX}street-${i + 1}${j > 0 ? `-${j + 1}` : ''}`,
@@ -247,6 +251,8 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
         geometry: poly,
         properties: props({
           kind, widthFt: s.width_ft, lengthFt: s.length_ft,
+          hazardCrossingFt: s.hazard_crossing_ft, ends: s.ends,
+          centerline2274: j === 0 ? centerline2274 : undefined,
           styleOverride: true, color: '#A9B4C0', opacity: 0.92, strokeColor: '#7B8794',
         }),
         metadata: meta,
@@ -263,6 +269,7 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
         geometry: poly,
         properties: props({
           areaSqFt: a.area_sqft ?? undefined, kind: 'alley',
+          widthFt: typeof resp.params?.alley_width_ft === 'number' ? resp.params.alley_width_ft : undefined,
           styleOverride: true, color: '#D5DCE4', opacity: 0.85, strokeColor: '#AEB8C4',
         }),
         metadata: meta,

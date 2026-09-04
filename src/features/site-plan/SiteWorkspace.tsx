@@ -43,6 +43,9 @@ import ExportReport from './ui/ExportReport';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
 import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
+import { fetchParcelTopo, topoView, TopoGrid, type ParcelTopo } from './api/parcelTopo';
+import { buildSheetAnnotations, buildSheetTitleBlock } from './api/sheetAnnotations';
+import { StreetProfilePanel, buildStreetProfiles } from './ui/StreetProfile';
 import {
   compilePlannerContext,
   plannerContextToDesignContext,
@@ -112,7 +115,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Workspace shell (3b): the canvas is the workspace — parameters live in a
   // collapsible left rail, reporting in tabs docked under the canvas.
   const [leftRailCollapsed, setLeftRailCollapsed] = useState(false);
-  const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results'>('tabulation');
+  const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results' | 'profile'>('tabulation');
   // Exit artifact (P1-5): print-ready scheme report with a plan snapshot.
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPng, setExportPng] = useState<string | null>(null);
@@ -262,6 +265,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [maxBuildout, setMaxBuildout] = useState<MaxBuildout | null>(null);
   // Neighborhood context: neighbor parcels/buildings/streets (display-only)
   const [neighbors, setNeighbors] = useState<PlannerNeighbors | null>(null);
+  // Existing topography (USGS 3DEP via fn_parcel_topo): contours on the sheet,
+  // spot grades at the stations, the street profiles. Display and profiling
+  // only — no generator reads it yet.
+  const [topo, setTopo] = useState<ParcelTopo | null>(null);
+  const [showTopo, setShowTopo] = useState(true);
   // J1: the engine's buildability verdict — a refused parcel is a first-class
   // result (RefusalCard), fetched the moment the parcel opens.
   const [buildability, setBuildability] = useState<ParcelBuildability | null>(null);
@@ -1698,6 +1706,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
+  // Topography loads once per parcel (fail-soft; the first fetch of a parcel
+  // makes the database sample the DEM, which can take tens of seconds on a
+  // large site — the sheet fills in when it lands).
+  useEffect(() => {
+    if (contextOgcFid == null) {
+      setTopo(null);
+      return;
+    }
+    let cancelled = false;
+    fetchParcelTopo(contextOgcFid).then(t => {
+      if (!cancelled) setTopo(t);
+    });
+    return () => { cancelled = true; };
+  }, [contextOgcFid]);
+
   useEffect(() => {
     if (contextOgcFid == null) {
       setBuildability(null);
@@ -2056,6 +2079,46 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     ? seedRender.basis + (seedRender.inFamily ? ` · in-family: ${seedRender.inFamily}` : '')
     : planBasis;
 
+  // The civil sheet's layers (2026-09-04): contours in the canvas frame, the
+  // sample grid for spot grades and profiles, the callouts written on the
+  // plan, the profile of every through-street, and the title block.
+  const topoCanvas = useMemo(() => (topo ? topoView(topo) : null), [topo]);
+  const topoGrid = useMemo(() => (topo ? new TopoGrid(topo) : null), [topo]);
+  const sheetAnnotations = useMemo(() => buildSheetAnnotations(displayElements, topoGrid), [displayElements, topoGrid]);
+  const streetProfiles = useMemo(() => buildStreetProfiles(displayElements, topoGrid), [displayElements, topoGrid]);
+  const subdivisionOnSheet = !!subdivisionSummary && displayElements.some(e => e.id.startsWith('subdiv-'));
+  const sheetTitle = useMemo(
+    () =>
+      buildSheetTitleBlock({
+        address: parcel.address ?? null,
+        parcelId: parcel.ogc_fid ?? parcel.id ?? null,
+        zoning: (parcel.zoning as string | undefined) ?? null,
+        acres: typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null,
+        subdivision: subdivisionOnSheet && subdivisionSummary
+          ? {
+              lots: subdivisionSummary.lots,
+              network: subdivisionSummary.network,
+              pctRow: subdivisionSummary.pctRow,
+              pctHazard: subdivisionSummary.pctHazard,
+              hazardCoverage: subdivisionSummary.hazardCoverage,
+              crossingFt: subdivisionSummary.crossingFt,
+            }
+          : null,
+        hasPlan: displayElements.some(e => e.type === 'building' || e.type === 'parking'),
+        topo: topoCanvas
+          ? {
+              source: topoCanvas.source,
+              spacingFt: topo?.spacing_ft ?? 20,
+              zMinFt: topoCanvas.zMinFt,
+              zMaxFt: topoCanvas.zMaxFt,
+              meanSlopePct: topoCanvas.meanSlopePct,
+              maxSlopePct: topoCanvas.maxSlopePct,
+            }
+          : null,
+      }),
+    [parcel.address, parcel.ogc_fid, parcel.id, parcel.zoning, parcel.deeded_acres, subdivisionOnSheet, subdivisionSummary, displayElements, topoCanvas, topo],
+  );
+
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation
   // codes, the capture — instead of scraping pixels. Production bundles
@@ -2093,12 +2156,30 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       neighborsLoaded: neighbors
         ? { parcels: neighbors.parcels.length, buildings: neighbors.buildings.length, roads: neighbors.roads.length }
         : null,
+      // 2026-09-04 civil sheet: the topography that rendered and what was written on the plan
+      topoLoaded: topoCanvas
+        ? {
+            source: topoCanvas.source,
+            samples: topo?.n_samples ?? topo?.samples.length ?? 0,
+            contours: topoCanvas.contours.length,
+            zMinFt: topoCanvas.zMinFt,
+            zMaxFt: topoCanvas.zMaxFt,
+            meanSlopePct: topoCanvas.meanSlopePct,
+          }
+        : null,
+      sheetAnnotations: {
+        stations: sheetAnnotations.filter(a => a.kind === 'station').length,
+        spots: sheetAnnotations.filter(a => a.kind === 'spot').length,
+        labels: sheetAnnotations.filter(a => a.kind === 'label' || a.kind === 'radius').length,
+      },
+      profileStreets: streetProfiles.length,
+      sheetTitle: sheetTitle.title,
       utilizationPct:
         !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -2233,6 +2314,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               className={`px-3 py-1.5 border-l border-gray-200 ${showSeed ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
             >
               Seed
+            </button>
+          )}
+          {topo && (
+            <button
+              data-testid="topo-toggle"
+              onClick={() => setShowTopo(v => !v)}
+              title={`Existing contours — ${topo.source ?? 'USGS 3DEP 1 m DEM'}, 1-ft interval (index 5 ft), NAVD88`}
+              className={`px-3 py-1.5 border-l border-gray-200 ${showTopo ? 'bg-amber-700 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              Topo
             </button>
           )}
         </div>
@@ -2423,6 +2514,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 draftMode={draftMode}
                 suppressCurbCut={frontage?.landlocked === true}
                 neighbors={neighbors}
+                topo={showTopo ? topoCanvas : null}
+                annotations={sheetAnnotations}
+                sheet={sheetTitle}
                 parcel={plannerParcel}
                 planElements={displayElements}
                 metrics={metrics || undefined}
@@ -2495,6 +2589,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 alert: violations.some(v => v.severity === 'error'),
               },
               { key: 'results', label: 'Results', badge: null, alert: false },
+              { key: 'profile', label: 'Profile', badge: streetProfiles.length || null, alert: false },
             ] as const).map(t => (
               <button
                 key={t.key}
@@ -2556,6 +2651,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 violations={violations}
               />
             )}
+            {dockTab === 'profile' && <StreetProfilePanel profiles={streetProfiles} topo={topo} />}
           </div>
         </div>
         </div>
