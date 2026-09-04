@@ -1,0 +1,4 @@
+{
+  "_rules": "Rotating single-family cohort for the nightly subdivision check (one per day, deterministic). Drawn 2026-09-03 from subdivision_sweep rows that solved (error null, lots >= 3), spread by md5 of the id across zonings and sizes. Asserted for 'no unexpected error' and 'hazard layers ingested' only — no lot floors on cohort parcels until they have a history.",
+  "fids": [300919, 315221, 373986, 387615, 395143, 479137, 554126, 583875, 602825, 661225, 663482, 666638, 667934, 669041, 672012, 672686, 672862, 675723, 677092, 677401, 677892, 678308, 679803, 680181, 680260, 681482, 686586, 697679, 701056, 710078]
+}

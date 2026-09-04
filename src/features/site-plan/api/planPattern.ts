@@ -17,6 +17,29 @@ export interface PlanExemplar {
   principles?: string[] | null;
 }
 
+/**
+ * What the generator achieved on PARCELS LIKE THIS ONE (same zoning base,
+ * ½× to 2× the acreage) in the population sweep — the number a single
+ * parcel's result is read against. Server-computed from subdivision_sweep.
+ */
+export interface PlanCalibration {
+  n: number;
+  band?: { zoning?: string | null; acres_lo?: number; acres_hi?: number } | null;
+  refused_pct?: number | null;
+  median_du_ac?: number | null;
+  p25_du_ac?: number | null;
+  p75_du_ac?: number | null;
+  median_lots?: number | null;
+  median_pct_row?: number | null;
+  median_pct_lots?: number | null;
+  median_pct_residual?: number | null;
+  median_pct_hazard?: number | null;
+  networks?: Record<string, number> | null;
+  generator_version?: string | null;
+  sweep_run_at?: string | null;
+  basis?: string | null;
+}
+
 export interface PlanPattern {
   version?: string;
   parcel_ogc_fid: number;
@@ -26,6 +49,7 @@ export interface PlanPattern {
   principles?: string[];
   selection_basis?: Record<string, unknown>;
   exemplars?: PlanExemplar[];
+  calibration?: PlanCalibration | null;
   generator_alignment?: { generator?: string; aligned?: boolean; note?: string };
   error?: string;
 }

@@ -437,7 +437,11 @@ describe('seed_v2 payload family (order-6)', () => {
     expect(buildings).toHaveLength(1); // ONE connected structure = ONE outline
     const b = buildings[0];
     expect(b.id).toBe('mfgen-bldg-1');
-    expect(b.name).toBe('bars connected S form × 4 st');
+    // Named by what it is (stories, the ENGINE's unit count — 75, not the
+    // mix rows' 74), not by the composition token, which still travels for
+    // the headline and the receipts.
+    expect(b.name).toBe('Apartments · 4 stories · 75 units');
+    expect(b.properties?.compositionNote).toBe('bars_connected_S_form');
     expect(b.properties?.areaSqFt).toBe(33284); // EPSG:2274 truth, never re-measured
     expect(b.properties?.floors).toBe(4);
     // The SERVER's mix travels verbatim, not a client guess. Note the live

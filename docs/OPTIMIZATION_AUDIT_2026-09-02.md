@@ -394,4 +394,290 @@ amenity a stronger green; the "Neighbourhood plan" panel states lots,
 network, lot dimensions, buildable depth, land split, access, density and
 every flag in plain words; the plan-basis line is the generator's own
 sentence. Still open from §7: the legend has no ROW/alley/court vocabulary,
-and the floodplain is a flag, not a held-out layer.
+and the floodplain is a flag, not a held-out layer. (Both closed in §10.)
+
+## 10. Hazards held out, open space with intent — generator v1.1 (2026-09-03)
+
+Eric, on the v1 render: "This isn't a good site plan. You just cut a road
+straight through the middle, and colored random squares as 'amenities'. You
+didn't take into account wetlands, flood plains, etc."
+
+Two of the three are fair and are fixed here; the third is the site. A
+250-ft-wide strip has exactly one organization — the civil drew the same
+spine — but the v1 courts were placed by a lot counter and the residual
+slivers were painted the same green as the amenity, so the plan read as
+"random squares". And the floodplain was a flag, not geometry, because the
+database had none.
+
+**Real hazard geometry, fetched by the database itself.** The agent sandbox
+cannot reach FEMA or USFWS, but Postgres can: the `http` extension pages the
+FEMA NFHL flood-hazard layer (S_FLD_HAZ_AR, SFHA only — floodway included;
+the county-sized X zones are never carved so never fetched) and the USFWS
+National Wetlands Inventory into `hazard_flood_2274` / `hazard_wetland_2274`
+over a 6 × 6 county tile queue. Run 2026-09-03: 6,422 flood features and
+9,596 wetland features across all 72 tiles, no stuck tile. Coverage is
+tracked per tile, so a parcel whose tiles are not ingested says so instead of
+pretending.
+
+**What v1.1 does differently.**
+
+1. Floodplain (A/AE/AH/AO/V/VE) and wetlands (with a 25-ft buffer) are held
+   out before a lot is drawn: lots, alleys and courts sit only on the
+   developable remainder; the held-out pieces come back as greenway polygons
+   with their zone; a street that crosses one says so with the crossing length
+   (a culvert or a bridge, for the civil to price). A parcel that is mostly
+   hazard is refused with the reason.
+2. The amenity goes beside the greenway when the site has one (a window search
+   along the axis for the most developable ground touching the held-out
+   land), otherwise at the head. Courts sit on a block rhythm — a mid-block
+   green every 600 ft on both faces of the street — not on a lot count.
+3. Estate lots (district minimum ≥ 40,000 sf) get no alleys.
+4. Residual land is drawn as "Unassigned" in neutral grey, never green; the
+   legend on a subdivision reads Street / Alley / Lot / Greenway / Court /
+   Amenity / Unassigned.
+
+**MDHA, 2400 W Heiman, v1.1** — `qa/audits/2026-09-02/mdha_subdivision_v1_1_hazards_screen.png`:
+
+| | v1 (no carve) | v1.1 (held out) | Civil |
+|---|---|---|---|
+| Held out | flag only (FEMA 15%) | 22.2% greenway: AE floodplain 15.1%, riverine wetland R4SBC + buffer 10.4% | floodplain + greenway held out |
+| District lots 80×75 | 52 | 33, 5 courts on a 600-ft rhythm, 0 lots in the greenway | — |
+| SP townhomes 25 ft | 163 | 122 | 102 (08/21) |
+| SP 25 ft + amenity 10% | 148 | 101 lots + 57,300-sf amenity beside the greenway | 69 + amenity (08/30) |
+| Street crossing | — | Street A crosses the held-out land for 373 ft (culvert/bridge) | — |
+
+The SP counts now sit where the civil's do, for the same reason: the land the
+civil held out is held out. The battery gate asserts it (`minPctHazard`:
+coverage ingested and ≥ 20% held out on 550510); the lot floor was re-based
+from 52 to 30 because the definition changed, and the file says so.
+
+**What the greenway does to the ten other parcels.** 4678 Lickton Pike loses
+17 lots to 7.9% held out; 1404 Pleasant Hill Rd loses 4 of 9 to a wetland
+(15.2%); 4999 Clarksville Hwy is 63.7% floodplain and now yields zero lots
+instead of two on the water. None of these numbers were visible before.
+
+**Still not modelled:** topography (steep slopes), tree canopy, stream
+buffers beyond the NWI polygon, sewer availability. Each is the same pattern
+— a geometry layer the database fetches, held out or costed before a lot is
+drawn.
+
+## 11. The population, not the parcel — the subdivision sweep (2026-09-03)
+
+Eric: "Are you doing this for other parcels or just MDHA? … Everything we do
+needs to help train decision making for multiple parcels, not just a one off
+solve."
+
+Every parcel the plan-pattern layer would route to the subdivision generator
+— single-family or agricultural-residential zoning, land ≥ max(2 ac, 9 ×
+the district minimum lot), AR2a capped at 100 ac — was run through v1.1 and
+the outcome stored, numbers only, in `subdivision_sweep` (4,111 parcels;
+`qa/audits/2026-09-03/subdivision_sweep_v1_1.csv`). Two things come out of
+it: a **calibration** every parcel is now read against, and a ranked list of
+what the generator gets wrong.
+
+**Calibration in the product.** `fn_plan_pattern` now carries, for a
+subdivision parcel, what the generator achieved on parcels like it — same
+zoning base, half to twice the acreage: the count, median and quartile lots
+per acre, median land split, median held-out share, refusal rate, network
+mix. The pattern panel shows it under "Calibration · parcels like this
+one", so 33 lots (2.5 lots/ac) on 2400 W Heiman is read against 36 R6
+parcels of 6.6–26.3 ac with a median 3.2 lots/ac (quartiles 2.9–3.4) — the
+gap is the 22% the greenway takes, which those parcels mostly do not carry. The nightly DB battery gates the generator the
+same way it gates the multifamily solver: a floor parcel (550510: ≥ 30 lots,
+≥ 20% held out, hazards ingested) and a rotating single-family cohort.
+
+**What the population says.**
+
+| Slice | Parcels | Solved | Median lots | Median lots/ac | Median ROW | Median unassigned |
+|---|---|---|---|---|---|---|
+| All | 4,111 | 3,862 (94%) | 5 | 0.76 | 19.4% | 26.6% |
+| R6 | 129 | 125 | 14 | 2.96 | 24.2% | 12.1% |
+| R8 | 133 | 123 | 12 | 2.19 | 24.0% | 16.5% |
+| RS5 / RS7.5 | 161 | 149 | 19 / 8 | 3.33 / 2.32 | 23–24% | 11–19% |
+| R10 / RS10 | 976 | 881 | 6 | 1.52 | 22–23% | 20–21% |
+| R15 / RS15 / R20 / RS20 | 1,390 | 1,302 | 6 | 0.8–1.1 | 17–21% | 21–25% |
+| R40 / RS40 / R80 / RS80 (estate) | 377 | 363 | 3–5 | 0.08–0.36 | 17–18% | 31–40% |
+| AR2a (≤ 100 ac) | 932 | 906 | 1 | 0.05 | 18.2% | 42.9% |
+| Regular outline (fill > 0.85) | 779 | 737 | 6 | 1.26 | 20.1% | 12.9% |
+| Irregular outline (fill < 0.70) | 2,334 | 2,183 | 4 | 0.42 | 19.4% | 33.5% |
+
+Refusals: 221 parcels mostly floodplain or wetland (honest zeros — 54% of
+the population touches a hazard, median 8% of the parcel where it does), 28
+too narrow for a street and a lot, no exceptions after the valid-geometry
+hardening. Networks: 1,467 spines (median ROW 17.5%), 1,286 ladders (19.9%),
+897 grids (20.2%), 212 single-loaded. Access: 34% of parcels had no street
+read on any edge and were given through-access with a flag — the parcel
+fabric cannot tell a railroad from a road.
+
+**What it gets wrong, ranked by lost lots — the next levers, from evidence
+instead of one parcel:**
+
+1. **Irregular outlines** (57% of the population): whole-lot and
+   complete-front rules leave a third of the land unassigned. An
+   outline-following lot fit at block ends — lots that bend with the
+   boundary — is the single largest lever.
+2. **Estate and rural lots** (AR2a, R40–RS80): 400-ft-wide lots on a
+   through-street grid is the wrong module; these subdivide as flag lots on a
+   shared drive or a cul-de-sac loop. A separate estate module.
+3. **Access reading**: a road-centerline layer would replace the parcel-fabric
+   guess and remove the "assumed both ends" flag from a third of parcels.
+4. **ROW share**: R6/R8 parcels sit at 24% ROW against the civil's ~22%; the
+   600-ft block cap is worth relaxing to 800 ft on narrow-lot districts once
+   Metro's block-length rule is in the ordinance machine.
+
+The sweep re-runs in batches (`fn_subdivision_sweep_next`) whenever the
+generator changes, so every rule change is measured on the population before
+it is believed.
+
+## 12. Streets stop at the greenway — generator v1.2 (2026-09-03)
+
+Eric, on the v1.1 render: "You just cut a road straight through the middle."
+
+§10 held the floodplain and the wetland out of the lots and called the
+through-street "the site". It was not. Street A still ran the full 2,381 ft,
+373 ft of it through the AE floodplain and the stream, to reach an end where
+no street had been read — a bridge built on an assumption. v1.2 makes the
+street answer to the greenway.
+
+**What v1.2 does differently.**
+
+1. **Each through-street is walked from its access end along its own
+   centreline.** A greenway crossing is taken only when the developable land
+   beyond it, in that street's row band, is worth it: two lots' worth for a
+   crossing up to 60 ft (a buffer finger or a swale — a culvert), one lot more
+   per further 30 ft (a 270-ft floodplain fill wants nine lots behind it; the
+   lot is capped at an R15 lot so estate districts are judged on land, not on
+   2-acre lots). The street stops before the first crossing that is not worth
+   it, with a cul-de-sac; two neighbouring streets of a ladder or grid that
+   stop at the same greenway are closed by a loop connector. The land beyond
+   is unserved — never lotted, reported in square feet, drawn Unassigned.
+   Every crossing taken is priced in the flags (culvert / bridge).
+2. **Assumed access picks the end with the least crossing.** With no street
+   read on any edge and a greenway on the axis, the plan no longer assumes
+   stubs at both ends: it enters from the end that serves the most developable
+   land for the least crossing and says what the other end would cost. A
+   dead-end over 750 ft names the neighbour sharing the most boundary as the
+   second connection to negotiate.
+3. **Courts are a pair at the same station.** Each face takes the lot slot
+   nearest the station — exact on a regular parcel, within half a lot where a
+   greenway carves one face — without leaving its own lot grid, so no lot is
+   lost to the court; a court is a whole number of lots wide; none sits within
+   150 ft of a crossing its street takes or of its greenway end — the greenway
+   is that block's green. (Two earlier drafts snapped the courts to a shared
+   grid; they aligned exactly and cost 5–15% of the lots on carved parcels.
+   That trade was not worth it.)
+4. **Lots only where the street reaches:** each face's lot strip is clipped to
+   its street's served range plus the bulb.
+
+**MDHA, 2400 W Heiman, v1.2** —
+`qa/audits/2026-09-03/mdha_subdivision_v1_2_greenway_stop_screen.png`:
+
+| | v1.1 | v1.2 |
+|---|---|---|
+| Access | assumed at both ends (stubs to TSU and 2518 W Heiman) | from the 2518 W Heiman end: 102 ft of crossing (an 85-ft stream culvert, a 17-ft buffer finger) against 373 ft from the Ed Temple end |
+| Street A | 2,321 ft, through the floodplain (373-ft crossing) | 1,990 ft; stops at the AE floodplain with a cul-de-sac — the 271-ft crossing would have reached 3,071 sf |
+| Dead end | — | 2,055 ft, over the 750-ft rule: a second connection is needed, e.g. via 2700 W Heiman St (1,542 ft of shared boundary) |
+| District lots 80×75 | 33 · 5 courts · 22.3% ROW | 34 · 4 paired courts · 20.0% ROW |
+| SP townhomes 25 ft | 122 | 119 |
+| SP 25 ft + amenity 10% | 101 + 57,300 sf | 94 + 57,224 sf beside the greenway |
+| Through-access forced at both ends | 33 | 33 — the court change is yield-neutral |
+
+The battery gate asserts it (`requireGreenwayStop`: the network stops at a
+greenway; `maxCrossingFt: 150`: a culvert, never a bridge on an assumed
+access), and the lot floor ratchets 30 → 33. The neighbourhood panel and the
+plan-basis line say where the street stops, what it crosses, and who could
+give the second connection.
+
+Eric, 2026-09-04, on the sheet: "You're showing wetlands and floodplains in
+white. Shouldn't they be called out?" They were — in this branch's client,
+as the teal "Greenway (floodplain / wetland)" fill — but the build on his
+screen was `main`, whose client predates the hazard payload and draws
+nothing where the greenway is. Merging this branch is the fix for that. On
+top of the fill, the held-out land is now called out on the sheet itself:
+a diagonal hatch (the map convention for a floodplain) and a label naming
+the zone ("AE floodplain", "Wetland (riverine) · 25-ft buffer") on every
+piece big enough to carry one.
+
+**The population, re-swept on v1.2 (4,111 parcels;
+`qa/audits/2026-09-03/subdivision_sweep_v1_2.csv`; the v1.1 numbers stay in
+`subdivision_sweep_v1_1.csv`).** No exceptions, the same 249 refusals. 797
+plans now stop at a greenway; 376 plans that assumed through-access enter
+from one end; the plans with a street through held-out land fall from 1,519
+to 1,009, and the crossings still taken total 314,138 ft against 427,644 ft
+declined — 1,078 ac of developable land is left unserved rather than reached
+by a road through a floodplain. Lots 45,001 → 43,924 (−2.4%): 2,648 parcels
+unchanged, 402 up, 1,061 down. On the 1,873 parcels with no hazard the count
+moves only where the court rule places a court v1.1 skipped (+450 courts
+population-wide, one lot each: 19,109 → 18,592). The largest losses are
+streams that run along a street line for thousands of feet — 405868 (R15,
+197 ac) 143 → 115 with 6,828 ft of crossing declined; 679506 (R10, 23 ac)
+20 → 7 — where v1.1 drew the street in the stream; the honest count is lower,
+and moving the street off the stream is the next lever. Median ROW 19.4% →
+18.8%. The calibration 2400 W Heiman is read against (36 R6 parcels of
+6.6–26.3 ac) is now v1.2's: median 3.23 lots/ac, quartiles 2.86–3.43; the
+parcel's 2.59 sits under the band because 22% of it is greenway.
+
+**The ten other parcels** are unchanged except 2018 Old Murfreesboro Pike
+(17 → 16, one more court) and 1404 Pleasant Hill Rd (5 → 4: the street ends
+in a cul-de-sac before a 72-ft wetland crossing that would have reached
+10,463 sf). A grid the first draft of this rule wrecked — 82 ac of R8
+(659603), seven streets, a stream across three of them — keeps its 131 lots:
+three streets end in cul-de-sacs at the stream, the other four run through,
+5.0 ac beyond the stream stays unserved.
+
+**Next levers, from the population:** a street that runs along a stream
+should move off it, not stop (the largest losses above); the road-centerline
+layer (§11) would replace the assumed-end pick with a read one; the estate
+module (§11).
+
+## 13. The multifamily page says what is being built (2026-09-03)
+
+Eric, on 2600 W Heiman (RM40): "There is a ton of stuff happening on this
+page; it's hard to follow, and I have no clue what's actually being built
+(building w/ 25, 25, 25, 18). The colored building doesn't make any sense
+from an actually multifamily layout."
+
+Three things were true. The page led with receipts — a red census line, the
+KPI strip, the solver's basis string (`133595 GSF seed plan @ 5 st · 99.1% of
+134850 max · 1 structure(s) · 76 units @ ~1547 GSF · 118/132 stalls (90.8% of
+placed need, 78.1% of max) · side_rows · generator: seed_v2 …`), the context
+lineage, the highest-and-best strip, the capacity card — and nowhere a
+sentence. The parking bays carried a bare number in the same grey as the
+building, so four rectangles labelled 25, 25, 25 and 18 read as a building.
+And the floor plate was drawn as saturated per-type stripes across the whole
+bar — a barcode, not a plan.
+
+**What changed.**
+
+1. **A headline above the plan, in words, read off the plan the engine
+   returned** (`BuiltHeadline.tsx`): "76 apartments in one 5-story building ·
+   133,595 GSF · 118 stalls (1.6 per unit)", and under it "One connected
+   S-form bar with a parking field behind it · 8 studios, 30 one-beds, 26
+   two-beds, 12 three-beds". Nothing is re-measured: units, GSF and stalls
+   are the engine's metrics; the composition and the parking words are the
+   generator's own notes (`bars_connected_S_form`, `rear_field_perp`) put
+   into English; the mix is the server's rows. The solver's basis line stays
+   under it as the audit trail. The subdivision and the house seed keep their
+   own lines.
+2. **Buildings are named by what they are** — "Apartments · 5 stories · 76
+   units" on the sheet, not "bars connected S form × 5 st". The composition
+   token still travels in the element for the headline and the receipts.
+3. **Parking bays say "25 stalls"**, never "25".
+4. **The floor plate is drawn as a plan**: units a pale tint of their type,
+   the demising walls the dark lines, the corridor a clear 5.5-ft strip
+   between the two banks with the centreline dashed over it, the cores
+   hatched as before.
+5. **The dev census line is collapsed** to one grey line ("Census 2026-07-21
+   · 1/15 ok · 1 exception · dev only · details"). It is a diagnostic about
+   the population, not about the plan on the screen, and in red it read as
+   one.
+
+Render (fixture mode, the committed 553450 response, which is an older
+vintage than the live one Eric saw — 70 units on 4 stories):
+`qa/audits/2026-09-03/heiman_2600_mf_legibility_screen.png`.
+
+**Still open from the same critique.** The stack under the headline —
+context lineage, highest-and-best, the capacity card with its stories
+table — is the analysis the earlier audits asked for, and it is still a lot
+of page. The next step is one "Analysis" disclosure so the sentence and the
+plan come first and the receipts open on demand.

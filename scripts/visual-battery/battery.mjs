@@ -127,6 +127,28 @@ function judge(exp, ev) {
     if (typeof exp.maxPctRow === 'number' && !(ev.subdivisionPctRow <= exp.maxPctRow)) {
       errs.push(`ROW takes ${ev.subdivisionPctRow ?? '?'}% of the land, over the ${exp.maxPctRow}% ceiling`);
     }
+    // v1.1: floodplain and wetlands are HELD OUT from real geometry — a parcel with
+    // hazards must show them carved (coverage ingested, % held out at or above the floor).
+    if (typeof exp.minPctHazard === 'number') {
+      if (ev.subdivisionHazardCoverage !== 'ingested') {
+        errs.push(`hazard layers not ingested for the parcel (coverage=${ev.subdivisionHazardCoverage ?? 'none'}) — the flood/wetland carve did not run`);
+      }
+      if (!(ev.subdivisionPctHazard >= exp.minPctHazard)) {
+        errs.push(`held-out hazard ${ev.subdivisionPctHazard ?? 'none'}% below the ${exp.minPctHazard}% floor (floodplain/wetland must be carved)`);
+      }
+    }
+    // v1.2: a street never runs through the greenway on an assumption — where the expectation
+    // says so, the network must STOP at the greenway (a cul-de-sac or a loop) at that end, and
+    // the crossing it did take must stay under the ceiling (a culvert, not a bridge).
+    if (exp.requireGreenwayStop) {
+      const ends = ev.subdivisionStreetEnds ?? {};
+      if (ends.start !== 'greenway' && ends.end !== 'greenway') {
+        errs.push(`expected the streets to stop at the greenway, got ends start=${ends.start ?? 'none'} end=${ends.end ?? 'none'}`);
+      }
+    }
+    if (typeof exp.maxCrossingFt === 'number' && !(ev.subdivisionCrossingFt <= exp.maxCrossingFt)) {
+      errs.push(`streets cross ${ev.subdivisionCrossingFt ?? '?'} ft of held-out land, over the ${exp.maxCrossingFt}-ft ceiling`);
+    }
     if (!ev._domSubdivision) errs.push('neighbourhood plan panel not rendered');
     if ((ev.violationCodes ?? []).includes('server-plan-rejected')) {
       errs.push('the subdivision was rejected by the geometry gate (overlapping pavement/lots)');

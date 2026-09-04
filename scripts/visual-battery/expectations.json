@@ -58,11 +58,14 @@
   },
   "550510": {
     "mode": "subdivision",
-    "minLots": 50,
+    "minLots": 33,
     "network": "spine",
     "maxPctRow": 25,
+    "minPctHazard": 20,
+    "requireGreenwayStop": true,
+    "maxCrossingFt": 150,
     "requirePlanPattern": "subdivision_row_spine",
     "requirePatternAligned": true,
-    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac, 2381x250 ft): the subdivision generator draws the civil's organization — one 55-ft through-street on the long axis, double-loaded 80x75 lots with 20-ft rear alleys, 4 courts, through-access assumed at both ends (stubs to TSU / 2518 W Heiman) — 52 lots frozen 2026-09-03 (floor 50; the 25-ft SP scheme gives 148). Flipped from plan-pattern (aligned=false) the day the generator shipped."
+    "_basis": "2400 W Heiman (MDHA, R6, 13.15 ac, 2381x250 ft): the subdivision generator draws the civil's organization — one 55-ft through-street on the long axis, double-loaded 80x75 lots with 20-ft rear alleys, courts on a 600-ft block rhythm. v1.1 (2026-09-03) HOLDS OUT the real FEMA AE floodplain (15.1%) and the riverine wetland + 25-ft buffer (10.4%) = 22.2% greenway, zero lots inside it. v1.2 (2026-09-03) STOPS THE STREET AT THE GREENWAY: no street is read on any edge, so the plan enters from the 2518 W Heiman end (a 102-ft stream culvert), declines the 271-ft floodplain crossing that would have reached 3,071 sf, and ends in a cul-de-sac — 34 lots (floor ratcheted 30 → 33), 20.0% ROW, 4 paired courts; the 25-ft SP scheme gives 119, SP + 10% amenity 94. requireGreenwayStop + maxCrossingFt assert the street stops (a culvert, never a bridge on a guess); minPctHazard asserts the carve ran (coverage ingested)."
   }
 }

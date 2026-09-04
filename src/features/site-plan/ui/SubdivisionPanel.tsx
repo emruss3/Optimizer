@@ -73,10 +73,32 @@ export function SubdivisionPanel({
         </dd>
         <dt className="text-slate-500">Land</dt>
         <dd>{land || '—'}</dd>
+        <dt className="text-slate-500">Held out</dt>
+        <dd data-testid="subdivision-hazard">
+          {summary.hazardCoverage === 'ingested'
+            ? (summary.pctHazard != null && summary.pctHazard > 0
+                ? `${summary.pctHazard}% greenway · floodplain ${summary.floodplainHeldOutPct ?? 0}% · wetland ${summary.wetlandHeldOutPct ?? 0}%`
+                : 'no floodplain or wetland on the parcel')
+            : <span className="text-amber-700">flood / wetland layers not ingested here yet</span>}
+        </dd>
         <dt className="text-slate-500">Courts</dt>
-        <dd>{summary.courts} · rear alleys</dd>
+        <dd>{summary.courts} · one every block · rear alleys</dd>
         <dt className="text-slate-500">Access</dt>
         <dd>{summary.accessMode ?? '—'}</dd>
+        {(summary.streetEnds.start === 'greenway' || summary.streetEnds.end === 'greenway' || (summary.crossingFt != null && summary.crossingFt > 0)) && (
+          <>
+            <dt className="text-slate-500">Greenway</dt>
+            <dd data-testid="subdivision-greenway">
+              {[
+                summary.streetEnds.start === 'greenway' || summary.streetEnds.end === 'greenway'
+                  ? `street stops at the greenway${summary.declinedCrossingFt != null && summary.declinedCrossingFt > 0 ? ` (${summary.declinedCrossingFt}-ft crossing declined)` : ''}`
+                  : null,
+                summary.crossingFt != null && summary.crossingFt > 0 ? `${summary.crossingFt}-ft crossing (culvert / bridge)` : null,
+                summary.secondConnection ? `second connection via ${summary.secondConnection}` : null,
+              ].filter(Boolean).join(' · ')}
+            </dd>
+          </>
+        )}
         {summary.densityDuAc != null && (
           <>
             <dt className="text-slate-500">Density</dt>

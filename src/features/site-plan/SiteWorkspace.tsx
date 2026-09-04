@@ -38,6 +38,7 @@ import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
 import FlagsPanel from './ui/FlagsPanel';
 import HbuStrip from './ui/HbuStrip';
+import BuiltHeadline from './ui/BuiltHeadline';
 import ExportReport from './ui/ExportReport';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
 import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
@@ -2075,6 +2076,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       subdivisionLots: subdivisionSummary?.lots ?? null,
       subdivisionNetwork: subdivisionSummary?.network ?? null,
       subdivisionPctRow: subdivisionSummary?.pctRow ?? null,
+      subdivisionPctHazard: subdivisionSummary?.pctHazard ?? null,
+      subdivisionHazardCoverage: subdivisionSummary?.hazardCoverage ?? null,
+      // v1.2: where the streets stop (boundary | greenway) and the held-out land they cross
+      subdivisionStreetEnds: subdivisionSummary?.streetEnds ?? null,
+      subdivisionCrossingFt: subdivisionSummary?.crossingFt ?? null,
+      subdivisionDeclinedCrossingFt: subdivisionSummary?.declinedCrossingFt ?? null,
       subdivisionScheme: subdivisionSummary ? subdivisionScheme : null,
       commercialAllowableGsf:
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
@@ -2246,6 +2253,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       </div>
 
+      {/* What is being built, in one plain sentence, before any receipt: the
+          solver's basis line below it is the audit trail, not the answer. */}
+      {!seedViewOn && <BuiltHeadline metrics={metrics} elements={elements} />}
       {(displayBasis || plannerCtx || plannerLoading || planStale || generationBlocked) && (
         <div className="px-4 py-1.5 bg-white border-b border-gray-100 flex-shrink-0 space-y-1">
           {displayBasis && (

@@ -427,13 +427,22 @@ export function seedFamilyPlanToElements(
     const footprint = num(b.footprint_sqft);
     const gsf = num(b.gsf) ?? (footprint != null ? footprint * stories : null);
     const unitsEst = Math.max(1, Math.round((gsf ?? 0) / AVG_UNIT_SF));
-    const composition = b.composition_note?.replace(/_/g, ' ') ?? null;
+    // The building is named by what it is — stories and units — never by the
+    // generator's composition token ("bars connected S form × 5 st" read as
+    // noise on the sheet; Eric, 2026-09-03). The token still travels in
+    // properties.compositionNote for the headline and the receipts.
+    // One structure carries the engine's own unit count (the headline reads
+    // the same number); several share the server's mix by GSF. The mix rows
+    // can sum one short of the engine's count (server-side rounding) — the
+    // sheet must not show 69 under a headline that says 70.
+    const mixUnits = mixes ? mixes[i].reduce((s, e) => s + e.count, 0) : null;
+    const unitsHere = structures.length === 1 ? (num(m.units) ?? mixUnits ?? unitsEst) : (mixUnits ?? unitsEst);
     elements.push({
       id: `${prefix}-bldg-${b.structure_id ?? i + 1}`,
       type: 'building',
       name: opts.house
         ? `House · ${footprint != null ? Math.round(footprint).toLocaleString() : '?'} sf`
-        : `${composition ?? `Building ${b.structure_id ?? i + 1}`} × ${stories} st`,
+        : `${structures.length === 1 ? 'Apartments' : `Bldg ${b.structure_id ?? i + 1}`} · ${stories} ${stories === 1 ? 'story' : 'stories'} · ${unitsHere} unit${unitsHere === 1 ? '' : 's'}`,
       geometry: poly,
       properties: {
         areaSqFt: footprint ?? undefined,
