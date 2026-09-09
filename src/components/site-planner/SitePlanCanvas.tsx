@@ -543,6 +543,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         if (y + stallDepth + aisleW + stallDepth <= lmaxY + 1e-6) {
           rowBands.push([y + stallDepth + aisleW, y + stallDepth + aisleW + stallDepth]);
           y += stallDepth + aisleW + stallDepth; // next module is back-to-back
+        } else if (y + 2 * stallDepth <= lmaxY + 1e-6) {
+          // 2026-09-09 aisle-first seed: a 36-ft band is two rows BACK TO
+          // BACK between two aisles — stripe both, no aisle between them
+          rowBands.push([y + stallDepth, y + 2 * stallDepth]);
+          y += 2 * stallDepth;
         } else {
           break;
         }

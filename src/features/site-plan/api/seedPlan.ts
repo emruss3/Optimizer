@@ -47,8 +47,12 @@ export interface SeedPlan {
     dof?: Record<string, unknown> | null;
   } | null;
   parking_seed?: {
-    bays?: Array<{ geom_2274: Geom2274; area_sqft?: number | null; row?: number | null }> | null;
+    bays?: Array<{ geom_2274: Geom2274; area_sqft?: number | null; row?: number | null; stalls?: number | null; rows?: number | null }> | null;
+    /** The need laid out for: the placed building's (2026-09-09), with the
+     *  max-buildout figure reported separately. */
     stalls_target?: number | null;
+    stalls_target_at_max?: number | null;
+    stalls_target_placed?: number | null;
     stalls_achieved_est?: number | null;
     coverage_of_target_pct?: number | null;
     basis?: string | null;

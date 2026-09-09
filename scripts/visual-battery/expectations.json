@@ -12,7 +12,8 @@
     "requirePlanPattern": "court_scheme_perpendicular_bars",
     "requireTopo": true,
     "_topo": "2026-09-04 civil sheet: the DEM layer must load on a massing parcel too (873 samples, 45 contours, 417.5-440.1 ft); no street to profile here.",
-    "requireAccess": true
+    "requireAccess": true,
+    "_access": "2026-09-09 aisle-first: 126/126 stalls in 3 rows — an L from the curb to the ring, two aisles up the strip with rows back to back between them (a 60-ft module), cut square at 627 ft from the entry; capture 96.5 unchanged."
   },
   "488278": {
     "mode": "server-plan",
@@ -25,7 +26,7 @@
     },
     "requirePlanPattern": "bar_on_frontage_rear_field",
     "requireAccess": true,
-    "_access": "2026-09-04: lane on the right, 100% capture kept, 66 stalls in 3 bays each reached (three drive pieces: the lane and two connectors)."
+    "_access": "2026-09-04: lane on the right, 100% capture kept, 66 stalls in 3 bays each reached (three drive pieces: the lane and two connectors). 2026-09-09 aisle-first: 52/52 stalls (the placed need, not the 61 of the max buildout) in 4 rows off one connected network — an L from the curb to the ring, a row beside the flank, a double-loaded aisle across the rear."
   },
   "667574": {
     "mode": "server-plan",
@@ -38,18 +39,19 @@
     },
     "requirePlanPattern": "court_scheme_perpendicular_bars",
     "requireAccess": true,
-    "_access": "2026-09-04: lane on the left (fit 0.93), 158285 GSF / 100.1% (the placer recovered the lost bar length in depth), 171 stalls in 4 side rows, all reached from one connected network (requireAccess)."
+    "_access": "2026-09-04: lane on the left (fit 0.93), 158285 GSF / 100.1% (the placer recovered the lost bar length in depth), 171 stalls in 4 side rows, all reached from one connected network (requireAccess). 2026-09-09 aisle-first: 154/154 stalls in 9 rows — the entry drive straight in from the curb, a ring on three sides, a rear cross-aisle with three double-loaded aisles off it, every row square to the building."
   },
   "669046": {
     "mode": "server-plan",
-    "minCapturePct": 89.0,
-    "_basis": "1200 W H Davis - flipped from honest-refusal 2026-07-28: seed_v2 solves it (96184/106950 = 89.9%, parking-limited true)",
+    "minCapturePct": 88.0,
+    "_basis": "1200 W H Davis - flipped from honest-refusal 2026-07-28: seed_v2 solves it (96184/106950 = 89.9%, parking-limited true). Re-based 2026-09-09 to the 2026-09-04 placer's mass as served today (101185 GSF, 88.2%): the fixture had not been refreshed since the placer began reserving lanes, and the aisle-first seed (Eric: 'not how parking would actually be laid out') now meets the placed need exactly — 99/99 stalls, parking_limited false — so the chip assertion is retired and requireAccess takes its place.",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,
       "buildings": true
     },
-    "requireParkingLimitedChip": true,
+    "requireAccess": true,
+    "_access": "2026-09-09 aisle-first: the entry drive runs straight down the flag pole to a 24-ft loop round the bar, then two double-loaded aisles south of it (four rows, cut square at 667 ft from the easement), 99 stalls in 6 rows, one connected network.",
     "requirePlanPattern": "landlocked_axis_bar"
   },
   "393306": {

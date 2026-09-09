@@ -939,3 +939,116 @@ it already did on the multifamily parcels. Roads on this parcel still do not
 draw: the nearest segment in the sparse OSM stub is 1,083 ft from the
 boundary, and the renderer's honesty gate draws a road only where one
 actually approaches the parcel.
+
+## 18. Parking is laid out aisle-first (2026-09-09)
+
+Eric, on 1200 W H Davis (669046, a 147 × 828 ft landlocked strip with a
+301 × 67 ft bar along it): "This is not how parking would actually be laid
+out for a building like this. We've now tried to clean up the example 10+
+times."
+
+### Why the clean-ups never held
+
+The seed never had a drive aisle in it. `fn_seed_parking` placed 60-ft
+stall MODULES — a double-loaded bay with its own internal aisle — as
+free-standing rectangles to reach a count: rows beside the building, rows
+past its ends, a field behind it, whichever set counted highest. On a strip
+the "end rows" stack module after module along it with each module's aisle
+running ACROSS the strip, open onto the property lines and joined to
+nothing: the 20/20/20/14-stall ladder in the screenshot. §16 then drew a
+road to modules that had been laid out as if roads did not exist, which is
+why every earlier fix cleaned the picture up without changing what it was.
+
+### What the seed does now
+
+`20260909110000_mf_seed_parking_aisle_first.sql` replaces the body of
+`fn_seed_parking` with the order a site planner works in, all of it drawn in
+the building's own frame so every drive and every row is parallel or square
+to the building:
+
+1. **Frame.** The building's oriented box: `a` along its long face, `n`
+   across it.
+2. **Ring.** A 24-ft aisle beside each long face and past each end — the
+   building's extent plus a corner — kept only where it fits beside the
+   building (a 20-ft front yard or a 5-ft side yard does not get one).
+3. **Connector.** From the entry (the reserved lane's centre on the curb, or
+   the easement end of a landlocked strip) a 26-ft drive to the ring:
+   straight along one of the frame's axes where a ray from the entry meets
+   the ring, else an L round a corner of the building's box, a diagonal only
+   when nothing square fits. A first leg that runs along the street rather
+   than in from it costs extra. If the given entry reaches nothing, the curb
+   cut moves along the frontage to where the building leaves room — the
+   three random parcels whose entry sat behind the building in the first
+   revisions all connect now.
+4. **Field aisles.** Beyond each side of the building: runs square to it on
+   a 60-ft module keyed off the ring's end aisle (so rows meet back to back)
+   or off either site edge; runs parallel to it 48 ft off the ring aisle
+   (two rows back to back between them) and then every 60 ft; past the ends,
+   runs continuing the flank aisles, a centred pair, and edge-keyed runs.
+   A run is refused where an aisle already runs the same way; it meets an
+   aisle running the other way as a T, never a crossing (a crossing chops
+   the rows on both sides into three-stall scraps). One that does not touch
+   the network is joined by a short square cross-connector. Aisles are
+   added in order of stalls gained per foot from the entry until the rows
+   cover the need.
+5. **Rows.** One 18-ft row beside each side of every aisle, each its own
+   rectangle in the frame — never a buffer of the network, never a union
+   across aisles (the unions merged rows at angles into wedges and counted
+   an 11-ft strip beside the building as 66 stalls) — clipped to the site,
+   never in the front yard, never over an aisle or another row, never under
+   16 ft deep; a row counts floor(length / 9). The rows nearest the entry
+   are kept: one radius from the entry is found that covers the need, every
+   row is cut square at it, so a field fills evenly from the way in and the
+   aisles stop together.
+6. **Trim.** Every field aisle is cut back to the rows it serves plus where
+   the network joins it; a ring side that carries no stalls and is not the
+   way in is dropped unless removing it breaks the network; pieces go back
+   where the network would otherwise fall apart.
+
+The need it lays out for is the need of the building actually placed,
+derived exactly as the dispatcher derives it (`ceil(units × ratio)` from
+the placed GSF), not `fn_max_buildout`'s figure for the biggest building
+the lot could hold: the dispatcher called the seed without a need, so every
+plan carried a third more parking than it required (128 stalls against 99
+on 1200 W H Davis). The max figure is still reported as
+`stalls_target_at_max`, and `20260909120000_mf_dispatcher_target_at_max.sql`
+reads it for the dispatcher's max line. Nine revisions were needed to get
+here; each was judged on plots of the live geometry (parcel, building,
+rows, drives, entry) for the four battery parcels and five random ones
+before a fixture was touched.
+
+### What it produces
+
+| parcel | before (§16) | now | network |
+|---|---|---|---|
+| 1200 W H Davis 669046 | 129 stalls / 99 needed; two single-loaded edge aisles down the strip, a curved stub | 99 / 99: the drive straight down the flag pole, a loop round the bar, two double-loaded aisles south of it (four rows) cut square at 667 ft | one piece, reaches the easement |
+| 2622 W Heiman 667574 | 155 / 154; rows merged into odd pieces, a 9-row "bay" | 154 / 154 in 9 rows: the drive straight in, a ring on three sides, a rear cross-aisle with three double-loaded aisles off it | one piece |
+| 2600 W Heiman 553450 | 153 / 126 | 126 / 126 in 3 rows: an L from the curb, two aisles up the strip with rows back to back between them | one piece |
+| 1710 Meharry 488278 | 63 / 52; a diagonal connector and a V-shaped wedge of stalls | 52 / 52 in 4 rows, everything square to the building | one piece |
+| random 425706 / 589193 / 659461 / 672378 | 39/35, 134/140, 133–162/157–183, 22/18; three of four in 2–3 pieces | 35/35, 138/138, 157/157, 18/18; all one piece | — |
+
+The only parcel still in two pieces is 323599, where the placer put three
+separate buildings on one lot and the seed frames on their union; that is
+a placer question, not a parking one (below).
+
+### Client
+
+Bays now carry their own `stalls` and `rows`; the mapper uses them instead
+of apportioning a total by area (`generateMfPlan.ts`, `seedToElements.ts`,
+`seedPlan.ts`), and the stripe renderer takes a 36-ft band as two rows back
+to back. Fixtures refreshed for all four multifamily parcels and the seed
+responses; 669046 re-based from the stale 89.9% (its fixture pre-dated the
+lane-reserving placer) to 88.0 against today's 88.2%, and its
+`requireParkingLimitedChip` retired for `requireAccess` — the plan is no
+longer parking-limited because the seed now meets the need it was asked for.
+
+### Still open
+
+- The multi-building placer output (323599): the seed frames on the union of
+  three footprints; a per-building ring with one shared network is the
+  right answer there.
+- Dead-end aisles get no turnaround; the fire code wants one past 150 ft.
+- Rows of two or three stalls left where a T-junction cuts a row are legal
+  but fussy; a designer would landscape them.
+- Landlocked strips still get no reserved lane in the placer (§16), so the
+  seed's connector does that work from the easement end alone.

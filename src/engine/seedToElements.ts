@@ -107,7 +107,9 @@ export function seedToElements(seed: SeedPlan): { elements: Element[]; basis: st
   const stallsTotal = seed.parking_seed?.stalls_achieved_est ?? 0;
   bays.forEach((b, i) => {
     const share = totalBayArea > 0 ? (b.area_sqft ?? 0) / totalBayArea : 1 / Math.max(1, bays.length);
-    const stalls = Math.max(0, Math.round(stallsTotal * share));
+    // 2026-09-09 aisle-first seed: a bay is a stall band and counts itself
+    const own = (b as { stalls?: number | null }).stalls;
+    const stalls = typeof own === 'number' && own >= 0 ? Math.round(own) : Math.max(0, Math.round(stallsTotal * share));
     elements.push({
       id: `seed-bay-${b.row ?? i + 1}`,
       type: 'parking',
