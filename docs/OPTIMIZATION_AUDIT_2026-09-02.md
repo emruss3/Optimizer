@@ -915,3 +915,27 @@ The building's organization is the generator's E-shape with courts opening
 sideways; the pattern layer says the site wants perpendicular bars framing
 courts to the street and admits the generator does not follow it yet. That
 is the next generator step, and a bigger one than the road.
+
+## 17. Neighbours are measured from the parcel, not its centroid (2026-09-09)
+
+Eric, on 2400 W Heiman: "We're missing the context of the neighboring lots.
+In other instances, you show the lots/buildings greyed out."
+
+`fn_planner_neighbors` selected parcels whose centroid lay within 500 ft of
+the subject parcel's centroid, the buildings on those parcels, and roads
+within 1,500 ft of the centroid. That is fine on a house lot and wrong on a
+strip: on the 2,381 × 250 ft MDHA parcel the centroid sits in the middle of
+the field, the nearest neighbouring centroid is 546 ft away and the nearest
+road segment 1,083 ft, so the call returned three empty arrays and the plan
+floated in white space — while 90 parcels and 76 buildings sit within 500 ft
+of the parcel's boundary.
+
+`20260909100000_planner_neighbors_by_geometry.sql` measures from the parcel
+geometry instead (edge to edge, on the `geom_2274` index) and scales the row
+caps with the perimeter (60–200 parcels, 150–400 buildings) so a long flank
+is not cut off at the first sixty abutters. The payload shape is unchanged.
+The fixture gate now requires the parcel and building layers on 550510 as
+it already did on the multifamily parcels. Roads on this parcel still do not
+draw: the nearest segment in the sparse OSM stub is 1,083 ft from the
+boundary, and the renderer's honesty gate draws a road only where one
+actually approaches the parcel.

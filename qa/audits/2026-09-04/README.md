@@ -1,5 +1,10 @@
 # Civil sheet record — 2026-09-04
 
+(The three 2400 W Heiman sheet renders were re-shot on 2026-09-09 after
+`fn_planner_neighbors` began measuring from the parcel boundary — §17 — so
+they now carry the neighbouring lots and buildings greyed out around the
+plan, as the multifamily sheets always did.)
+
 Companion renders for `docs/OPTIMIZATION_AUDIT_2026-09-02.md` §15 (Eric:
 "The output looks rudimentary. This should look like a full civil set with
 elevations, etc.").
