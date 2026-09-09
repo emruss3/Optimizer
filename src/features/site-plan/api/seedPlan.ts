@@ -47,7 +47,7 @@ export interface SeedPlan {
     dof?: Record<string, unknown> | null;
   } | null;
   parking_seed?: {
-    bays?: Array<{ geom_2274: Geom2274; area_sqft?: number | null; row?: number | null }> | null;
+    bays?: Array<{ geom_2274: Geom2274; area_sqft?: number | null; row?: number | null; stalls?: number | null; rows?: number | null }> | null;
     stalls_target?: number | null;
     stalls_achieved_est?: number | null;
     coverage_of_target_pct?: number | null;

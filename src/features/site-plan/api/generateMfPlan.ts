@@ -299,7 +299,9 @@ export interface SeedFamilyStructure {
   legs_meta?: unknown;
 }
 export interface SeedFamilyParking {
-  bays?: Array<{ geom_2274?: SeedFamilyGeom | null; area_sqft?: number | null }> | null;
+  /** 2026-09-09 aisle-first seed: a bay is a stall band beside an aisle and
+   *  carries its own stall count and row count (1, or 2 back to back) */
+  bays?: Array<{ geom_2274?: SeedFamilyGeom | null; area_sqft?: number | null; stalls?: number | null; rows?: number | null }> | null;
   stalls?: number | null;
   strategy?: string | null;
   stalls_required?: number | null;
@@ -487,7 +489,9 @@ export function seedFamilyPlanToElements(
       return;
     }
     const share = totalBayArea > 0 ? (num(b.area_sqft) ?? 0) / totalBayArea : 1 / bays.length;
-    const stalls = Math.max(0, Math.round(stallsTotal * share));
+    // the aisle-first seed counts each band's stalls itself; older payloads
+    // are shared out by area
+    const stalls = typeof b.stalls === 'number' && b.stalls >= 0 ? Math.round(b.stalls) : Math.max(0, Math.round(stallsTotal * share));
     elements.push({
       id: `${prefix}-park-${i + 1}`,
       type: 'parking',
