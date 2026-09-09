@@ -54,3 +54,33 @@ verified on the database directly (first fetch 24.6 s on the 13-ac parcel,
   per bar, units a bank deep, the drive at the bay heads.
 - `heiman_2600_mf_access_after_screen.png` — 2600 W Heiman on the same
   change: lane on the right, 96.5% capture (was 99.2% with no road).
+
+## 1200 W H Davis — parking laid out aisle-first (§18, 2026-09-09)
+
+Eric: "This is not how parking would actually be laid out for a building
+like this. We've now tried to clean up the example 10+ times." Fixture
+mode, the aisle-first seed (nine revisions, each judged on plots of the
+live geometry before a fixture was touched).
+
+- `hdavis_1200_mf_aisle_first_screen.png` — the page: 57 apartments in one
+  5-storey bar, 99 / 99 stalls (100% of the placed need, 77% of the max —
+  the seed no longer lays out for the biggest building the lot could hold),
+  the drive straight down the flag pole from the easement to a 24-ft loop
+  round the bar, two double-loaded aisles south of it.
+- `hdavis_1200_mf_aisle_first_zoom.png` — at 1" = 227': the loop, the four
+  rows south of the bar striped as rows, the row along the entry drive in
+  the pole.
+- `hdavis_1200_mf_aisle_first_zoom_south.png` — at 1" = 171': the south end
+  — the two aisles stop together where the need is met (the rows are cut
+  square at one radius from the entry), the five-stall row beside the end
+  aisle labelled "P · 5".
+- `heiman_2622_mf_aisle_first_zoom.png` — 2622 W Heiman on the same seed:
+  154 / 154 stalls; the entry drive straight in from the curb, a ring on
+  three sides of the E-shaped bar, a rear cross-aisle with three
+  double-loaded aisles off it (P · 22 / 23 / 23), the 15-stall row along the
+  left flank, every row square to the building. Before this the same field
+  was rows merged into wedge-shaped pieces (one counted as "9 rows").
+- `heiman_2600_mf_aisle_first_zoom.png` — 2600 W Heiman: 126 / 126 stalls
+  in three rows (P · 39 / 42 / 45), an L from the curb to the ring, two
+  aisles up the strip with rows back to back between them on a 60-ft
+  module; capture 96.5% unchanged.
