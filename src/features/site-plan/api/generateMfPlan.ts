@@ -360,8 +360,11 @@ export interface SeedFamilyResponse {
 /** Seed-family payloads carry native EPSG:2274 structures; legacy payloads
  *  carry 4326 `geom`. The FIRST building decides — families never mix. */
 export function isSeedFamilyResponse(resp: MfPlanResponse | SeedFamilyResponse | null | undefined): resp is SeedFamilyResponse {
-  const b0 = resp?.buildings?.[0] as { geom_2274?: unknown } | undefined;
-  return !!b0?.geom_2274;
+  if (!resp?.buildings?.[0]) return false;
+  const b0 = resp.buildings[0] as { geom_2274?: unknown; geom?: unknown };
+  // Order-8 audit (667574): robust family detection even if response has BOTH
+  // geom_2274 and legacy geom fields (shouldn't happen, but defensive).
+  return !!b0.geom_2274;
 }
 
 const seedTo3857 = <T extends SeedFamilyGeom>(g: T): T =>
@@ -434,7 +437,9 @@ export function seedFamilyPlanToElements(
     let poly: Polygon;
     try {
       poly = seedTo3857(b.geom_2274 as Polygon);
-    } catch {
+    } catch (err) {
+      // Order-8 audit (667574): log transformation failures for diagnostics
+      console.warn(`[seedFamilyPlanToElements] building ${i} geom transform failed:`, err);
       return; // one malformed geometry must not sink the plan
     }
     const stories = Math.max(1, Math.round(num(b.stories) ?? num(m.stories) ?? 3));
@@ -485,7 +490,9 @@ export function seedFamilyPlanToElements(
     let poly: Polygon;
     try {
       poly = seedTo3857(b.geom_2274 as Polygon);
-    } catch {
+    } catch (err) {
+      // Order-8 audit (667574): log transformation failures for diagnostics
+      console.warn(`[seedFamilyPlanToElements] parking bay ${i} geom transform failed:`, err);
       return;
     }
     const share = totalBayArea > 0 ? (num(b.area_sqft) ?? 0) / totalBayArea : 1 / bays.length;
