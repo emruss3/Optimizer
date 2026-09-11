@@ -1,13 +1,20 @@
 import mapboxgl from 'mapbox-gl';
 
-export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+export const MAPBOX_TOKEN = 
+  import.meta.env.VITE_MAPBOX_TOKEN ||
+  import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ||
+  import.meta.env.VITE_MAPBOX_API_KEY;
+
 export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 mapboxgl.accessToken = MAPBOX_TOKEN || '';
 
-if (!MAPBOX_TOKEN) {
-  console.warn('Missing Mapbox API key. Add VITE_MAPBOX_TOKEN to your .env');
+// The MapPanel already renders a visible "Mapbox Token Required" panel when the
+// token is absent, so this is only a dev-time hint (info, not warn) and stays
+// out of production consoles.
+if (!MAPBOX_TOKEN && import.meta.env.DEV) {
+  console.info('Mapbox token not set — map tiles are disabled. Add VITE_MAPBOX_TOKEN (or VITE_MAPBOX_ACCESS_TOKEN / VITE_MAPBOX_API_KEY) to your .env to enable the map.');
 }
 
 export const NASHVILLE_CENTER = {

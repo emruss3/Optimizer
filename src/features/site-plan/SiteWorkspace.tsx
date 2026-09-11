@@ -69,7 +69,10 @@ import { mfAccessSummary } from './api/mfAccess';
 import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
-const Massing3D = React.lazy(() => import('./ui/Massing3D'));
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+// lazyWithRetry so a stale dynamic-import URL retries and reloads instead of
+// hard-crashing the site-planner into its error boundary.
+const Massing3D = lazyWithRetry(() => import('./ui/Massing3D'));
 
 /**
  * Diagnostics-only escape hatch: when '1', context-free solves render as
