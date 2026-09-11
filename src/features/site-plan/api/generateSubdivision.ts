@@ -324,28 +324,40 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
   }
 
   // Held-out hazards read as GREENWAY — the one thing a plan must never put a lot on.
-  (resp.hazards ?? []).forEach((h, i) => {
+  // UNBLOCKED (2026-09-11): Supabase fixed fn_generate_subdivision_safe dropping
+  // hazards[]. Fresh responses have resp.hazards; persisted candidates have
+  // metrics.hazards with geom_2274. Check both locations for hydration support.
+  const hazardSources = [
+    ...(resp.hazards ?? []),
+    ...((resp.metrics as { hazards?: SubdivisionHazard[] })?.hazards ?? []),
+  ];
+  // Dedupe by index in case both locations have the same hazards
+  const seenKinds = new Set<string>();
+  hazardSources.forEach((h, i) => {
     const kind = h.kind ?? 'floodplain';
+    const zoneKey = `${kind}-${h.zone ?? 'unknown'}`;
+    if (seenKinds.has(zoneKey)) return; // Skip duplicate
+    seenKinds.add(zoneKey);
+    
     const label = kind === 'floodway' ? 'Floodway' : kind === 'wetland' ? 'Wetland' : 'Floodplain';
     const polys = polygons2274To3857(h.geom_2274);
     if (polys.length === 0) {
       // GREENWAY RENDERING HANDOFF (parcel 550510, Eric/Lead 2026-09-11):
       // Server reports hazard metrics (pct_land_hazard, floodplain_sqft, wetland_sqft)
-      // but hazards[].geom_2274 is null/invalid — no geometry to draw hatch on canvas.
-      // CLIENT FIX COMPLETE: metrics now display "unknown %" (not lying "0%") + diagnostics log.
-      // SERVER TODO: fn_generate_subdivision must populate hazards[].geom_2274 with
-      // FEMA SFHA + NWI geometries when metrics report non-zero hazard coverage.
-      // Without geom_2274, client cannot render greenway hatch that Eric sees in legend.
+      // but this hazard entry has no geom_2274 — likely an old candidate from before
+      // the Supabase fix. Fresh generation should populate geometries.
       console.warn(
         `[subdivisionToElements] GREENWAY MISSING: Hazard ${i + 1} (${kind}${h.zone ? ` ${h.zone}` : ''}) ` +
-        `has no drawable geometry — server provided metrics but geom_2274 is null. ` +
+        `has no drawable geometry — geom_2274 is null. ` +
         `Legend shows greenway but canvas cannot render hatch without coordinates. ` +
-        `Area reported: ${h.area_sqft ?? 'unknown'} SF.`
+        `Area reported: ${h.area_sqft ?? 'unknown'} SF. ` +
+        `Regenerate subdivision to get fresh geometries from Supabase fix.`
       );
+      return;
     }
     polys.forEach((poly, j) => {
       elements.push({
-        id: `${SUBDIVISION_ID_PREFIX}hazard-${i + 1}${j > 0 ? `-${j + 1}` : ''}`,
+        id: `${SUBDIVISION_ID_PREFIX}hazard-${seenKinds.size}${j > 0 ? `-${j + 1}` : ''}`,
         type: 'greenspace',
         name: `${label}${h.zone ? ` (${h.zone})` : ''}`,
         geometry: poly,
@@ -381,15 +393,33 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
   const openSqft = (num(m.court_area_sqft) ?? 0) + (num(m.amenity_sqft) ?? 0) + (num(m.hazard_sqft) ?? 0);
   const pctOf = (v: number | null) => (v != null && parcelSqft && parcelSqft > 0 ? Math.round((v / parcelSqft) * 1000) / 10 : null);
   
+  // Calculate floodplain/wetland areas: prefer top-level metrics, fallback to sum from hazards array
+  let floodplainSqft = num(m.floodplain_sqft);
+  let wetlandSqft = num(m.wetland_sqft);
+  if (floodplainSqft == null || wetlandSqft == null) {
+    // Supabase fix (2026-09-11): metrics.hazards now has geom_2274 + area_sqft per hazard.
+    // Sum floodplain and wetland areas when top-level metrics are missing.
+    const allHazards = [
+      ...(resp.hazards ?? []),
+      ...((m as { hazards?: SubdivisionHazard[] }).hazards ?? []),
+    ];
+    floodplainSqft = floodplainSqft ?? allHazards
+      .filter(h => (h.kind ?? 'floodplain') === 'floodplain' || (h.kind ?? 'floodplain') === 'floodway')
+      .reduce((sum, h) => sum + (num(h.area_sqft) ?? 0), 0);
+    wetlandSqft = wetlandSqft ?? allHazards
+      .filter(h => (h.kind ?? 'floodplain') === 'wetland')
+      .reduce((sum, h) => sum + (num(h.area_sqft) ?? 0), 0);
+  }
+  
   // Validate hazard data consistency: if metrics say hazards exist but no geometries rendered, warn
   const hazardMetricsPct = num(m.pct_land_hazard);
   const hazardElementsCount = elements.filter(e => e.id.startsWith(`${SUBDIVISION_ID_PREFIX}hazard-`)).length;
   if (hazardMetricsPct != null && hazardMetricsPct > 0 && hazardElementsCount === 0) {
     console.error(
       `[subdivisionToElements] HAZARD GEOMETRY MISSING: metrics report ${hazardMetricsPct}% hazard ` +
-      `(${num(m.floodplain_sqft)} SF floodplain, ${num(m.wetland_sqft)} SF wetland) ` +
-      `but ${(resp.hazards ?? []).length} hazard entries produced 0 renderable elements. ` +
-      `Server response has ${(resp.hazards ?? []).length} hazard records.`
+      `(${floodplainSqft} SF floodplain, ${wetlandSqft} SF wetland) ` +
+      `but no hazard entries produced renderable elements. ` +
+      `Server response has ${(resp.hazards ?? []).length} top-level + ${((m as { hazards?: SubdivisionHazard[] }).hazards ?? []).length} metrics.hazards records.`
     );
   }
   
@@ -411,8 +441,8 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
       densityDuAc: num(m.gross_density_du_ac),
       floodplainPct: num(m.floodplain_100yr_pct),
       pctHazard: num(m.pct_land_hazard),
-      floodplainHeldOutPct: pctOf(num(m.floodplain_sqft)),
-      wetlandHeldOutPct: pctOf(num(m.wetland_sqft)),
+      floodplainHeldOutPct: pctOf(floodplainSqft),
+      wetlandHeldOutPct: pctOf(wetlandSqft),
       hazardCoverage: typeof m.hazard_layer_coverage === 'string' ? m.hazard_layer_coverage : null,
       accessMode: resp.access?.mode ?? null,
       crossingFt: num(m.greenway_crossing_ft) ?? num(resp.access?.greenway_crossing_ft),
