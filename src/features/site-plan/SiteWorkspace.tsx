@@ -141,9 +141,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const n = Number(parcel.ogc_fid);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [parcel.ogc_fid]);
-  // Initial use is a placeholder — the workspace corrects it to the parcel's
-  // highest-intensity as-of-right use unless the user picked one.
-  const [contextUse, setContextUse] = useState('single_family');
+  // Initial use: infer from zoning when possible so commercial parcels don't
+  // compile as single_family (which returns no entitlement_capacity). The
+  // permitted-uses RPC will override this if it returns a compilable use.
+  const [contextUse, setContextUse] = useState(() => 
+    defaultUseFromZoningBase(parcel.zoning as string | undefined) ?? 'single_family'
+  );
   const userPickedUseRef = useRef(false);
   const handleUseChange = useCallback((use: string) => {
     userPickedUseRef.current = true;
@@ -1898,6 +1901,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // bootstrap compile (which returns the ordinance caps with
       // generation_allowed=false) and shows the capacity card — it never
       // defaults to a use the compiler cannot type ('commercial').
+      // 
+      // P0 #1 fix (by-right product rule): DON'T force contextUse='multi_family'
+      // on commercial parcels. Instead, the bootstrap should be intelligent
+      // (zoning-based) so commercial parcels start with the compile path that
+      // returns entitlement_capacity. The user never picked 'multi_family' —
+      // the compile RPC choice is internal, the card makes the commercial-only
+      // context clear.
       setNonResidentialOnly(isNonResidentialOnly(list));
       if (!userPickedUseRef.current && list.length > 0) {
         const preferred = pickDefaultUse(list);
