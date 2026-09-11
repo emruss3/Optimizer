@@ -2439,6 +2439,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
               : null
           }
+          hasPlate={planModeRef.current === 'commercial'}
         />
       )}
       {!nonResidentialOnly && isRefusal(buildability) && product === 'apartments' && buildability && (
@@ -2498,6 +2499,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               ? (metrics.totalBuiltSF / maxBuildout.max_gsf) * 100
               : null
           }
+          isCommercial={planModeRef.current === 'commercial'}
         />
         <div className="flex items-center gap-2 flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
