@@ -65,7 +65,9 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null, frontageBea
     // setbacks, FAR, and a buildable envelope — and the promise cache means
     // this shares the exact compile the workspace makes (density-first use),
     // so this is effectively free.
-    const compileUse = defaultUseFromZoningBase(parcel.zoning) ?? 'multi_family';
+    // Order-8 commercial correction (2026-09-11): commercial parcels compile
+    // as 'commercial' (Supabase added typology_spec), not 'multi_family'.
+    const compileUse = defaultUseFromZoningBase(parcel.zoning) ?? 'single_family';
     compilePlannerContext(parcelId, compileUse)
       .then((resp) => {
         if (cancelled) return;

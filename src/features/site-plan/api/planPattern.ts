@@ -77,8 +77,28 @@ export function patternLabel(key: string | null | undefined): string {
 
 const cache = new Map<string, Promise<PlanPattern | null>>();
 
-export async function fetchPlanPattern(ogcFid: number, typology = 'multifamily'): Promise<PlanPattern | null> {
+/**
+ * Fetch the plan pattern for a parcel with the appropriate typology.
+ * Order-8 commercial correction (2026-09-11): commercial parcels should query
+ * with p_typology='commercial', not default to 'multifamily'. Pass `zoning` or
+ * `use` to auto-select; otherwise defaults to 'multifamily' for backward compat.
+ */
+export async function fetchPlanPattern(
+  ogcFid: number,
+  options?: { typology?: string; zoning?: string | null; use?: string | null }
+): Promise<PlanPattern | null> {
   if (!supabase || !ogcFid) return null;
+  
+  // Infer typology from zoning/use if not explicitly provided
+  let typology = options?.typology;
+  if (!typology) {
+    if (options?.use === 'commercial' || (options?.zoning && /^C[SLNP]?|^COMMERCIAL/i.test(options.zoning))) {
+      typology = 'commercial';
+    } else {
+      typology = 'multifamily'; // backward-compatible default
+    }
+  }
+  
   const key = `${ogcFid}:${typology}`;
   const hit = cache.get(key);
   if (hit) return hit;

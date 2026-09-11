@@ -1345,7 +1345,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     setIsGeneratingLots(true);
     try {
-      const pattern = await fetchPlanPattern(contextOgcFid).catch(() => null);
+      const pattern = await fetchPlanPattern(contextOgcFid, { use: contextUse, zoning: parcel.zoning as string | undefined }).catch(() => null);
       if (pattern?.pattern?.startsWith('subdivision')) {
         const sub = await generateSubdivision(contextOgcFid, subdivisionParamsRef.current);
         if (!sub) {
@@ -1736,7 +1736,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (!cancelled) setBuildability(b);
     });
     setPlanPattern(null);
-    fetchPlanPattern(contextOgcFid).then(pp => {
+    fetchPlanPattern(contextOgcFid, { use: contextUse, zoning: parcel.zoning as string | undefined }).then(pp => {
       if (!cancelled) setPlanPattern(pp);
     });
     return () => { cancelled = true; };
