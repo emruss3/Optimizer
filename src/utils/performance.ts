@@ -21,11 +21,8 @@ export const logBundleSize = () => {
       }
     });
     
-    console.log(`📊 Estimated initial JS: ${(estimatedSize / 1024).toFixed(1)}KB (Budget: ${(PERFORMANCE_BUDGET.initialJS / 1024).toFixed(1)}KB)`);
-    
-    if (estimatedSize > PERFORMANCE_BUDGET.initialJS) {
-      console.warn('⚠️ Initial JS exceeds performance budget!');
-    }
+    const overBudget = estimatedSize > PERFORMANCE_BUDGET.initialJS;
+    console.log(`📊 Estimated initial JS: ${(estimatedSize / 1024).toFixed(1)}KB (Budget: ${(PERFORMANCE_BUDGET.initialJS / 1024).toFixed(1)}KB)${overBudget ? ' — over budget (dev estimate, not representative of the production bundle)' : ''}`);
   }
 };
 
@@ -42,11 +39,11 @@ export const initWebVitalsMonitoring = () => {
             const fcp = (entry as any).renderTime || entry.startTime;
             // Only log if it's a reasonable value (less than 60 seconds)
             if (fcp < 60000) {
-              console.log(`🎯 First Contentful Paint: ${fcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.firstContentfulPaint}ms)`);
-              
-              if (fcp > PERFORMANCE_BUDGET.firstContentfulPaint) {
-                console.warn('⚠️ FCP exceeds performance budget!');
-              }
+              // Dev-mode paint timings are inflated (unminified, on-demand transforms)
+              // and are not comparable to the production budget, so note it inline
+              // rather than emitting an alarming warning.
+              const overBudget = fcp > PERFORMANCE_BUDGET.firstContentfulPaint;
+              console.log(`🎯 First Contentful Paint: ${fcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.firstContentfulPaint}ms)${overBudget ? ' — over dev budget (not representative of production)' : ''}`);
             }
           }
         });
@@ -67,11 +64,11 @@ export const initWebVitalsMonitoring = () => {
         
         // Only log if it's a reasonable value (less than 60 seconds)
         if (lcp < 60000) {
-          console.log(`🎯 Largest Contentful Paint: ${lcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.largestContentfulPaint}ms)`);
-          
-          if (lcp > PERFORMANCE_BUDGET.largestContentfulPaint) {
-            console.warn('⚠️ LCP exceeds performance budget!');
-          }
+          // Dev-mode paint timings are inflated (unminified, on-demand transforms)
+          // and are not comparable to the production budget, so note it inline
+          // rather than emitting an alarming warning.
+          const overBudget = lcp > PERFORMANCE_BUDGET.largestContentfulPaint;
+          console.log(`🎯 Largest Contentful Paint: ${lcp.toFixed(1)}ms (Target: ${PERFORMANCE_BUDGET.largestContentfulPaint}ms)${overBudget ? ' — over dev budget (not representative of production)' : ''}`);
         } else {
           console.warn('⚠️ LCP value seems incorrect:', lcp, 'ms. Ignoring.');
         }
