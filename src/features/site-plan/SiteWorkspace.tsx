@@ -29,7 +29,8 @@ import { PlanPatternPanel } from './ui/PlanPatternPanel';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import {
   generateSubdivision, subdivisionToElements, subdivisionSummaryLine,
-  type SubdivisionParams, type SubdivisionSummary,
+  type SubdivisionParams, type SubdivisionSummary, type SubdivisionAccess,
+  listSubdivisionCandidates, hydrateSubdivisionCandidate, type SubdivisionCandidate,
 } from './api/generateSubdivision';
 import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/SubdivisionPanel';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
@@ -310,6 +311,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [contextOgcFid]);
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
   const [mfCandidates, setMfCandidates] = useState<MfCandidate[]>([]);
+  const [subdivisionCandidates, setSubdivisionCandidates] = useState<SubdivisionCandidate[]>([]);
   const ctxSettledRef = useRef<DesignContext | null | 'pending'>('pending');
 
   // ── Undo / redo ───────────────────────────────────────────────────────────
@@ -481,6 +483,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         return enrichCandidatesWithMoney(fid, cands); // …then rank by market margin
       })
       .then(setMfCandidates)
+      .catch(() => undefined);
+    
+    // Also load subdivision candidates for this parcel (if any exist)
+    listSubdivisionCandidates(fid)
+      .then(setSubdivisionCandidates)
       .catch(() => undefined);
   }, [contextOgcFid]);
 
@@ -1966,6 +1973,110 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   useEffect(() => {
     refreshCandidates();
   }, [refreshCandidates]);
+
+  // Subdivision candidate hydration: if a persisted subdivision candidate exists
+  // for this parcel, automatically load and render it on mount (like MF does)
+  useEffect(() => {
+    if (subdivisionCandidates.length === 0 || !contextOgcFid) return;
+    
+    // Only auto-hydrate if the canvas is empty or showing EXISTING CONDITIONS
+    const hasContent = elements.some(el => 
+      el.id.startsWith('mfgen-') || 
+      el.id.startsWith('subdiv-') || 
+      el.id.startsWith('sflot-')
+    );
+    if (hasContent) return;
+    
+    // Load the most recent subdivision candidate
+    const latest = subdivisionCandidates[0];
+    if (!latest) return;
+    
+    try {
+      const hydrated = hydrateSubdivisionCandidate(latest);
+      if (hydrated.length === 0) {
+        console.warn('[subdivision-hydrate] Candidate produced no elements');
+        return;
+      }
+      
+      // Build subdivision summary from persisted metrics
+      const m = latest.metrics;
+      
+      // Extract access/street ends from metrics (server may store access object there)
+      const access = m.access as SubdivisionAccess | undefined;
+      const accessEnds = access?.ends;
+      const accessMode = typeof access?.mode === 'string' ? access.mode : null;
+      const crossingFt = typeof m.greenway_crossing_ft === 'number' ? m.greenway_crossing_ft 
+        : typeof access?.greenway_crossing_ft === 'number' ? access.greenway_crossing_ft : null;
+      const declinedCrossingFt = typeof m.declined_crossing_ft === 'number' ? m.declined_crossing_ft
+        : typeof access?.declined_crossing_ft === 'number' ? access.declined_crossing_ft : null;
+      const secondConnection = typeof access?.second_connection?.via === 'string' ? access.second_connection.via : null;
+      
+      const summary: SubdivisionSummary = {
+        lots: typeof m.lots === 'number' ? m.lots : 0,
+        network: typeof m.network === 'string' ? m.network : 'spine',
+        streets: typeof m.streets === 'number' ? m.streets : 0,
+        courts: typeof m.courts === 'number' ? m.courts : 0,
+        lotWidthFt: typeof m.lot_width_ft === 'number' ? m.lot_width_ft : null,
+        lotDepthFt: typeof m.lot_depth_ft === 'number' ? m.lot_depth_ft : null,
+        buildableDepthFt: typeof m.buildable_depth_ft === 'number' ? m.buildable_depth_ft : null,
+        pctRow: typeof m.pct_land_in_row === 'number' ? m.pct_land_in_row : null,
+        pctAlleys: typeof m.pct_land_in_alleys === 'number' ? m.pct_land_in_alleys : null,
+        pctLots: typeof m.pct_land_in_lots === 'number' ? m.pct_land_in_lots : null,
+        pctResidual: typeof m.pct_land_residual === 'number' ? m.pct_land_residual : null,
+        pctOpen: null,
+        densityDuAc: typeof m.gross_density_du_ac === 'number' ? m.gross_density_du_ac : null,
+        floodplainPct: null,
+        pctHazard: typeof m.pct_land_hazard === 'number' ? m.pct_land_hazard : null,
+        floodplainHeldOutPct: null,
+        wetlandHeldOutPct: null,
+        hazardCoverage: typeof m.hazard_layer_coverage === 'string' ? m.hazard_layer_coverage : null,
+        accessMode,
+        crossingFt,
+        declinedCrossingFt,
+        streetEnds: {
+          start: typeof accessEnds?.start === 'string' ? accessEnds.start : null,
+          end: typeof accessEnds?.end === 'string' ? accessEnds.end : null,
+        },
+        secondConnection,
+        flags: Array.isArray(m.flags) ? m.flags.filter((f): f is string => typeof f === 'string') : [],
+        basis: typeof m.plan_basis === 'string' ? m.plan_basis : 'Persisted subdivision candidate',
+      };
+      
+      const base = elements.filter(el => !isSubdivisionElement(el) && !isMfPlanElement(el) && !isSfPlanElement(el));
+      const subMetrics = {
+        totalBuiltSF: 0,
+        siteCoveragePct: 0,
+        achievedFAR: 0,
+        parkingRatio: 0,
+        openSpacePct: summary.pctOpen ?? 0,
+        totalUnits: summary.lots,
+        unitMixSummary: `${summary.lots} lots`,
+        zoningCompliant: true,
+        violations: [] as string[],
+        warnings: summary.flags,
+        optimizationStatus: latest.generatorVersion ?? 'subdivision_v1',
+      } as NonNullable<typeof metrics>;
+      
+      setPlanOutput([...base, ...hydrated], subMetrics);
+      setSubdivisionSummary(summary);
+      setPlanLineage({
+        solvedBy: 'server',
+        contextId: null,
+        generatorVersion: latest.generatorVersion ?? 'subdivision_v1',
+        flags: summary.flags,
+        buildings: 0,
+        floors: null,
+        footprintSqft: null,
+        standardsDirect: true,
+      });
+      setPlanStale(false);
+      setPlanBasis(subdivisionSummaryLine(summary));
+      setLotFitSummary(subdivisionSummaryLine(summary));
+    } catch (err) {
+      console.error('[subdivision-hydrate] Failed to hydrate candidate:', err);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subdivisionCandidates, contextOgcFid]);
 
   /** View a saved scheme: deterministic re-render from its seed + pins (no
    *  new candidate row); future variations descend from the viewed scheme.

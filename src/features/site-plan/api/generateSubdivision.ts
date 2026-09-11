@@ -444,3 +444,218 @@ export async function generateSubdivision(
     return null;
   }
 }
+
+/**
+ * Call the PERSISTING subdivision RPC — generates a subdivision plan and
+ * persists it to siteplanner_session / siteplanner_candidate, same pattern as
+ * MF. Returns the persisted candidate's payload for immediate rendering.
+ */
+export async function generateSubdivisionSafe(
+  ogcFid: number,
+  params: SubdivisionParams = {}
+): Promise<SubdivisionResponse | null> {
+  try {
+    if (!supabase) return null;
+    const args: Record<string, unknown> = { p_ogc_fid: ogcFid };
+    if (params.lotWidthFt != null) args.p_lot_width_ft = params.lotWidthFt;
+    if (params.amenityPct != null) args.p_amenity_pct = params.amenityPct;
+    if (params.access) args.p_access = params.access;
+    const { data, error } = await supabase.rpc('fn_generate_subdivision_safe', args);
+    if (error) {
+      console.warn('[generateSubdivisionSafe] RPC failed:', error.message ?? error);
+      return null;
+    }
+    return (data as SubdivisionResponse) ?? null;
+  } catch (err) {
+    console.warn('[generateSubdivisionSafe] RPC threw:', err);
+    return null;
+  }
+}
+
+export interface SubdivisionCandidate {
+  id: string;
+  createdAt: string;
+  sessionId: string;
+  typology: string;
+  metrics: Record<string, unknown>;
+  generatorVersion: string | null;
+  /** Persisted lot geometry (EPSG:3857 multipolygon) */
+  geometryBuildings: unknown | null;
+  /** Persisted alley geometry (EPSG:3857 multipolygon) */
+  geometryParking: unknown | null;
+  /** Persisted street centerlines (EPSG:3857 multilinestring) */
+  geometryDrives: unknown | null;
+}
+
+/**
+ * List a parcel's persisted subdivision candidates, newest first. Mirrors
+ * listMfCandidates for the subdivision typology. Uses a join to find
+ * candidates for this parcel's sessions where typology = 'subdivision'.
+ */
+export async function listSubdivisionCandidates(ogcFid: number, limit = 20): Promise<SubdivisionCandidate[]> {
+  try {
+    if (!supabase) return [];
+    
+    // Two-step: first get session ids for this parcel, then get subdivision candidates
+    const { data: sessions, error: sessErr } = await supabase
+      .from('siteplanner_session')
+      .select('id')
+      .eq('parcel_id', ogcFid.toString());
+    
+    if (sessErr || !sessions || sessions.length === 0) {
+      return [];
+    }
+    
+    const sessionIds = sessions.map(s => s.id);
+    
+    const { data, error } = await supabase
+      .from('siteplanner_candidate')
+      .select('id, created_at, session_id, typology, metrics, generator_version, geometry_buildings, geometry_parking, geometry_drives')
+      .in('session_id', sessionIds)
+      .eq('typology', 'subdivision')
+      .order('created_at', { ascending: false })
+      .limit(Math.min(Math.max(limit, 1), 50));
+    
+    if (error || !Array.isArray(data)) {
+      console.warn('[listSubdivisionCandidates] query failed:', error);
+      return [];
+    }
+    
+    return data.map(r => ({
+      id: String(r.id),
+      createdAt: String(r.created_at ?? ''),
+      sessionId: String(r.session_id ?? ''),
+      typology: String(r.typology ?? 'subdivision'),
+      metrics: (r.metrics as Record<string, unknown>) ?? {},
+      generatorVersion: typeof r.generator_version === 'string' ? r.generator_version : null,
+      geometryBuildings: r.geometry_buildings,
+      geometryParking: r.geometry_parking,
+      geometryDrives: r.geometry_drives,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Hydrate a persisted subdivision candidate into canvas elements. The
+ * candidate's geometry (lots, alleys, streets) is already in EPSG:3857 and
+ * ready to render. Maps the persisted storage to subdivision elements.
+ * 
+ * For subdivision, the full response (with streets[], lots[], etc.) is stored
+ * in metrics, and centerlines are in geometry_drives for profiling.
+ * 
+ * @param candidate - persisted subdivision candidate from listSubdivisionCandidates
+ * @returns canvas elements array
+ */
+export function hydrateSubdivisionCandidate(candidate: SubdivisionCandidate): Element[] {
+  const now = new Date().toISOString();
+  const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
+  const elements: Element[] = [];
+  
+  const props = (o: Record<string, unknown>): Element['properties'] => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(o)) if (v !== undefined) out[k] = v;
+    return out as Element['properties'];
+  };
+  
+  // Try to extract the full subdivision response from metrics (server may store it there)
+  const m = candidate.metrics;
+  const streets = Array.isArray(m.streets) ? m.streets as SubdivisionStreet[] : [];
+  const lots = Array.isArray(m.lots) ? m.lots as SubdivisionLot[] : [];
+  const alleys = Array.isArray(m.alleys) ? m.alleys as SubdivisionPolygon[] : [];
+  
+  // If we have the full response in metrics, use subdivisionToElements
+  if (streets.length > 0 || lots.length > 0) {
+    const resp: SubdivisionResponse = {
+      parcel_ogc_fid: Number(m.parcel_ogc_fid) || 0,
+      generator_version: candidate.generatorVersion || 'subdivision_v1',
+      pattern: typeof m.pattern === 'string' ? m.pattern : undefined,
+      network: typeof m.network === 'string' ? m.network : undefined,
+      streets,
+      lots,
+      alleys,
+      metrics: m,
+    };
+    const { elements: generated } = subdivisionToElements(resp);
+    return generated;
+  }
+  
+  // Fallback: hydrate from geometry columns (old persist format or geometry-only)
+  // Lots: geometry_buildings → 'other' elements (subdivision lot parcels)
+  if (candidate.geometryBuildings && typeof candidate.geometryBuildings === 'object') {
+    try {
+      const geom = candidate.geometryBuildings as { type?: string; coordinates?: unknown };
+      if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
+        geom.coordinates.forEach((coords, idx) => {
+          elements.push({
+            id: `${SUBDIVISION_ID_PREFIX}lot-${idx + 1}`,
+            type: 'other',
+            name: `Lot ${idx + 1}`,
+            geometry: { type: 'Polygon', coordinates: coords },
+            properties: props({ color: '#E5E7EB' }),
+            metadata: meta,
+          });
+        });
+      }
+    } catch (err) {
+      console.warn('[hydrateSubdivisionCandidate] failed to parse geometry_buildings:', err);
+    }
+  }
+  
+  // Alleys: geometry_parking → 'circulation' elements (alley pavement)
+  if (candidate.geometryParking && typeof candidate.geometryParking === 'object') {
+    try {
+      const geom = candidate.geometryParking as { type?: string; coordinates?: unknown };
+      if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
+        geom.coordinates.forEach((coords, idx) => {
+          elements.push({
+            id: `${SUBDIVISION_ID_PREFIX}alley-${idx + 1}`,
+            type: 'circulation',
+            name: 'Alley',
+            geometry: { type: 'Polygon', coordinates: coords },
+            properties: props({
+              kind: 'alley',
+              styleOverride: true,
+              color: '#D5DCE4',
+              opacity: 0.85,
+              strokeColor: '#AEB8C4',
+            }),
+            metadata: meta,
+          });
+        });
+      }
+    } catch (err) {
+      console.warn('[hydrateSubdivisionCandidate] failed to parse geometry_parking:', err);
+    }
+  }
+  
+  // Streets: if geometry_drives has MultiPolygon, use those for rendering
+  if (candidate.geometryDrives && typeof candidate.geometryDrives === 'object') {
+    try {
+      const geom = candidate.geometryDrives as { type?: string; coordinates?: unknown };
+      if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
+        geom.coordinates.forEach((coords, idx) => {
+          elements.push({
+            id: `${SUBDIVISION_ID_PREFIX}street-${idx + 1}`,
+            type: 'circulation',
+            name: 'Street',
+            geometry: { type: 'Polygon', coordinates: coords },
+            properties: props({
+              kind: 'through',
+              styleOverride: true,
+              color: '#A9B4C0',
+              opacity: 0.92,
+              strokeColor: '#7B8794',
+            }),
+            metadata: meta,
+          });
+        });
+      }
+    } catch (err) {
+      console.warn('[hydrateSubdivisionCandidate] failed to parse geometry_drives:', err);
+    }
+  }
+  
+  return elements;
+}
