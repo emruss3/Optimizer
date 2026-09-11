@@ -2618,7 +2618,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
         {!leftRailCollapsed && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
-          {planPattern && <PlanPatternPanel plan={planPattern} />}
+          {planPattern && planModeRef.current !== 'commercial' && <PlanPatternPanel plan={planPattern} />}
           {subdivisionSummary && (
             <SubdivisionPanel
               summary={subdivisionSummary}
