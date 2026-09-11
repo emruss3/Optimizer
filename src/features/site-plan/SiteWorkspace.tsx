@@ -1897,17 +1897,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // default) — never uses inferred from a zoning-string prefix. The
       // compile still proceeds; the rail says the list is unavailable.
       setPermittedUses(list);
-      // Order-8 audit (2405 12th Ave, CS): a commercial-only lot keeps the
-      // bootstrap compile (which returns the ordinance caps with
-      // generation_allowed=false) and shows the capacity card — it never
-      // defaults to a use the compiler cannot type ('commercial').
-      // 
-      // P0 #1 fix (by-right product rule): DON'T force contextUse='multi_family'
-      // on commercial parcels. Instead, the bootstrap should be intelligent
-      // (zoning-based) so commercial parcels start with the compile path that
-      // returns entitlement_capacity. The user never picked 'multi_family' —
-      // the compile RPC choice is internal, the card makes the commercial-only
-      // context clear.
+      // Order-8 audit (2405 12th Ave, CS): a commercial-only lot compiles
+      // as 'commercial' (or defaults to as-of-right) and shows the capacity
+      // card. With commercial typology_spec coming from Supabase, the client
+      // must NOT force p_use=multifamily on CS parcels — pass 'commercial' or
+      // omit (server defaults to as-of-right). The capacity card +
+      // nonResidentialOnly gate make the commercial-only context clear.
       setNonResidentialOnly(isNonResidentialOnly(list));
       if (!userPickedUseRef.current && list.length > 0) {
         const preferred = pickDefaultUse(list);

@@ -344,11 +344,12 @@ export function isNonResidentialOnly(uses: string[]): boolean {
  * because one network call 503'd — users flip DOWN to less dense if they
  * want, the product never silently flips them down.
  * 
- * Order-8 commercial fix (2405 12th Ave, CS): commercial districts also map
- * to 'multi_family' COMPILE PATH (not Use intent) because that RPC returns
- * entitlement_capacity for commercial FAR caps while single_family does not.
- * The capacity card + nonResidentialOnly gate make it clear no residential
- * plan is offered — this is purely about which compile returns FAR data.
+ * Order-8 commercial correction (2405 12th Ave, CS): commercial districts do
+ * NOT map to 'multi_family' — that conflicts with the as-of-right product
+ * rule and the commercial typology_spec coming from Supabase. Commercial
+ * parcels compile as 'commercial' (or let the server default to as-of-right).
+ * The commercial capacity card + nonResidentialOnly gate make the context
+ * clear; no silent Use forcing.
  */
 export function defaultUseFromZoningBase(base: string | null | undefined): string | null {
   const b = (base ?? '').trim().toUpperCase();
@@ -356,10 +357,9 @@ export function defaultUseFromZoningBase(base: string | null | undefined): strin
   // Multifamily-first districts: RM (multifamily), OR (office/residential),
   // MU* (mixed-use), ORI (office/residential intensive).
   if (/^(RM|OR|MU)/.test(b)) return 'multi_family';
-  // Commercial districts: CS (commercial service), CL (commercial limited),
-  // CN (commercial neighborhood), etc. — compile as multi_family to get
-  // entitlement_capacity with FAR caps (generation_allowed will be false).
-  if (/^C[SLNP]?|^COMMERCIAL/.test(b)) return 'multi_family';
+  // Commercial districts: CS, CL, CN, etc. — return 'commercial' so the
+  // compile stays as-of-right. The server will handle commercial typology.
+  if (/^C[SLNP]?|^COMMERCIAL/.test(b)) return 'commercial';
   // One/two-family districts: R6..R80, RS3.75..RS80.
   if (/^RS?\d/.test(b)) return 'single_family';
   return null;

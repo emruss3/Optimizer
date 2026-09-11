@@ -329,7 +329,19 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
     const label = kind === 'floodway' ? 'Floodway' : kind === 'wetland' ? 'Wetland' : 'Floodplain';
     const polys = polygons2274To3857(h.geom_2274);
     if (polys.length === 0) {
-      console.warn(`[subdivisionToElements] Hazard ${i + 1} (${kind}) has no drawable geometry — geom_2274 is null or invalid`);
+      // GREENWAY RENDERING HANDOFF (parcel 550510, Eric/Lead 2026-09-11):
+      // Server reports hazard metrics (pct_land_hazard, floodplain_sqft, wetland_sqft)
+      // but hazards[].geom_2274 is null/invalid — no geometry to draw hatch on canvas.
+      // CLIENT FIX COMPLETE: metrics now display "unknown %" (not lying "0%") + diagnostics log.
+      // SERVER TODO: fn_generate_subdivision must populate hazards[].geom_2274 with
+      // FEMA SFHA + NWI geometries when metrics report non-zero hazard coverage.
+      // Without geom_2274, client cannot render greenway hatch that Eric sees in legend.
+      console.warn(
+        `[subdivisionToElements] GREENWAY MISSING: Hazard ${i + 1} (${kind}${h.zone ? ` ${h.zone}` : ''}) ` +
+        `has no drawable geometry — server provided metrics but geom_2274 is null. ` +
+        `Legend shows greenway but canvas cannot render hatch without coordinates. ` +
+        `Area reported: ${h.area_sqft ?? 'unknown'} SF.`
+      );
     }
     polys.forEach((poly, j) => {
       elements.push({
