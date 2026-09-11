@@ -1064,8 +1064,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             : 'bg-yellow-50 border-yellow-200'
         }`}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium">
+            <div className="flex items-center space-x-2 flex-1 min-w-0">
+              <span className="text-sm font-medium whitespace-nowrap">
                 Envelope status: <span className={
                   usingFallbackEnvelope ? 'text-yellow-700' :
                   envelopeStatus === 'ready' ? 'text-green-700' :
