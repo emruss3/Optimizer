@@ -21,21 +21,26 @@ import CommandPalette from './components/CommandPalette';
 import AppGrid from './layout/AppGrid';
 import DrawerOverlay from './components/DrawerOverlay';
 import RealtimeComments from './components/RealtimeComments';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // Shell-first performance (order-5 item 1): the landing page and header
 // paint from the light shell; mapbox+deck (~650 KB gz) and every workflow
 // island load on demand. The map chunk preloads on idle so entering the
 // app stays instant.
-const MapPanel = React.lazy(() => import('./components/MapPanel'));
-const ParcelDrawer = React.lazy(() => import('./components/ParcelDrawer'));
-const UnifiedWorkspace = React.lazy(() => import('./components/UnifiedWorkspace').then(m => ({ default: m.UnifiedWorkspace })));
-const ProjectWorkflow = React.lazy(() => import('./components/ProjectWorkflow').then(m => ({ default: m.ProjectWorkflow })));
-const SimpleProjectManager = React.lazy(() => import('./components/SimpleProjectManager').then(m => ({ default: m.SimpleProjectManager })));
-const ConnectedProjectWorkflow = React.lazy(() => import('./components/ConnectedProjectWorkflow').then(m => ({ default: m.ConnectedProjectWorkflow })));
-const UnifiedProjectWorkflow = React.lazy(() => import('./components/UnifiedProjectWorkflow').then(m => ({ default: m.UnifiedProjectWorkflow })));
-const RealUnderwritingWorkflow = React.lazy(() => import('./components/RealUnderwritingWorkflow').then(m => ({ default: m.RealUnderwritingWorkflow })));
-const WorkflowAudit = React.lazy(() => import('./components/WorkflowAudit').then(m => ({ default: m.WorkflowAudit })));
-const WorkflowConnectionTest = React.lazy(() => import('./components/WorkflowConnectionTest').then(m => ({ default: m.WorkflowConnectionTest })));
+//
+// lazyWithRetry (instead of React.lazy) so a stale dynamic-import URL — dev
+// dep re-optimization or a fresh production deploy — retries and reloads
+// instead of hard-crashing into the error boundary.
+const MapPanel = lazyWithRetry(() => import('./components/MapPanel'));
+const ParcelDrawer = lazyWithRetry(() => import('./components/ParcelDrawer'));
+const UnifiedWorkspace = lazyWithRetry(() => import('./components/UnifiedWorkspace').then(m => ({ default: m.UnifiedWorkspace })));
+const ProjectWorkflow = lazyWithRetry(() => import('./components/ProjectWorkflow').then(m => ({ default: m.ProjectWorkflow })));
+const SimpleProjectManager = lazyWithRetry(() => import('./components/SimpleProjectManager').then(m => ({ default: m.SimpleProjectManager })));
+const ConnectedProjectWorkflow = lazyWithRetry(() => import('./components/ConnectedProjectWorkflow').then(m => ({ default: m.ConnectedProjectWorkflow })));
+const UnifiedProjectWorkflow = lazyWithRetry(() => import('./components/UnifiedProjectWorkflow').then(m => ({ default: m.UnifiedProjectWorkflow })));
+const RealUnderwritingWorkflow = lazyWithRetry(() => import('./components/RealUnderwritingWorkflow').then(m => ({ default: m.RealUnderwritingWorkflow })));
+const WorkflowAudit = lazyWithRetry(() => import('./components/WorkflowAudit').then(m => ({ default: m.WorkflowAudit })));
+const WorkflowConnectionTest = lazyWithRetry(() => import('./components/WorkflowConnectionTest').then(m => ({ default: m.WorkflowConnectionTest })));
 
 // Skip to content for screen readers
 function SkipToContent() {
