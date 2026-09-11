@@ -368,13 +368,12 @@ export function isSeedFamilyResponse(resp: MfPlanResponse | SeedFamilyResponse |
 }
 
 const seedTo3857 = <T extends SeedFamilyGeom>(g: T): T => {
-  // Order-8 audit (667574): strip CRS field from geom_2274 responses before
-  // transformation. The server emits { crs: { type: 'name', properties: { name: 'EPSG:2274' } } }
-  // which gets preserved through geom2274To4326 → feature4326To3857, resulting
-  // in EPSG:3857 coordinates with a stale EPSG:2274 CRS tag. Strip it.
-  const transformed = feature4326To3857(geom2274To4326(g as never) as never) as T;
-  const { crs, ...clean } = transformed as T & { crs?: unknown };
-  return clean as T;
+  // Order-8 fix (667574): strip CRS field from geom_2274 BEFORE transformation.
+  // The geom_2274 payload carries { crs: { type: 'name', properties: { name: 'EPSG:2274' } } }
+  // which may interfere with coordinate transformation. Strip it before processing.
+  const { crs, ...cleanInput } = g as T & { crs?: unknown };
+  const transformed = feature4326To3857(geom2274To4326(cleanInput as never) as never) as T;
+  return transformed;
 };
 
 /** Distribute the server's plan-level unit mix across structures by GSF share
