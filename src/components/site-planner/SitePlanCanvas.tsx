@@ -1380,6 +1380,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // has no vocabulary for ROW, alley, courtyard"). Colors match the
     // subdivision mapper's style overrides.
     const isSubdivision = elements.some(e => e.id.startsWith('subdiv-'));
+    // Commercial plates are retail/office footprints — no unit mix vocabulary.
+    const isCommercial = elements.some(e => e.id === 'commercial-plate-1' || (e.properties as { use?: string } | undefined)?.use === 'commercial');
     const entries: Array<[string, string]> = isSubdivision
       ? [
           ['Street (public ROW)', '#A9B4C0'],
@@ -1389,6 +1391,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['Court', '#BBF7D0'],
           ['Amenity', '#86EFAC'],
           ['Unassigned land', '#F1F5F9'],
+          ['Front setback', '#2563EB'],
+          ['Rear setback', '#D97706'],
+          ['Side setback', '#64748B'],
+        ]
+      : isCommercial
+      ? [
+          ['Retail plate', '#FEF3C7'],
+          ['Open space', '#BBF7D0'],
           ['Front setback', '#2563EB'],
           ['Rear setback', '#D97706'],
           ['Side setback', '#64748B'],
@@ -1405,7 +1415,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['Rear setback', '#D97706'],
           ['Side setback', '#64748B'],
         ];
-    if (hasLots && !isSubdivision) entries.push(['Lot line', '#F8FAFC']);
+    if (hasLots && !isSubdivision && !isCommercial) entries.push(['Lot line', '#F8FAFC']);
     // Existing contours are line work, keyed as a line (the 'contour' colour
     // token draws a sample stroke instead of a swatch).
     if (topo && topo.contours.length > 0) entries.push(['Existing contour · 1 ft (index 5 ft)', 'contour']);
