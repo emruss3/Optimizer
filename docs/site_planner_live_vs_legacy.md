@@ -57,25 +57,11 @@ These files are directly or indirectly used from real user-facing routes/compone
 - `src/types/parcel.ts` - Parcel type definitions
 - `src/types/zoning.ts` - Zoning type definitions
 
-## Group B: DEV/EXPERIMENTAL - Not in Production
+## Group B: DEV/EXPERIMENTAL - Preserved
 
-These files are only used in dev-only routes, Storybook stories, or experimental components. **Leave these alone for now.**
+These files are accessible from dev menu routes in App.tsx and have been preserved. **Note: None of the legacy planner variants from the original Group B specification existed in the codebase.**
 
-### Legacy Planner Components (Adapter-Only)
-- `src/components/EnterpriseSitePlanner.tsx` - Legacy planner (only imported by adapters)
-- `src/components/EnhancedSitePlanner.tsx` - Legacy planner (only imported by adapters)
-- `src/components/ConsolidatedSitePlanner.tsx` - Legacy planner (only imported by adapters)
-- `src/components/AIDrivenSitePlanGenerator.tsx` - AI generator (experimental, used in UnifiedProjectWorkflow but not main flow)
-- `src/components/adapters/SitePlannerAdapters.tsx` - Adapter layer (experimental)
-
-### Legacy Hooks
-- `src/hooks/useEnhancedSitePlanner.ts` - Legacy hook (not imported)
-
-### Legacy Features
-- `src/features/site-planner/hooks/useMouseHandlers.ts` - Legacy hook (not imported)
-- `src/features/site-planner/types.ts` - Legacy types (not imported)
-
-### Dev/Experimental Components
+### Dev/Experimental Components (Kept - accessible via App.tsx menu)
 - `src/components/ParcelAnalysisDemo.tsx` - Demo component (dev mode only)
 - `src/components/WorkflowAudit.tsx` - Audit tool (dev mode only)
 - `src/components/WorkflowConnectionTest.tsx` - Connection test (dev mode only)
@@ -85,20 +71,34 @@ These files are only used in dev-only routes, Storybook stories, or experimental
 - `src/components/ConnectedProjectWorkflow.tsx` - Connected workflow (dev mode only)
 - `src/components/RealUnderwritingWorkflow.tsx` - Underwriting workflow (dev mode only)
 
-## Group C: UNREFERENCED - Dead Code
+## Group C: DELETED - Dead Code Removed (2026-09-11)
 
-These files are not imported anywhere or only referenced by other Group C files. **These can be moved to legacy/ folder later.**
+These files were confirmed unreferenced and have been deleted:
 
-- `src/components/SitePlannerWrapper.tsx` - Wrapper component (not imported)
-- `src/components/SetbackOverlay.tsx` - Setback overlay (not imported)
-- `src/store/sitePlan.ts` - Site plan store (not imported)
-- `src/services/sitePlanEngine.ts` - Site plan engine (not imported)
+- ~~`src/components/SetbackOverlay.tsx`~~ - **DELETED** (setback overlay, not imported)
+- ~~`src/store/sitePlan.ts`~~ - **DELETED** (site plan store, not imported)
+- ~~`src/features/site-planner/hooks/useMouseHandlers.ts`~~ - **DELETED** (legacy hook, not imported)
+- ~~`src/features/site-planner/types.ts`~~ - **DELETED** (legacy types, not imported)
+- ~~`src/features/site-planner/engine/scorePad.ts`~~ - **DELETED** (dead RPC wrapper, confirmed in bugged-RPC audit)
+
+### Note on Legacy Planner Variants
+The following files from the original Group B specification **did not exist** in the codebase:
+- `src/components/EnterpriseSitePlanner.tsx` - Not found
+- `src/components/EnhancedSitePlanner.tsx` - Not found
+- `src/components/ConsolidatedSitePlanner.tsx` - Not found
+- `src/components/AIDrivenSitePlanGenerator.tsx` - Not found
+- `src/components/adapters/SitePlannerAdapters.tsx` - Not found
+- `src/hooks/useEnhancedSitePlanner.ts` - Not found
+
+### Files Identified But Not Deleted
+- `src/components/SitePlannerWrapper.tsx` - Not found in codebase
+- `src/services/sitePlanEngine.ts` - Not found in codebase
 
 ## Summary
 
 - **Group A (LIVE)**: 37 files - **These are the files we refactor**
-- **Group B (DEV/EXPERIMENTAL)**: 12 files - **Leave these alone**
-- **Group C (UNREFERENCED)**: 4 files - **Can be archived later**
+- **Group B (DEV/EXPERIMENTAL)**: 8 files - **Preserved (accessible via App.tsx menu)**
+- **Group C (DELETED)**: 5 files - **Removed (dead code cleanup completed 2026-09-11)**
 
 ## Refactoring Strategy
 
@@ -135,11 +135,11 @@ live measurement path**:
 | # | Site | RPC | Class | Status |
 |---|------|-----|-------|--------|
 | 1 | `components/SupabaseIntegrationExample.tsx:77` | get_buildable_envelope | display (code sample string in an unmounted demo) | dead |
-| 2 | `services/parcelGeometry.ts:91` | get_parcel_geometry_3857 | service method — zero runtime consumers (one TYPE-only import in unmounted `SetbackOverlay`; own test file) | dead, stamped |
+| 2 | `services/parcelGeometry.ts:91` | get_parcel_geometry_3857 | service method — zero runtime consumers (SetbackOverlay deleted; own test file) | dead, stamped |
 | 3 | `services/parcelAnalysis.ts:116` | get_buildable_envelope | deprecated service, demo-only | dead, stamped |
 | 4 | `services/parcelAnalysis.ts:156` | score_pad | deprecated service, demo-only | dead, stamped |
 | 5 | `services/parcelAnalysis.ts:263` | get_parcel_geometry_3857 | deprecated service, demo-only | dead, stamped |
-| 6 | `features/site-planner/engine/scorePad.ts:29` | score_pad | module with zero importers | dead, stamped |
+| 6 | ~~`features/site-planner/engine/scorePad.ts:29`~~ | score_pad | **DELETED** - module with zero importers | removed 2026-09-11 |
 | 7 | `lib/rpc.ts:31` | score_pad | dead export (`sb` client re-export in the same file IS live via `map/ParcelSource.ts` — display only) | dead, stamped |
 | 8 | `lib/parcelRpc.ts:23` | get_parcel_geometry_3857 | deprecated wrapper, demo-only | dead, stamped |
 | 9 | `lib/parcelRpc.ts:55` | get_buildable_envelope | deprecated wrapper, demo-only | dead, stamped |
