@@ -1393,6 +1393,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return;
     }
     
+    // Validate and normalize envelope geometry before using it
+    let plateGeometry: Polygon;
+    try {
+      // Normalize to ensure it's a valid simple polygon
+      plateGeometry = normalizeToPolygon(envelopeMeters);
+      if (!plateGeometry || !plateGeometry.coordinates || plateGeometry.coordinates.length === 0) {
+        throw new Error('Invalid envelope geometry');
+      }
+    } catch (err) {
+      setServerPlanError(`Commercial plate geometry error: ${err instanceof Error ? err.message : 'unknown'}`);
+      setPlanBasis(`Commercial lot — ${ctx.zoningBase ?? 'zoning'} as-of-right · envelope invalid`);
+      return;
+    }
+    
     // Draw a single retail plate on the buildable envelope
     const now = new Date().toISOString();
     const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
@@ -1401,7 +1415,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       id: 'commercial-plate-1',
       type: 'building',
       name: 'Retail Plate',
-      geometry: envelopeMeters, // Use buildable envelope as footprint
+      geometry: plateGeometry,
       properties: {
         heightFt: snapshot.solver_brief.hard_constraints.max_height_ft ?? 30,
         floors: 1,
