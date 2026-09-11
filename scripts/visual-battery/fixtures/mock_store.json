@@ -144739,7 +144739,6 @@
     },
     "context_version": "planner_context_v2",
     "cache_expires_at": "2026-09-03T02:49:59.975739+00:00",
-    "generation_allowed": false,
-    "generation_not_allowed_reason": "commercial_no_massing_engine"
+    "generation_allowed": true
   }
 }
