@@ -432,7 +432,16 @@ export function seedFamilyPlanToElements(
   const num = (v: unknown): number | null =>
     typeof v === 'number' && Number.isFinite(v) ? v : null;
 
+  // Order-8 audit (667574): log what we receive
+  console.log('[seedFamilyPlanToElements] called with:', {
+    buildings: resp.buildings?.length,
+    parking_bays: resp.parking?.bays?.length,
+    drives: resp.drives?.length,
+    has_metrics: !!resp.metrics,
+  });
+
   const structures = (resp.buildings ?? []).filter(b => b?.geom_2274);
+  console.log('[seedFamilyPlanToElements] structures after filter:', structures.length);
   const gsfShares = (() => {
     const gsfs = structures.map(s => num(s.gsf) ?? num(s.footprint_sqft) ?? 0);
     const total = gsfs.reduce((a, b) => a + b, 0);
@@ -444,9 +453,10 @@ export function seedFamilyPlanToElements(
     let poly: Polygon;
     try {
       poly = seedTo3857(b.geom_2274 as Polygon);
+      console.log(`[seedFamilyPlanToElements] building ${i} transformed successfully`);
     } catch (err) {
       // Order-8 audit (667574): log transformation failures for diagnostics
-      console.warn(`[seedFamilyPlanToElements] building ${i} geom transform failed:`, err);
+      console.error(`[seedFamilyPlanToElements] building ${i} geom transform failed:`, err);
       return; // one malformed geometry must not sink the plan
     }
     const stories = Math.max(1, Math.round(num(b.stories) ?? num(m.stories) ?? 3));
@@ -491,15 +501,17 @@ export function seedFamilyPlanToElements(
   });
 
   const bays = resp.parking?.bays?.filter(b => b?.geom_2274) ?? [];
+  console.log('[seedFamilyPlanToElements] parking bays after filter:', bays.length);
   const totalBayArea = bays.reduce((a, b) => a + (num(b.area_sqft) ?? 0), 0);
   const stallsTotal = num(resp.parking?.stalls) ?? num(m.stalls) ?? 0;
   bays.forEach((b, i) => {
     let poly: Polygon;
     try {
       poly = seedTo3857(b.geom_2274 as Polygon);
+      console.log(`[seedFamilyPlanToElements] parking bay ${i} transformed successfully`);
     } catch (err) {
       // Order-8 audit (667574): log transformation failures for diagnostics
-      console.warn(`[seedFamilyPlanToElements] parking bay ${i} geom transform failed:`, err);
+      console.error(`[seedFamilyPlanToElements] parking bay ${i} geom transform failed:`, err);
       return;
     }
     const share = totalBayArea > 0 ? (num(b.area_sqft) ?? 0) / totalBayArea : 1 / bays.length;
@@ -638,6 +650,13 @@ export function seedFamilyPlanToElements(
       ...(m.parking_limited === true ? ['parking_limited'] : []),
     ]),
   ];
+
+  console.log('[seedFamilyPlanToElements] returning:', {
+    elements: elements.length,
+    buildings: elements.filter(e => e.type === 'building').length,
+    parking: elements.filter(e => e.type === 'parking').length,
+    drives: elements.filter(e => e.type === 'circulation').length,
+  });
 
   return { elements, metrics, basis: resp.plan_basis ?? null, flags };
 }
