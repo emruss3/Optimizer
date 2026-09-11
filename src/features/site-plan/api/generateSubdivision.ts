@@ -542,6 +542,9 @@ export async function listSubdivisionCandidates(ogcFid: number, limit = 20): Pro
  * candidate's geometry (lots, alleys, streets) is already in EPSG:3857 and
  * ready to render. Maps the persisted storage to subdivision elements.
  * 
+ * For subdivision, the full response (with streets[], lots[], etc.) is stored
+ * in metrics, and centerlines are in geometry_drives for profiling.
+ * 
  * @param candidate - persisted subdivision candidate from listSubdivisionCandidates
  * @returns canvas elements array
  */
@@ -556,6 +559,29 @@ export function hydrateSubdivisionCandidate(candidate: SubdivisionCandidate): El
     return out as Element['properties'];
   };
   
+  // Try to extract the full subdivision response from metrics (server may store it there)
+  const m = candidate.metrics;
+  const streets = Array.isArray(m.streets) ? m.streets as SubdivisionStreet[] : [];
+  const lots = Array.isArray(m.lots) ? m.lots as SubdivisionLot[] : [];
+  const alleys = Array.isArray(m.alleys) ? m.alleys as SubdivisionPolygon[] : [];
+  
+  // If we have the full response in metrics, use subdivisionToElements
+  if (streets.length > 0 || lots.length > 0) {
+    const resp: SubdivisionResponse = {
+      parcel_ogc_fid: Number(m.parcel_ogc_fid) || 0,
+      generator_version: candidate.generatorVersion || 'subdivision_v1',
+      pattern: typeof m.pattern === 'string' ? m.pattern : undefined,
+      network: typeof m.network === 'string' ? m.network : undefined,
+      streets,
+      lots,
+      alleys,
+      metrics: m,
+    };
+    const { elements: generated } = subdivisionToElements(resp);
+    return generated;
+  }
+  
+  // Fallback: hydrate from geometry columns (old persist format or geometry-only)
   // Lots: geometry_buildings → 'other' elements (subdivision lot parcels)
   if (candidate.geometryBuildings && typeof candidate.geometryBuildings === 'object') {
     try {
@@ -604,17 +630,10 @@ export function hydrateSubdivisionCandidate(candidate: SubdivisionCandidate): El
     }
   }
   
-  // Streets: geometry_drives → 'circulation' elements (ROW asphalt)
-  // Centerlines are stored in geometry_drives but for rendering we'd draw the
-  // street polygons; if the candidate only has centerlines, skip for now.
-  // The full subdivision response has street geometries, but if the persisted
-  // candidate has centerlines, we can't re-create the full street polygons here.
-  // Assume the server persists the FULL street geometry in a way we can load.
-  // For now, if streets are stored as multilinestrings, skip (we need polys).
+  // Streets: if geometry_drives has MultiPolygon, use those for rendering
   if (candidate.geometryDrives && typeof candidate.geometryDrives === 'object') {
     try {
       const geom = candidate.geometryDrives as { type?: string; coordinates?: unknown };
-      // If streets are stored as MultiPolygon (not centerlines), render them
       if (geom.type === 'MultiPolygon' && Array.isArray(geom.coordinates)) {
         geom.coordinates.forEach((coords, idx) => {
           elements.push({
