@@ -180,8 +180,14 @@ const TabulationPanel: React.FC<{
             Efficiency <b>{efficiency.toFixed(0)}%</b>
           </span>
         )}
-        <span>FAR <b>{(metrics?.achievedFAR ?? 0).toFixed(2)}</b></span>
-        <span>Coverage <b>{(metrics?.siteCoveragePct ?? 0).toFixed(0)}%</b></span>
+        {/* Seed payloads report 0 for FAR/Coverage (meaning "not reported by this
+            engine") — hide them rather than display fabricated 0.00 / 0%. */}
+        {(metrics?.achievedFAR ?? 0) > 0 && (
+          <span>FAR <b>{(metrics.achievedFAR ?? 0).toFixed(2)}</b></span>
+        )}
+        {(metrics?.siteCoveragePct ?? 0) > 0 && (
+          <span>Coverage <b>{(metrics.siteCoveragePct ?? 0).toFixed(0)}%</b></span>
+        )}
         {duAc != null && <span>Density <b>{duAc.toFixed(1)} DU/ac</b></span>}
         <span>
           Stalls <b>{metrics?.stallsProvided ?? 0} / {metrics?.stallsRequired ?? 0}</b>
