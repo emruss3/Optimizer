@@ -29,7 +29,7 @@ import { PlanPatternPanel } from './ui/PlanPatternPanel';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import {
   generateSubdivision, subdivisionToElements, subdivisionSummaryLine,
-  type SubdivisionParams, type SubdivisionSummary,
+  type SubdivisionParams, type SubdivisionSummary, type SubdivisionAccess,
   listSubdivisionCandidates, hydrateSubdivisionCandidate, type SubdivisionCandidate,
 } from './api/generateSubdivision';
 import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/SubdivisionPanel';
@@ -1991,8 +1991,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const latest = subdivisionCandidates[0];
     if (!latest) return;
     
-    console.log(`[subdivision-hydrate] Loading persisted candidate ${latest.id} for parcel ${contextOgcFid}`);
-    
     try {
       const hydrated = hydrateSubdivisionCandidate(latest);
       if (hydrated.length === 0) {
@@ -2002,6 +2000,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       
       // Build subdivision summary from persisted metrics
       const m = latest.metrics;
+      
+      // Extract access/street ends from metrics (server may store access object there)
+      const access = m.access as SubdivisionAccess | undefined;
+      const accessEnds = access?.ends;
+      const accessMode = typeof access?.mode === 'string' ? access.mode : null;
+      const crossingFt = typeof m.greenway_crossing_ft === 'number' ? m.greenway_crossing_ft 
+        : typeof access?.greenway_crossing_ft === 'number' ? access.greenway_crossing_ft : null;
+      const declinedCrossingFt = typeof m.declined_crossing_ft === 'number' ? m.declined_crossing_ft
+        : typeof access?.declined_crossing_ft === 'number' ? access.declined_crossing_ft : null;
+      const secondConnection = typeof access?.second_connection?.via === 'string' ? access.second_connection.via : null;
+      
       const summary: SubdivisionSummary = {
         lots: typeof m.lots === 'number' ? m.lots : 0,
         network: typeof m.network === 'string' ? m.network : 'spine',
@@ -2021,13 +2030,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         floodplainHeldOutPct: null,
         wetlandHeldOutPct: null,
         hazardCoverage: typeof m.hazard_layer_coverage === 'string' ? m.hazard_layer_coverage : null,
-        accessMode: null,
-        crossingFt: null,
-        declinedCrossingFt: null,
-        streetEnds: { start: null, end: null },
-        secondConnection: null,
-        flags: [],
-        basis: 'Persisted subdivision candidate',
+        accessMode,
+        crossingFt,
+        declinedCrossingFt,
+        streetEnds: {
+          start: typeof accessEnds?.start === 'string' ? accessEnds.start : null,
+          end: typeof accessEnds?.end === 'string' ? accessEnds.end : null,
+        },
+        secondConnection,
+        flags: Array.isArray(m.flags) ? m.flags.filter((f): f is string => typeof f === 'string') : [],
+        basis: typeof m.plan_basis === 'string' ? m.plan_basis : 'Persisted subdivision candidate',
       };
       
       const base = elements.filter(el => !isSubdivisionElement(el) && !isMfPlanElement(el) && !isSfPlanElement(el));
@@ -2041,7 +2053,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         unitMixSummary: `${summary.lots} lots`,
         zoningCompliant: true,
         violations: [] as string[],
-        warnings: [],
+        warnings: summary.flags,
         optimizationStatus: latest.generatorVersion ?? 'subdivision_v1',
       } as NonNullable<typeof metrics>;
       
@@ -2051,7 +2063,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         solvedBy: 'server',
         contextId: null,
         generatorVersion: latest.generatorVersion ?? 'subdivision_v1',
-        flags: [],
+        flags: summary.flags,
         buildings: 0,
         floors: null,
         footprintSqft: null,
@@ -2060,12 +2072,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setPlanStale(false);
       setPlanBasis(subdivisionSummaryLine(summary));
       setLotFitSummary(subdivisionSummaryLine(summary));
-      
-      console.log(`[subdivision-hydrate] Successfully loaded ${hydrated.length} elements from persisted candidate`);
     } catch (err) {
       console.error('[subdivision-hydrate] Failed to hydrate candidate:', err);
     }
-  }, [subdivisionCandidates, contextOgcFid, elements, metrics, setPlanOutput]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subdivisionCandidates, contextOgcFid]);
 
   /** View a saved scheme: deterministic re-render from its seed + pins (no
    *  new candidate row); future variations descend from the viewed scheme.
