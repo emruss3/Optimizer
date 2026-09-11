@@ -61,8 +61,10 @@
   },
   "408571": {
     "mode": "commercial-capacity",
-    "_basis": "2405 12th Ave S (CS, 0.198 ac) - no residential use as-of-right; the card states the FAR-0.6 allowable area (5,173 SF, the architect built to 5,171); no house/apartment plan offered",
-    "requirePlanPattern": "retail_full_plate"
+    "_basis": "2405 12th Ave S (CS, 0.198 ac) - no residential use as-of-right; the card states the FAR-0.6 allowable area (5,173 SF, the architect built to 5,171); commercial plate drawn on canvas from entitlement capacity; PlanPatternPanel hidden for commercial (no pattern assertion required); no MF unit legend",
+    "expectCommercialCard": true,
+    "expectCommercialPlate": true,
+    "expectCommercialGsf": 5173
   },
   "550510": {
     "mode": "subdivision",
