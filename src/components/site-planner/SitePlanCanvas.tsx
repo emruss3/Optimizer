@@ -694,6 +694,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 4) return;
 
+    // Commercial plates have no interior detail — they're capacity footprints,
+    // not unit layouts. Skip unit ticks and corridors for commercial buildings.
+    const isCommercial = element.id === 'commercial-plate-1' || 
+      (element.properties as { use?: string } | undefined)?.use === 'commercial';
+    if (isCommercial) return;
+
     const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
     // Skip when detail would be sub-3px noise
     if (UNIT_SPACING_M * zoom < 3) return;

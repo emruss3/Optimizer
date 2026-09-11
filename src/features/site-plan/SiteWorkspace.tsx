@@ -1399,7 +1399,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // Normalize to ensure it's a valid simple polygon
       plateGeometry = normalizeToPolygon(envelopeMeters);
       if (!plateGeometry || !plateGeometry.coordinates || plateGeometry.coordinates.length === 0) {
-        throw new Error('Invalid envelope geometry');
+        throw new Error('Invalid envelope geometry - empty coordinates');
+      }
+      if (!plateGeometry.coordinates[0] || plateGeometry.coordinates[0].length < 3) {
+        throw new Error('Invalid envelope geometry - insufficient ring points');
       }
     } catch (err) {
       setServerPlanError(`Commercial plate geometry error: ${err instanceof Error ? err.message : 'unknown'}`);
