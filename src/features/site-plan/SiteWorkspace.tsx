@@ -635,6 +635,29 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         severity: 'error',
       }]);
       setPlanBasis(`Plan rejected: ${validation.reason}`);
+      // Order-8 audit (667574): set lineage even when rejected so battery can
+      // verify the server DID generate a plan (solvedBy='server'), even though
+      // client validation blocked render. Proves plan existence for diagnostics.
+      const mNum = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isFinite(v) ? v : null;
+      setPlanLineage({
+        solvedBy: 'server',
+        contextId: resp.context_id ?? null,
+        contextVersion: resp.context_version ?? null,
+        contextHash: resp.context_hash ?? null,
+        generatorVersion: resp.generator_version ?? null,
+        scoreVersion: resp.score_version ?? null,
+        programPriorVersion: resp.program_prior_version ?? null,
+        scoreTotal: resp.score_total ?? null,
+        scoreComponents: resp.score_components ?? null,
+        flags: [...(mapped.flags ?? []), 'server-plan-rejected'],
+        buildings: mNum(resp.metrics?.bars) ?? (resp.buildings?.length || null),
+        floors: mNum(resp.metrics?.floors) ?? mNum(resp.metrics?.stories),
+        footprintSqft: mNum(resp.metrics?.footprint_sqft)
+          ?? (resp.buildings?.length
+            ? resp.buildings.reduce((s, b) => s + (mNum((b as { footprint_sqft?: unknown }).footprint_sqft) ?? 0), 0) || null
+            : null),
+      });
       serverFailCauseRef.current = `The plan failed the geometry gate after a retry: ${validation.reason}.`;
       return false;
     }
@@ -1901,7 +1924,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setNonResidentialOnly(isNonResidentialOnly(list));
       if (!userPickedUseRef.current && list.length > 0) {
         const preferred = pickDefaultUse(list);
-        if (preferred && preferred !== contextUse) setContextUse(preferred);
+        // Order-8 fix (408571): commercial-only parcels have no compilable
+        // residential use, so pickDefaultUse returns null. Compile with
+        // 'multi_family' anyway — the server returns generation_allowed=false
+        // but DOES return entitlement_capacity (the FAR ceiling the card needs).
+        if (preferred && preferred !== contextUse) {
+          setContextUse(preferred);
+        } else if (!preferred && isNonResidentialOnly(list)) {
+          setContextUse('multi_family');
+        }
       }
       if (list.length === 0) {
         console.warn('[permitted-uses] list unavailable after retry — selector limited to the compiled use (no inference).');
