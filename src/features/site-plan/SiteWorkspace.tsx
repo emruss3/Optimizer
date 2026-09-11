@@ -599,15 +599,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         persist: false,
       });
     }
-    console.log('[runServerMfPlan] response received:', {
-      hasResp: !!resp,
-      hasBuildings: !!resp?.buildings,
-      buildingsLength: resp?.buildings?.length,
-      hasParking: !!resp?.parking,
-      hasDrives: !!resp?.drives,
-      contextId: resp?.context_id,
-      parcel: contextOgcFid
-    });
     if (!resp || !resp.buildings || resp.buildings.length === 0) {
       serverFailCauseRef.current = resp
         ? `The generator returned no plan${resp.generation ? ` — ${resp.generation}` : resp.error ? ` — ${resp.error}` : ''}.`
@@ -1958,7 +1949,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // generation_allowed=false) and shows the capacity card — it never
       // defaults to a use the compiler cannot type ('commercial').
       setNonResidentialOnly(isNonResidentialOnly(list));
-      console.log('[permitted-uses] nonResidentialOnly:', isNonResidentialOnly(list), 'parcel:', contextOgcFid);
       if (!userPickedUseRef.current && list.length > 0) {
         const preferred = pickDefaultUse(list);
         // Order-8 fix (408571): commercial-only parcels have no compilable
@@ -1968,7 +1958,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         if (preferred && preferred !== contextUse) {
           setContextUse(preferred);
         } else if (!preferred && isNonResidentialOnly(list)) {
-          console.log('[permitted-uses] commercial-only parcel detected, forcing multi_family compile');
           setContextUse('multi_family');
         }
       }
@@ -2015,12 +2004,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         if (cancelled) return;
         plannerCtxRef.current = resp;
         setPlannerCtx(resp);
-        console.log('[compile] plannerCtx set:', {
-          ogcFid: contextOgcFid,
-          use: contextUse,
-          hasEntitlementCapacity: !!resp?.context?.entitlement_capacity,
-          maxGfaSqft: resp?.context?.entitlement_capacity?.max_gfa_sqft
-        });
         setPlannerLoading(false);
         if (resp) {
           applyBriefDefaults(resp);
