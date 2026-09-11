@@ -242,8 +242,9 @@ describe('density-first default use (zoning-base fallback)', () => {
     // One/two-family districts default single_family
     expect(defaultUseFromZoningBase('RS5')).toBe('single_family');
     expect(defaultUseFromZoningBase('R6')).toBe('single_family');
-    // Unknown/commercial: no inference (keep whatever is selected)
-    expect(defaultUseFromZoningBase('CS')).toBeNull();
+    // Commercial zones now infer 'commercial' (order-8 commercial correction)
+    expect(defaultUseFromZoningBase('CS')).toBe('commercial');
+    // Unknown/special: no inference (keep whatever is selected)
     expect(defaultUseFromZoningBase('SP')).toBeNull();
     expect(defaultUseFromZoningBase(null)).toBeNull();
     expect(defaultUseFromZoningBase('')).toBeNull();
