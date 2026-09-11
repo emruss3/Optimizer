@@ -599,6 +599,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         persist: false,
       });
     }
+    console.log('[runServerMfPlan] response received:', {
+      hasResp: !!resp,
+      hasBuildings: !!resp?.buildings,
+      buildingsLength: resp?.buildings?.length,
+      hasParking: !!resp?.parking,
+      hasDrives: !!resp?.drives,
+      contextId: resp?.context_id,
+      parcel: contextOgcFid
+    });
     if (!resp || !resp.buildings || resp.buildings.length === 0) {
       serverFailCauseRef.current = resp
         ? `The generator returned no plan${resp.generation ? ` — ${resp.generation}` : resp.error ? ` — ${resp.error}` : ''}.`
