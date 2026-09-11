@@ -25,6 +25,7 @@ import {
   corridorLine
 } from '../planRendering';
 import { computeFloorplate, UNIT_COLORS } from '../unitLayout';
+import { LINE_WEIGHT, LINE_STYLE, applyLineStyle } from '../rendering/lineWeights';
 
 interface ElementLayerProps {
   ctx: CanvasRenderingContext2D;
@@ -171,7 +172,11 @@ function renderElement(
   // Stroke — ONLY for stroked styles and selected elements
   if (style.stroke || isSelected) {
     ctx.strokeStyle = isSelected ? '#F59E0B' : (style.strokeColor ?? '#1E40AF');
-    ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
+    // Buildings and lots get heavier strokes than other elements
+    const weight = element.type === 'building' || element.type === 'other' 
+      ? LINE_WEIGHT.BUILDING 
+      : LINE_WEIGHT.DETAIL;
+    applyLineStyle(ctx, isSelected ? weight * 1.5 : weight, zoom);
     ctx.globalAlpha = 1;
     ctx.stroke();
   }
@@ -219,11 +224,11 @@ function renderBuildingDetail(
       ctx.fill();
       // Party walls
       ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-      ctx.lineWidth = 2 / zoom;
+      ctx.lineWidth = LINE_WEIGHT.BUILDING / zoom;
       ctx.stroke();
       // Door ticks on both long edges
       ctx.strokeStyle = 'rgba(30,41,59,0.55)';
-      ctx.lineWidth = 1.2 / zoom;
+      ctx.lineWidth = LINE_WEIGHT.DETAIL / zoom;
       for (const e of slice.edges) {
         ctx.beginPath();
         ctx.moveTo(e.mid[0], e.mid[1]);
@@ -278,7 +283,7 @@ function renderBuildingDetail(
         ctx.fill();
         ctx.globalAlpha = 0.9;
         ctx.strokeStyle = 'rgba(51,65,85,0.7)';
-        ctx.lineWidth = 0.9 / zoom;
+        applyLineStyle(ctx, LINE_WEIGHT.DETAIL, zoom);
         ctx.stroke();
       }
 
@@ -292,7 +297,7 @@ function renderBuildingDetail(
         ctx.closePath();
         ctx.fill();
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-        ctx.lineWidth = 1 / zoom;
+        applyLineStyle(ctx, LINE_WEIGHT.DETAIL, zoom);
         ctx.beginPath();
         ctx.moveTo(core.ring[0][0], core.ring[0][1]);
         ctx.lineTo(core.ring[2][0], core.ring[2][1]);
@@ -337,8 +342,7 @@ function renderBuildingDetail(
         ctx.lineTo(b[0], b[1]);
         ctx.stroke();
         ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)';
-        ctx.lineWidth = 1.2 / zoom;
-        ctx.setLineDash([4 / zoom, 3 / zoom]);
+        applyLineStyle(ctx, LINE_WEIGHT.DETAIL, zoom, LINE_STYLE.DIM_LEADER);
         ctx.beginPath();
         ctx.moveTo(a[0], a[1]);
         ctx.lineTo(b[0], b[1]);
@@ -359,7 +363,7 @@ function renderBuildingDetail(
   ctx.clip();
 
   ctx.strokeStyle = 'rgba(30, 64, 175, 0.30)';
-  ctx.lineWidth = 1 / zoom;
+  applyLineStyle(ctx, LINE_WEIGHT.DETAIL, zoom);
   for (const [[x1, y1], [x2, y2]] of computeUnitTicks(coords, UNIT_SPACING_M)) {
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -370,8 +374,7 @@ function renderBuildingDetail(
   const corridor = corridorLine(coords);
   if (corridor) {
     ctx.strokeStyle = 'rgba(30, 64, 175, 0.55)';
-    ctx.lineWidth = 1.5 / zoom;
-    ctx.setLineDash([4 / zoom, 3 / zoom]);
+    applyLineStyle(ctx, LINE_WEIGHT.DETAIL, zoom, LINE_STYLE.DIM_LEADER);
     ctx.beginPath();
     ctx.moveTo(corridor[0][0], corridor[0][1]);
     ctx.lineTo(corridor[1][0], corridor[1][1]);
@@ -437,7 +440,7 @@ function renderParkingStripes(
 
   // Stall dividers
   ctx.strokeStyle = '#8494A6';
-  ctx.lineWidth = Math.max(0.75 / zoom, 0.3);
+  ctx.lineWidth = Math.max(LINE_WEIGHT.DETAIL / zoom, 0.3);
   ctx.globalAlpha = 0.9;
 
   const stallDepth = feetToMeters(parkingViz.stallDepthFt);
@@ -631,7 +634,7 @@ function renderGreenwayCallout(
   ctx.closePath();
   ctx.clip();
   ctx.strokeStyle = 'rgba(13, 148, 136, 0.5)';
-  ctx.lineWidth = 0.8 / zoom;
+  applyLineStyle(ctx, LINE_WEIGHT.DETAIL, zoom);
   const h = maxY - minY;
   const step = Math.max(8 / zoom, 2);
   for (let d = minX - h; d < maxX + h; d += step) {

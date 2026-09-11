@@ -23,6 +23,7 @@ import type { SheetAnnotation } from '../../../features/site-plan/api/sheetAnnot
 import { ElementService } from '../../../services/elementService';
 import { metersToFeet } from '../../../engine/units';
 import { edgeDimensions, setbackLabelIndices } from '../planRendering';
+import { LINE_WEIGHT, LINE_STYLE, applyLineStyle } from '../rendering/lineWeights';
 
 interface AnnotationLayerProps {
   ctx: CanvasRenderingContext2D;
@@ -110,7 +111,7 @@ function renderDimensions(
   ctx.save();
   ctx.strokeStyle = '#64748B';
   ctx.fillStyle = '#334155';
-  ctx.lineWidth = 1 / zoom;
+  applyLineStyle(ctx, LINE_WEIGHT.DIMENSION, zoom);
 
   for (const d of dims) {
     const [[x1, y1], [x2, y2]] = d.line;
@@ -168,7 +169,7 @@ function renderEdgeSetbacks(
     const edge = edgeClassifications[ei];
     const [[x1, y1], [x2, y2]] = edge.edge;
     ctx.strokeStyle = EDGE_COLORS[edge.type] ?? '#64748B';
-    ctx.lineWidth = 3 / zoom;
+    applyLineStyle(ctx, LINE_WEIGHT.SETBACK, zoom);
     ctx.globalAlpha = 0.85;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -219,7 +220,7 @@ function renderTopo(
   for (const c of topo.contours) {
     if (!c.index && !drawMinor) continue;
     ctx.strokeStyle = c.index ? 'rgba(120, 72, 32, 0.55)' : 'rgba(120, 72, 32, 0.28)';
-    ctx.lineWidth = (c.index ? 1.1 : 0.6) / zoom;
+    applyLineStyle(ctx, c.index ? LINE_WEIGHT.DIMENSION : LINE_WEIGHT.DETAIL, zoom);
     ctx.beginPath();
     for (const line of c.lines) {
       if (line.length < 2) continue;
@@ -331,7 +332,7 @@ function renderAnnotations(
       const ny = Math.cos(angle);
       const h = 5 / zoom;
       ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 1 / zoom;
+      applyLineStyle(ctx, LINE_WEIGHT.DIMENSION, zoom);
       ctx.beginPath();
       ctx.moveTo(a.x - nx * h, a.y - ny * h);
       ctx.lineTo(a.x + nx * h, a.y + ny * h);
@@ -373,7 +374,7 @@ function renderVertexHandles(
     
     ctx.fillStyle = isSelectedVertex ? '#EF4444' : '#3B82F6';
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 1 / zoom;
+    applyLineStyle(ctx, LINE_WEIGHT.HANDLE, zoom);
     
     ctx.beginPath();
     ctx.arc(x, y, 5 / zoom, 0, Math.PI * 2);
@@ -397,7 +398,7 @@ function renderResizeHandles(
   const size = 8 / zoom;
   ctx.fillStyle = '#FFFFFF';
   ctx.strokeStyle = '#3B82F6';
-  ctx.lineWidth = 1.5 / zoom;
+  applyLineStyle(ctx, LINE_WEIGHT.HANDLE, zoom);
   for (let i = 0; i < 4; i++) {
     const [x, y] = coords[i];
     ctx.beginPath();
@@ -420,7 +421,7 @@ function renderRotationHandle(
   ctx.save();
   ctx.strokeStyle = '#3B82F6';
   ctx.fillStyle = '#FFFFFF';
-  ctx.lineWidth = 2 / zoom;
+  applyLineStyle(ctx, LINE_WEIGHT.HANDLE, zoom);
   
   // Line from center to handle
   ctx.beginPath();
@@ -448,8 +449,7 @@ function renderMeasurement(
 
   ctx.save();
   ctx.strokeStyle = '#EF4444';
-  ctx.lineWidth = 2 / zoom;
-  ctx.setLineDash([5 / zoom, 5 / zoom]);
+  applyLineStyle(ctx, LINE_WEIGHT.DIMENSION, zoom, LINE_STYLE.DIM_LEADER);
 
   ctx.beginPath();
   ctx.moveTo(startPoint.x, startPoint.y);
@@ -478,8 +478,7 @@ function renderMeasurement(
 
   ctx.fillStyle = '#FFFFFF';
   ctx.strokeStyle = '#EF4444';
-  ctx.lineWidth = 1 / zoom;
-  ctx.setLineDash([]);
+  applyLineStyle(ctx, LINE_WEIGHT.DIMENSION, zoom);
   ctx.font = `${12 / zoom}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';

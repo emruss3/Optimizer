@@ -12,6 +12,7 @@
  * - Draft watermark (when in draft mode)
  * 
  * These are drawn in screen coordinates after the world transform is popped.
+ * Line weights are in fixed CSS pixels (not zoom-scaled) since these are UI chrome.
  */
 
 import type { Element } from '../../../engine/types';
@@ -19,6 +20,7 @@ import type { ParcelTopoView } from '../../../features/site-plan/api/parcelTopo'
 import type { SheetTitleBlock } from '../../../features/site-plan/api/sheetAnnotations';
 import { pickScaleBarFt } from '../planRendering';
 import { UNIT_COLORS } from '../unitLayout';
+import { LINE_WEIGHT } from '../rendering/lineWeights';
 
 interface OverlayLayerProps {
   ctx: CanvasRenderingContext2D;

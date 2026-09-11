@@ -18,6 +18,7 @@ import type { Element } from '../../../engine/types';
 import type { EdgeClassification } from '../../../engine/setbacks';
 import { pointsAlongSegment, computeCurbCut } from '../planRendering';
 import { feetToMeters } from '../../../engine/units';
+import { LINE_WEIGHT, LINE_STYLE, applyLineStyle } from '../rendering/lineWeights';
 
 interface BaseLayerProps {
   ctx: CanvasRenderingContext2D;
@@ -81,9 +82,8 @@ export function renderParcelBoundary(
 
   ctx.save();
   ctx.strokeStyle = '#374151';
-  ctx.lineWidth = 2 / zoom;
+  applyLineStyle(ctx, LINE_WEIGHT.PROPERTY, zoom, LINE_STYLE.PROPERTY);
   ctx.globalAlpha = 0.8;
-  ctx.setLineDash([10 / zoom, 5 / zoom]);
 
   ctx.beginPath();
   ctx.moveTo(coords[0][0], coords[0][1]);
@@ -121,9 +121,8 @@ function renderBuildableEnvelope(
 
   // Subtle dashed border
   ctx.strokeStyle = '#93C5FD';
-  ctx.lineWidth = 1 / zoom;
   ctx.globalAlpha = 0.5;
-  ctx.setLineDash([8 / zoom, 4 / zoom]);
+  applyLineStyle(ctx, LINE_WEIGHT.DIMENSION, zoom, LINE_STYLE.DASHED);
   ctx.stroke();
   ctx.setLineDash([]);
 
@@ -139,7 +138,7 @@ function renderGrid(
 ): void {
   ctx.save();
   ctx.strokeStyle = '#E5E7EB';
-  ctx.lineWidth = 1 / zoom;
+  applyLineStyle(ctx, LINE_WEIGHT.GRID, zoom);
   ctx.globalAlpha = 0.5;
 
   const startX = Math.floor(bounds.minX / gridSize) * gridSize;
@@ -190,7 +189,7 @@ function renderNeighbors(
     if (!coords || coords.length < 2) continue;
     if (!nearParcel(coords)) continue;
     ctx.strokeStyle = 'rgba(226, 232, 240, 0.9)';
-    ctx.lineWidth = 12; // metres — reads as a street body
+    ctx.lineWidth = LINE_WEIGHT.CONTEXT_STREET; // metres — reads as a street body
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(coords[0][0], coords[0][1]);
@@ -213,7 +212,7 @@ function renderNeighbors(
     ctx.fillStyle = 'rgba(241, 245, 249, 0.75)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(203, 213, 225, 0.9)';
-    ctx.lineWidth = 1 / zoom;
+    applyLineStyle(ctx, LINE_WEIGHT.CONTEXT_PARCEL, zoom);
     ctx.stroke();
   }
   // Existing buildings (light mass with a fine outline)
@@ -227,7 +226,7 @@ function renderNeighbors(
     ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)';
-    ctx.lineWidth = 1 / zoom;
+    applyLineStyle(ctx, LINE_WEIGHT.CONTEXT_PARCEL, zoom);
     ctx.stroke();
   }
   ctx.restore();
@@ -311,7 +310,7 @@ function renderLandscape(
         ctx.fill();
         // Curb line broken at the cut
         ctx.strokeStyle = '#94A3B8';
-        ctx.lineWidth = 2 / zoom;
+        applyLineStyle(ctx, LINE_WEIGHT.DETAIL, zoom);
         ctx.beginPath();
         ctx.moveTo(-7, 0);
         ctx.lineTo(7, 0);
