@@ -503,3 +503,40 @@ export async function generateSubdivision(
     return null;
   }
 }
+
+/** List persisted subdivision candidates for a parcel, newest first.
+ *  Order-8 fix (550510): load latest candidate with metrics.hazards[].geom_2274
+ *  so greenway hatch hydrates on mount. */
+export async function listSubdivisionCandidates(ogcFid: number, limit = 10): Promise<SubdivisionResponse[]> {
+  try {
+    if (!supabase) return [];
+    // The fn_generate_subdivision RPC with no params may return the latest persisted candidate
+    // Or there may be a separate list RPC. Try calling the generate RPC which might return cached.
+    const { data, error } = await supabase.rpc('fn_list_subdivision_candidates', {
+      p_ogc_fid: ogcFid,
+      p_limit: limit,
+    });
+    if (error) {
+      // RPC might not exist yet, fall back to single generate call
+      const latest = await generateSubdivision(ogcFid);
+      return latest ? [latest] : [];
+    }
+    if (!Array.isArray(data)) return [];
+    return data as SubdivisionResponse[];
+  } catch (err) {
+    // Fallback to single generate
+    const latest = await generateSubdivision(ogcFid);
+    return latest ? [latest] : [];
+  }
+}
+
+/** Load the newest subdivision candidate with hazards for hydration. */
+export async function hydrateSubdivisionCandidate(ogcFid: number): Promise<SubdivisionResponse | null> {
+  const candidates = await listSubdivisionCandidates(ogcFid, 10);
+  // Prefer latest candidate with metrics.hazards (has geom_2274 for greenway)
+  const withHazards = candidates.find(c => 
+    (c.hazards && c.hazards.length > 0) || 
+    ((c.metrics as { hazards?: unknown[] })?.hazards && (c.metrics as { hazards?: unknown[] }).hazards!.length > 0)
+  );
+  return withHazards ?? candidates[0] ?? null;
+}
