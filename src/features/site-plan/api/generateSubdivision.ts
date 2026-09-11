@@ -327,7 +327,11 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
   (resp.hazards ?? []).forEach((h, i) => {
     const kind = h.kind ?? 'floodplain';
     const label = kind === 'floodway' ? 'Floodway' : kind === 'wetland' ? 'Wetland' : 'Floodplain';
-    polygons2274To3857(h.geom_2274).forEach((poly, j) => {
+    const polys = polygons2274To3857(h.geom_2274);
+    if (polys.length === 0) {
+      console.warn(`[subdivisionToElements] Hazard ${i + 1} (${kind}) has no drawable geometry — geom_2274 is null or invalid`);
+    }
+    polys.forEach((poly, j) => {
       elements.push({
         id: `${SUBDIVISION_ID_PREFIX}hazard-${i + 1}${j > 0 ? `-${j + 1}` : ''}`,
         type: 'greenspace',
@@ -364,6 +368,19 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
   const parcelSqft = num(m.parcel_sqft);
   const openSqft = (num(m.court_area_sqft) ?? 0) + (num(m.amenity_sqft) ?? 0) + (num(m.hazard_sqft) ?? 0);
   const pctOf = (v: number | null) => (v != null && parcelSqft && parcelSqft > 0 ? Math.round((v / parcelSqft) * 1000) / 10 : null);
+  
+  // Validate hazard data consistency: if metrics say hazards exist but no geometries rendered, warn
+  const hazardMetricsPct = num(m.pct_land_hazard);
+  const hazardElementsCount = elements.filter(e => e.id.startsWith(`${SUBDIVISION_ID_PREFIX}hazard-`)).length;
+  if (hazardMetricsPct != null && hazardMetricsPct > 0 && hazardElementsCount === 0) {
+    console.error(
+      `[subdivisionToElements] HAZARD GEOMETRY MISSING: metrics report ${hazardMetricsPct}% hazard ` +
+      `(${num(m.floodplain_sqft)} SF floodplain, ${num(m.wetland_sqft)} SF wetland) ` +
+      `but ${(resp.hazards ?? []).length} hazard entries produced 0 renderable elements. ` +
+      `Server response has ${(resp.hazards ?? []).length} hazard records.`
+    );
+  }
+  
   return {
     elements,
     summary: {
@@ -409,7 +426,7 @@ export function subdivisionSummaryLine(s: SubdivisionSummary): string {
   // Hazards: real geometry when the FEMA/NWI tiles cover the area; otherwise the honest warning.
   const hazard = s.hazardCoverage === 'ingested'
     ? (s.pctHazard != null && s.pctHazard > 0
-        ? ` · ${s.pctHazard}% held out as greenway (floodplain ${s.floodplainHeldOutPct ?? 0}%, wetland ${s.wetlandHeldOutPct ?? 0}%)`
+        ? ` · ${s.pctHazard}% held out as greenway (floodplain ${s.floodplainHeldOutPct != null ? `${s.floodplainHeldOutPct}%` : 'unknown'}, wetland ${s.wetlandHeldOutPct != null ? `${s.wetlandHeldOutPct}%` : 'unknown'})`
         : ' · no floodplain or wetland on the parcel')
     : (s.floodplainPct != null && s.floodplainPct > 0 ? ` · ⚠ ${s.floodplainPct}% floodplain not carved (layer not ingested here)` : '');
   // v1.2: the streets stop at the greenway unless through-access is read; a crossing taken is a culvert/bridge to price
