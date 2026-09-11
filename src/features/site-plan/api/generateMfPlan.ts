@@ -364,8 +364,16 @@ export function isSeedFamilyResponse(resp: MfPlanResponse | SeedFamilyResponse |
   return !!b0?.geom_2274;
 }
 
-const seedTo3857 = <T extends SeedFamilyGeom>(g: T): T =>
-  feature4326To3857(geom2274To4326(g as never) as never) as T;
+const seedTo3857 = <T extends SeedFamilyGeom>(g: T): T => {
+  // Order-8 fix (667574): strip CRS field before AND after transformation.
+  // The geom_2274 payload carries { crs: { type: 'name', properties: { name: 'EPSG:2274' } } }
+  // which persists through reproject and causes Mapbox to drop geometries when
+  // the CRS tag (EPSG:2274) conflicts with actual coordinates (EPSG:3857).
+  const { crs: _inputCrs, ...cleanInput } = g as T & { crs?: unknown };
+  const transformed = feature4326To3857(geom2274To4326(cleanInput as never) as never) as T;
+  const { crs: _outputCrs, ...cleanOutput } = transformed as T & { crs?: unknown };
+  return cleanOutput as T;
+};
 
 /** Distribute the server's plan-level unit mix across structures by GSF share
  *  (largest remainder per type, so totals stay exact). */
