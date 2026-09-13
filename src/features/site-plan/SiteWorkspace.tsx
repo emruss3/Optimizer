@@ -1510,7 +1510,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const parkingMaxY = driveMinY - parkingGap; // HARD CEILING, never exceeded
     const availableForParking = Math.max(0, parkingMaxY - envBbox.minY - frontInset - 3); // -3m min for building
     const targetParkingDepth = 12; // ~40ft two-row if space allows
-    const actualParkingDepth = Math.min(targetParkingDepth, availableForParking * 0.6); // take ~60% of remaining
+    const actualParkingDepth = Math.min(targetParkingDepth, availableForParking); // use full available up to target
     const parkingMinY = parkingMaxY - actualParkingDepth;
     
     // STEP 3: Building gets remaining front space (EXACTLY fits what's left)
@@ -1562,10 +1562,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
     const parkingDepthFt = (actualParkingDepth / 0.3048);
     const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width, strict floor
-    // Match canvas renderParkingStripes: if actualParkingDepth > 0, at least 1 row renders
-    // Standard: 18ft per stall + shared aisle between rows (42ft = 2 rows, 60ft = 3 rows)
+    // Match canvas renderParkingStripes: if parking polygon exists, count rows by depth
     const stallRows = actualParkingDepth > 0
-      ? (parkingDepthFt < 42 ? 1 : 1 + Math.floor((parkingDepthFt - 42) / 18))
+      ? (parkingDepthFt < 42 ? 1 : parkingDepthFt < 60 ? 2 : 3)
       : 0;
     let stallsProvided = Math.max(0, stallsPerRow) * stallRows;
     
