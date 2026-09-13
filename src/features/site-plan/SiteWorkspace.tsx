@@ -481,32 +481,35 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const fid = contextOgcFid;
     listMfCandidates(fid)
       .then(cands => {
-        // Smart candidate sorting: when plan pattern is court, prefer courtyard
-        // candidates over tuck_under with designed_court_sf=0. Don't just take
-        // latest-by-created_at if it doesn't match the pattern.
-        const sorted = planPattern?.pattern === 'court_scheme_perpendicular_bars'
-          ? [...cands].sort((a, b) => {
+        // When plan pattern is court_scheme_perpendicular_bars:
+        // 1. Filter out stale tuck_under with designed_court_sf=0 (persist can diverge from live generate)
+        // 2. Prefer courtyard regime or designed_central_court_v1 flag
+        const isCourtPattern = planPattern?.pattern === 'court_scheme_perpendicular_bars';
+        
+        const filtered = isCourtPattern
+          ? cands.filter(c => {
+              // Filter out tuck_under with no courtyard when pattern expects court
+              const isBadTuckUnder = c.metrics.regime === 'tuck_under' && 
+                (c.metrics.designed_court_sf === 0 || c.metrics.designed_court_sf == null);
+              return !isBadTuckUnder;
+            })
+          : cands;
+        
+        const sorted = isCourtPattern
+          ? [...filtered].sort((a, b) => {
               // Prefer regime=courtyard or flags containing designed_central_court_v1
               const aIsCourtyard = a.metrics.regime === 'courtyard' || 
                 (a.flags?.includes('designed_central_court_v1') ?? false);
               const bIsCourtyard = b.metrics.regime === 'courtyard' || 
                 (b.flags?.includes('designed_central_court_v1') ?? false);
               
-              // Filter out tuck_under with no courtyard when pattern expects court
-              const aIsBadTuckUnder = a.metrics.regime === 'tuck_under' && 
-                (a.metrics.designed_court_sf === 0 || a.metrics.designed_court_sf == null);
-              const bIsBadTuckUnder = b.metrics.regime === 'tuck_under' && 
-                (b.metrics.designed_court_sf === 0 || b.metrics.designed_court_sf == null);
-              
               if (aIsCourtyard && !bIsCourtyard) return -1;
               if (!aIsCourtyard && bIsCourtyard) return 1;
-              if (aIsBadTuckUnder && !bIsBadTuckUnder) return 1;
-              if (!aIsBadTuckUnder && bIsBadTuckUnder) return -1;
               
               // Otherwise keep original order (newest first)
               return 0;
             })
-          : cands;
+          : filtered;
         
         setMfCandidates(sorted); // show immediately…
         return enrichCandidatesWithMoney(fid, sorted); // …then rank by market margin
