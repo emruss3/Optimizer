@@ -144079,7 +144079,29 @@
         "far_uncapped_for_mf": false,
         "max_impervious_sqft": 7759
       },
-      "program_prior_version": "existing_engine_bridge_v0_1"
+      "program_prior_version": "existing_engine_bridge_v0_1",
+      "display": {
+        "setback_front_ft": {
+          "value": 15,
+          "source": "overlay",
+          "confidence": "high"
+        },
+        "setback_side_ft": {
+          "value": 0,
+          "source": "typology_default",
+          "confidence": "high"
+        },
+        "setback_rear_ft": {
+          "value": 10,
+          "source": "zoning",
+          "confidence": "high"
+        },
+        "max_far": {
+          "value": 0.6,
+          "source": "zoning",
+          "confidence": "high"
+        }
+      }
     },
     "context_id": "db3b4b87-ec7e-4c1d-bc9b-6f44fd935c2c",
     "created_at": "2026-09-03T02:19:59.975739+00:00",
@@ -144590,7 +144612,7 @@
         "developable": true,
         "max_height_ft": 30,
         "rear_setback_ft": 20,
-        "side_setback_ft": 10,
+        "side_setback_ft": 0,
         "front_setback_ft": 20,
         "max_coverage_pct": 60,
         "coverage_semantics": {
@@ -144601,7 +144623,8 @@
         "min_open_space_pct": null,
         "max_density_du_acre": null,
         "max_impervious_sqft": 7759,
-        "max_building_coverage_pct": 60
+        "max_building_coverage_pct": 60,
+        "setback_side_ft_source": "typology_default"
       },
       "precedent_priors": {
         "stories": {

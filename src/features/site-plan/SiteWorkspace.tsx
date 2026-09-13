@@ -1486,18 +1486,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const bldgX = envBbox.minX + sideSetback;
     const bldgY = envBbox.minY + frontSetback;
     
+    // Limit building depth to leave room for parking
+    const maxBldgDepth = Math.min(envHeight - frontSetback - rearSetback, 25);
+    const actualBldgDepth = Math.max(10, maxBldgDepth); // At least 10m (~33ft)
+    const actualBldgWidth = Math.max(10, Math.min(envWidth - 2 * sideSetback, targetFootprintSqm / actualBldgDepth));
+    
     const buildingGeom: Polygon = {
       type: 'Polygon',
       coordinates: [[
         [bldgX, bldgY],
-        [bldgX + bldgWidth, bldgY],
-        [bldgX + bldgWidth, bldgY + bldgDepth],
-        [bldgX, bldgY + bldgDepth],
+        [bldgX + actualBldgWidth, bldgY],
+        [bldgX + actualBldgWidth, bldgY + actualBldgDepth],
+        [bldgX, bldgY + actualBldgDepth],
         [bldgX, bldgY],
       ]],
     };
     
-    const actualFootprintSqft = (bldgWidth * bldgDepth) / 0.092903;
+    const actualFootprintSqft = (actualBldgWidth * actualBldgDepth) / 0.092903;
     
     const plateElement: Element = {
       id: 'commercial-bldg-1',
@@ -1520,23 +1525,24 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     generatedElements.push(plateElement);
     
     // Parking field: rear of building
-    const parkingY = bldgY + bldgDepth + 1; // 1m (~3ft) gap
-    const parkingDepth = envBbox.maxY - parkingY - 2; // leave 2m for rear buffer
+    const parkingY = bldgY + actualBldgDepth + 1; // 1m (~3ft) gap
+    const parkingDepth = Math.max(0, envBbox.maxY - parkingY - 2); // leave 2m for rear buffer
     
+    let stallsProvided = 0;
     if (parkingDepth > 5) {
       // Calculate actual stalls based on parking geometry
       // Standard stall: 9ft x 18ft = 162 sqft, plus aisle circulation
       // For single-row 90° parking: ~350 sqft per stall (stall + share of aisle)
-      const parkingAreaSqm = bldgWidth * parkingDepth;
+      const parkingAreaSqm = actualBldgWidth * parkingDepth;
       const parkingAreaSqft = parkingAreaSqm / 0.092903;
-      const stallsProvided = Math.floor(parkingAreaSqft / 350); // Conservative estimate with aisles
+      stallsProvided = Math.floor(parkingAreaSqft / 350); // Conservative estimate with aisles
       
       const parkingGeom: Polygon = {
         type: 'Polygon',
         coordinates: [[
           [bldgX, parkingY],
-          [bldgX + bldgWidth, parkingY],
-          [bldgX + bldgWidth, parkingY + parkingDepth],
+          [bldgX + actualBldgWidth, parkingY],
+          [bldgX + actualBldgWidth, parkingY + parkingDepth],
           [bldgX, parkingY + parkingDepth],
           [bldgX, parkingY],
         ]],
@@ -1558,39 +1564,40 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         metadata: meta,
       };
       generatedElements.push(parkingElement);
-      
-      // Save stall count for metrics
-      actualStallsProvided = stallsProvided;
-      
-      // Drive aisle along side of parking
-      const driveWidth = 6; // ~20ft drive aisle
-      const driveGeom: Polygon = {
-        type: 'Polygon',
-        coordinates: [[
-          [bldgX - driveWidth, bldgY],
-          [bldgX, bldgY],
-          [bldgX, parkingY + parkingDepth],
-          [bldgX - driveWidth, parkingY + parkingDepth],
-          [bldgX - driveWidth, bldgY],
-        ]],
-      };
-      
-      const driveElement: Element = {
-        id: 'commercial-drive-1',
-        type: 'circulation',
-        name: 'Access Drive',
-        geometry: driveGeom,
-        properties: {
-          circulationType: 'drive',
-          styleOverride: true,
-          color: '#D1D5DB',
-          opacity: 0.8,
-          strokeColor: '#6B7280',
-        },
-        metadata: meta,
-      };
-      generatedElements.push(driveElement);
     }
+    
+    // Save stall count for metrics
+    actualStallsProvided = stallsProvided;
+    
+    // Drive aisle along side for access (always present)
+    const driveWidth = 6; // ~20ft drive aisle
+    const driveDepth = Math.min(actualBldgDepth + (parkingDepth > 0 ? parkingDepth + 1 : 0), envHeight - frontSetback);
+    const driveGeom: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [bldgX - driveWidth, bldgY],
+        [bldgX, bldgY],
+        [bldgX, bldgY + driveDepth],
+        [bldgX - driveWidth, bldgY + driveDepth],
+        [bldgX - driveWidth, bldgY],
+      ]],
+    };
+    
+    const driveElement: Element = {
+      id: 'commercial-drive-1',
+      type: 'circulation',
+      name: 'Access Drive',
+      geometry: driveGeom,
+      properties: {
+        circulationType: 'drive',
+        styleOverride: true,
+        color: '#D1D5DB',
+        opacity: 0.8,
+        strokeColor: '#6B7280',
+      },
+      metadata: meta,
+    };
+    generatedElements.push(driveElement);
     
     const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
     
