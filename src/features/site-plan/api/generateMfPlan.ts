@@ -359,7 +359,9 @@ export interface SeedFamilyResponse {
   amenity?: SeedFamilyAmenity[] | null;
   metrics?: {
     gsf?: number | null;
+    gfa_sqft?: number | null;  // RPC uses gfa_sqft (NOT gsf)
     units?: number | null;
+    units_est?: number | null;  // RPC uses units_est (NOT units)
     stalls?: number | null;
     stalls_required?: number | null;
     stories?: number | null;
@@ -693,8 +695,9 @@ export function seedFamilyPlanToElements(
     } as Element);
   });
 
-  const gsf = num(m.gsf);
-  const units = num(m.units);
+  // RPC uses gfa_sqft/units_est (NOT gsf/units) — fallback to legacy names
+  const gsf = num(m.gsf) ?? num(m.gfa_sqft);
+  const units = num(m.units) ?? num(m.units_est);
   
   // Stalls: read from metrics first, then parking (array or structured)
   // Never return 0 as default — use null so KPI shows actual values or hides row
@@ -704,9 +707,11 @@ export function seedFamilyPlanToElements(
   const stalls = num(m.stalls) ?? stallsFromParking;
   const stallsRequired = num(m.stalls_required) ?? num((parkingRaw as { stalls_required_at_placed?: unknown; stalls_required?: unknown } | null)?.stalls_required_at_placed) ?? num((parkingRaw as { stalls_required?: unknown } | null)?.stalls_required);
   
-  const metrics: SiteMetrics | null = gsf
+  // Always emit SiteMetrics when any primary metric exists (gsf, units, stalls)
+  // Don't null the whole object just because gsf is missing if stalls exist
+  const metrics: SiteMetrics | null = (gsf != null || units != null || stalls != null)
     ? ({
-        totalBuiltSF: gsf,
+        totalBuiltSF: gsf ?? undefined,
         // The seed payload doesn't report FAR/coverage/open-space and the
         // client never re-measures — zeros here mean "not reported" and the
         // KPI strip hides zero-valued stats rather than display fabricated 0s.
