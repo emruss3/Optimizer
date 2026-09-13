@@ -1491,16 +1491,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const envWidth = envBbox.maxX - envBbox.minX;
     const envHeight = envBbox.maxY - envBbox.minY;
     
-    // Single-tenant retail: place building at front, leave rear for parking
+    // Single-tenant retail: place building at front, leave rear for parking + drive
     // NOTE: envelope is already setback-adjusted by RPC, so we work within it directly
-    // Reserve ~12m (~40ft) at rear for parking + circulation, 1m side clearances
+    // Reserve space at rear for parking field + rear access drive
     const frontInset = 0.5; // minimal buffer from envelope edge
     const sideInset = 0.5;  // minimal side clearance
-    const parkingReserve = 12; // ~40ft for parking + drive
+    const rearDriveReserve = 4.5; // ~15ft for rear drive (always reserve for access)
+    const parkingReserve = 12; // ~40ft for parking field
     
     // Building footprint: sized to fit max GFA in single story, with realistic proportions
     const targetFootprintSqm = maxGfaSqft * 0.092903; // sqft to sqm
-    const availDepth = envHeight - frontInset - parkingReserve;
+    const availDepth = envHeight - frontInset - parkingReserve - rearDriveReserve;
     const bldgDepth = Math.min(availDepth, 25); // Cap at ~80ft for realistic retail depth
     const bldgWidth = Math.min(envWidth - 2 * sideInset, targetFootprintSqm / Math.max(bldgDepth, 10));
     
@@ -1550,12 +1551,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const rearBuffer = 0.5; // minimal rear buffer
     const parkingDepth = Math.max(0, envBbox.maxY - parkingY - rearBuffer);
     
-    // Calculate actual stalls based on parking geometry
-    // Standard stall: 9ft x 18ft = 162 sqft, plus aisle circulation
-    // For single-row 90° parking: ~350 sqft per stall (stall + share of aisle)
-    const parkingAreaSqm = actualBldgWidth * parkingDepth;
-    const parkingAreaSqft = parkingAreaSqm / 0.092903;
-    let stallsProvided = Math.floor(parkingAreaSqft / 350); // Conservative estimate with aisles
+    // Calculate actual stalls based on 90° parking geometry (striping formula)
+    // Standard stall: 9ft wide × 18ft deep, plus 24ft aisle
+    const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
+    const parkingDepthFt = (parkingDepth / 0.3048);
+    const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width
+    const stallRows = Math.max(0, Math.floor((parkingDepthFt - 24) / 18)); // 18ft stall depth, 24ft aisle
+    let stallsProvided = stallsPerRow * stallRows;
     
     // ALWAYS draw parking element if we have any depth (even if stalls round to 0)
     // The polygon shows where parking COULD go; metrics show the honest count
@@ -1592,20 +1594,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // Save stall count for metrics
     actualStallsProvided = stallsProvided;
     
-    // Drive aisle: try side-loaded first, fall back to rear drive if too narrow
-    const driveWidth = 4.5; // ~15ft drive aisle (minimum functional)
-    const driveDepth = actualBldgDepth + (parkingDepth > 0 ? parkingDepth + parkingGap : 0);
+    // Access drive: ALWAYS create rear drive (reserved space from layout)
+    // Rear drive runs behind parking for access to stalls
+    const rearDriveY = parkingY + parkingDepth + 0.5; // small gap after parking
+    const rearDriveDepth = Math.max(0, envBbox.maxY - rearDriveY - rearBuffer);
     
-    // Side-loaded drive if there's room
-    if (envWidth >= actualBldgWidth + driveWidth + 2 * sideInset + 0.5) {
+    // Create rear drive if we have reserved space (always true if layout planned correctly)
+    if (rearDriveDepth >= 3) {
       const driveGeom: Polygon = {
         type: 'Polygon',
         coordinates: [[
-          [bldgX - driveWidth, bldgY],
-          [bldgX, bldgY],
-          [bldgX, bldgY + driveDepth],
-          [bldgX - driveWidth, bldgY + driveDepth],
-          [bldgX - driveWidth, bldgY],
+          [bldgX, rearDriveY],
+          [bldgX + actualBldgWidth, rearDriveY],
+          [bldgX + actualBldgWidth, rearDriveY + rearDriveDepth],
+          [bldgX, rearDriveY + rearDriveDepth],
+          [bldgX, rearDriveY],
         ]],
       };
       
@@ -1624,38 +1627,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         metadata: meta,
       };
       generatedElements.push(driveElement);
-    } else if (parkingDepth > 0) {
-      // Rear-loaded drive behind parking (narrow-lot fallback)
-      const rearDriveY = parkingY + parkingDepth;
-      const rearDriveDepth = Math.max(0, envBbox.maxY - rearDriveY - rearBuffer);
-      if (rearDriveDepth >= 3) {
-        const driveGeom: Polygon = {
-          type: 'Polygon',
-          coordinates: [[
-            [bldgX, rearDriveY],
-            [bldgX + actualBldgWidth, rearDriveY],
-            [bldgX + actualBldgWidth, rearDriveY + rearDriveDepth],
-            [bldgX, rearDriveY + rearDriveDepth],
-            [bldgX, rearDriveY],
-          ]],
-        };
-        
-        const driveElement: Element = {
-          id: 'commercial-drive-1',
-          type: 'circulation',
-          name: 'Access Drive (rear)',
-          geometry: driveGeom,
-          properties: {
-            circulationType: 'drive',
-            styleOverride: true,
-            color: '#D1D5DB',
-            opacity: 0.8,
-            strokeColor: '#6B7280',
-          },
-          metadata: meta,
-        };
-        generatedElements.push(driveElement);
-      }
     }
     
     const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
