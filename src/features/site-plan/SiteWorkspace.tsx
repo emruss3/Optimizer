@@ -481,12 +481,39 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const fid = contextOgcFid;
     listMfCandidates(fid)
       .then(cands => {
-        setMfCandidates(cands); // show immediately…
-        return enrichCandidatesWithMoney(fid, cands); // …then rank by market margin
+        // Smart candidate sorting: when plan pattern is court, prefer courtyard
+        // candidates over tuck_under with designed_court_sf=0. Don't just take
+        // latest-by-created_at if it doesn't match the pattern.
+        const sorted = planPattern?.pattern === 'court_scheme_perpendicular_bars'
+          ? [...cands].sort((a, b) => {
+              // Prefer regime=courtyard or flags containing designed_central_court_v1
+              const aIsCourtyard = a.metrics.regime === 'courtyard' || 
+                (a.flags?.includes('designed_central_court_v1') ?? false);
+              const bIsCourtyard = b.metrics.regime === 'courtyard' || 
+                (b.flags?.includes('designed_central_court_v1') ?? false);
+              
+              // Filter out tuck_under with no courtyard when pattern expects court
+              const aIsBadTuckUnder = a.metrics.regime === 'tuck_under' && 
+                (a.metrics.designed_court_sf === 0 || a.metrics.designed_court_sf == null);
+              const bIsBadTuckUnder = b.metrics.regime === 'tuck_under' && 
+                (b.metrics.designed_court_sf === 0 || b.metrics.designed_court_sf == null);
+              
+              if (aIsCourtyard && !bIsCourtyard) return -1;
+              if (!aIsCourtyard && bIsCourtyard) return 1;
+              if (aIsBadTuckUnder && !bIsBadTuckUnder) return 1;
+              if (!aIsBadTuckUnder && bIsBadTuckUnder) return -1;
+              
+              // Otherwise keep original order (newest first)
+              return 0;
+            })
+          : cands;
+        
+        setMfCandidates(sorted); // show immediately…
+        return enrichCandidatesWithMoney(fid, sorted); // …then rank by market margin
       })
       .then(setMfCandidates)
       .catch(() => undefined);
-  }, [contextOgcFid]);
+  }, [contextOgcFid, planPattern]);
 
   const runServerMfPlan = useCallback(async (opts: {
     seed: number;
