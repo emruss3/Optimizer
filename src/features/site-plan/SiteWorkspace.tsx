@@ -1545,18 +1545,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
     generatedElements.push(plateElement);
     
-    // Parking field: rear of building
+    // Parking field: rear of building (reserve space for rear drive)
     const parkingGap = 0.5; // ~1.5ft gap between building and parking
     const parkingY = bldgY + actualBldgDepth + parkingGap;
     const rearBuffer = 0.5; // minimal rear buffer
-    const parkingDepth = Math.max(0, envBbox.maxY - parkingY - rearBuffer);
+    // CAP parking depth to leave room for rear drive (rearDriveReserve already set)
+    const parkingDepth = Math.max(0, envBbox.maxY - parkingY - rearBuffer - rearDriveReserve);
     
-    // Calculate actual stalls based on 90° parking geometry (striping formula)
-    // Standard stall: 9ft wide × 18ft deep, plus 24ft aisle
+    // Calculate actual stalls based on 90° parking geometry (match drawn stripes)
+    // Standard stall: 9ft wide × 18ft deep; aisle is shared between rows
     const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
     const parkingDepthFt = (parkingDepth / 0.3048);
-    const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width
-    const stallRows = Math.max(0, Math.floor((parkingDepthFt - 24) / 18)); // 18ft stall depth, 24ft aisle
+    // Round stalls/row when within 0.8 of next integer (tighter packing, matches visual striping)
+    const stallsPerRowFloat = parkingWidthFt / 9;
+    const stallsPerRow = (stallsPerRowFloat - Math.floor(stallsPerRowFloat) >= 0.8) 
+      ? Math.ceil(stallsPerRowFloat) 
+      : Math.floor(stallsPerRowFloat);
+    // Single-row: depth >= 18ft → 1 row; Multi-row: depth >= 42ft → 2+ rows
+    const stallRows = parkingDepthFt >= 18 
+      ? (parkingDepthFt < 42 ? 1 : 1 + Math.floor((parkingDepthFt - 42) / 18))
+      : 0;
     let stallsProvided = stallsPerRow * stallRows;
     
     // ALWAYS draw parking element if we have any depth (even if stalls round to 0)
