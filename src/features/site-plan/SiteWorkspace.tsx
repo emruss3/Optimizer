@@ -1491,29 +1491,38 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const envWidth = envBbox.maxX - envBbox.minX;
     const envHeight = envBbox.maxY - envBbox.minY;
     
-    // Single-tenant retail: ALLOCATE REAR FIRST (parking + drive), size building to fit
-    // NOTE: envelope is already setback-adjusted by RPC
+    // Single-tenant retail: LAY OUT FROM REAR (drive first), ensure ALL inside envelope
+    // HARD RULE: envelope is already setback-adjusted; nothing may exceed envBbox bounds
     const frontInset = 0.5; // minimal buffer from envelope edge
     const sideInset = 0.5;  // minimal side clearance
     const rearBuffer = 0.5; // rear envelope buffer
     
-    // STEP 1: Determine rear allocation (parking + drive) - grows with envelope
+    // STEP 1: Lay out DRIVE at rear (works backward from envelope end)
     const minDriveDepth = 4.5; // ~15ft rear drive minimum
-    const minParkingDepth = 5.5; // ~18ft for one stall row minimum
-    const targetParkingDepth = 12; // ~40ft for 2+ rows if space allows
+    const targetDriveDepth = Math.min(5, (envHeight - frontInset - rearBuffer) * 0.2); // ~20% or 5m max
+    const actualDriveDepth = Math.max(minDriveDepth, targetDriveDepth);
+    const driveMaxY = envBbox.maxY - rearBuffer; // MUST NOT EXCEED
+    const driveMinY = driveMaxY - actualDriveDepth;
     
-    const availableRear = Math.max(0, envHeight - frontInset - rearBuffer - 5); // -5m min for building
-    const desiredParking = Math.min(targetParkingDepth, Math.max(minParkingDepth, availableRear - minDriveDepth - 1));
-    const rearReserve = desiredParking + minDriveDepth + 1; // gaps
+    // STEP 2: Lay out PARKING in front of drive
+    const parkingGap = 0.5;
+    const minParkingDepth = 5.5; // ~18ft one-row minimum
+    const targetParkingDepth = 12; // ~40ft two-row if space allows
+    const parkingMaxY = driveMinY - parkingGap; // MUST NOT EXCEED
+    const availableForParking = Math.max(0, parkingMaxY - envBbox.minY - frontInset - 5); // -5m min for building
+    const actualParkingDepth = Math.max(0, Math.min(targetParkingDepth, availableForParking));
+    const parkingMinY = parkingMaxY - actualParkingDepth;
     
-    // STEP 2: Building gets remainder (flexible, can be shallow)
-    const maxBldgDepth = Math.max(5, envHeight - frontInset - rearReserve - 1); // min 5m
-    const targetFootprintSqm = maxGfaSqft * 0.092903; // sqft to sqm
-    const actualBldgDepth = Math.max(5, Math.min(maxBldgDepth, 25)); // 5-25m range
+    // STEP 3: Building gets remaining front space (flexible, shrinks to fit)
+    const bldgGap = 0.5;
+    const bldgMaxY = parkingMinY - bldgGap; // MUST NOT EXCEED
+    const bldgMinY = envBbox.minY + frontInset;
+    const actualBldgDepth = Math.max(3, bldgMaxY - bldgMinY); // min 3m, fit what's left
+    const targetFootprintSqm = maxGfaSqft * 0.092903;
     const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, targetFootprintSqm / actualBldgDepth));
     
     const bldgX = envBbox.minX + sideInset;
-    const bldgY = envBbox.minY + frontInset;
+    const bldgY = bldgMinY;
     
     const buildingGeom: Polygon = {
       type: 'Polygon',
@@ -1548,17 +1557,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
     generatedElements.push(plateElement);
     
-    // STEP 3: Parking field (allocated between building and drive)
-    const parkingGap = 0.5; // gap between building and parking
-    const parkingY = bldgY + actualBldgDepth + parkingGap;
-    const driveGap = 0.5;
-    // Calculate available space for parking (never exceed envelope)
-    const availableForParking = Math.max(0, envBbox.maxY - parkingY - rearBuffer - minDriveDepth - driveGap);
-    const parkingDepth = Math.max(0, Math.min(desiredParking, availableForParking));
-    
-    // Calculate actual stalls based on 90° parking geometry
+    // Calculate stalls from actual parking geometry (honest geometry-based count)
     const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
-    const parkingDepthFt = (parkingDepth / 0.3048);
+    const parkingDepthFt = (actualParkingDepth / 0.3048);
     const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width, strict floor
     // Single-row: depth >= 18ft → 1 row; Multi-row: depth >= 42ft → 2+ rows
     const stallRows = parkingDepthFt >= 18 
@@ -1566,15 +1567,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       : 0;
     let stallsProvided = stallsPerRow * stallRows;
     
-    // ALWAYS create parking element (allocated from rear reserve)
+    // ALWAYS create parking element (laid out from STEP 2, guaranteed inside envelope)
     const parkingGeom: Polygon = {
       type: 'Polygon',
       coordinates: [[
-        [bldgX, parkingY],
-        [bldgX + actualBldgWidth, parkingY],
-        [bldgX + actualBldgWidth, parkingY + parkingDepth],
-        [bldgX, parkingY + parkingDepth],
-        [bldgX, parkingY],
+        [bldgX, parkingMinY],
+        [bldgX + actualBldgWidth, parkingMinY],
+        [bldgX + actualBldgWidth, parkingMaxY],
+        [bldgX, parkingMaxY],
+        [bldgX, parkingMinY],
       ]],
     };
     
@@ -1599,19 +1600,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // Save stall count for metrics
     actualStallsProvided = stallsProvided;
     
-    // STEP 4: Access drive (gets remaining space, min minDriveDepth)
-    const rearDriveY = parkingY + parkingDepth + driveGap;
-    const rearDriveDepth = Math.max(minDriveDepth, envBbox.maxY - rearDriveY - rearBuffer);
-    
-    // ALWAYS create rear drive (allocated from rear reserve)
+    // ALWAYS create drive element (laid out from STEP 1, guaranteed inside envelope)
     const driveGeom: Polygon = {
       type: 'Polygon',
       coordinates: [[
-        [bldgX, rearDriveY],
-        [bldgX + actualBldgWidth, rearDriveY],
-        [bldgX + actualBldgWidth, rearDriveY + rearDriveDepth],
-        [bldgX, rearDriveY + rearDriveDepth],
-        [bldgX, rearDriveY],
+        [bldgX, driveMinY],
+        [bldgX + actualBldgWidth, driveMinY],
+        [bldgX + actualBldgWidth, driveMaxY],
+        [bldgX, driveMaxY],
+        [bldgX, driveMinY],
       ]],
     };
     
