@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Polygon } from 'geojson';
-import { layoutCommercialPlate, canvasStallCells, type Pt } from './commercialPlate';
-import { classifyParcelEdges, applyVariableSetbacks } from './setbacks';
+import { layoutCommercialPlate, envelopeFromSetbacks, retailSqftPerStall, canvasStallCells, type Pt } from './commercialPlate';
 import { feature4326To3857 } from '../utils/reproject';
 import { areaM2, intersection, polygons, mercatorCorrectionFactor } from './geometry';
 
@@ -10,7 +9,8 @@ const at = <T,>(arr: T[], i: number): T => arr[i] as T;
 // 2405 12th Ave S (ogc_fid 408571, CS): a 170 × 50 ft slot rotated ~7° off the
 // screen axes, 12th Ave S on the short EAST edge (frontage bearing 184.5°),
 // an alley on the west, neighbours on both long sides. Setbacks F 20 / S 0 /
-// R 20; FAR 0.6 on 8,622 SF → 5,173 SF allowable.
+// R 20; FAR 0.6 on 8,622 SF → 5,173 SF allowable. Geometry = the live brief
+// (fn_compile_planner_context 408571 'commercial', 2026-09-13), CW as served.
 const PARCEL_4326: Polygon = {
   type: 'Polygon',
   coordinates: [[
@@ -19,29 +19,26 @@ const PARCEL_4326: Polygon = {
   ]],
 };
 const FRONT_4326: Pt[] = [[-86.789374355, 36.125960406], [-86.789385643, 36.125830117]];
+// The brief's buildable_envelope as served live: a UNIFORM 6.096 m inset on
+// all four sides (20 ft applied in Mercator metres) — contradicting the same
+// brief's side_setback_ft = 0. 2,518 true SF.
+const BRIEF_ENVELOPE_4326: Polygon = {
+  type: 'Polygon',
+  coordinates: [[
+    [-86.789905586, 36.125924297], [-86.789898259, 36.12597308], [-86.789432246, 36.125925827],
+    [-86.789436579, 36.12587582], [-86.789905586, 36.125924297],
+  ]],
+};
 const LOT_SQFT = 8622;
 const MAX_GFA = 5173;
 const PARKING = { stallWidthFt: 9, stallDepthFt: 18, aisleWidthFt: 24 };
+const SETBACKS = { front: 20, side: 0, rear: 20 };
 
-// CCW ring: applyVariableSetbacks re-indexes the edge classes off by one on a
-// CW ring (pre-existing; the live envelope comes from the brief, not from
-// this construction), so the fixture is wound CCW to build the same envelope.
-const parcel3857: Polygon = ((): Polygon => {
-  const p = feature4326To3857(PARCEL_4326);
-  const r = p.coordinates[0] as Pt[];
-  let s2 = 0;
-  for (let i = 0; i < r.length - 1; i++) s2 += at(r, i)[0] * at(r, i + 1)[1] - at(r, i + 1)[0] * at(r, i)[1];
-  return s2 >= 0 ? p : { type: 'Polygon', coordinates: [[...r].reverse()] };
-})();
+const parcel3857 = feature4326To3857(PARCEL_4326);
+const briefEnvelope3857 = feature4326To3857(BRIEF_ENVELOPE_4326);
 const front3857 = feature4326To3857({ type: 'LineString', coordinates: FRONT_4326 }).coordinates as Pt[];
 const k = mercatorCorrectionFactor(parcel3857);
-// The live envelope is built in EPSG:2274 true feet — offset the same true
-// distance here, expressed in Mercator metres at this latitude.
-const trueFtToMercM = (ft: number) => (ft * 0.3048) / Math.sqrt(k);
-const edges = classifyParcelEdges(parcel3857, [], 184.5);
-const envelope = applyVariableSetbacks(parcel3857, edges, {
-  front: trueFtToMercM(20), side: 0, rear: trueFtToMercM(20),
-})!;
+const envelope = envelopeFromSetbacks(parcel3857, front3857, SETBACKS)!;
 
 const trueSqft = (p: Polygon | null) => (p ? areaM2(p) * k * 10.7639 : 0);
 const ring = (p: Polygon): Pt[] => p.coordinates[0] as Pt[];
@@ -75,10 +72,75 @@ const insideEnvelope = (p: Polygon) => {
 };
 const overlapM2 = (a: Polygon, b: Polygon) => polygons(intersection(a, b)).reduce((s, q) => s + areaM2(q), 0);
 
+describe('envelopeFromSetbacks — the brief\'s standards on the parcel (408571)', () => {
+  it('offsets F 20 / R 20 true feet off the street edge and its opposite, nothing off the sides', () => {
+    expect(envelope).not.toBeNull();
+    const parcelSqft = trueSqft(parcel3857);
+    const envSqft = trueSqft(envelope);
+    // 170 × 50 ft lot minus two 20 ft bands across the 50 ft width ≈ 2,000 SF
+    expect(parcelSqft).toBeCloseTo(8640, -1);
+    expect(parcelSqft - envSqft).toBeGreaterThan(1900);
+    expect(parcelSqft - envSqft).toBeLessThan(2150);
+    // Side lot lines are shared with the envelope (side setback 0): the
+    // envelope's long edges lie ON the parcel's long edges.
+    const pr = ring(parcel3857);
+    const parcelEdges: Array<[Pt, Pt]> = [];
+    for (let i = 0; i < pr.length - 1; i++) parcelEdges.push([at(pr, i), at(pr, i + 1)]);
+    // Every envelope vertex sits on a side lot line (0 side setback)…
+    const sideEdges = parcelEdges.filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) > 40);
+    expect(sideEdges).toHaveLength(2);
+    for (const p of ring(envelope)) {
+      expect(Math.min(...sideEdges.map(([a, b]) => distToSeg(p, a, b)))).toBeLessThan(0.02);
+    }
+    // …and the front setback line is 20 true ft off 12th Ave S.
+    const [fa, fb] = seg(front3857);
+    const dFront = Math.min(...ring(envelope).map(p => distToSeg(p, fa, fb)));
+    expect(dFront * Math.sqrt(k) / 0.3048).toBeCloseTo(20, 0);
+  });
+
+  it('is on-plane: every envelope edge is parallel to a parcel edge', () => {
+    const parcelAngles = edgeAngles(parcel3857);
+    for (const a of edgeAngles(envelope)) expect(Math.min(...parcelAngles.map(x => angleDiffDeg(a, x)))).toBeLessThan(0.05);
+  });
+
+  it('the live brief polygon is a uniform 20-ft Mercator inset (16 true ft on the 0-ft sides) — 2,518 SF, far from the standards envelope', () => {
+    expect(trueSqft(briefEnvelope3857)).toBeCloseTo(2518, -1);
+    expect(trueSqft(briefEnvelope3857)).toBeLessThan(trueSqft(envelope) * 0.5);
+    // Filling that polygon can never reach the entitlement: the plate the
+    // Lead saw live (2,518 SF, FAR 0.29, no parking).
+    const capped = layoutCommercialPlate({
+      envelope: briefEnvelope3857, frontLine: front3857, targetFootprintSqft: MAX_GFA, lotSqft: LOT_SQFT,
+      parking: PARKING, sqftPerStall: 250,
+    })!;
+    expect(capped.flags).toContain('footprint_capped_by_envelope');
+    expect(capped.achievedFar!).toBeLessThan(0.3);
+    expect(capped.stallRows).toHaveLength(0);
+  });
+
+  it('keeps every vertex inside the parcel', () => {
+    const inter = polygons(intersection(parcel3857, envelope)).reduce((s, q) => s + areaM2(q), 0);
+    expect(Math.abs(inter - areaM2(envelope))).toBeLessThan(0.05);
+  });
+});
+
+describe('retailSqftPerStall — the brief\'s parking basis', () => {
+  it('reads per_1000_gsf × ratio (live 408571: 4 / 1,000 SF → 250 SF per stall)', () => {
+    expect(retailSqftPerStall({ basis: 'per_1000_gsf', ratio: 4 })).toEqual({ sqftPerStall: 250, label: '4 / 1,000 SF', source: 'brief' });
+    expect(retailSqftPerStall({ basis: 'per_1000sf', ratio: 3.3 }).sqftPerStall).toBeCloseTo(303.03, 1);
+  });
+  it('falls back to 1 / 300 SF for unit-based or missing bases', () => {
+    expect(retailSqftPerStall({ basis: 'per_unit', ratio: 1.5 })).toEqual({ sqftPerStall: 300, label: '1 / 300 SF', source: 'default' });
+    expect(retailSqftPerStall(null).sqftPerStall).toBe(300);
+    expect(retailSqftPerStall({ basis: 'per_1000_gsf', ratio: null }).source).toBe('default');
+  });
+});
+
 describe('commercial plate — 408571 (2405 12th Ave S, CS)', () => {
+  // Live brief parking basis: per_1000_gsf × 4 → 250 SF per stall.
+  const SQFT_PER_STALL = retailSqftPerStall({ basis: 'per_1000_gsf', ratio: 4 }).sqftPerStall;
   const layout = layoutCommercialPlate({
     envelope, frontLine: front3857, targetFootprintSqft: MAX_GFA, lotSqft: LOT_SQFT,
-    parking: PARKING, sqftPerStall: 300, maxImperviousSqft: 7759,
+    parking: PARKING, sqftPerStall: SQFT_PER_STALL, maxImperviousSqft: 7759,
   })!;
   const all = [layout.building, ...layout.stallRows, ...(layout.drive ? [layout.drive] : []), ...(layout.landscape ? [layout.landscape] : [])];
 
@@ -134,13 +196,14 @@ describe('commercial plate — 408571 (2405 12th Ave S, CS)', () => {
     }
   });
 
-  it('honest stalls: modest, one row, counted the way the canvas stripes them, short of 1/300 and flagged', () => {
+  it('honest stalls: modest, one row, counted the way the canvas stripes them, short of 4/1,000 SF and flagged', () => {
     expect(layout.stallRows).toHaveLength(1);
     const drawn = canvasStallCells(ring(at(layout.stallRows, 0)), 9 * 0.3048);
     expect(layout.stallsProvided).toBe(drawn);
     expect(layout.stallsProvided).toBeGreaterThanOrEqual(5);
     expect(layout.stallsProvided).toBeLessThanOrEqual(7);
-    expect(layout.stallsRequired).toBe(Math.ceil(layout.footprintSqft / 300));
+    expect(layout.stallsRequired).toBe(Math.ceil(layout.footprintSqft / SQFT_PER_STALL));
+    expect(layout.stallsRequired).toBe(21);
     expect(layout.stallsProvided).toBeLessThan(layout.stallsRequired);
     expect(layout.flags).toContain('parking_below_ratio');
     // One stall row (18 ft) plus the rear apron the remnant allows.

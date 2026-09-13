@@ -15,7 +15,7 @@ import { feetToMeters } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount, type BuildingSpec } from '../../engine/model';
 import { placeBarsAlongEdges } from '../../engine/edgePlacement';
 import { buildBuildingFootprint } from '../../engine/buildingGeometry';
-import { layoutCommercialPlate, canvasStallCells } from '../../engine/commercialPlate';
+import { layoutCommercialPlate, envelopeFromSetbacks, retailSqftPerStall, canvasStallCells } from '../../engine/commercialPlate';
 import { computeProForma } from '../../engine/proforma';
 import type { Polygon, MultiPolygon, LineString } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
@@ -222,7 +222,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // courts from fn_generate_mf_site_plan). Static modes ('sf', 'mf-server')
   // guard the live re-solver and drag pump — those plans vary by
   // REGENERATION (candidate tree), not by local re-packing.
-  const planModeRef = useRef<'sf' | 'mf' | 'mf-server' | null>(null);
+  const planModeRef = useRef<'sf' | 'mf' | 'mf-server' | 'commercial' | null>(null);
   const mfSeedRef = useRef(1);
   // Product within the multifamily legal basis: stacked apartments (mf
   // generator) or attached townhomes (th generator, attached-dwelling
@@ -475,6 +475,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // (While status is 'loading' the banner shows loading — previously this
   // flashed a misleading "fallback" banner during the ~600ms fetch.)
   const usingFallbackEnvelope = !!(envelopeMeters && status !== 'loading' && !(envelope && status === 'ready'));
+
+  // The parcel line in the canvas frame — the commercial plate rebuilds its
+  // envelope from it when the brief's polygon contradicts the brief's own
+  // setbacks (408571: a uniform Mercator inset where side setback is 0).
+  const parcelPoly3857 = useMemo((): Polygon | null => {
+    try {
+      if (!parcel?.geometry) return null;
+      const geom = parcel.geometry as Polygon | MultiPolygon;
+      const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0]?.[0];
+      const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+      const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
+      return normalizeToPolygon(reprojected);
+    } catch {
+      return null;
+    }
+  }, [parcel?.geometry]);
+  // Commercial plate only: the envelope the plate was measured against (drawn
+  // in place of the brief polygon while the plate is the plan) and the
+  // receipts behind it (dev evidence hook). MF paths never set these.
+  const [plateEnvelope, setPlateEnvelope] = useState<Polygon | null>(null);
+  const [plateReceipt, setPlateReceipt] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    setPlateEnvelope(null);
+    setPlateReceipt(null);
+  }, [parcel?.ogc_fid]);
 
   // Elements and envelope stay in EPSG:3857 meters — no feet conversion.
   // The canvas viewport fits to processedGeometry (also EPSG:3857 meters).
@@ -1513,19 +1538,43 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return front ? front.edge : null;
     })();
 
+    // The envelope the plate is measured against is the one the brief's OWN
+    // setbacks describe on the parcel (F / S / R in true feet, along the
+    // parcel edges). The brief's polygon is used only when it agrees with
+    // them. 408571 live (2026-09-13): the brief polygon was a uniform 6.096 m
+    // inset on all four sides — 20 ft applied in Mercator metres, sides
+    // included — against side_setback_ft = 0; filling it capped FAR at 0.29.
+    const setbacksFt = {
+      front: hc.front_setback_ft ?? 20,
+      side: hc.side_setback_ft ?? 0,
+      rear: hc.rear_setback_ft ?? 20,
+    };
+    const briefEnvelopeSqft = correctedAreaM2(envelopeGeom) * 10.7639;
+    const standardsEnvelope = parcelPoly3857 ? envelopeFromSetbacks(parcelPoly3857, frontLine, setbacksFt) : null;
+    const standardsEnvelopeSqft = standardsEnvelope ? correctedAreaM2(standardsEnvelope) * 10.7639 : null;
+    const briefAgrees =
+      standardsEnvelopeSqft == null ||
+      Math.abs(briefEnvelopeSqft - standardsEnvelopeSqft) <= Math.max(50, standardsEnvelopeSqft * 0.03);
+    const plateEnvelopeGeom = briefAgrees || !standardsEnvelope ? envelopeGeom : standardsEnvelope;
+    const envelopeBasis: 'brief_polygon' | 'brief_setbacks_on_parcel' =
+      plateEnvelopeGeom === envelopeGeom ? 'brief_polygon' : 'brief_setbacks_on_parcel';
+
     const parkingSpec = {
       stallWidthFt: snapshot.solver_brief.parking?.stall_width_ft ?? config.designParameters.parking.stallWidthFt,
       stallDepthFt: snapshot.solver_brief.parking?.stall_depth_ft ?? config.designParameters.parking.stallDepthFt,
       aisleWidthFt: snapshot.solver_brief.parking?.aisle_width_ft ?? config.designParameters.parking.aisleWidthFt,
     };
+    // Required stalls on the brief's SF basis (per_1000_gsf × ratio); the CS
+    // default of 1 / 300 SF only when the brief carries no SF basis.
+    const stallBasis = retailSqftPerStall(snapshot.solver_brief.parking, RETAIL_SQFT_PER_STALL);
 
     const layout = layoutCommercialPlate({
-      envelope: envelopeGeom,
+      envelope: plateEnvelopeGeom,
       frontLine,
       targetFootprintSqft,
       lotSqft: lotSqft ?? null,
       parking: parkingSpec,
-      sqftPerStall: RETAIL_SQFT_PER_STALL,
+      sqftPerStall: stallBasis.sqftPerStall,
       maxImperviousSqft: hc.max_impervious_sqft ?? null,
     });
     if (!layout) {
@@ -1533,6 +1582,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setPlanBasis(`Commercial lot — ${ctx.zoningBase ?? 'zoning'} as-of-right · envelope unusable`);
       return;
     }
+    if (envelopeBasis === 'brief_setbacks_on_parcel') {
+      layout.flags.push('envelope_rebuilt_from_brief_setbacks');
+    }
+    // Receipts: the envelope dimensions the plate was measured against, on
+    // the console and in the dev evidence hook — the proof of what bound.
+    const receipt = {
+      envelopeBasis,
+      briefEnvelopeSqft: Math.round(briefEnvelopeSqft),
+      standardsEnvelopeSqft: standardsEnvelopeSqft != null ? Math.round(standardsEnvelopeSqft) : null,
+      setbacksFt,
+      envelopeDepthFt: Math.round(layout.depthsFt.envelope),
+      envelopeWidthFt: Math.round(layout.widthFt),
+      buildingDepthFt: Math.round(layout.depthsFt.building),
+      stallsDepthFt: Math.round(layout.depthsFt.stalls),
+      driveDepthFt: Math.round(layout.depthsFt.drive),
+      footprintSqft: Math.round(layout.footprintSqft),
+      targetFootprintSqft: Math.round(targetFootprintSqft),
+      achievedFar: layout.achievedFar != null ? Math.round(layout.achievedFar * 1000) / 1000 : null,
+      stallsProvided: layout.stallsProvided,
+      stallsRequired: layout.stallsRequired,
+      stallBasis: stallBasis.label,
+      depthAxisDeg: Math.round((layout.depthAxisRad * 180) / Math.PI * 10) / 10,
+      flags: layout.flags,
+    };
+    console.info('[commercial-plate] receipts', receipt);
 
     const now = new Date().toISOString();
     const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
@@ -1617,8 +1691,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const warnings: string[] = [];
     if (parkingShort) {
       warnings.push(
-        `${stallsProvided} on-site stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} at 1/${RETAIL_SQFT_PER_STALL} SF — ` +
+        `${stallsProvided} on-site stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} at ${stallBasis.label} — ` +
         `the plate takes the lot; balance by shared access / district exemptions.`
+      );
+    }
+    if (envelopeBasis === 'brief_setbacks_on_parcel') {
+      warnings.push(
+        `Brief envelope polygon (${Math.round(briefEnvelopeSqft).toLocaleString()} SF) contradicts the brief's setbacks ` +
+        `F ${setbacksFt.front} / S ${setbacksFt.side} / R ${setbacksFt.rear} ft (${Math.round(standardsEnvelopeSqft ?? 0).toLocaleString()} SF on the parcel) — ` +
+        `the plate is measured against the setbacks.`
       );
     }
     if (layout.flags.includes('parking_apron_below_aisle_standard')) {
@@ -1652,6 +1733,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } as NonNullable<typeof metrics>;
 
     setPlanOutput([...base, ...generatedElements], plateMetrics);
+    setPlateEnvelope(plateEnvelopeGeom);
+    setPlateReceipt(receipt);
     setViolations(
       warnings.map((message, i) => ({
         code: i === 0 && parkingShort ? 'parking-short' : 'commercial-plate',
@@ -1678,11 +1761,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       (captured != null ? ` (${captured}% of ${Math.round(maxGfaSqft).toLocaleString()} SF allowable, FAR ${achievedFAR.toFixed(2)})` : '') +
       ` · ${Math.round(layout.depthsFt.building)} × ${Math.round(layout.widthFt)} ft · ` +
       (stallsProvided > 0
-        ? `${stallsProvided} rear stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} required`
-        : `no on-site parking fits (${stallsRequired} required)`) +
-      (layout.drive ? ' · rear drive' : '')
+        ? `${stallsProvided} rear stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} required (${stallBasis.label})`
+        : `no on-site parking fits (${stallsRequired} required at ${stallBasis.label})`) +
+      (layout.drive ? ' · rear drive' : '') +
+      (envelopeBasis === 'brief_setbacks_on_parcel'
+        ? ` · envelope from setbacks F ${setbacksFt.front} / S ${setbacksFt.side} / R ${setbacksFt.rear} ft`
+        : '')
     );
-  }, [envelopeMeters, elements, config.designParameters.parking, gateNonGesturePlan, setPlanOutput, setViolations, setPlanLineage, setPlanStale, setServerPlanError, setPlanBasis]);
+  }, [envelopeMeters, parcelPoly3857, elements, config.designParameters.parking, gateNonGesturePlan, setPlanOutput, setViolations, setPlanLineage, setPlanStale, setServerPlanError, setPlanBasis]);
 
   /**
    * Brief Phase 2: market-grounded SF lot fit, appended to the plan.
@@ -2589,6 +2675,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
           ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
           : null,
+      // 2026-09-13: the plate's receipts — which envelope it was measured
+      // against and its dimensions, footprint, FAR, stalls — the proof of
+      // what bound, readable on a live settle.
+      commercialPlate: plateReceipt,
       seedAvailable: !!seedPlan,
       seedShown: seedViewOn,
       seedComposition: seedPlan?.composition ?? null,
@@ -2619,11 +2709,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, plateReceipt]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
     : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356);
+
+  // While the commercial plate is the plan, the canvas outlines the envelope
+  // the plate was measured against (the brief's setbacks on the parcel), not
+  // a brief polygon that contradicts them. Every other plan mode is untouched.
+  const canvasEnvelope = planModeRef.current === 'commercial' && plateEnvelope ? plateEnvelope : envelopeMeters;
 
   // historyVersion re-renders this component whenever the undo stacks change
   const canUndo = historyVersion >= 0 && pastRef.current.length > 0;
@@ -2942,7 +3037,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               <Massing3D
                 elements={displayElements}
                 parcelGeometry={plannerParcel?.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined}
-                envelope={envelopeMeters ?? undefined}
+                envelope={canvasEnvelope ?? undefined}
                 neighbors={neighbors}
                 edgeClassifications={edgeClassifications}
               />
@@ -2967,7 +3062,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                   stallDepthFt: config.designParameters.parking.stallDepthFt,
                   aisleWidthFt: config.designParameters.parking.aisleWidthFt
                 }}
-                buildableEnvelope={envelopeMeters || undefined}
+                buildableEnvelope={canvasEnvelope || undefined}
                 edgeClassifications={edgeClassifications}
                 setbacks={rpcMetrics?.setbacks}
                 onBuildingUpdate={handleBuildingUpdate}

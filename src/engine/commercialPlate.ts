@@ -99,13 +99,6 @@ const ringOf = (p: Polygon | null | undefined): Pt[] | null => {
 /** Indexed ring access for rings already validated by `ringOf`. */
 const at = (ring: Pt[], i: number): Pt => ring[i] as Pt;
 
-const ringCentroid = (ring: Pt[]): Pt => {
-  const n = ring.length - 1;
-  let cx = 0, cy = 0;
-  for (let i = 0; i < n; i++) { cx += at(ring, i)[0]; cy += at(ring, i)[1]; }
-  return [cx / n, cy / n];
-};
-
 function longestEdge(ring: Pt[]): { a: Pt; b: Pt; angle: number } {
   let best = { a: at(ring, 0), b: at(ring, 1), len: -1 };
   for (let i = 0; i < ring.length - 1; i++) {
@@ -123,11 +116,12 @@ function segDist(p: Pt, a: Pt, b: Pt): number {
   return Math.hypot(p[0] - (a[0] + t * ex), p[1] - (a[1] + t * ey));
 }
 
-/** Inward unit normal of the envelope edge that IS the frontage: the edge
- *  whose midpoint sits closest to the street-frontage line. */
-function frontInwardNormal(ring: Pt[], frontLine: Pt[] | null): Pt {
-  const c = ringCentroid(ring);
-  let pick: { a: Pt; b: Pt } | null = null;
+/** Index of the ring edge that IS the frontage: the edge whose midpoint sits
+ *  closest to the street-frontage line, parallel-ish edges winning ties (a
+ *  corner vertex can sit nearer the street than the front edge's midpoint on
+ *  a skewed lot). Longest edge when no frontage is known. */
+function frontEdgeIndex(ring: Pt[], frontLine: Pt[] | null): number {
+  let pick = -1;
   if (frontLine && frontLine.length >= 2) {
     let bestD = Infinity;
     const f0 = at(frontLine, 0), f1 = at(frontLine, frontLine.length - 1);
@@ -138,26 +132,138 @@ function frontInwardNormal(ring: Pt[], frontLine: Pt[] | null): Pt {
       const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
       let d = Infinity;
       for (let j = 0; j < frontLine.length - 1; j++) d = Math.min(d, segDist(mid, at(frontLine, j), at(frontLine, j + 1)));
-      // Parallel-ish edges win ties: a corner vertex can sit nearer the
-      // street than the front edge's own midpoint on a skewed lot.
       const fx = f1[0] - f0[0];
       const fy = f1[1] - f0[1];
       const flen = Math.hypot(fx, fy) || 1;
       const align = Math.abs(((b[0] - a[0]) * fx + (b[1] - a[1]) * fy) / (len * flen));
       const score = d * (2 - align);
-      if (score < bestD) { bestD = score; pick = { a, b }; }
+      if (score < bestD) { bestD = score; pick = i; }
     }
   }
-  if (!pick) {
-    const le = longestEdge(ring);
-    pick = { a: le.a, b: le.b };
+  if (pick < 0) {
+    let bestLen = -1;
+    for (let i = 0; i < ring.length - 1; i++) {
+      const a = at(ring, i), b = at(ring, i + 1);
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len > bestLen) { bestLen = len; pick = i; }
+    }
   }
-  const ex = pick.b[0] - pick.a[0], ey = pick.b[1] - pick.a[1];
+  return pick;
+}
+
+/** Inward unit normal of edge i, from the ring's winding (interior is to the
+ *  left of travel on a CCW ring) — holds on concave parcels too. */
+function inwardNormal(ring: Pt[], i: number): Pt {
+  let s2 = 0;
+  for (let j = 0; j < ring.length - 1; j++) {
+    const p = at(ring, j), q = at(ring, j + 1);
+    s2 += p[0] * q[1] - q[0] * p[1];
+  }
+  const ccw = s2 >= 0;
+  const a = at(ring, i), b = at(ring, i + 1);
+  const ex = b[0] - a[0], ey = b[1] - a[1];
   const len = Math.hypot(ex, ey) || 1;
-  let nx = ey / len, ny = -ex / len;
-  const mid: Pt = [(pick.a[0] + pick.b[0]) / 2, (pick.a[1] + pick.b[1]) / 2];
-  if ((c[0] - mid[0]) * nx + (c[1] - mid[1]) * ny < 0) { nx = -nx; ny = -ny; }
-  return [nx, ny];
+  return ccw ? [-ey / len, ex / len] : [ey / len, -ex / len];
+}
+
+/** Inward unit normal of the envelope edge that IS the frontage. */
+function frontInwardNormal(ring: Pt[], frontLine: Pt[] | null): Pt {
+  return inwardNormal(ring, frontEdgeIndex(ring, frontLine));
+}
+
+export interface SetbacksFt { front: number; side: number; rear: number }
+
+/**
+ * The setback-adjusted envelope the brief's OWN standards describe: the parcel
+ * with the front setback off its street edge, the rear setback off the edge
+ * facing away from it, the side setback off every other edge — each in TRUE
+ * feet at the parcel's latitude, applied along the parcel's edges (so the
+ * result is on-plane with the lot).
+ *
+ * Why this exists (408571, 2026-09-13): the compiled brief carried a
+ * `buildable_envelope` that was a UNIFORM 6.096 m inset on all four sides —
+ * 20 ft applied in Mercator metres (16 true ft), sides included — while the
+ * same brief declared side_setback_ft = 0. A plate that fills that strip can
+ * never reach FAR 0.6. The plate is measured against the standards, not the
+ * polygon that contradicts them.
+ */
+export function envelopeFromSetbacks(parcel: Polygon, frontLine: Pt[] | null, setbacks: SetbacksFt): Polygon | null {
+  const ring = ringOf(parcel);
+  if (!ring) return null;
+  const lin = Math.sqrt(mercatorCorrectionFactor(parcel));
+  const ftToM = (ft: number): number => (ft * 0.3048) / lin;
+  const fi = frontEdgeIndex(ring, frontLine);
+  const nFront = inwardNormal(ring, fi);
+  // Rear = the longest edge facing most directly away from the front.
+  let ri = -1, bestRear = -Infinity;
+  for (let i = 0; i < ring.length - 1; i++) {
+    if (i === fi) continue;
+    const a = at(ring, i), b = at(ring, i + 1);
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 1e-6) continue;
+    const n = inwardNormal(ring, i);
+    const opposite = -(n[0] * nFront[0] + n[1] * nFront[1]); // 1 = faces the front edge
+    const score = opposite * len;
+    if (opposite > 0 && score > bestRear) { bestRear = score; ri = i; }
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const big = 4 * Math.hypot(maxX - minX, maxY - minY) + 10;
+  let acc: Polygon | null = parcel;
+  for (let i = 0; i < ring.length - 1 && acc; i++) {
+    const a = at(ring, i), b = at(ring, i + 1);
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 1e-6) continue;
+    const sFt = i === fi ? setbacks.front : i === ri ? setbacks.rear : setbacks.side;
+    const s = ftToM(Math.max(0, sFt));
+    if (s <= 1e-6) continue;
+    const n = inwardNormal(ring, i);
+    const t: Pt = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+    const mid: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    // Half-plane on the inward side of the edge, offset by the setback.
+    const p = (along: number, inward: number): Pt => [
+      mid[0] + t[0] * along + n[0] * inward,
+      mid[1] + t[1] * along + n[1] * inward,
+    ];
+    const half: Polygon = {
+      type: 'Polygon',
+      coordinates: [[p(-big, s), p(big, s), p(big, s + big), p(-big, s + big), p(-big, s)]],
+    };
+    let best: Polygon | null = null;
+    let bestA = 0;
+    for (const part of polygons(intersection(acc, half))) {
+      if (!ringOf(part)) continue;
+      const area = areaM2(part);
+      if (area > bestA) { bestA = area; best = part; }
+    }
+    acc = best;
+  }
+  return acc && areaM2(acc) >= 1 ? acc : null;
+}
+
+export interface ParkingBasisLike { basis?: string | null; ratio?: number | null }
+
+/**
+ * Retail SF per required stall from the brief's parking basis
+ * (`per_1000_gsf` × ratio 4 → 250 SF/stall). Unit-based or unknown bases
+ * fall back to the CS default of one stall per 300 SF.
+ */
+export function retailSqftPerStall(
+  p: ParkingBasisLike | null | undefined,
+  fallback = 300
+): { sqftPerStall: number; label: string; source: 'brief' | 'default' } {
+  const basis = (p?.basis ?? '').toLowerCase();
+  const ratio = p?.ratio ?? null;
+  if (ratio != null && ratio > 0) {
+    const perN = basis.match(/per_?(\d+)_?(g?sf|sq_?ft)/);
+    const n = perN ? Number(perN[1]) : 0;
+    if (n > 0) return { sqftPerStall: n / ratio, label: `${ratio} / ${n.toLocaleString()} SF`, source: 'brief' };
+    if (/(sf|sqft)_per_stall/.test(basis)) return { sqftPerStall: ratio, label: `1 / ${ratio} SF`, source: 'brief' };
+  }
+  return { sqftPerStall: fallback, label: `1 / ${fallback} SF`, source: 'default' };
 }
 
 /** Full stall cells the canvas striping draws on a one-row band: dividers
