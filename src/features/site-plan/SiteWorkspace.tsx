@@ -701,6 +701,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // "Context applied" strip compares these against the active snapshot.
     const mNum = (v: unknown): number | null =>
       typeof v === 'number' && Number.isFinite(v) ? v : null;
+    
+    // Append pattern misalignment flag when the generator doesn't follow the pattern
+    const lineageFlags = [...flags];
+    if (planPattern && planPattern.generator_alignment?.aligned === false) {
+      lineageFlags.push('pattern_misaligned');
+    }
+    
     setPlanLineage({
       solvedBy: 'server',
       contextId: resp.context_id ?? null,
@@ -711,7 +718,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       programPriorVersion: resp.program_prior_version ?? null,
       scoreTotal: resp.score_total ?? null,
       scoreComponents: resp.score_components ?? null,
-      flags,
+      flags: lineageFlags,
       // Seed-family payloads name these differently (structures / stories /
       // per-structure footprints) — fall through so the lineage strip stays
       // populated for both families.

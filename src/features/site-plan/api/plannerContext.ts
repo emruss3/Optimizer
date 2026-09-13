@@ -762,6 +762,8 @@ const FLAG_TEXT: Record<string, string> = {
     'A pool court sits inside the designed courtyard.',
   worker_brief_inputs_v2:
     'The fallback solver ran entirely on the compiled brief (max-buildout target, ordinance constraints, parking spec) — no legacy side-channel inputs.',
+  pattern_misaligned:
+    'The generator does not yet draw the recommended plan organization for this site — the pattern and this plan\'s composition differ.',
 };
 
 /** Translate a technical flag into UI text; unknown flags are humanized. */
