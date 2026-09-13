@@ -514,7 +514,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         setMfCandidates(sorted); // show immediately…
         return enrichCandidatesWithMoney(fid, sorted); // …then rank by market margin
       })
-      .then(setMfCandidates)
+      .then(enriched => {
+        // enrichCandidatesWithMoney preserves array order (Promise.all on map) —
+        // courtyard preference is maintained after enrichment
+        setMfCandidates(enriched);
+      })
       .catch(() => undefined);
   }, [contextOgcFid, planPattern]);
 
