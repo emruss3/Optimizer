@@ -1491,26 +1491,29 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const envWidth = envBbox.maxX - envBbox.minX;
     const envHeight = envBbox.maxY - envBbox.minY;
     
-    // Single-tenant retail: place building at front, leave rear for parking + drive
-    // NOTE: envelope is already setback-adjusted by RPC, so we work within it directly
-    // Reserve space at rear for parking field + rear access drive
+    // Single-tenant retail: ALLOCATE REAR FIRST (parking + drive), size building to fit
+    // NOTE: envelope is already setback-adjusted by RPC
     const frontInset = 0.5; // minimal buffer from envelope edge
     const sideInset = 0.5;  // minimal side clearance
-    const rearDriveReserve = 4.5; // ~15ft for rear drive (always reserve for access)
-    const parkingReserve = 12; // ~40ft for parking field
+    const rearBuffer = 0.5; // rear envelope buffer
     
-    // Building footprint: sized to fit max GFA in single story, with realistic proportions
+    // STEP 1: Determine rear allocation (parking + drive) - grows with envelope
+    const minDriveDepth = 4.5; // ~15ft rear drive minimum
+    const minParkingDepth = 5.5; // ~18ft for one stall row minimum
+    const targetParkingDepth = 12; // ~40ft for 2+ rows if space allows
+    
+    const availableRear = Math.max(0, envHeight - frontInset - rearBuffer - 5); // -5m min for building
+    const desiredParking = Math.min(targetParkingDepth, Math.max(minParkingDepth, availableRear - minDriveDepth - 1));
+    const rearReserve = desiredParking + minDriveDepth + 1; // gaps
+    
+    // STEP 2: Building gets remainder (flexible, can be shallow)
+    const maxBldgDepth = Math.max(5, envHeight - frontInset - rearReserve - 1); // min 5m
     const targetFootprintSqm = maxGfaSqft * 0.092903; // sqft to sqm
-    const availDepth = envHeight - frontInset - parkingReserve - rearDriveReserve;
-    const bldgDepth = Math.min(availDepth, 25); // Cap at ~80ft for realistic retail depth
-    const bldgWidth = Math.min(envWidth - 2 * sideInset, targetFootprintSqm / Math.max(bldgDepth, 10));
+    const actualBldgDepth = Math.max(5, Math.min(maxBldgDepth, 25)); // 5-25m range
+    const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, targetFootprintSqm / actualBldgDepth));
     
     const bldgX = envBbox.minX + sideInset;
     const bldgY = envBbox.minY + frontInset;
-    
-    // Ensure reasonable dimensions
-    const actualBldgDepth = Math.max(8, Math.min(bldgDepth, availDepth)); // At least 8m (~26ft)
-    const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, targetFootprintSqm / actualBldgDepth));
     
     const buildingGeom: Polygon = {
       type: 'Polygon',
@@ -1545,97 +1548,89 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
     generatedElements.push(plateElement);
     
-    // Parking field: rear of building (reserve space for rear drive)
-    const parkingGap = 0.5; // ~1.5ft gap between building and parking
+    // STEP 3: Parking field (gets space between building and drive)
+    const parkingGap = 0.5; // gap between building and parking
     const parkingY = bldgY + actualBldgDepth + parkingGap;
-    const rearBuffer = 0.5; // minimal rear buffer
-    // CAP parking depth to leave room for rear drive (rearDriveReserve already set)
-    const parkingDepth = Math.max(0, envBbox.maxY - parkingY - rearBuffer - rearDriveReserve);
+    const rearBuffer = 0.5;
+    const driveGap = 0.5;
+    // Parking depth = available space after reserving drive (grow to fit, min 5.5m)
+    const availableForParking = envBbox.maxY - parkingY - rearBuffer - minDriveDepth - driveGap;
+    const parkingDepth = Math.max(minParkingDepth, availableForParking);
     
-    // Calculate actual stalls based on 90° parking geometry (match drawn stripes)
-    // Standard stall: 9ft wide × 18ft deep; aisle is shared between rows
+    // Calculate actual stalls based on 90° parking geometry
     const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
     const parkingDepthFt = (parkingDepth / 0.3048);
-    // Round stalls/row when within 0.8 of next integer (tighter packing, matches visual striping)
-    const stallsPerRowFloat = parkingWidthFt / 9;
-    const stallsPerRow = (stallsPerRowFloat - Math.floor(stallsPerRowFloat) >= 0.8) 
-      ? Math.ceil(stallsPerRowFloat) 
-      : Math.floor(stallsPerRowFloat);
+    const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width, strict floor
     // Single-row: depth >= 18ft → 1 row; Multi-row: depth >= 42ft → 2+ rows
     const stallRows = parkingDepthFt >= 18 
       ? (parkingDepthFt < 42 ? 1 : 1 + Math.floor((parkingDepthFt - 42) / 18))
       : 0;
     let stallsProvided = stallsPerRow * stallRows;
     
-    // ALWAYS draw parking element if we have any depth (even if stalls round to 0)
-    // The polygon shows where parking COULD go; metrics show the honest count
-    if (parkingDepth >= 3) {
-      const parkingGeom: Polygon = {
-        type: 'Polygon',
-        coordinates: [[
-          [bldgX, parkingY],
-          [bldgX + actualBldgWidth, parkingY],
-          [bldgX + actualBldgWidth, parkingY + parkingDepth],
-          [bldgX, parkingY + parkingDepth],
-          [bldgX, parkingY],
-        ]],
-      };
-      
-      const parkingElement: Element = {
-        id: 'commercial-parking-1',
-        type: 'parking',
-        name: stallsProvided > 0 ? `Parking · ${stallsProvided} stalls` : 'Parking area',
-        geometry: parkingGeom,
-        properties: {
-          parkingType: 'surface',
-          stallCount: stallsProvided,
-          styleOverride: true,
-          color: '#E5E7EB',
-          opacity: 0.7,
-          strokeColor: '#9CA3AF',
-        },
-        metadata: meta,
-      };
-      generatedElements.push(parkingElement);
-    }
+    // ALWAYS create parking element (allocated from rear reserve)
+    const parkingGeom: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [bldgX, parkingY],
+        [bldgX + actualBldgWidth, parkingY],
+        [bldgX + actualBldgWidth, parkingY + parkingDepth],
+        [bldgX, parkingY + parkingDepth],
+        [bldgX, parkingY],
+      ]],
+    };
+    
+    const parkingElement: Element = {
+      id: 'commercial-parking-1',
+      type: 'parking',
+      name: stallsProvided > 0 ? `Parking · ${stallsProvided} stalls` : 'Parking area',
+      geometry: parkingGeom,
+      properties: {
+        parkingType: 'surface',
+        stallCount: stallsProvided,
+        parkingSpaces: stallsProvided, // Canvas labels/readers use parkingSpaces
+        styleOverride: true,
+        color: '#E5E7EB',
+        opacity: 0.7,
+        strokeColor: '#9CA3AF',
+      },
+      metadata: meta,
+    };
+    generatedElements.push(parkingElement);
     
     // Save stall count for metrics
     actualStallsProvided = stallsProvided;
     
-    // Access drive: ALWAYS create rear drive (reserved space from layout)
-    // Rear drive runs behind parking for access to stalls
-    const rearDriveY = parkingY + parkingDepth + 0.5; // small gap after parking
-    const rearDriveDepth = Math.max(0, envBbox.maxY - rearDriveY - rearBuffer);
+    // STEP 4: Access drive (gets remaining space, min minDriveDepth)
+    const rearDriveY = parkingY + parkingDepth + driveGap;
+    const rearDriveDepth = Math.max(minDriveDepth, envBbox.maxY - rearDriveY - rearBuffer);
     
-    // Create rear drive if we have reserved space (always true if layout planned correctly)
-    if (rearDriveDepth >= 3) {
-      const driveGeom: Polygon = {
-        type: 'Polygon',
-        coordinates: [[
-          [bldgX, rearDriveY],
-          [bldgX + actualBldgWidth, rearDriveY],
-          [bldgX + actualBldgWidth, rearDriveY + rearDriveDepth],
-          [bldgX, rearDriveY + rearDriveDepth],
-          [bldgX, rearDriveY],
-        ]],
-      };
-      
-      const driveElement: Element = {
-        id: 'commercial-drive-1',
-        type: 'circulation',
-        name: 'Access Drive',
-        geometry: driveGeom,
-        properties: {
-          circulationType: 'drive',
-          styleOverride: true,
-          color: '#D1D5DB',
-          opacity: 0.8,
-          strokeColor: '#6B7280',
-        },
-        metadata: meta,
-      };
-      generatedElements.push(driveElement);
-    }
+    // ALWAYS create rear drive (allocated from rear reserve)
+    const driveGeom: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [bldgX, rearDriveY],
+        [bldgX + actualBldgWidth, rearDriveY],
+        [bldgX + actualBldgWidth, rearDriveY + rearDriveDepth],
+        [bldgX, rearDriveY + rearDriveDepth],
+        [bldgX, rearDriveY],
+      ]],
+    };
+    
+    const driveElement: Element = {
+      id: 'commercial-drive-1',
+      type: 'circulation',
+      name: 'Access Drive',
+      geometry: driveGeom,
+      properties: {
+        circulationType: 'drive',
+        styleOverride: true,
+        color: '#D1D5DB',
+        opacity: 0.8,
+        strokeColor: '#6B7280',
+      },
+      metadata: meta,
+    };
+    generatedElements.push(driveElement);
     
     const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
     
