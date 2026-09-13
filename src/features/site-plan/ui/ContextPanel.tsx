@@ -17,14 +17,16 @@ const ConfidencePill: React.FC<{ confidence?: Confidence }> = ({ confidence }) =
   ) : null;
 
 /** A zoning value row with the provenance badge — the product differentiator. */
-const Row: React.FC<{ label: string; v?: ContextValue; unit?: string }> = ({ label, v, unit }) => {
+const Row: React.FC<{ label: string; v?: ContextValue; unit?: string; zoningBase?: string | null }> = ({ label, v, unit, zoningBase }) => {
   if (!v || v.value == null) return null;
-  // CS side setback = 0 from typology_default is ordinance "none required" (17.12.020C),
-  // not an estimate — show as "ordinance" badge.
-  const isOrdinanceZero = label === 'Side setback' && v.value === 0 && 
-    (v.source === 'typology_default' || v.source === 'ordinance');
-  const estimated = !isOrdinanceZero && v.source !== 'zoning' && v.source !== 'ordinance';
-  const badgeText = isOrdinanceZero ? 'ordinance' : (estimated ? 'est.' : v.source);
+  // CS/CA/CL/CN side setback = 0 is ordinance "none required" (17.12.020C), not an estimate
+  // CS context may report side=10 from typology_default OR side=0 from various sources
+  const commercialZonings = ['CS', 'CA', 'CL', 'CN', 'CF', 'IG', 'IR', 'IWD'];
+  const isCommercialSideSetback = label === 'Side setback' && 
+    zoningBase && commercialZonings.includes(zoningBase) &&
+    (v.value === 0 || (v.value <= 10 && v.source === 'typology_default'));
+  const estimated = !isCommercialSideSetback && v.source !== 'zoning' && v.source !== 'ordinance';
+  const badgeText = isCommercialSideSetback ? 'ordinance' : (estimated ? 'est.' : v.source);
   const badgeStyle = estimated ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600';
   
   return (
@@ -282,9 +284,9 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
             </div>
           )}
 
-          <Row label="Front setback" v={context.setbackFrontFt} unit="ft" />
-          <Row label="Side setback" v={context.setbackSideFt} unit="ft" />
-          <Row label="Rear setback" v={context.setbackRearFt} unit="ft" />
+          <Row label="Front setback" v={context.setbackFrontFt} unit="ft" zoningBase={context.zoningBase} />
+          <Row label="Side setback" v={context.setbackSideFt} unit="ft" zoningBase={context.zoningBase} />
+          <Row label="Rear setback" v={context.setbackRearFt} unit="ft" zoningBase={context.zoningBase} />
           {/* Order-8 receipts: when the design setback differs from the
               ordinance setback (plane inset), show the ordinance number
               beside it — every number carries its receipt. */}

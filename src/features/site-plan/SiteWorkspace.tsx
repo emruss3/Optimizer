@@ -1557,8 +1557,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const parkingAreaSqft = parkingAreaSqm / 0.092903;
     let stallsProvided = Math.floor(parkingAreaSqft / 350); // Conservative estimate with aisles
     
-    // Draw parking element if we have any meaningful depth (4m = ~13ft = compact stall)
-    if (parkingDepth >= 4 && stallsProvided > 0) {
+    // ALWAYS draw parking element if we have any depth (even if stalls round to 0)
+    // The polygon shows where parking COULD go; metrics show the honest count
+    if (parkingDepth >= 3) {
       const parkingGeom: Polygon = {
         type: 'Polygon',
         coordinates: [[
@@ -1573,7 +1574,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const parkingElement: Element = {
         id: 'commercial-parking-1',
         type: 'parking',
-        name: `Parking · ${stallsProvided} stalls`,
+        name: stallsProvided > 0 ? `Parking · ${stallsProvided} stalls` : 'Parking area',
         geometry: parkingGeom,
         properties: {
           parkingType: 'surface',
@@ -1591,12 +1592,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // Save stall count for metrics
     actualStallsProvided = stallsProvided;
     
-    // Drive aisle along side for access (always present)
-    const driveWidth = 5; // ~16ft drive aisle (compact but functional)
+    // Drive aisle: try side-loaded first, fall back to rear drive if too narrow
+    const driveWidth = 4.5; // ~15ft drive aisle (minimum functional)
     const driveDepth = actualBldgDepth + (parkingDepth > 0 ? parkingDepth + parkingGap : 0);
     
-    // Only draw drive if there's room alongside the building
-    if (envWidth >= actualBldgWidth + driveWidth + 2 * sideInset) {
+    // Side-loaded drive if there's room
+    if (envWidth >= actualBldgWidth + driveWidth + 2 * sideInset + 0.5) {
       const driveGeom: Polygon = {
         type: 'Polygon',
         coordinates: [[
@@ -1623,6 +1624,38 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         metadata: meta,
       };
       generatedElements.push(driveElement);
+    } else if (parkingDepth > 0) {
+      // Rear-loaded drive behind parking (narrow-lot fallback)
+      const rearDriveY = parkingY + parkingDepth;
+      const rearDriveDepth = Math.max(0, envBbox.maxY - rearDriveY - rearBuffer);
+      if (rearDriveDepth >= 3) {
+        const driveGeom: Polygon = {
+          type: 'Polygon',
+          coordinates: [[
+            [bldgX, rearDriveY],
+            [bldgX + actualBldgWidth, rearDriveY],
+            [bldgX + actualBldgWidth, rearDriveY + rearDriveDepth],
+            [bldgX, rearDriveY + rearDriveDepth],
+            [bldgX, rearDriveY],
+          ]],
+        };
+        
+        const driveElement: Element = {
+          id: 'commercial-drive-1',
+          type: 'circulation',
+          name: 'Access Drive (rear)',
+          geometry: driveGeom,
+          properties: {
+            circulationType: 'drive',
+            styleOverride: true,
+            color: '#D1D5DB',
+            opacity: 0.8,
+            strokeColor: '#6B7280',
+          },
+          metadata: meta,
+        };
+        generatedElements.push(driveElement);
+      }
     }
     
     const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
