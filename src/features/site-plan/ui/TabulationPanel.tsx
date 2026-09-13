@@ -130,14 +130,18 @@ const TabulationPanel: React.FC<{
       farSource === 'ordinance' || farSource === 'zoning'
         ? '§17.12.020'
         : 'typology defaults';
+    // Commercial: parking is SF-based ordinance (CS requires 1/300 SF) or none if no parking requirement exists
+    const parkingSource = c.typology === 'commercial'
+      ? ((metrics?.stallsRequired ?? 0) > 0 ? 'ordinance' : 'none required')
+      : 'typology defaults';
     const parts = [
       n != null ? `Mix prior: ${n} local ${zone ?? ''} precedents`.replace('  ', ' ') : null,
       `Envelope: ${envelope}`,
       conf ? `Confidence: ${conf}` : null,
-      'Parking ratios: typology defaults',
+      `Parking ratios: ${parkingSource}`,
     ].filter(Boolean);
     return parts.join(' · ');
-  }, [plannerCtx]);
+  }, [plannerCtx, metrics?.stallsRequired]);
 
   if (rows.length === 0) return null;
 
