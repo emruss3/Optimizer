@@ -259,6 +259,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Zero-overlap gate bookkeeping: one silent re-solve per gesture on the
   // server path; rejected worker candidates surface in the solves rail.
   const serverGeoRetryRef = useRef(false);
+  const serverGeoFallbackRef = useRef(false);
   // Why the last server solve was rejected by the geometry gate (null = it
   // wasn't). The auto-plan's worker fallback re-surfaces this AFTER the worker
   // result lands, so a rejected server plan never silently becomes a worker
@@ -691,6 +692,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         `[server-plan] rejected by the geometry gate after retry: ${validation.reason}`,
         validation.overlaps.slice(0, 4)
       );
+      // Courtyard fallback (667574): if court pattern and no fallback tried yet,
+      // try seed=1 / courtyard / designed_central_court_v1 before leaving canvas empty
+      const isCourtPattern = planPattern?.pattern === 'court_scheme_perpendicular_bars';
+      if (isCourtPattern && !serverGeoFallbackRef.current) {
+        serverGeoFallbackRef.current = true;
+        console.log(`[667574] geometry gate rejected, trying courtyard fallback with seed=1`);
+        setPlanBasis(`Plan rejected: ${validation.reason} — trying courtyard fallback`);
+        const ok = await runServerMfPlan({ ...opts, seed: 1 });
+        serverGeoFallbackRef.current = false;
+        return ok;
+      }
       serverRejectRef.current = validation.reason;
       setViolations([{
         code: 'geometry-overlap',
@@ -702,6 +714,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return false;
     }
     serverGeoRetryRef.current = false;
+    serverGeoFallbackRef.current = false;
     serverFailCauseRef.current = null;
     setServerPlanError(null);
     markDraft(degraded || !effectiveContextId);
@@ -2011,6 +2024,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       compileBlockedRef.current = null;
       setCompileBlocked(null);
       serverGeoRetryRef.current = false;
+      serverGeoFallbackRef.current = false;
       serverFailCauseRef.current = null;
       setServerPlanError(null);
       setSolveRejected(null);
