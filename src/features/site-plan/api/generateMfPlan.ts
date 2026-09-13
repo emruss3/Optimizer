@@ -230,69 +230,6 @@ export function mfPlanToElements(resp: MfPlanResponse): {
     });
   });
 
-  // [667574 critical] Map greens/amenity from seed-family responses so courtyard
-  // geometry actually renders on canvas. Legacy path maps resp.greens/amenity;
-  // seed-family payloads can carry them too (courtyard schemes, clubhouse pads).
-  // designed_court_sf is receipt-only metadata, not geometry — the court polygon
-  // lives in greens[] or amenity[].
-  interface SeedFamilyGreen {
-    geom_2274?: SeedFamilyGeom | null;
-    area_sqft?: number | null;
-    kind?: string | null;
-  }
-  interface SeedFamilyAmenity {
-    geom_2274?: SeedFamilyGeom | null;
-    area_sqft?: number | null;
-    name?: string | null;
-  }
-  const seedGreens = (resp as { greens?: SeedFamilyGreen[] }).greens ?? [];
-  seedGreens.forEach((g, idx) => {
-    if (!g?.geom_2274) return;
-    let poly: Polygon;
-    try {
-      poly = seedTo3857(g.geom_2274 as Polygon);
-    } catch {
-      return;
-    }
-    elements.push({
-      id: `${prefix}-green-${idx + 1}`,
-      type: 'greenspace',
-      name: g.kind === 'courtyard' || g.kind === 'court' ? 'Courtyard' : 'Open space',
-      geometry: poly,
-      properties: { 
-        areaSqFt: num(g.area_sqft) ?? undefined,
-        color: '#86EFAC',
-        ...(g.kind ? { kind: g.kind } : {}),
-      },
-      metadata: meta,
-    } as Element);
-  });
-
-  const seedAmenity = (resp as { amenity?: SeedFamilyAmenity[] }).amenity ?? [];
-  seedAmenity.forEach((a, idx) => {
-    if (!a?.geom_2274) return;
-    let poly: Polygon;
-    try {
-      poly = seedTo3857(a.geom_2274 as Polygon);
-    } catch {
-      return;
-    }
-    elements.push({
-      id: `${prefix}-amenity-${idx + 1}`,
-      type: 'building',
-      name: a.name ?? 'Clubhouse',
-      geometry: poly,
-      properties: { 
-        areaSqFt: num(a.area_sqft) ?? undefined, 
-        floors: 1, 
-        stories: 1, 
-        use: 'amenity', 
-        color: '#F59E0B',
-      },
-      metadata: meta,
-    } as Element);
-  });
-
   const m = resp.metrics ?? {};
   const gfa = mNum(m.gfa_sqft);
   const metrics: SiteMetrics | null = gfa
@@ -392,6 +329,16 @@ export interface SeedFamilyAccess {
   lane_fit_left?: number | null;
   lane_fit_right?: number | null;
 }
+export interface SeedFamilyGreen {
+  geom_2274?: SeedFamilyGeom | null;
+  area_sqft?: number | null;
+  kind?: string | null;
+}
+export interface SeedFamilyAmenity {
+  geom_2274?: SeedFamilyGeom | null;
+  area_sqft?: number | null;
+  name?: string | null;
+}
 export interface SeedFamilyResponse {
   parcel_ogc_fid?: number;
   typology?: string;
@@ -404,6 +351,8 @@ export interface SeedFamilyResponse {
   drives?: SeedFamilyDrive[];
   access?: SeedFamilyAccess | null;
   parking?: SeedFamilyParking | null;
+  greens?: SeedFamilyGreen[] | null;
+  amenity?: SeedFamilyAmenity[] | null;
   metrics?: {
     gsf?: number | null;
     units?: number | null;
@@ -656,6 +605,55 @@ export function seedFamilyPlanToElements(
       name: i === 0 ? 'Access drive' : `Access drive ${i + 1}`,
       geometry: piece as unknown as Polygon,
       properties: { color: '#94A3B8' },
+      metadata: meta,
+    } as Element);
+  });
+
+  // [667574 + MF×3 audit] Map greens/amenity from seed-family responses so
+  // courtyard geometry and open space render on canvas. designed_court_sf is
+  // receipt-only metadata — court polygons live in greens[] with geom_2274.
+  (resp.greens ?? []).forEach((g, idx) => {
+    if (!g?.geom_2274) return;
+    let poly: Polygon;
+    try {
+      poly = seedTo3857(g.geom_2274 as Polygon);
+    } catch {
+      return;
+    }
+    elements.push({
+      id: `${prefix}-green-${idx + 1}`,
+      type: 'greenspace',
+      name: g.kind === 'courtyard' || g.kind === 'court' ? 'Courtyard' : 'Open space',
+      geometry: poly,
+      properties: { 
+        areaSqFt: num(g.area_sqft) ?? undefined,
+        color: '#86EFAC',
+        ...(g.kind ? { kind: g.kind } : {}),
+      },
+      metadata: meta,
+    } as Element);
+  });
+
+  (resp.amenity ?? []).forEach((a, idx) => {
+    if (!a?.geom_2274) return;
+    let poly: Polygon;
+    try {
+      poly = seedTo3857(a.geom_2274 as Polygon);
+    } catch {
+      return;
+    }
+    elements.push({
+      id: `${prefix}-amenity-${idx + 1}`,
+      type: 'building',
+      name: a.name ?? 'Clubhouse',
+      geometry: poly,
+      properties: { 
+        areaSqFt: num(a.area_sqft) ?? undefined, 
+        floors: 1, 
+        stories: 1, 
+        use: 'amenity', 
+        color: '#F59E0B',
+      },
       metadata: meta,
     } as Element);
   });
