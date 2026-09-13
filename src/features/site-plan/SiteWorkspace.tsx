@@ -1499,27 +1499,27 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     
     // STEP 1: Lay out DRIVE at rear (works backward from envelope end)
     const minDriveDepth = 4.5; // ~15ft rear drive minimum
-    const targetDriveDepth = Math.min(5, (envHeight - frontInset - rearBuffer) * 0.2); // ~20% or 5m max
-    const actualDriveDepth = Math.max(minDriveDepth, targetDriveDepth);
-    const driveMaxY = envBbox.maxY - rearBuffer; // MUST NOT EXCEED
+    const driveMaxY = envBbox.maxY - rearBuffer; // HARD CEILING, never exceeded
+    const maxDriveSpace = Math.max(0, driveMaxY - envBbox.minY - frontInset - 3); // -3m min for bldg+park
+    const actualDriveDepth = Math.min(minDriveDepth, Math.max(3, maxDriveSpace * 0.25)); // fit what space allows
     const driveMinY = driveMaxY - actualDriveDepth;
     
     // STEP 2: Lay out PARKING in front of drive
     const parkingGap = 0.5;
-    const minParkingDepth = 5.5; // ~18ft one-row minimum
+    const parkingMaxY = driveMinY - parkingGap; // HARD CEILING, never exceeded
+    const availableForParking = Math.max(0, parkingMaxY - envBbox.minY - frontInset - 3); // -3m min for building
     const targetParkingDepth = 12; // ~40ft two-row if space allows
-    const parkingMaxY = driveMinY - parkingGap; // MUST NOT EXCEED
-    const availableForParking = Math.max(0, parkingMaxY - envBbox.minY - frontInset - 5); // -5m min for building
-    const actualParkingDepth = Math.max(0, Math.min(targetParkingDepth, availableForParking));
+    const actualParkingDepth = Math.min(targetParkingDepth, availableForParking * 0.6); // take ~60% of remaining
     const parkingMinY = parkingMaxY - actualParkingDepth;
     
-    // STEP 3: Building gets remaining front space (flexible, shrinks to fit)
+    // STEP 3: Building gets remaining front space (EXACTLY fits what's left)
     const bldgGap = 0.5;
-    const bldgMaxY = parkingMinY - bldgGap; // MUST NOT EXCEED
-    const bldgMinY = envBbox.minY + frontInset;
-    const actualBldgDepth = Math.max(3, bldgMaxY - bldgMinY); // min 3m, fit what's left
+    const bldgMaxY = parkingMinY - bldgGap; // HARD CEILING, never exceeded
+    const bldgMinY = envBbox.minY + frontInset; // HARD FLOOR, never goes below
+    const actualBldgDepth = Math.max(0, bldgMaxY - bldgMinY); // EXACT fit, no minimums that push past
     const targetFootprintSqm = maxGfaSqft * 0.092903;
-    const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, targetFootprintSqm / actualBldgDepth));
+    const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, 
+      actualBldgDepth > 0 ? targetFootprintSqm / actualBldgDepth : 8));
     
     const bldgX = envBbox.minX + sideInset;
     const bldgY = bldgMinY;
@@ -1557,14 +1557,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
     generatedElements.push(plateElement);
     
-    // Calculate stalls from actual parking geometry (honest geometry-based count)
+    // Calculate stalls from actual parking geometry (honest count matching stripes)
     const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
     const parkingDepthFt = (actualParkingDepth / 0.3048);
     const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width, strict floor
-    // Single-row: depth >= 18ft → 1 row; Multi-row: depth >= 42ft → 2+ rows
-    const stallRows = parkingDepthFt >= 18 
-      ? (parkingDepthFt < 42 ? 1 : 1 + Math.floor((parkingDepthFt - 42) / 18))
-      : 0;
+    // Count rows that fit: if depth >= 14ft (compact) → at least 1 row if stripes render
+    // Standard: 18ft per stall + shared aisle between rows (42ft = 2 rows, 60ft = 3 rows)
+    let stallRows = 0;
+    if (parkingDepthFt >= 14) stallRows = 1; // First row if depth allows any striping
+    if (parkingDepthFt >= 42) stallRows = 2; // Second row with aisle
+    if (parkingDepthFt >= 60) stallRows = 3; // Third row
     let stallsProvided = stallsPerRow * stallRows;
     
     // ALWAYS create parking element (laid out from STEP 2, guaranteed inside envelope)
