@@ -1424,6 +1424,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const now = new Date().toISOString();
     const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
     const generatedElements: Element[] = [];
+    let actualStallsProvided = 0;
     
     const envCoords = envelopeGeom.coordinates[0];
     const envBbox = {
@@ -1489,8 +1490,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const parkingDepth = envBbox.maxY - parkingY - 2; // leave 2m for rear buffer
     
     if (parkingDepth > 5) {
-      // Standard retail parking: ~1 stall per 300 SF
-      const parkingNeeded = Math.ceil(maxGfaSqft / 300);
+      // Calculate actual stalls based on parking geometry
+      // Standard stall: 9ft x 18ft = 162 sqft, plus aisle circulation
+      // For single-row 90° parking: ~350 sqft per stall (stall + share of aisle)
+      const parkingAreaSqm = bldgWidth * parkingDepth;
+      const parkingAreaSqft = parkingAreaSqm / 0.092903;
+      const stallsProvided = Math.floor(parkingAreaSqft / 350); // Conservative estimate with aisles
       
       const parkingGeom: Polygon = {
         type: 'Polygon',
@@ -1506,11 +1511,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const parkingElement: Element = {
         id: 'commercial-parking-1',
         type: 'parking',
-        name: `Parking · ${parkingNeeded} stalls`,
+        name: `Parking · ${stallsProvided} stalls`,
         geometry: parkingGeom,
         properties: {
           parkingType: 'surface',
-          stallCount: parkingNeeded,
+          stallCount: stallsProvided,
           styleOverride: true,
           color: '#E5E7EB',
           opacity: 0.7,
@@ -1519,6 +1524,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         metadata: meta,
       };
       generatedElements.push(parkingElement);
+      
+      // Save stall count for metrics
+      actualStallsProvided = stallsProvided;
       
       // Drive aisle along side of parking
       const driveWidth = 6; // ~20ft drive aisle
@@ -1552,15 +1560,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     
     const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
     
-    // Commercial metrics
+    // Commercial metrics with actual parking stalls
+    const actualBuildingSqft = Math.min(actualFootprintSqft, maxGfaSqft);
     const plateMetrics = {
-      totalBuiltSF: Math.min(actualFootprintSqft, maxGfaSqft),
+      totalBuiltSF: actualBuildingSqft,
       siteCoveragePct: 0,
       achievedFAR: maxFar ?? 0,
-      parkingRatio: 0,
+      parkingRatio: actualStallsProvided > 0 && actualBuildingSqft > 0 
+        ? actualStallsProvided / (actualBuildingSqft / 1000) // stalls per 1000 SF
+        : 0,
+      stallsProvided: actualStallsProvided,
+      stallsRequired: Math.ceil(actualBuildingSqft / 300), // ~1 per 300 SF retail target
       openSpacePct: 0,
       totalUnits: 0,
-      unitMixSummary: `${Math.round(Math.min(actualFootprintSqft, maxGfaSqft)).toLocaleString()} SF retail`,
+      unitMixSummary: `${Math.round(actualBuildingSqft).toLocaleString()} SF retail`,
       zoningCompliant: true,
       violations: [] as string[],
       warnings: [],

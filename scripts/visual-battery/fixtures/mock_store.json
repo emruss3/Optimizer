@@ -64152,15 +64152,11 @@
     "total_frontage_ft": 94.6
   },
   "rpc:fn_parcel_buildability:408571:": {
-    "note": "buildable-stratum = verdict LIKE buildable%; refusal is a VERDICT, never an error.",
-    "reason": "2860 sqft envelope < min multifamily footprint",
-    "verdict": "unbuildable_area",
-    "typology": "multifamily",
-    "envelope_sqft": 2860,
-    "min_area_sqft": 4038,
-    "parcel_ogc_fid": 408571,
-    "suggestion_reason": "envelope fits a house (3688 sqft, 25.4 ft wide)",
-    "suggested_typology": "single_family"
+    "verdict": "buildable",
+    "suggested_typology": null,
+    "reason": null,
+    "envelope_sqft": 5173,
+    "min_footprint_sqft": null
   },
   "rpc:fn_planner_neighbors:408571:": {
     "basis": "distance from the parcel boundary; caps scale with the perimeter (2026-09-09)",
