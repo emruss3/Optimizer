@@ -697,11 +697,12 @@ export function seedFamilyPlanToElements(
   const units = num(m.units);
   
   // Stalls: read from metrics first, then parking (array or structured)
+  // Never return 0 as default — use null so KPI shows actual values or hides row
   const stallsFromParking = Array.isArray(parkingRaw)
     ? parkingRaw.reduce((sum: number, p: { stalls?: unknown }) => sum + (num(p.stalls) ?? 0), 0)
     : num((parkingRaw as { stalls?: unknown } | null)?.stalls);
-  const stalls = num(m.stalls) ?? stallsFromParking ?? 0;
-  const stallsRequired = num(m.stalls_required) ?? num((parkingRaw as { stalls_required_at_placed?: unknown; stalls_required?: unknown } | null)?.stalls_required_at_placed) ?? num((parkingRaw as { stalls_required?: unknown } | null)?.stalls_required) ?? 0;
+  const stalls = num(m.stalls) ?? stallsFromParking;
+  const stallsRequired = num(m.stalls_required) ?? num((parkingRaw as { stalls_required_at_placed?: unknown; stalls_required?: unknown } | null)?.stalls_required_at_placed) ?? num((parkingRaw as { stalls_required?: unknown } | null)?.stalls_required);
   
   const metrics: SiteMetrics | null = gsf
     ? ({
