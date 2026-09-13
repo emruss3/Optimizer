@@ -694,9 +694,17 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 4) return;
 
-    const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
-    // Skip when detail would be sub-3px noise
-    if (UNIT_SPACING_M * zoom < 3) return;
+    // Commercial plates have no interior detail — they're capacity footprints,
+    // not unit layouts. Skip unit ticks and corridors for commercial buildings.
+      const isCommercial = element.id === 'commercial-plate-1' || 
+        element.id.startsWith('commercial-bldg-') ||
+        (element.properties as { use?: string } | undefined)?.use === 'commercial';
+      if (isCommercial) return;
+
+    try {
+      const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
+      // Skip when detail would be sub-3px noise
+      if (UNIT_SPACING_M * zoom < 3) return;
 
     // TOWNHOME ROWS are not apartment floorplates: each unit is a full-depth
     // party-wall slice with its own entrance — no corridor, no studio/1BR
@@ -898,6 +906,13 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.setLineDash([]);
     }
     ctx.restore();
+    } catch (err) {
+      // Defensive: courtyard/multi-bar schemes or complex geometries may hit
+      // edge cases in floorplate computation. Log and skip detail rendering
+      // rather than crashing the entire canvas.
+      console.warn('[renderBuildingDetail] skipped due to error:', err, element.id);
+      return;
+    }
   }, []);
 
   // Small in-plan zone label ("Drive", "Open space") so grey/green areas are
@@ -1380,6 +1395,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // has no vocabulary for ROW, alley, courtyard"). Colors match the
     // subdivision mapper's style overrides.
     const isSubdivision = elements.some(e => e.id.startsWith('subdiv-'));
+    // Commercial plates are retail/office footprints — no unit mix vocabulary.
+    const isCommercial = elements.some(e => 
+      e.id === 'commercial-plate-1' || 
+      e.id.startsWith('commercial-bldg-') || 
+      (e.properties as { use?: string } | undefined)?.use === 'commercial'
+    );
     const entries: Array<[string, string]> = isSubdivision
       ? [
           ['Street (public ROW)', '#A9B4C0'],
@@ -1389,6 +1410,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['Court', '#BBF7D0'],
           ['Amenity', '#86EFAC'],
           ['Unassigned land', '#F1F5F9'],
+          ['Front setback', '#2563EB'],
+          ['Rear setback', '#D97706'],
+          ['Side setback', '#64748B'],
+        ]
+      : isCommercial
+      ? [
+          ['Retail plate', '#FEF3C7'],
+          ['Open space', '#BBF7D0'],
           ['Front setback', '#2563EB'],
           ['Rear setback', '#D97706'],
           ['Side setback', '#64748B'],
@@ -1405,7 +1434,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['Rear setback', '#D97706'],
           ['Side setback', '#64748B'],
         ];
-    if (hasLots && !isSubdivision) entries.push(['Lot line', '#F8FAFC']);
+    if (hasLots && !isSubdivision && !isCommercial) entries.push(['Lot line', '#F8FAFC']);
     // Existing contours are line work, keyed as a line (the 'contour' colour
     // token draws a sample stroke instead of a swatch).
     if (topo && topo.contours.length > 0) entries.push(['Existing contour · 1 ft (index 5 ft)', 'contour']);

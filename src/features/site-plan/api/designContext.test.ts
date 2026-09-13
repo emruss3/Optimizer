@@ -183,12 +183,13 @@ describe('pickDefaultUse (zoning-grounded default)', () => {
     expect(pickDefaultUse(['single_family'])).toBe('single_family');
   });
 
-  it('falls back to the first listed use, and null when empty', () => {
-    // Order-8: a non-compilable use is never the default (the compiler has no
-    // 'commercial' typology; the workspace shows the capacity card instead).
-    expect(pickDefaultUse(['commercial'])).toBeNull();
-    expect(pickDefaultUse(['industrial', 'commercial'])).toBeNull();
-    expect(pickDefaultUse(['commercial', 'single_family'])).toBe('single_family');
+  it('falls back to commercial when no residential uses, and null when not compilable', () => {
+    // Order-8 commercial correction (2026-09-11): Supabase added commercial
+    // typology_spec, so 'commercial' is now compilable and can be the default.
+    expect(pickDefaultUse(['commercial'])).toBe('commercial');
+    expect(pickDefaultUse(['commercial', 'single_family'])).toBe('single_family'); // residential preferred
+    expect(pickDefaultUse(['industrial', 'commercial'])).toBe('commercial'); // commercial compilable, industrial not
+    expect(pickDefaultUse(['industrial'])).toBeNull(); // industrial still not compilable
     expect(pickDefaultUse([])).toBeNull();
   });
 });
@@ -241,8 +242,9 @@ describe('density-first default use (zoning-base fallback)', () => {
     // One/two-family districts default single_family
     expect(defaultUseFromZoningBase('RS5')).toBe('single_family');
     expect(defaultUseFromZoningBase('R6')).toBe('single_family');
-    // Unknown/commercial: no inference (keep whatever is selected)
-    expect(defaultUseFromZoningBase('CS')).toBeNull();
+    // Commercial zones now infer 'commercial' (order-8 commercial correction)
+    expect(defaultUseFromZoningBase('CS')).toBe('commercial');
+    // Unknown/special: no inference (keep whatever is selected)
     expect(defaultUseFromZoningBase('SP')).toBeNull();
     expect(defaultUseFromZoningBase(null)).toBeNull();
     expect(defaultUseFromZoningBase('')).toBeNull();

@@ -33,9 +33,13 @@ describe('CommercialCapacityCard (order-8 audit, 2405 12th Ave S)', () => {
   });
 
   it('is the routing target for non-residential-only parcels', () => {
+    // Order-8 commercial correction (2026-09-11): 'commercial' is now compilable,
+    // so pickDefaultUse returns 'commercial' (not null). However, isNonResidentialOnly
+    // still identifies commercial-only parcels for the capacity card gate.
     expect(isNonResidentialOnly(['commercial', 'industrial'])).toBe(true);
     expect(isNonResidentialOnly(['commercial', 'single_family'])).toBe(false);
     expect(isNonResidentialOnly([])).toBe(false);
-    expect(pickDefaultUse(['commercial', 'industrial'])).toBeNull();
+    expect(pickDefaultUse(['commercial', 'industrial'])).toBe('commercial'); // commercial now compilable
+    expect(pickDefaultUse(['commercial'])).toBe('commercial');
   });
 });

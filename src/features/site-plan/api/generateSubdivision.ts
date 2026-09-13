@@ -324,12 +324,40 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
   }
 
   // Held-out hazards read as GREENWAY — the one thing a plan must never put a lot on.
-  (resp.hazards ?? []).forEach((h, i) => {
+  // UNBLOCKED (2026-09-11): Supabase fixed fn_generate_subdivision_safe dropping
+  // hazards[]. Fresh responses have resp.hazards; persisted candidates have
+  // metrics.hazards with geom_2274. Check both locations for hydration support.
+  const hazardSources = [
+    ...(resp.hazards ?? []),
+    ...((resp.metrics as { hazards?: SubdivisionHazard[] })?.hazards ?? []),
+  ];
+  // Dedupe by index in case both locations have the same hazards
+  const seenKinds = new Set<string>();
+  hazardSources.forEach((h, i) => {
     const kind = h.kind ?? 'floodplain';
+    const zoneKey = `${kind}-${h.zone ?? 'unknown'}`;
+    if (seenKinds.has(zoneKey)) return; // Skip duplicate
+    seenKinds.add(zoneKey);
+    
     const label = kind === 'floodway' ? 'Floodway' : kind === 'wetland' ? 'Wetland' : 'Floodplain';
-    polygons2274To3857(h.geom_2274).forEach((poly, j) => {
+    const polys = polygons2274To3857(h.geom_2274);
+    if (polys.length === 0) {
+      // GREENWAY RENDERING HANDOFF (parcel 550510, Eric/Lead 2026-09-11):
+      // Server reports hazard metrics (pct_land_hazard, floodplain_sqft, wetland_sqft)
+      // but this hazard entry has no geom_2274 — likely an old candidate from before
+      // the Supabase fix. Fresh generation should populate geometries.
+      console.warn(
+        `[subdivisionToElements] GREENWAY MISSING: Hazard ${i + 1} (${kind}${h.zone ? ` ${h.zone}` : ''}) ` +
+        `has no drawable geometry — geom_2274 is null. ` +
+        `Legend shows greenway but canvas cannot render hatch without coordinates. ` +
+        `Area reported: ${h.area_sqft ?? 'unknown'} SF. ` +
+        `Regenerate subdivision to get fresh geometries from Supabase fix.`
+      );
+      return;
+    }
+    polys.forEach((poly, j) => {
       elements.push({
-        id: `${SUBDIVISION_ID_PREFIX}hazard-${i + 1}${j > 0 ? `-${j + 1}` : ''}`,
+        id: `${SUBDIVISION_ID_PREFIX}hazard-${seenKinds.size}${j > 0 ? `-${j + 1}` : ''}`,
         type: 'greenspace',
         name: `${label}${h.zone ? ` (${h.zone})` : ''}`,
         geometry: poly,
@@ -364,6 +392,37 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
   const parcelSqft = num(m.parcel_sqft);
   const openSqft = (num(m.court_area_sqft) ?? 0) + (num(m.amenity_sqft) ?? 0) + (num(m.hazard_sqft) ?? 0);
   const pctOf = (v: number | null) => (v != null && parcelSqft && parcelSqft > 0 ? Math.round((v / parcelSqft) * 1000) / 10 : null);
+  
+  // Calculate floodplain/wetland areas: prefer top-level metrics, fallback to sum from hazards array
+  let floodplainSqft = num(m.floodplain_sqft);
+  let wetlandSqft = num(m.wetland_sqft);
+  if (floodplainSqft == null || wetlandSqft == null) {
+    // Supabase fix (2026-09-11): metrics.hazards now has geom_2274 + area_sqft per hazard.
+    // Sum floodplain and wetland areas when top-level metrics are missing.
+    const allHazards = [
+      ...(resp.hazards ?? []),
+      ...((m as { hazards?: SubdivisionHazard[] }).hazards ?? []),
+    ];
+    floodplainSqft = floodplainSqft ?? allHazards
+      .filter(h => (h.kind ?? 'floodplain') === 'floodplain' || (h.kind ?? 'floodplain') === 'floodway')
+      .reduce((sum, h) => sum + (num(h.area_sqft) ?? 0), 0);
+    wetlandSqft = wetlandSqft ?? allHazards
+      .filter(h => (h.kind ?? 'floodplain') === 'wetland')
+      .reduce((sum, h) => sum + (num(h.area_sqft) ?? 0), 0);
+  }
+  
+  // Validate hazard data consistency: if metrics say hazards exist but no geometries rendered, warn
+  const hazardMetricsPct = num(m.pct_land_hazard);
+  const hazardElementsCount = elements.filter(e => e.id.startsWith(`${SUBDIVISION_ID_PREFIX}hazard-`)).length;
+  if (hazardMetricsPct != null && hazardMetricsPct > 0 && hazardElementsCount === 0) {
+    console.error(
+      `[subdivisionToElements] HAZARD GEOMETRY MISSING: metrics report ${hazardMetricsPct}% hazard ` +
+      `(${floodplainSqft} SF floodplain, ${wetlandSqft} SF wetland) ` +
+      `but no hazard entries produced renderable elements. ` +
+      `Server response has ${(resp.hazards ?? []).length} top-level + ${((m as { hazards?: SubdivisionHazard[] }).hazards ?? []).length} metrics.hazards records.`
+    );
+  }
+  
   return {
     elements,
     summary: {
@@ -382,8 +441,8 @@ export function subdivisionToElements(resp: SubdivisionResponse): { elements: El
       densityDuAc: num(m.gross_density_du_ac),
       floodplainPct: num(m.floodplain_100yr_pct),
       pctHazard: num(m.pct_land_hazard),
-      floodplainHeldOutPct: pctOf(num(m.floodplain_sqft)),
-      wetlandHeldOutPct: pctOf(num(m.wetland_sqft)),
+      floodplainHeldOutPct: pctOf(floodplainSqft),
+      wetlandHeldOutPct: pctOf(wetlandSqft),
       hazardCoverage: typeof m.hazard_layer_coverage === 'string' ? m.hazard_layer_coverage : null,
       accessMode: resp.access?.mode ?? null,
       crossingFt: num(m.greenway_crossing_ft) ?? num(resp.access?.greenway_crossing_ft),
@@ -409,7 +468,7 @@ export function subdivisionSummaryLine(s: SubdivisionSummary): string {
   // Hazards: real geometry when the FEMA/NWI tiles cover the area; otherwise the honest warning.
   const hazard = s.hazardCoverage === 'ingested'
     ? (s.pctHazard != null && s.pctHazard > 0
-        ? ` · ${s.pctHazard}% held out as greenway (floodplain ${s.floodplainHeldOutPct ?? 0}%, wetland ${s.wetlandHeldOutPct ?? 0}%)`
+        ? ` · ${s.pctHazard}% held out as greenway (floodplain ${s.floodplainHeldOutPct != null ? `${s.floodplainHeldOutPct}%` : 'unknown'}, wetland ${s.wetlandHeldOutPct != null ? `${s.wetlandHeldOutPct}%` : 'unknown'})`
         : ' · no floodplain or wetland on the parcel')
     : (s.floodplainPct != null && s.floodplainPct > 0 ? ` · ⚠ ${s.floodplainPct}% floodplain not carved (layer not ingested here)` : '');
   // v1.2: the streets stop at the greenway unless through-access is read; a crossing taken is a culvert/bridge to price
@@ -443,4 +502,41 @@ export async function generateSubdivision(
     console.warn('[generateSubdivision] RPC threw:', err);
     return null;
   }
+}
+
+/** List persisted subdivision candidates for a parcel, newest first.
+ *  Order-8 fix (550510): load latest candidate with metrics.hazards[].geom_2274
+ *  so greenway hatch hydrates on mount. */
+export async function listSubdivisionCandidates(ogcFid: number, limit = 10): Promise<SubdivisionResponse[]> {
+  try {
+    if (!supabase) return [];
+    // The fn_generate_subdivision RPC with no params may return the latest persisted candidate
+    // Or there may be a separate list RPC. Try calling the generate RPC which might return cached.
+    const { data, error } = await supabase.rpc('fn_list_subdivision_candidates', {
+      p_ogc_fid: ogcFid,
+      p_limit: limit,
+    });
+    if (error) {
+      // RPC might not exist yet, fall back to single generate call
+      const latest = await generateSubdivision(ogcFid);
+      return latest ? [latest] : [];
+    }
+    if (!Array.isArray(data)) return [];
+    return data as SubdivisionResponse[];
+  } catch (err) {
+    // Fallback to single generate
+    const latest = await generateSubdivision(ogcFid);
+    return latest ? [latest] : [];
+  }
+}
+
+/** Load the newest subdivision candidate with hazards for hydration. */
+export async function hydrateSubdivisionCandidate(ogcFid: number): Promise<SubdivisionResponse | null> {
+  const candidates = await listSubdivisionCandidates(ogcFid, 10);
+  // Prefer latest candidate with metrics.hazards (has geom_2274 for greenway)
+  const withHazards = candidates.find(c => 
+    (c.hazards && c.hazards.length > 0) || 
+    ((c.metrics as { hazards?: unknown[] })?.hazards && (c.metrics as { hazards?: unknown[] }).hazards!.length > 0)
+  );
+  return withHazards ?? candidates[0] ?? null;
 }

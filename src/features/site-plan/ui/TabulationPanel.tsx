@@ -130,14 +130,18 @@ const TabulationPanel: React.FC<{
       farSource === 'ordinance' || farSource === 'zoning'
         ? '§17.12.020'
         : 'typology defaults';
+    // Commercial: parking is SF-based ordinance (CS requires 1/300 SF) or none if no parking requirement exists
+    const parkingSource = c.typology === 'commercial'
+      ? ((metrics?.stallsRequired ?? 0) > 0 ? 'ordinance' : 'none required')
+      : 'typology defaults';
     const parts = [
       n != null ? `Mix prior: ${n} local ${zone ?? ''} precedents`.replace('  ', ' ') : null,
       `Envelope: ${envelope}`,
       conf ? `Confidence: ${conf}` : null,
-      'Parking ratios: typology defaults',
+      `Parking ratios: ${parkingSource}`,
     ].filter(Boolean);
     return parts.join(' · ');
-  }, [plannerCtx]);
+  }, [plannerCtx, metrics?.stallsRequired]);
 
   if (rows.length === 0) return null;
 
@@ -180,8 +184,14 @@ const TabulationPanel: React.FC<{
             Efficiency <b>{efficiency.toFixed(0)}%</b>
           </span>
         )}
-        <span>FAR <b>{(metrics?.achievedFAR ?? 0).toFixed(2)}</b></span>
-        <span>Coverage <b>{(metrics?.siteCoveragePct ?? 0).toFixed(0)}%</b></span>
+        {/* Seed payloads report 0 for FAR/Coverage (meaning "not reported by this
+            engine") — hide them rather than display fabricated 0.00 / 0%. */}
+        {(metrics?.achievedFAR ?? 0) > 0 && (
+          <span>FAR <b>{(metrics.achievedFAR ?? 0).toFixed(2)}</b></span>
+        )}
+        {(metrics?.siteCoveragePct ?? 0) > 0 && (
+          <span>Coverage <b>{(metrics.siteCoveragePct ?? 0).toFixed(0)}%</b></span>
+        )}
         {duAc != null && <span>Density <b>{duAc.toFixed(1)} DU/ac</b></span>}
         <span>
           Stalls <b>{metrics?.stallsProvided ?? 0} / {metrics?.stallsRequired ?? 0}</b>

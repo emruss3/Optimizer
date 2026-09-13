@@ -92,13 +92,21 @@ function judge(exp, ev) {
       errs.push('the improvised worker plan rendered — order-6 item 5c forbids that path');
     }
   } else if (exp.mode === 'commercial-capacity') {
-    // Order-8: a commercial-only lot shows the capacity card with the FAR
-    // ceiling and never offers a residential plan.
+    // Order-8 + commercial plate (2026-09-11): a commercial-only lot shows the
+    // capacity card with the FAR ceiling and draws a retail plate from entitlement.
     if (!ev.nonResidentialLot) errs.push('expected nonResidentialLot=true (permitted uses carry no residential use)');
     if (!(ev.commercialAllowableGsf > 0)) errs.push('expected the FAR-derived allowable area on the capacity card');
     if (!ev._domCommercialCard) errs.push('commercial capacity card not rendered');
     if (ev._domSfSwitch) errs.push('a "draw the house" switch rendered on a lot with no residential use');
-    if (ev.solvedBy) errs.push(`a plan rendered (solvedBy=${ev.solvedBy}) where no residential use is permitted`);
+    // Commercial plate expectations (optional assertions from expectations.json)
+    if (exp.expectCommercialPlate) {
+      if (ev.solvedBy !== 'client') errs.push(`expected commercial plate (solvedBy=client), got ${ev.solvedBy ?? 'none'}`);
+      if (exp.expectCommercialGsf && Math.abs((ev.commercialAllowableGsf ?? 0) - exp.expectCommercialGsf) > 1) {
+        errs.push(`expected commercial GSF ${exp.expectCommercialGsf}, got ${ev.commercialAllowableGsf ?? 0}`);
+      }
+    } else if (ev.solvedBy) {
+      errs.push(`a plan rendered (solvedBy=${ev.solvedBy}) where no residential use is permitted`);
+    }
   } else if (exp.mode === 'sf-suggestion') {
     // The MF refusal must carry the server-verified suggestion, and the tap
     // must have rendered the house (the post-click evidence is judged).
@@ -156,13 +164,16 @@ function judge(exp, ev) {
   }
   // Plan-organization layer: every gated parcel must resolve the expected
   // pattern, and the alignment verdict must be honest where asserted.
-  if (exp.requirePlanPattern && ev.planPattern !== exp.requirePlanPattern) {
-    errs.push(`expected plan pattern '${exp.requirePlanPattern}', got '${ev.planPattern ?? 'none'}'`);
+  // Exception: commercial plates hide the PlanPatternPanel (no pattern required).
+  if (exp.requirePlanPattern && exp.mode !== 'commercial-capacity') {
+    if (ev.planPattern !== exp.requirePlanPattern) {
+      errs.push(`expected plan pattern '${exp.requirePlanPattern}', got '${ev.planPattern ?? 'none'}'`);
+    }
+    if (!ev._domPlanPattern) errs.push('plan-pattern panel not rendered');
   }
   if (typeof exp.requirePatternAligned === 'boolean' && ev.planPatternAligned !== exp.requirePatternAligned) {
     errs.push(`expected generator alignment ${exp.requirePatternAligned}, got ${ev.planPatternAligned}`);
   }
-  if (exp.requirePlanPattern && !ev._domPlanPattern) errs.push('plan-pattern panel not rendered');
   if (exp.mode === 'server-plan' && ev.serverPlanError) {
     errs.push(`server-plan error card raised unexpectedly: ${ev.serverPlanError}`);
   }

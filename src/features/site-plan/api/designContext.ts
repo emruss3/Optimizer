@@ -309,32 +309,37 @@ export function toContextTypology(use: string): string {
  * permitted AS OF RIGHT. This is what stops an RM40 parcel from defaulting to
  * a single-family plan just because 'single_family' was the hardcoded initial.
  */
-const USE_PRIORITY = ['multi_family', 'multifamily', 'two_family', 'single_family'];
+const USE_PRIORITY = ['multi_family', 'multifamily', 'two_family', 'single_family', 'commercial'];
 
-/** Uses the planner can actually COMPILE (typology_spec rows exist). */
-const COMPILABLE_USES = new Set(['multi_family', 'multifamily', 'mf', 'two_family', 'duplex', 'single_family', 'sf']);
+/** Uses the planner can actually COMPILE (typology_spec rows exist).
+ *  Order-8 commercial correction (2026-09-11): Supabase added commercial
+ *  typology_spec row so CS as-of-right can compile as 'commercial'. */
+const COMPILABLE_USES = new Set(['multi_family', 'multifamily', 'mf', 'two_family', 'duplex', 'single_family', 'sf', 'commercial']);
 
-/** Non-residential as-of-right uses the product recognizes but cannot mass yet. */
+/** Residential uses that the massing engines can serve. */
+const RESIDENTIAL_USES = new Set(['multi_family', 'multifamily', 'mf', 'two_family', 'duplex', 'single_family', 'sf']);
+
+/** Non-residential as-of-right uses the product recognizes (industrial not compilable yet). */
 export const NON_RESIDENTIAL_USES = new Set(['commercial', 'industrial']);
 
 export function pickDefaultUse(uses: string[]): string | null {
   if (uses.length === 0) return null;
+  // Prefer residential uses first (density-first), then fall back to commercial
   for (const u of USE_PRIORITY) {
     if (uses.includes(u)) return u;
   }
-  // Order-8 audit (2405 12th Ave, CS): a commercial-only lot used to default
-  // to 'commercial' / 'industrial', which the compiler rejects ("unknown
-  // typology") — the enterprise gate then blanked the canvas. A non-compilable
-  // use is never the default; the workspace shows the commercial capacity
-  // card instead.
+  // If no priority use found, return first compilable use (or null)
   return uses.find(u => COMPILABLE_USES.has(u)) ?? null;
 }
 
 /** True when the parcel permits no residential use as-of-right but does
- *  permit commercial/industrial — the case the massing engines cannot serve. */
+ *  permit commercial/industrial — the CommercialCapacityCard case.
+ *  Order-8 commercial correction (2026-09-11): 'commercial' is now compilable,
+ *  but we still want to show the capacity card for commercial-only parcels
+ *  (no massing engines for retail/office yet). Check for NO residential uses. */
 export function isNonResidentialOnly(uses: string[]): boolean {
   if (uses.length === 0) return false;
-  return !uses.some(u => COMPILABLE_USES.has(u)) && uses.some(u => NON_RESIDENTIAL_USES.has(u));
+  return !uses.some(u => RESIDENTIAL_USES.has(u)) && uses.some(u => NON_RESIDENTIAL_USES.has(u));
 }
 
 /**
@@ -343,6 +348,13 @@ export function isNonResidentialOnly(uses: string[]): boolean {
  * already displays. An RM40 parcel must never default to single_family just
  * because one network call 503'd — users flip DOWN to less dense if they
  * want, the product never silently flips them down.
+ * 
+ * Order-8 commercial correction (2405 12th Ave, CS): commercial districts do
+ * NOT map to 'multi_family' — that conflicts with the as-of-right product
+ * rule and the commercial typology_spec coming from Supabase. Commercial
+ * parcels compile as 'commercial' (or let the server default to as-of-right).
+ * The commercial capacity card + nonResidentialOnly gate make the context
+ * clear; no silent Use forcing.
  */
 export function defaultUseFromZoningBase(base: string | null | undefined): string | null {
   const b = (base ?? '').trim().toUpperCase();
@@ -350,6 +362,9 @@ export function defaultUseFromZoningBase(base: string | null | undefined): strin
   // Multifamily-first districts: RM (multifamily), OR (office/residential),
   // MU* (mixed-use), ORI (office/residential intensive).
   if (/^(RM|OR|MU)/.test(b)) return 'multi_family';
+  // Commercial districts: CS, CL, CN, etc. — return 'commercial' so the
+  // compile stays as-of-right. The server will handle commercial typology.
+  if (/^C[SLNP]?|^COMMERCIAL/.test(b)) return 'commercial';
   // One/two-family districts: R6..R80, RS3.75..RS80.
   if (/^RS?\d/.test(b)) return 'single_family';
   return null;

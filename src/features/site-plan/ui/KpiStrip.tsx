@@ -45,7 +45,9 @@ const KpiStrip: React.FC<{
   planFlags?: string[];
   /** Achieved GSF / max-buildout GSF, 0–100+ (SF-first objective) */
   utilizationPct?: number | null;
-}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null }) => {
+  /** Commercial plates have no units — hide the Units KPI for retail. */
+  isCommercial?: boolean;
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, isCommercial = false }) => {
   if (!metrics) {
     return (
       <div className="text-sm text-gray-500">Generating plan…</div>
@@ -77,7 +79,7 @@ const KpiStrip: React.FC<{
 
   return (
     <div className="flex items-center gap-5 overflow-x-auto">
-      <Stat label="Units" value={`${metrics.totalUnits ?? 0}`} />
+      {!isCommercial && <Stat label="Units" value={`${metrics.totalUnits ?? 0}`} />}
       {/* FAR/Coverage/Open at exactly 0 mean "not reported by this engine"
           (the seed payload carries none and the client never re-measures) —
           hide them rather than display fabricated zeros. */}

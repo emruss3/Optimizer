@@ -15,8 +15,9 @@ import { feetToMeters } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount, type BuildingSpec } from '../../engine/model';
 import { placeBarsAlongEdges } from '../../engine/edgePlacement';
 import { buildBuildingFootprint } from '../../engine/buildingGeometry';
+import { layoutCommercialPlate, envelopeFromSetbacks, retailSqftPerStall, canvasStallCells } from '../../engine/commercialPlate';
 import { computeProForma } from '../../engine/proforma';
-import type { Polygon, MultiPolygon } from 'geojson';
+import type { Polygon, MultiPolygon, LineString } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
 import KpiStrip from './ui/KpiStrip';
@@ -29,6 +30,7 @@ import { PlanPatternPanel } from './ui/PlanPatternPanel';
 import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
 import {
   generateSubdivision, subdivisionToElements, subdivisionSummaryLine,
+  hydrateSubdivisionCandidate,
   type SubdivisionParams, type SubdivisionSummary,
 } from './api/generateSubdivision';
 import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/SubdivisionPanel';
@@ -78,6 +80,10 @@ const Massing3D = React.lazy(() => import('./ui/Massing3D'));
  * posture is that nothing renders without a compiled ordinance context.
  */
 
+/** Retail parking basis the commercial plate is measured against: one stall
+ *  per 300 SF (the CS ordinance basis the tabulation receipts already cite). */
+const RETAIL_SQFT_PER_STALL = 300;
+
 type SiteWorkspaceProps = {
   parcel: SelectedParcel;
 };
@@ -111,6 +117,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const massingRef = useRef<MassingProgram | null>(null);
   massingRef.current = massingProg;
   const { status, envelope, rpcMetrics, edgeClassifications, error: envelopeError } = useBuildableEnvelope(parcel, frontage?.primary?.bearing_deg ?? null);
+  // The commercial plate reads the parcel's front edge by ref: the auto-plan
+  // fires from a compile settle, not from a render with fresh classifications.
+  const edgeClassificationsRef = useRef<EdgeClassification[]>([]);
+  edgeClassificationsRef.current = edgeClassifications;
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
@@ -141,9 +151,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const n = Number(parcel.ogc_fid);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [parcel.ogc_fid]);
-  // Initial use is a placeholder — the workspace corrects it to the parcel's
-  // highest-intensity as-of-right use unless the user picked one.
-  const [contextUse, setContextUse] = useState('single_family');
+  // Initial use: infer from zoning when possible so commercial parcels don't
+  // compile as single_family (which returns no entitlement_capacity). The
+  // permitted-uses RPC will override this if it returns a compilable use.
+  const [contextUse, setContextUse] = useState(() => 
+    defaultUseFromZoningBase(parcel.zoning as string | undefined) ?? 'single_family'
+  );
   const userPickedUseRef = useRef(false);
   const handleUseChange = useCallback((use: string) => {
     userPickedUseRef.current = true;
@@ -209,7 +222,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // courts from fn_generate_mf_site_plan). Static modes ('sf', 'mf-server')
   // guard the live re-solver and drag pump — those plans vary by
   // REGENERATION (candidate tree), not by local re-packing.
-  const planModeRef = useRef<'sf' | 'mf' | 'mf-server' | null>(null);
+  const planModeRef = useRef<'sf' | 'mf' | 'mf-server' | 'commercial' | null>(null);
   const mfSeedRef = useRef(1);
   // Product within the multifamily legal basis: stacked apartments (mf
   // generator) or attached townhomes (th generator, attached-dwelling
@@ -255,6 +268,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Zero-overlap gate bookkeeping: one silent re-solve per gesture on the
   // server path; rejected worker candidates surface in the solves rail.
   const serverGeoRetryRef = useRef(false);
+  const serverGeoFallbackRef = useRef(false);
   // Why the last server solve was rejected by the geometry gate (null = it
   // wasn't). The auto-plan's worker fallback re-surfaces this AFTER the worker
   // result lands, so a rejected server plan never silently becomes a worker
@@ -462,6 +476,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // flashed a misleading "fallback" banner during the ~600ms fetch.)
   const usingFallbackEnvelope = !!(envelopeMeters && status !== 'loading' && !(envelope && status === 'ready'));
 
+  // The parcel line in the canvas frame — the commercial plate rebuilds its
+  // envelope from it when the brief's polygon contradicts the brief's own
+  // setbacks (408571: a uniform Mercator inset where side setback is 0).
+  const parcelPoly3857 = useMemo((): Polygon | null => {
+    try {
+      if (!parcel?.geometry) return null;
+      const geom = parcel.geometry as Polygon | MultiPolygon;
+      const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0]?.[0];
+      const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+      const reprojected = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
+      return normalizeToPolygon(reprojected);
+    } catch {
+      return null;
+    }
+  }, [parcel?.geometry]);
+  // Commercial plate only: the envelope the plate was measured against (drawn
+  // in place of the brief polygon while the plate is the plan) and the
+  // receipts behind it (dev evidence hook). MF paths never set these.
+  const [plateEnvelope, setPlateEnvelope] = useState<Polygon | null>(null);
+  const [plateReceipt, setPlateReceipt] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    setPlateEnvelope(null);
+    setPlateReceipt(null);
+  }, [parcel?.ogc_fid]);
+
   // Elements and envelope stay in EPSG:3857 meters — no feet conversion.
   // The canvas viewport fits to processedGeometry (also EPSG:3857 meters).
 
@@ -477,12 +516,54 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const fid = contextOgcFid;
     listMfCandidates(fid)
       .then(cands => {
-        setMfCandidates(cands); // show immediately…
-        return enrichCandidatesWithMoney(fid, cands); // …then rank by market margin
+        // When plan pattern is court_scheme_perpendicular_bars:
+        // 1. Filter out stale tuck_under with designed_court_sf=0 (persist can diverge from live generate)
+        // 2. Prefer courtyard regime or designed_central_court_v1 flag
+        const isCourtPattern = planPattern?.pattern === 'court_scheme_perpendicular_bars';
+        
+        const filtered = isCourtPattern
+          ? cands.filter(c => {
+              // Filter out tuck_under with no courtyard when pattern expects court
+              const isBadTuckUnder = c.metrics.regime === 'tuck_under' && 
+                (c.metrics.designed_court_sf === 0 || c.metrics.designed_court_sf == null);
+              return !isBadTuckUnder;
+            })
+          : cands;
+        
+        const sorted = isCourtPattern
+          ? [...filtered].sort((a, b) => {
+              // Prefer regime=courtyard or flags containing designed_central_court_v1
+              const aIsCourtyard = a.metrics.regime === 'courtyard' || 
+                (a.flags?.includes('designed_central_court_v1') ?? false);
+              const bIsCourtyard = b.metrics.regime === 'courtyard' || 
+                (b.flags?.includes('designed_central_court_v1') ?? false);
+              
+              if (aIsCourtyard && !bIsCourtyard) return -1;
+              if (!aIsCourtyard && bIsCourtyard) return 1;
+              
+              // Otherwise keep original order (newest first)
+              return 0;
+            })
+          : filtered;
+        
+        // CRITICAL: If court pattern but no valid courtyard candidates, force fresh generate
+        // by clearing the auto-generated flag. This ensures courtyard schemes land, not
+        // just "Generating..." forever because stale tuck_under was filtered out.
+        if (isCourtPattern && sorted.length === 0 && hasAutoGeneratedRef.current) {
+          console.log('[667574] Court pattern with no valid candidates - forcing fresh generate');
+          hasAutoGeneratedRef.current = false;
+        }
+        
+        setMfCandidates(sorted); // show immediately…
+        return enrichCandidatesWithMoney(fid, sorted); // …then rank by market margin
       })
-      .then(setMfCandidates)
+      .then(enriched => {
+        // enrichCandidatesWithMoney preserves array order (Promise.all on map) —
+        // courtyard preference is maintained after enrichment
+        setMfCandidates(enriched);
+      })
       .catch(() => undefined);
-  }, [contextOgcFid]);
+  }, [contextOgcFid, planPattern]);
 
   const runServerMfPlan = useCallback(async (opts: {
     seed: number;
@@ -513,10 +594,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // snapshot shipped SF setbacks beneath apartment bars (2600 W Heiman).
     // Stored-candidate replays (explicit contextId) are exempt — their
     // stored context IS the massing context and the UI marks them stale.
+    // Order-8 commercial correction (408571, 2026-09-11): commercial contexts
+    // should NEVER reach this function — autoPlan suppresses massing for
+    // commercial-only parcels. If we somehow get here, reject gracefully.
     if (
       opts.contextId === undefined &&
       snapshot &&
-      snapshot.context.typology !== 'multifamily'
+      snapshot.context.typology !== 'multifamily' &&
+      snapshot.context.typology !== 'commercial'
     ) {
       console.error(
         `[use-binding] server solve: refusing to mass '${effectiveProduct}' under a '${snapshot.context.typology}' compiled context (${snapshot.context_id}). Compile use and massing use must match.`
@@ -528,6 +613,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }]);
       serverFailCauseRef.current = `Use mismatch — the compiled context is '${snapshot.context.typology}', not multifamily. Pick the multifamily use and retry.`;
       return false;
+    }
+    // Commercial context reaching here is a routing bug — commercial parcels
+    // show the capacity card, not massing. Reject with helpful message.
+    if (
+      opts.contextId === undefined &&
+      snapshot &&
+      snapshot.context.typology === 'commercial'
+    ) {
+      console.error(
+        `[use-binding] server solve: commercial context should not attempt massing (${snapshot.context_id}). Commercial parcels show capacity card only.`
+      );
+      serverFailCauseRef.current = 'Commercial parcels do not generate massing — capacity shown in banner.';
+      return true; // handled: suppress massing, show capacity card
     }
     let resp = effectiveContextId
       ? effectiveProduct === 'townhomes'
@@ -628,6 +726,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         `[server-plan] rejected by the geometry gate after retry: ${validation.reason}`,
         validation.overlaps.slice(0, 4)
       );
+      // Courtyard fallback (667574): if court pattern and no fallback tried yet,
+      // try seed=1 / courtyard / designed_central_court_v1 before leaving canvas empty
+      const isCourtPattern = planPattern?.pattern === 'court_scheme_perpendicular_bars';
+      if (isCourtPattern && !serverGeoFallbackRef.current) {
+        serverGeoFallbackRef.current = true;
+        console.log(`[667574] geometry gate rejected, trying courtyard fallback with seed=1`);
+        setPlanBasis(`Plan rejected: ${validation.reason} — trying courtyard fallback`);
+        const ok = await runServerMfPlan({ ...opts, seed: 1 });
+        serverGeoFallbackRef.current = false;
+        return ok;
+      }
       serverRejectRef.current = validation.reason;
       setViolations([{
         code: 'geometry-overlap',
@@ -639,6 +748,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return false;
     }
     serverGeoRetryRef.current = false;
+    serverGeoFallbackRef.current = false;
     serverFailCauseRef.current = null;
     setServerPlanError(null);
     markDraft(degraded || !effectiveContextId);
@@ -680,6 +790,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // "Context applied" strip compares these against the active snapshot.
     const mNum = (v: unknown): number | null =>
       typeof v === 'number' && Number.isFinite(v) ? v : null;
+    
+    // Append pattern misalignment flag when the generator doesn't follow the pattern
+    const lineageFlags = [...flags];
+    if (planPattern && planPattern.generator_alignment?.aligned === false) {
+      lineageFlags.push('pattern_misaligned');
+    }
+    
     setPlanLineage({
       solvedBy: 'server',
       contextId: resp.context_id ?? null,
@@ -690,7 +807,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       programPriorVersion: resp.program_prior_version ?? null,
       scoreTotal: resp.score_total ?? null,
       scoreComponents: resp.score_components ?? null,
-      flags,
+      flags: lineageFlags,
       // Seed-family payloads name these differently (structures / stories /
       // per-structure footprints) — fall through so the lineage strip stays
       // populated for both families.
@@ -787,6 +904,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         code: 'context',
         message: 'Generation blocked: the selected use is not permitted as-of-right. Pick a permitted use in the Design Context panel.',
         severity: 'error',
+      }]);
+      return;
+    }
+    // Order-8 commercial correction (408571): commercial-only parcels do NOT
+    // generate massing — the CommercialCapacityCard is the result.
+    if (nonResidentialOnly || plannerCtxRef.current?.context.typology === 'commercial') {
+      setViolations(v => [...v, {
+        code: 'commercial-no-massing',
+        message: 'Commercial parcels do not generate massing — capacity is shown in the banner above.',
+        severity: 'info',
       }]);
       return;
     }
@@ -1334,6 +1461,324 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    * street face, courts, an amenity on request — never strips sliced across
    * the parcel. The pattern lookup is cached, so this costs no extra RPC.
    */
+  const handleGenerateCommercialPlate = useCallback(async (ctx: DesignContext) => {
+    planModeRef.current = 'commercial';
+    if (!envelopeMeters) {
+      setServerPlanError('Commercial plate needs buildable envelope.');
+      setPlanBasis('Commercial plate needs buildable envelope — waiting for envelope...');
+      return;
+    }
+    
+    // Wait for plannerCtx to be available (compile may still be settling)
+    const snapshot = plannerCtxRef.current;
+    if (!snapshot) {
+      setServerPlanError('Commercial context not yet compiled — waiting...');
+      setPlanBasis('Commercial lot — context compiling...');
+      // Don't block autoPlan retry - let compile settle and trigger again
+      hasAutoGeneratedRef.current = false;
+      return;
+    }
+    
+    const maxGfaSqft = snapshot.context.entitlement_capacity?.max_gfa_sqft as number | undefined;
+    const maxFar = snapshot.solver_brief.hard_constraints.max_far ?? null;
+    const lotSqft = snapshot.context.entitlement_capacity?.lot_sqft as number | undefined;
+    
+    if (!maxGfaSqft || maxGfaSqft <= 0) {
+      setServerPlanError(`Commercial capacity not available — max GFA: ${maxGfaSqft ?? 'unknown'}`);
+      setPlanBasis(`Commercial lot — ${ctx.zoningBase ?? 'zoning'} as-of-right · capacity unavailable`);
+      return;
+    }
+    
+    // Validate and normalize envelope geometry before using it
+    let envelopeGeom: Polygon;
+    try {
+      envelopeGeom = normalizeToPolygon(envelopeMeters);
+      if (!envelopeGeom || !envelopeGeom.coordinates || envelopeGeom.coordinates.length === 0) {
+        throw new Error('Invalid envelope geometry - empty coordinates');
+      }
+      if (!envelopeGeom.coordinates[0] || envelopeGeom.coordinates[0].length < 3) {
+        throw new Error('Invalid envelope geometry - insufficient ring points');
+      }
+    } catch (err) {
+      setServerPlanError(`Commercial plate geometry error: ${err instanceof Error ? err.message : 'unknown'}`);
+      setPlanBasis(`Commercial lot — ${ctx.zoningBase ?? 'zoning'} as-of-right · envelope invalid`);
+      return;
+    }
+    
+    // BUILDING FIRST (Eric, 2026-09-13): the plate chases the entitlement and
+    // fronts the street; parking is the remnant behind it; every band is laid
+    // out in the envelope's own frame (square to the side lot lines), clipped
+    // to the envelope — nothing axis-aligned to EPSG:3857, nothing outside
+    // the setback lines. Geometry + honest numbers come from one pure module.
+    const hc = snapshot.solver_brief.hard_constraints;
+    // A building-coverage cap binds the plate only when it is LAW — a
+    // typology estimate ("80% est.") must not shave the entitlement.
+    const legal = snapshot.context.legal;
+    const coverageSource = legal?.max_building_coverage_pct?.source ?? legal?.max_coverage_pct?.source ?? null;
+    const coverageIsLaw = coverageSource === 'ordinance' || coverageSource === 'zoning';
+    const coveragePct = hc.max_building_coverage_pct ?? hc.max_coverage_pct ?? null;
+    const coverageCapSqft = coverageIsLaw && coveragePct != null && coveragePct > 0 && lotSqft
+      ? (coveragePct / 100) * lotSqft
+      : null;
+    const targetFootprintSqft = coverageCapSqft != null ? Math.min(maxGfaSqft, coverageCapSqft) : maxGfaSqft;
+
+    // Street frontage in the canvas frame: the brief's real front edge first,
+    // the parcel edge classification second. Never the longest-edge guess
+    // while a real frontage exists.
+    const frontLine = ((): [number, number][] | null => {
+      const g = snapshot.solver_brief.geometry;
+      const fe = g?.front_edge as { type?: string; coordinates?: number[][] } | undefined;
+      if (g?.front_edge_is_placeholder === false && fe?.type === 'LineString' && Array.isArray(fe.coordinates) && fe.coordinates.length >= 2) {
+        try {
+          const ls = feature4326To3857({ type: 'LineString', coordinates: fe.coordinates } as LineString);
+          return ls.coordinates as [number, number][];
+        } catch { /* fall through */ }
+      }
+      const front = edgeClassificationsRef.current.find(e => e.type === 'front');
+      return front ? front.edge : null;
+    })();
+
+    // The envelope the plate is measured against is the one the brief's OWN
+    // setbacks describe on the parcel (F / S / R in true feet, along the
+    // parcel edges). The brief's polygon is used only when it agrees with
+    // them. 408571 live (2026-09-13): the brief polygon was a uniform 6.096 m
+    // inset on all four sides — 20 ft applied in Mercator metres, sides
+    // included — against side_setback_ft = 0; filling it capped FAR at 0.29.
+    const setbacksFt = {
+      front: hc.front_setback_ft ?? 20,
+      side: hc.side_setback_ft ?? 0,
+      rear: hc.rear_setback_ft ?? 20,
+    };
+    const briefEnvelopeSqft = correctedAreaM2(envelopeGeom) * 10.7639;
+    const standardsEnvelope = parcelPoly3857 ? envelopeFromSetbacks(parcelPoly3857, frontLine, setbacksFt) : null;
+    const standardsEnvelopeSqft = standardsEnvelope ? correctedAreaM2(standardsEnvelope) * 10.7639 : null;
+    const briefAgrees =
+      standardsEnvelopeSqft == null ||
+      Math.abs(briefEnvelopeSqft - standardsEnvelopeSqft) <= Math.max(50, standardsEnvelopeSqft * 0.03);
+    const plateEnvelopeGeom = briefAgrees || !standardsEnvelope ? envelopeGeom : standardsEnvelope;
+    const envelopeBasis: 'brief_polygon' | 'brief_setbacks_on_parcel' =
+      plateEnvelopeGeom === envelopeGeom ? 'brief_polygon' : 'brief_setbacks_on_parcel';
+
+    const parkingSpec = {
+      stallWidthFt: snapshot.solver_brief.parking?.stall_width_ft ?? config.designParameters.parking.stallWidthFt,
+      stallDepthFt: snapshot.solver_brief.parking?.stall_depth_ft ?? config.designParameters.parking.stallDepthFt,
+      aisleWidthFt: snapshot.solver_brief.parking?.aisle_width_ft ?? config.designParameters.parking.aisleWidthFt,
+    };
+    // Required stalls on the brief's SF basis (per_1000_gsf × ratio); the CS
+    // default of 1 / 300 SF only when the brief carries no SF basis.
+    const stallBasis = retailSqftPerStall(snapshot.solver_brief.parking, RETAIL_SQFT_PER_STALL);
+
+    const layout = layoutCommercialPlate({
+      envelope: plateEnvelopeGeom,
+      frontLine,
+      targetFootprintSqft,
+      lotSqft: lotSqft ?? null,
+      parking: parkingSpec,
+      sqftPerStall: stallBasis.sqftPerStall,
+      maxImperviousSqft: hc.max_impervious_sqft ?? null,
+    });
+    if (!layout) {
+      setServerPlanError('Commercial plate could not be laid out — envelope too small to frame.');
+      setPlanBasis(`Commercial lot — ${ctx.zoningBase ?? 'zoning'} as-of-right · envelope unusable`);
+      return;
+    }
+    if (envelopeBasis === 'brief_setbacks_on_parcel') {
+      layout.flags.push('envelope_rebuilt_from_brief_setbacks');
+    }
+    // Receipts: the envelope dimensions the plate was measured against, on
+    // the console and in the dev evidence hook — the proof of what bound.
+    const receipt = {
+      envelopeBasis,
+      briefEnvelopeSqft: Math.round(briefEnvelopeSqft),
+      standardsEnvelopeSqft: standardsEnvelopeSqft != null ? Math.round(standardsEnvelopeSqft) : null,
+      setbacksFt,
+      envelopeDepthFt: Math.round(layout.depthsFt.envelope),
+      envelopeWidthFt: Math.round(layout.widthFt),
+      buildingDepthFt: Math.round(layout.depthsFt.building),
+      stallsDepthFt: Math.round(layout.depthsFt.stalls),
+      driveDepthFt: Math.round(layout.depthsFt.drive),
+      footprintSqft: Math.round(layout.footprintSqft),
+      targetFootprintSqft: Math.round(targetFootprintSqft),
+      achievedFar: layout.achievedFar != null ? Math.round(layout.achievedFar * 1000) / 1000 : null,
+      stallsProvided: layout.stallsProvided,
+      stallsRequired: layout.stallsRequired,
+      stallBasis: stallBasis.label,
+      depthAxisDeg: Math.round((layout.depthAxisRad * 180) / Math.PI * 10) / 10,
+      flags: layout.flags,
+    };
+    console.info('[commercial-plate] receipts', receipt);
+
+    const now = new Date().toISOString();
+    const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
+    const generatedElements: Element[] = [];
+    const footprintSqft = Math.round(layout.footprintSqft);
+
+    generatedElements.push({
+      id: 'commercial-bldg-1',
+      type: 'building',
+      name: 'Retail Building',
+      geometry: layout.building,
+      properties: {
+        heightFt: hc.max_height_ft ?? 20,
+        floors: 1,
+        gfaSqft: footprintSqft,
+        areaSqFt: footprintSqft,
+        use: 'commercial',
+        typology: 'retail',
+        rotation: (layout.depthAxisRad * 180) / Math.PI,
+        styleOverride: true,
+        color: '#FEF3C7',
+        opacity: 0.85,
+        strokeColor: '#F59E0B',
+      },
+      metadata: meta,
+    });
+
+    layout.stallRows.forEach((row, i) => {
+      const cells = canvasStallCells(row.coordinates[0] as [number, number][], parkingSpec.stallWidthFt * 0.3048);
+      generatedElements.push({
+        id: `commercial-parking-${i + 1}`,
+        type: 'parking',
+        name: cells > 0 ? `Parking · ${cells} stalls` : 'Parking area',
+        geometry: row,
+        properties: {
+          parkingType: 'surface',
+          stallCount: cells,
+          parkingSpaces: cells, // Canvas labels/readers use parkingSpaces
+          styleOverride: true,
+          color: '#E5E7EB',
+          opacity: 0.7,
+          strokeColor: '#9CA3AF',
+        },
+        metadata: meta,
+      });
+    });
+
+    if (layout.drive) {
+      generatedElements.push({
+        id: 'commercial-drive-1',
+        type: 'circulation',
+        name: layout.stallRows.length > 0 ? 'Access Drive' : 'Service Drive',
+        geometry: layout.drive,
+        properties: {
+          circulationType: 'drive',
+          styleOverride: true,
+          color: '#D1D5DB',
+          opacity: 0.8,
+          strokeColor: '#6B7280',
+        },
+        metadata: meta,
+      });
+    }
+
+    if (layout.landscape) {
+      generatedElements.push({
+        id: 'commercial-landscape-1',
+        type: 'greenspace',
+        name: 'Landscape strip',
+        geometry: layout.landscape,
+        properties: { styleOverride: true, color: '#D1FAE5', opacity: 0.7, strokeColor: '#6EE7B7' },
+        metadata: meta,
+      });
+    }
+
+    if (!gateNonGesturePlan(generatedElements, 'Commercial plate')) return;
+
+    const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
+
+    const { stallsProvided, stallsRequired } = layout;
+    const parkingShort = stallsRequired > 0 && stallsProvided < stallsRequired;
+    const warnings: string[] = [];
+    if (parkingShort) {
+      warnings.push(
+        `${stallsProvided} on-site stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} at ${stallBasis.label} — ` +
+        `the plate takes the lot; balance by shared access / district exemptions.`
+      );
+    }
+    if (envelopeBasis === 'brief_setbacks_on_parcel') {
+      warnings.push(
+        `Brief envelope polygon (${Math.round(briefEnvelopeSqft).toLocaleString()} SF) contradicts the brief's setbacks ` +
+        `F ${setbacksFt.front} / S ${setbacksFt.side} / R ${setbacksFt.rear} ft (${Math.round(standardsEnvelopeSqft ?? 0).toLocaleString()} SF on the parcel) — ` +
+        `the plate is measured against the setbacks.`
+      );
+    }
+    if (layout.flags.includes('parking_apron_below_aisle_standard')) {
+      warnings.push(`Rear apron ${Math.round(layout.depthsFt.drive)} ft — stalls back out across the rear setback (alley-loaded).`);
+    }
+    if (layout.flags.includes('footprint_trimmed_for_parking_module')) {
+      warnings.push(`Footprint trimmed ${Math.round(layout.giveBackSqft).toLocaleString()} SF so one parking module fits.`);
+    }
+    if (layout.flags.includes('footprint_capped_by_envelope')) {
+      warnings.push('The buildable envelope is smaller than the FAR allows — the plate fills it.');
+    }
+    if (layout.flags.includes('impervious_over_cap')) {
+      warnings.push(`Impervious ${Math.round(layout.imperviousSqft).toLocaleString()} SF exceeds the ${hc.max_impervious_pct ?? ''}% cap.`);
+    }
+
+    const achievedFAR = layout.achievedFar ?? (maxFar ?? 0);
+    const plateMetrics = {
+      totalBuiltSF: footprintSqft,
+      siteCoveragePct: layout.coveragePct ?? 0,
+      achievedFAR,
+      parkingRatio: stallsProvided > 0 && footprintSqft > 0 ? stallsProvided / (footprintSqft / 1000) : 0, // stalls per 1000 SF
+      stallsProvided,
+      stallsRequired,
+      openSpacePct: 0,
+      totalUnits: 0,
+      unitMixSummary: `${footprintSqft.toLocaleString()} SF retail`,
+      zoningCompliant: !layout.flags.includes('impervious_over_cap'),
+      violations: [] as string[],
+      warnings,
+      optimizationStatus: 'commercial_retail_schematic',
+    } as NonNullable<typeof metrics>;
+
+    setPlanOutput([...base, ...generatedElements], plateMetrics);
+    setPlateEnvelope(plateEnvelopeGeom);
+    setPlateReceipt(receipt);
+    setViolations(
+      warnings.map((message, i) => ({
+        code: i === 0 && parkingShort ? 'parking-short' : 'commercial-plate',
+        message,
+        severity: 'warning' as const,
+      }))
+    );
+    setPlanLineage({
+      solvedBy: 'client',
+      contextId: snapshot.context_id,
+      generatorVersion: 'commercial_retail_schematic_v2_building_first',
+      flags: layout.flags,
+      buildings: 1,
+      floors: 1,
+      footprintSqft,
+      standardsDirect: true,
+    });
+    setPlanStale(false);
+    setServerPlanError(null);
+    const captured = maxGfaSqft > 0 ? Math.round((footprintSqft / maxGfaSqft) * 100) : null;
+    setPlanBasis(
+      `Single-tenant retail — ${ctx.zoningBase ?? 'zoning'} as-of-right · ` +
+      `${footprintSqft.toLocaleString()} SF plate on the frontage` +
+      (captured != null ? ` (${captured}% of ${Math.round(maxGfaSqft).toLocaleString()} SF allowable, FAR ${achievedFAR.toFixed(2)})` : '') +
+      ` · ${Math.round(layout.depthsFt.building)} × ${Math.round(layout.widthFt)} ft · ` +
+      (stallsProvided > 0
+        ? `${stallsProvided} rear stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} required (${stallBasis.label})`
+        : `no on-site parking fits (${stallsRequired} required at ${stallBasis.label})`) +
+      (layout.drive ? ' · rear drive' : '') +
+      (envelopeBasis === 'brief_setbacks_on_parcel'
+        ? ` · envelope from setbacks F ${setbacksFt.front} / S ${setbacksFt.side} / R ${setbacksFt.rear} ft`
+        : '')
+    );
+  }, [envelopeMeters, parcelPoly3857, elements, config.designParameters.parking, gateNonGesturePlan, setPlanOutput, setViolations, setPlanLineage, setPlanStale, setServerPlanError, setPlanBasis]);
+
+  /**
+   * Brief Phase 2: market-grounded SF lot fit, appended to the plan.
+   *
+   * 2026-09-03: on a subdivision-pattern parcel (the plan-organization layer
+   * says `subdivision_*`) the NEIGHBOURHOOD generator draws the civil's
+   * organization instead — streets first, rear alleys, whole lots on every
+   * street face, courts, an amenity on request — never strips sliced across
+   * the parcel. The pattern lookup is cached, so this costs no extra RPC.
+   */
   const handleGenerateLots = useCallback(async () => {
     planModeRef.current = 'sf';
     if (contextOgcFid == null) {
@@ -1342,21 +1787,29 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     setIsGeneratingLots(true);
     try {
-      const pattern = await fetchPlanPattern(contextOgcFid).catch(() => null);
+      const pattern = await fetchPlanPattern(contextOgcFid, { use: contextUse, zoning: parcel.zoning as string | undefined }).catch(() => null);
       if (pattern?.pattern?.startsWith('subdivision')) {
-        const sub = await generateSubdivision(contextOgcFid, subdivisionParamsRef.current);
+        // Try hydrating latest persisted candidate with hazards first (550510 fix)
+        let sub = await hydrateSubdivisionCandidate(contextOgcFid);
+        // If no persisted candidate or it lacks data, generate fresh
+        if (!sub || (!sub.streets?.length && !sub.lots?.length)) {
+          sub = await generateSubdivision(contextOgcFid, subdivisionParamsRef.current);
+        }
         if (!sub) {
           setLotFitSummary('Subdivision generator unavailable — backend RPC not reachable.');
+          setServerPlanError('Subdivision generator unavailable — backend RPC not reachable.');
           return;
         }
         if (sub.error) {
           setSubdivisionSummary(null);
           setLotFitSummary(`Subdivision generator refused: ${sub.error.replace(/_/g, ' ')}.`);
+          setServerPlanError(`Subdivision generator refused: ${sub.error.replace(/_/g, ' ')}.`);
           return;
         }
         const { elements: drawn, summary: subSummary } = subdivisionToElements(sub);
         if (drawn.length === 0) {
           setLotFitSummary('Subdivision generator returned no drawable streets or lots for this parcel.');
+          setServerPlanError('Subdivision generator returned no drawable streets or lots for this parcel.');
           return;
         }
         if (!gateNonGesturePlan(drawn, 'Subdivision plan')) return;
@@ -1673,6 +2126,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       compileBlockedRef.current = null;
       setCompileBlocked(null);
       serverGeoRetryRef.current = false;
+      serverGeoFallbackRef.current = false;
       serverFailCauseRef.current = null;
       setServerPlanError(null);
       setSolveRejected(null);
@@ -1733,7 +2187,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (!cancelled) setBuildability(b);
     });
     setPlanPattern(null);
-    fetchPlanPattern(contextOgcFid).then(pp => {
+    fetchPlanPattern(contextOgcFid, { use: contextUse, zoning: parcel.zoning as string | undefined }).then(pp => {
       if (!cancelled) setPlanPattern(pp);
     });
     return () => { cancelled = true; };
@@ -1799,12 +2253,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    * engine). The context's `regime` deliberately does NOT route here — it
    * describes parking structure (surface vs structured), and reading it as
    * "SF vs MF" is how an RM40 parcel once got tiled with house pads.
+   * 
+   * Order-8 commercial correction (408571, 2026-09-11): commercial-only
+   * parcels auto-generate a retail plate from entitlement_capacity max_gfa_sqft
+   * on the buildable envelope.
    */
   const autoPlan = useCallback((ctx: DesignContext | null) => {
     if (hasAutoGeneratedRef.current || !envelopeMeters || !hasValidGeometry) return;
     // Defense in depth: while massing is blocked (no compiled context), no
     // auto-path may lay anything out. Retry / a late settle re-arms.
     if (compileBlockedRef.current) return;
+    // Commercial-only parcels: draw a retail plate from entitlement capacity.
+    if (ctx && (ctx.typology === 'commercial' || nonResidentialOnly)) {
+      hasAutoGeneratedRef.current = true;
+      planModeRef.current = 'commercial';
+      handleGenerateCommercialPlate(ctx).catch(() => undefined);
+      return;
+    }
     // USE-BINDING (2026-09-04, 2622 W Heiman console): a single-family
     // context on multifamily land is the boot placeholder still resolving —
     // massing apartments on it only trips the solver's guard (three red
@@ -1823,7 +2288,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } else {
       autoPlanMf(ctx);
     }
-  }, [envelopeMeters, hasValidGeometry, handleGenerateLots, autoPlanMf]);
+  }, [envelopeMeters, hasValidGeometry, nonResidentialOnly, handleGenerateCommercialPlate, handleGenerateLots, autoPlanMf]);
 
   /** Compile settle → grounding + routing. generation_allowed=false BLOCKS
    *  generation (a rejection, not a fallback); a later allowed compile
@@ -1894,10 +2359,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // default) — never uses inferred from a zoning-string prefix. The
       // compile still proceeds; the rail says the list is unavailable.
       setPermittedUses(list);
-      // Order-8 audit (2405 12th Ave, CS): a commercial-only lot keeps the
-      // bootstrap compile (which returns the ordinance caps with
-      // generation_allowed=false) and shows the capacity card — it never
-      // defaults to a use the compiler cannot type ('commercial').
+      // Order-8 audit (2405 12th Ave, CS): a commercial-only lot compiles
+      // as 'commercial' (or defaults to as-of-right) and shows the capacity
+      // card. With commercial typology_spec coming from Supabase, the client
+      // must NOT force p_use=multifamily on CS parcels — pass 'commercial' or
+      // omit (server defaults to as-of-right). The capacity card +
+      // nonResidentialOnly gate make the commercial-only context clear.
       setNonResidentialOnly(isNonResidentialOnly(list));
       if (!userPickedUseRef.current && list.length > 0) {
         const preferred = pickDefaultUse(list);
@@ -2208,6 +2675,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
           ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
           : null,
+      // 2026-09-13: the plate's receipts — which envelope it was measured
+      // against and its dimensions, footprint, FAR, stalls — the proof of
+      // what bound, readable on a live settle.
+      commercialPlate: plateReceipt,
       seedAvailable: !!seedPlan,
       seedShown: seedViewOn,
       seedComposition: seedPlan?.composition ?? null,
@@ -2238,11 +2709,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, plateReceipt]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
     : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356);
+
+  // While the commercial plate is the plan, the canvas outlines the envelope
+  // the plate was measured against (the brief's setbacks on the parcel), not
+  // a brief polygon that contradicts them. Every other plan mode is untouched.
+  const canvasEnvelope = planModeRef.current === 'commercial' && plateEnvelope ? plateEnvelope : envelopeMeters;
 
   // historyVersion re-renders this component whenever the undo stacks change
   const canUndo = historyVersion >= 0 && pastRef.current.length > 0;
@@ -2273,6 +2749,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
               : null
           }
+          hasPlate={planModeRef.current === 'commercial'}
         />
       )}
       {!nonResidentialOnly && isRefusal(buildability) && product === 'apartments' && buildability && (
@@ -2332,6 +2809,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               ? (metrics.totalBuiltSF / maxBuildout.max_gsf) * 100
               : null
           }
+          isCommercial={planModeRef.current === 'commercial'}
         />
         <div className="flex items-center gap-2 flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
@@ -2455,7 +2933,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
         {!leftRailCollapsed && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
-          {planPattern && <PlanPatternPanel plan={planPattern} />}
+          {planPattern && planModeRef.current !== 'commercial' && <PlanPatternPanel plan={planPattern} />}
           {subdivisionSummary && (
             <SubdivisionPanel
               summary={subdivisionSummary}
@@ -2559,7 +3037,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               <Massing3D
                 elements={displayElements}
                 parcelGeometry={plannerParcel?.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined}
-                envelope={envelopeMeters ?? undefined}
+                envelope={canvasEnvelope ?? undefined}
                 neighbors={neighbors}
                 edgeClassifications={edgeClassifications}
               />
@@ -2584,7 +3062,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                   stallDepthFt: config.designParameters.parking.stallDepthFt,
                   aisleWidthFt: config.designParameters.parking.aisleWidthFt
                 }}
-                buildableEnvelope={envelopeMeters || undefined}
+                buildableEnvelope={canvasEnvelope || undefined}
                 edgeClassifications={edgeClassifications}
                 setbacks={rpcMetrics?.setbacks}
                 onBuildingUpdate={handleBuildingUpdate}

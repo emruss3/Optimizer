@@ -599,6 +599,44 @@ describe('degenerate seed programs (2026-07-28 sweep finding)', () => {
   });
 });
 
+describe('RPC field names: gfa_sqft/units_est (not gsf/units)', () => {
+  it('reads metrics from gfa_sqft/units_est when gsf/units are missing', () => {
+    // Live RPC returns { gfa_sqft, units_est, stalls, stalls_required } — NOT gsf/units.
+    // Before fix: metrics stayed null because `gsf ? {...} : null` failed, causing 0/0 stalls.
+    const { metrics } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      metrics: {
+        gfa_sqft: 99307,
+        units_est: 65,
+        stalls: 117,
+        stalls_required: 113,
+        // NO gsf or units fields
+      } as { gfa_sqft: number; units_est: number; stalls: number; stalls_required: number },
+    });
+    
+    expect(metrics).not.toBeNull();
+    expect(metrics?.totalBuiltSF).toBe(99307);  // From gfa_sqft
+    expect(metrics?.totalUnits).toBe(65);       // From units_est
+    expect(metrics?.stallsProvided).toBe(117);  // From stalls
+    expect(metrics?.stallsRequired).toBe(113);  // From stalls_required
+  });
+
+  it('emits metrics when only stalls exist (no gsf/units)', () => {
+    // Edge case: parking-only payload with stalls but no building metrics
+    const { metrics } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      metrics: {
+        stalls: 50,
+        stalls_required: 40,
+      } as { stalls: number; stalls_required: number },
+    });
+    
+    expect(metrics).not.toBeNull();
+    expect(metrics?.stallsProvided).toBe(50);
+    expect(metrics?.stallsRequired).toBe(40);
+  });
+});
+
 describe('legacy mapper defense (Eric console crash 2026-08-04)', () => {
   it('a seed-family payload misrouted into mfPlanToElements must not throw', () => {
     // The stale pre-#89 build crashed on `(resp.parking ?? []).forEach` when

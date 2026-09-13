@@ -18,12 +18,14 @@ export interface CommercialCapacityCardProps {
   rearSetbackFt?: number | null;
   /** The context's own FAR × lot number when present (entitlement_capacity.max_gfa_sqft). */
   allowableGsf?: number | null;
+  /** Whether the commercial plate is already drawn on canvas. */
+  hasPlate?: boolean;
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
 
 export const CommercialCapacityCard: React.FC<CommercialCapacityCardProps> = ({
-  zoning, uses, lotSqft, maxFar, maxHeightFt, maxImperviousPct, frontSetbackFt, rearSetbackFt, allowableGsf,
+  zoning, uses, lotSqft, maxFar, maxHeightFt, maxImperviousPct, frontSetbackFt, rearSetbackFt, allowableGsf, hasPlate,
 }) => {
   const derived = maxFar != null && lotSqft != null && maxFar > 0 && lotSqft > 0 ? maxFar * lotSqft : null;
   const allowable = allowableGsf ?? derived;
@@ -54,11 +56,13 @@ export const CommercialCapacityCard: React.FC<CommercialCapacityCardProps> = ({
           : ''}
         .
       </div>
-      <div className="mt-1 text-xs text-amber-800">
-        Retail massing is not modeled yet — the allowable area above is the ceiling an architect builds to
-        (single-tenant full plate or a stacked two-tenant scheme). No house or apartment plan is offered
-        because none is permitted here as-of-right.
-      </div>
+      {!hasPlate && (
+        <div className="mt-1 text-xs text-amber-800">
+          Retail massing is not modeled yet — the allowable area above is the ceiling an architect builds to
+          (single-tenant full plate or a stacked two-tenant scheme). No house or apartment plan is offered
+          because none is permitted here as-of-right.
+        </div>
+      )}
     </div>
   );
 };
