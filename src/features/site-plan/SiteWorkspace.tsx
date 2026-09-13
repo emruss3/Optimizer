@@ -1478,26 +1478,25 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const envWidth = envBbox.maxX - envBbox.minX;
     const envHeight = envBbox.maxY - envBbox.minY;
     
-    // Single-tenant retail: inset building from front (12th Ave), leave rear for parking
-    // Front setback: 5m (~16ft) for landscaping/signage
-    // Side clearance: 2m (~6ft) each side
-    // Rear: 18m (~60ft) for parking + drive
-    const frontSetback = 5;
-    const sideSetback = 2;
-    const rearSetback = 18;
+    // Single-tenant retail: place building at front, leave rear for parking
+    // NOTE: envelope is already setback-adjusted by RPC, so we work within it directly
+    // Reserve ~12m (~40ft) at rear for parking + circulation, 1m side clearances
+    const frontInset = 0.5; // minimal buffer from envelope edge
+    const sideInset = 0.5;  // minimal side clearance
+    const parkingReserve = 12; // ~40ft for parking + drive
     
     // Building footprint: sized to fit max GFA in single story, with realistic proportions
     const targetFootprintSqm = maxGfaSqft * 0.092903; // sqft to sqm
-    const bldgDepth = Math.min(envHeight - frontSetback - rearSetback, 25); // ~80ft max depth
-    const bldgWidth = Math.min(envWidth - 2 * sideSetback, targetFootprintSqm / bldgDepth);
+    const availDepth = envHeight - frontInset - parkingReserve;
+    const bldgDepth = Math.min(availDepth, 25); // Cap at ~80ft for realistic retail depth
+    const bldgWidth = Math.min(envWidth - 2 * sideInset, targetFootprintSqm / Math.max(bldgDepth, 10));
     
-    const bldgX = envBbox.minX + sideSetback;
-    const bldgY = envBbox.minY + frontSetback;
+    const bldgX = envBbox.minX + sideInset;
+    const bldgY = envBbox.minY + frontInset;
     
-    // Limit building depth to leave room for parking
-    const maxBldgDepth = Math.min(envHeight - frontSetback - rearSetback, 25);
-    const actualBldgDepth = Math.max(10, maxBldgDepth); // At least 10m (~33ft)
-    const actualBldgWidth = Math.max(10, Math.min(envWidth - 2 * sideSetback, targetFootprintSqm / actualBldgDepth));
+    // Ensure reasonable dimensions
+    const actualBldgDepth = Math.max(8, Math.min(bldgDepth, availDepth)); // At least 8m (~26ft)
+    const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, targetFootprintSqm / actualBldgDepth));
     
     const buildingGeom: Polygon = {
       type: 'Polygon',
@@ -1533,18 +1532,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     generatedElements.push(plateElement);
     
     // Parking field: rear of building
-    const parkingY = bldgY + actualBldgDepth + 1; // 1m (~3ft) gap
-    const parkingDepth = Math.max(0, envBbox.maxY - parkingY - 2); // leave 2m for rear buffer
+    const parkingGap = 0.5; // ~1.5ft gap between building and parking
+    const parkingY = bldgY + actualBldgDepth + parkingGap;
+    const rearBuffer = 0.5; // minimal rear buffer
+    const parkingDepth = Math.max(0, envBbox.maxY - parkingY - rearBuffer);
     
-    let stallsProvided = 0;
-    if (parkingDepth > 5) {
-      // Calculate actual stalls based on parking geometry
-      // Standard stall: 9ft x 18ft = 162 sqft, plus aisle circulation
-      // For single-row 90° parking: ~350 sqft per stall (stall + share of aisle)
-      const parkingAreaSqm = actualBldgWidth * parkingDepth;
-      const parkingAreaSqft = parkingAreaSqm / 0.092903;
-      stallsProvided = Math.floor(parkingAreaSqft / 350); // Conservative estimate with aisles
-      
+    // Calculate actual stalls based on parking geometry
+    // Standard stall: 9ft x 18ft = 162 sqft, plus aisle circulation
+    // For single-row 90° parking: ~350 sqft per stall (stall + share of aisle)
+    const parkingAreaSqm = actualBldgWidth * parkingDepth;
+    const parkingAreaSqft = parkingAreaSqm / 0.092903;
+    let stallsProvided = Math.floor(parkingAreaSqft / 350); // Conservative estimate with aisles
+    
+    // Draw parking element if we have any meaningful depth (4m = ~13ft = compact stall)
+    if (parkingDepth >= 4 && stallsProvided > 0) {
       const parkingGeom: Polygon = {
         type: 'Polygon',
         coordinates: [[
@@ -1578,34 +1579,38 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     actualStallsProvided = stallsProvided;
     
     // Drive aisle along side for access (always present)
-    const driveWidth = 6; // ~20ft drive aisle
-    const driveDepth = Math.min(actualBldgDepth + (parkingDepth > 0 ? parkingDepth + 1 : 0), envHeight - frontSetback);
-    const driveGeom: Polygon = {
-      type: 'Polygon',
-      coordinates: [[
-        [bldgX - driveWidth, bldgY],
-        [bldgX, bldgY],
-        [bldgX, bldgY + driveDepth],
-        [bldgX - driveWidth, bldgY + driveDepth],
-        [bldgX - driveWidth, bldgY],
-      ]],
-    };
+    const driveWidth = 5; // ~16ft drive aisle (compact but functional)
+    const driveDepth = actualBldgDepth + (parkingDepth > 0 ? parkingDepth + parkingGap : 0);
     
-    const driveElement: Element = {
-      id: 'commercial-drive-1',
-      type: 'circulation',
-      name: 'Access Drive',
-      geometry: driveGeom,
-      properties: {
-        circulationType: 'drive',
-        styleOverride: true,
-        color: '#D1D5DB',
-        opacity: 0.8,
-        strokeColor: '#6B7280',
-      },
-      metadata: meta,
-    };
-    generatedElements.push(driveElement);
+    // Only draw drive if there's room alongside the building
+    if (envWidth >= actualBldgWidth + driveWidth + 2 * sideInset) {
+      const driveGeom: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [bldgX - driveWidth, bldgY],
+          [bldgX, bldgY],
+          [bldgX, bldgY + driveDepth],
+          [bldgX - driveWidth, bldgY + driveDepth],
+          [bldgX - driveWidth, bldgY],
+        ]],
+      };
+      
+      const driveElement: Element = {
+        id: 'commercial-drive-1',
+        type: 'circulation',
+        name: 'Access Drive',
+        geometry: driveGeom,
+        properties: {
+          circulationType: 'drive',
+          styleOverride: true,
+          color: '#D1D5DB',
+          opacity: 0.8,
+          strokeColor: '#6B7280',
+        },
+        metadata: meta,
+      };
+      generatedElements.push(driveElement);
+    }
     
     const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
     
