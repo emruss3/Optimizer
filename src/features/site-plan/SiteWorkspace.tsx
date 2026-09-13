@@ -1548,14 +1548,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
     generatedElements.push(plateElement);
     
-    // STEP 3: Parking field (gets space between building and drive)
+    // STEP 3: Parking field (allocated between building and drive)
     const parkingGap = 0.5; // gap between building and parking
     const parkingY = bldgY + actualBldgDepth + parkingGap;
-    const rearBuffer = 0.5;
     const driveGap = 0.5;
-    // Parking depth = available space after reserving drive (grow to fit, min 5.5m)
-    const availableForParking = envBbox.maxY - parkingY - rearBuffer - minDriveDepth - driveGap;
-    const parkingDepth = Math.max(minParkingDepth, availableForParking);
+    // Calculate available space for parking (never exceed envelope)
+    const availableForParking = Math.max(0, envBbox.maxY - parkingY - rearBuffer - minDriveDepth - driveGap);
+    const parkingDepth = Math.max(0, Math.min(desiredParking, availableForParking));
     
     // Calculate actual stalls based on 90° parking geometry
     const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
