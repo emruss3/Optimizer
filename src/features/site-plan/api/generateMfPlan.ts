@@ -301,7 +301,7 @@ export interface SeedFamilyStructure {
 export interface SeedFamilyParking {
   /** 2026-09-09 aisle-first seed: a bay is a stall band beside an aisle and
    *  carries its own stall count and row count (1, or 2 back to back) */
-  bays?: Array<{ geom_2274?: SeedFamilyGeom | null; area_sqft?: number | null; stalls?: number | null; rows?: number | null }> | null;
+  bays?: Array<{ geom_2274?: SeedFamilyGeom | null; geom?: SeedFamilyGeom | null; area_sqft?: number | null; stalls?: number | null; rows?: number | null }> | null;
   stalls?: number | null;
   strategy?: string | null;
   stalls_required?: number | null;
@@ -316,6 +316,7 @@ export interface SeedFamilyDrive {
   entry_2274?: SeedFamilyGeom | null;
   spine_2274?: SeedFamilyGeom | null;
   geom_2274?: SeedFamilyGeom | null;
+  geom?: SeedFamilyGeom | null;
   /** 'access' = the seed's drive network (2026-09-04): lane from the curb,
    *  aisle strip along the building, connectors to every bay head */
   kind?: string | null;
@@ -498,13 +499,20 @@ export function seedFamilyPlanToElements(
     } as Element);
   });
 
-  const bays = resp.parking?.bays?.filter(b => b?.geom_2274) ?? [];
+  // Parking bays: accept geom_2274 OR fallback to geom (EPSG:2274, same as buildings)
+  const bays = (resp.parking?.bays ?? []).filter(b => {
+    const bay = b as { geom_2274?: unknown; geom?: unknown } | null | undefined;
+    return bay?.geom_2274 || bay?.geom;
+  });
   const totalBayArea = bays.reduce((a, b) => a + (num(b.area_sqft) ?? 0), 0);
   const stallsTotal = num(resp.parking?.stalls) ?? num(m.stalls) ?? 0;
   bays.forEach((b, i) => {
     let poly: Polygon;
     try {
-      poly = seedTo3857(b.geom_2274 as Polygon);
+      const bay = b as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom };
+      // Use geom_2274 if present; fallback to geom (EPSG:2274)
+      const geom2274 = bay.geom_2274 ?? bay.geom;
+      poly = seedTo3857(geom2274 as Polygon);
     } catch {
       return;
     }
@@ -535,7 +543,11 @@ export function seedFamilyPlanToElements(
       try { return seedTo3857(b.geom_2274 as Polygon); } catch { return null; }
     }),
     ...bays.map(b => {
-      try { return seedTo3857(b.geom_2274 as Polygon); } catch { return null; }
+      try { 
+        const bay = b as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom };
+        const geom2274 = bay.geom_2274 ?? bay.geom;
+        return seedTo3857(geom2274 as Polygon); 
+      } catch { return null; }
     }),
   ].filter((p): p is Polygon => p != null)
     .map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] }));
@@ -547,16 +559,17 @@ export function seedFamilyPlanToElements(
     // connectors to the bay heads) IS the drive; its spine and entry are then
     // the centreline and the curb point, not geometry to fabricate a second
     // rectangle from.
-    const hasPolygon = !!dr?.geom_2274;
-    if (dr?.spine_2274 && !hasPolygon) {
+    const drive = dr as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom; spine_2274?: unknown; entry_2274?: unknown; kind?: string | null; lane_ft?: number | null } | null | undefined;
+    const hasPolygon = !!(drive?.geom_2274 || drive?.geom);
+    if (drive?.spine_2274 && !hasPolygon) {
       try {
-        const rect = lineToRect(seedTo3857(dr.spine_2274 as unknown as LineString), 7.3); // 24 ft drive
+        const rect = lineToRect(seedTo3857(drive.spine_2274 as unknown as LineString), 7.3); // 24 ft drive
         if (rect) skeletonPolys.push({ type: 'Polygon', coordinates: rect.coordinates as number[][][] });
       } catch { /* skip malformed spine */ }
     }
-    if (dr?.entry_2274 && !hasPolygon) {
+    if (drive?.entry_2274 && !hasPolygon) {
       try {
-        const [ex, ey] = seedTo3857(dr.entry_2274 as unknown as Point).coordinates as Position;
+        const [ex, ey] = seedTo3857(drive.entry_2274 as unknown as Point).coordinates as Position;
         const w = 3.7, d = 3.0; // 12×10 ft apron marker at the curb
         skeletonPolys.push({
           type: 'Polygon',
@@ -564,9 +577,11 @@ export function seedFamilyPlanToElements(
         });
       } catch { /* skip malformed entry */ }
     }
-    if (dr?.geom_2274) {
+    // Accept either geom_2274 OR fallback geom (EPSG:2274, same as buildings)
+    const driveGeom = drive?.geom_2274 ?? drive?.geom;
+    if (driveGeom) {
       try {
-        const poly = seedTo3857(dr.geom_2274 as Polygon);
+        const poly = seedTo3857(driveGeom as Polygon);
         const clipped = clipPolysToObstacles(
           [{ type: 'Polygon' as const, coordinates: poly.coordinates as number[][][] }],
           obstacles,
@@ -576,20 +591,20 @@ export function seedFamilyPlanToElements(
           elements.push({
             id: `${prefix}-drive-${i + 1}${pi > 0 ? `-${pi + 1}` : ''}`,
             type: 'circulation',
-            name: dr.kind === 'driveway'
+            name: drive.kind === 'driveway'
               ? 'Driveway'
-              : dr.kind === 'access'
+              : drive.kind === 'access'
                 ? (i === 0 && pi === 0 ? 'Access drive' : `Access drive ${i + 1}${pi > 0 ? `-${pi + 1}` : ''}`)
                 : `Drive ${i + 1}`,
             geometry: piece as unknown as Polygon,
             properties: {
               // pavement, a shade darker than the striped bays so the road reads as a road
               styleOverride: true,
-              color: dr.kind === 'access' ? '#9AA8B8' : '#94A3B8',
+              color: drive.kind === 'access' ? '#9AA8B8' : '#94A3B8',
               opacity: 0.9,
               strokeColor: '#7B8794',
-              kind: dr.kind ?? 'drive',
-              ...(typeof dr.lane_ft === 'number' ? { widthFt: dr.lane_ft } : {}),
+              kind: drive.kind ?? 'drive',
+              ...(typeof drive.lane_ft === 'number' ? { widthFt: drive.lane_ft } : {}),
               ...(resp.access?.side ? { accessSide: resp.access.side } : {}),
             },
             metadata: meta,
