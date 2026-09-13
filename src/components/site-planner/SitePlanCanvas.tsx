@@ -701,9 +701,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         (element.properties as { use?: string } | undefined)?.use === 'commercial';
       if (isCommercial) return;
 
-    const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
-    // Skip when detail would be sub-3px noise
-    if (UNIT_SPACING_M * zoom < 3) return;
+    try {
+      const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
+      // Skip when detail would be sub-3px noise
+      if (UNIT_SPACING_M * zoom < 3) return;
 
     // TOWNHOME ROWS are not apartment floorplates: each unit is a full-depth
     // party-wall slice with its own entrance — no corridor, no studio/1BR
@@ -905,6 +906,13 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.setLineDash([]);
     }
     ctx.restore();
+    } catch (err) {
+      // Defensive: courtyard/multi-bar schemes or complex geometries may hit
+      // edge cases in floorplate computation. Log and skip detail rendering
+      // rather than crashing the entire canvas.
+      console.warn('[renderBuildingDetail] skipped due to error:', err, element.id);
+      return;
+    }
   }, []);
 
   // Small in-plan zone label ("Drive", "Open space") so grey/green areas are
