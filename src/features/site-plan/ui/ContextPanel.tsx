@@ -19,7 +19,14 @@ const ConfidencePill: React.FC<{ confidence?: Confidence }> = ({ confidence }) =
 /** A zoning value row with the provenance badge — the product differentiator. */
 const Row: React.FC<{ label: string; v?: ContextValue; unit?: string }> = ({ label, v, unit }) => {
   if (!v || v.value == null) return null;
-  const estimated = v.source !== 'zoning' && v.source !== 'ordinance';
+  // CS side setback = 0 from typology_default is ordinance "none required" (17.12.020C),
+  // not an estimate — show as "ordinance" badge.
+  const isOrdinanceZero = label === 'Side setback' && v.value === 0 && 
+    (v.source === 'typology_default' || v.source === 'ordinance');
+  const estimated = !isOrdinanceZero && v.source !== 'zoning' && v.source !== 'ordinance';
+  const badgeText = isOrdinanceZero ? 'ordinance' : (estimated ? 'est.' : v.source);
+  const badgeStyle = estimated ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600';
+  
   return (
     <div className="flex items-center justify-between text-sm py-0.5">
       <span className="text-gray-600">{label}</span>
@@ -27,11 +34,9 @@ const Row: React.FC<{ label: string; v?: ContextValue; unit?: string }> = ({ lab
         {v.value}{unit ? ` ${unit}` : ''}
         <span
           title={`Source: ${v.source}${v.confidence ? ` (${v.confidence})` : ''}`}
-          className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-            estimated ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'
-          }`}
+          className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${badgeStyle}`}
         >
-          {estimated ? 'est.' : v.source}
+          {badgeText}
         </span>
       </span>
     </div>
