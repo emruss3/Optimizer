@@ -15,8 +15,9 @@ import { feetToMeters } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount, type BuildingSpec } from '../../engine/model';
 import { placeBarsAlongEdges } from '../../engine/edgePlacement';
 import { buildBuildingFootprint } from '../../engine/buildingGeometry';
+import { layoutCommercialPlate, canvasStallCells } from '../../engine/commercialPlate';
 import { computeProForma } from '../../engine/proforma';
-import type { Polygon, MultiPolygon } from 'geojson';
+import type { Polygon, MultiPolygon, LineString } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
 import KpiStrip from './ui/KpiStrip';
@@ -79,6 +80,10 @@ const Massing3D = React.lazy(() => import('./ui/Massing3D'));
  * posture is that nothing renders without a compiled ordinance context.
  */
 
+/** Retail parking basis the commercial plate is measured against: one stall
+ *  per 300 SF (the CS ordinance basis the tabulation receipts already cite). */
+const RETAIL_SQFT_PER_STALL = 300;
+
 type SiteWorkspaceProps = {
   parcel: SelectedParcel;
 };
@@ -112,6 +117,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const massingRef = useRef<MassingProgram | null>(null);
   massingRef.current = massingProg;
   const { status, envelope, rpcMetrics, edgeClassifications, error: envelopeError } = useBuildableEnvelope(parcel, frontage?.primary?.bearing_deg ?? null);
+  // The commercial plate reads the parcel's front edge by ref: the auto-plan
+  // fires from a compile settle, not from a render with fresh classifications.
+  const edgeClassificationsRef = useRef<EdgeClassification[]>([]);
+  edgeClassificationsRef.current = edgeClassifications;
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
@@ -1471,206 +1480,209 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return;
     }
     
-    // Build a real single-tenant retail schematic (not an envelope clone):
-    // - Footprint sized to ≤ max GFA
-    // - Front setback for curb appeal / signage
-    // - Rear parking field
-    // - Drive aisle for access
+    // BUILDING FIRST (Eric, 2026-09-13): the plate chases the entitlement and
+    // fronts the street; parking is the remnant behind it; every band is laid
+    // out in the envelope's own frame (square to the side lot lines), clipped
+    // to the envelope — nothing axis-aligned to EPSG:3857, nothing outside
+    // the setback lines. Geometry + honest numbers come from one pure module.
+    const hc = snapshot.solver_brief.hard_constraints;
+    // A building-coverage cap binds the plate only when it is LAW — a
+    // typology estimate ("80% est.") must not shave the entitlement.
+    const legal = snapshot.context.legal;
+    const coverageSource = legal?.max_building_coverage_pct?.source ?? legal?.max_coverage_pct?.source ?? null;
+    const coverageIsLaw = coverageSource === 'ordinance' || coverageSource === 'zoning';
+    const coveragePct = hc.max_building_coverage_pct ?? hc.max_coverage_pct ?? null;
+    const coverageCapSqft = coverageIsLaw && coveragePct != null && coveragePct > 0 && lotSqft
+      ? (coveragePct / 100) * lotSqft
+      : null;
+    const targetFootprintSqft = coverageCapSqft != null ? Math.min(maxGfaSqft, coverageCapSqft) : maxGfaSqft;
+
+    // Street frontage in the canvas frame: the brief's real front edge first,
+    // the parcel edge classification second. Never the longest-edge guess
+    // while a real frontage exists.
+    const frontLine = ((): [number, number][] | null => {
+      const g = snapshot.solver_brief.geometry;
+      const fe = g?.front_edge as { type?: string; coordinates?: number[][] } | undefined;
+      if (g?.front_edge_is_placeholder === false && fe?.type === 'LineString' && Array.isArray(fe.coordinates) && fe.coordinates.length >= 2) {
+        try {
+          const ls = feature4326To3857({ type: 'LineString', coordinates: fe.coordinates } as LineString);
+          return ls.coordinates as [number, number][];
+        } catch { /* fall through */ }
+      }
+      const front = edgeClassificationsRef.current.find(e => e.type === 'front');
+      return front ? front.edge : null;
+    })();
+
+    const parkingSpec = {
+      stallWidthFt: snapshot.solver_brief.parking?.stall_width_ft ?? config.designParameters.parking.stallWidthFt,
+      stallDepthFt: snapshot.solver_brief.parking?.stall_depth_ft ?? config.designParameters.parking.stallDepthFt,
+      aisleWidthFt: snapshot.solver_brief.parking?.aisle_width_ft ?? config.designParameters.parking.aisleWidthFt,
+    };
+
+    const layout = layoutCommercialPlate({
+      envelope: envelopeGeom,
+      frontLine,
+      targetFootprintSqft,
+      lotSqft: lotSqft ?? null,
+      parking: parkingSpec,
+      sqftPerStall: RETAIL_SQFT_PER_STALL,
+      maxImperviousSqft: hc.max_impervious_sqft ?? null,
+    });
+    if (!layout) {
+      setServerPlanError('Commercial plate could not be laid out — envelope too small to frame.');
+      setPlanBasis(`Commercial lot — ${ctx.zoningBase ?? 'zoning'} as-of-right · envelope unusable`);
+      return;
+    }
+
     const now = new Date().toISOString();
     const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
     const generatedElements: Element[] = [];
-    let actualStallsProvided = 0;
-    
-    const envCoords = envelopeGeom.coordinates[0];
-    const envBbox = {
-      minX: Math.min(...envCoords.map(c => c[0])),
-      maxX: Math.max(...envCoords.map(c => c[0])),
-      minY: Math.min(...envCoords.map(c => c[1])),
-      maxY: Math.max(...envCoords.map(c => c[1])),
-    };
-    const envWidth = envBbox.maxX - envBbox.minX;
-    const envHeight = envBbox.maxY - envBbox.minY;
-    
-    // Single-tenant retail: LAY OUT FROM REAR (drive first), ensure ALL inside envelope
-    // HARD RULE: envelope is already setback-adjusted; nothing may exceed envBbox bounds
-    const frontInset = 0.5; // minimal buffer from envelope edge
-    const sideInset = 0.5;  // minimal side clearance
-    const rearBuffer = 0.5; // rear envelope buffer
-    
-    // STEP 1: Lay out DRIVE at rear (works backward from envelope end)
-    const minDriveDepth = 4.5; // ~15ft rear drive minimum
-    const driveMaxY = envBbox.maxY - rearBuffer; // HARD CEILING, never exceeded
-    const maxDriveSpace = Math.max(0, driveMaxY - envBbox.minY - frontInset - 3); // -3m min for bldg+park
-    const availableRearForDrive = maxDriveSpace * 0.25; // ~25% of available depth for drive
-    const actualDriveDepth = Math.min(availableRearForDrive, Math.max(minDriveDepth, availableRearForDrive)); // never Math.max past envelope
-    const driveMinY = driveMaxY - actualDriveDepth;
-    
-    // STEP 2: Lay out PARKING in front of drive
-    const parkingGap = 0.5;
-    const parkingMaxY = driveMinY - parkingGap; // HARD CEILING, never exceeded
-    const availableForParking = Math.max(0, parkingMaxY - envBbox.minY - frontInset - 3); // -3m min for building
-    const targetParkingDepth = 12; // ~40ft two-row if space allows
-    const actualParkingDepth = Math.min(targetParkingDepth, availableForParking); // use full available up to target
-    const parkingMinY = parkingMaxY - actualParkingDepth;
-    
-    // STEP 3: Building gets remaining front space (EXACTLY fits what's left)
-    const bldgGap = 0.5;
-    const bldgMaxY = parkingMinY - bldgGap; // HARD CEILING, never exceeded
-    const bldgMinY = envBbox.minY + frontInset; // HARD FLOOR, never goes below
-    const actualBldgDepth = Math.max(0, bldgMaxY - bldgMinY); // EXACT fit, no Math.max(3,...) that could overflow
-    const targetFootprintSqm = maxGfaSqft * 0.092903;
-    const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, 
-      actualBldgDepth > 0 ? targetFootprintSqm / actualBldgDepth : 8));
-    
-    const bldgX = envBbox.minX + sideInset;
-    const bldgY = bldgMinY;
-    
-    const buildingGeom: Polygon = {
-      type: 'Polygon',
-      coordinates: [[
-        [bldgX, bldgY],
-        [bldgX + actualBldgWidth, bldgY],
-        [bldgX + actualBldgWidth, bldgY + actualBldgDepth],
-        [bldgX, bldgY + actualBldgDepth],
-        [bldgX, bldgY],
-      ]],
-    };
-    
-    const actualFootprintSqft = (actualBldgWidth * actualBldgDepth) / 0.092903;
-    
-    const plateElement: Element = {
+    const footprintSqft = Math.round(layout.footprintSqft);
+
+    generatedElements.push({
       id: 'commercial-bldg-1',
       type: 'building',
       name: 'Retail Building',
-      geometry: buildingGeom,
+      geometry: layout.building,
       properties: {
-        heightFt: snapshot.solver_brief.hard_constraints.max_height_ft ?? 20,
+        heightFt: hc.max_height_ft ?? 20,
         floors: 1,
-        gfaSqft: Math.min(actualFootprintSqft, maxGfaSqft),
+        gfaSqft: footprintSqft,
+        areaSqFt: footprintSqft,
         use: 'commercial',
         typology: 'retail',
+        rotation: (layout.depthAxisRad * 180) / Math.PI,
         styleOverride: true,
         color: '#FEF3C7',
         opacity: 0.85,
         strokeColor: '#F59E0B',
       },
       metadata: meta,
-    };
-    generatedElements.push(plateElement);
-    
-    // Calculate stalls from actual parking geometry (honest count matching stripes)
-    const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
-    const parkingDepthFt = (actualParkingDepth / 0.3048);
-    const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width, strict floor
-    // Match canvas renderParkingStripes: if parking polygon exists, count rows by depth
-    const stallRows = actualParkingDepth > 0
-      ? (parkingDepthFt < 42 ? 1 : parkingDepthFt < 60 ? 2 : 3)
-      : 0;
-    let stallsProvided = Math.max(0, stallsPerRow) * stallRows;
-    
-    // ALWAYS create parking element (laid out from STEP 2, guaranteed inside envelope)
-    const parkingGeom: Polygon = {
-      type: 'Polygon',
-      coordinates: [[
-        [bldgX, parkingMinY],
-        [bldgX + actualBldgWidth, parkingMinY],
-        [bldgX + actualBldgWidth, parkingMaxY],
-        [bldgX, parkingMaxY],
-        [bldgX, parkingMinY],
-      ]],
-    };
-    
-    const parkingElement: Element = {
-      id: 'commercial-parking-1',
-      type: 'parking',
-      name: stallsProvided > 0 ? `Parking · ${stallsProvided} stalls` : 'Parking area',
-      geometry: parkingGeom,
-      properties: {
-        parkingType: 'surface',
-        stallCount: stallsProvided,
-        parkingSpaces: stallsProvided, // Canvas labels/readers use parkingSpaces
-        styleOverride: true,
-        color: '#E5E7EB',
-        opacity: 0.7,
-        strokeColor: '#9CA3AF',
-      },
-      metadata: meta,
-    };
-    generatedElements.push(parkingElement);
-    
-    // Save stall count for metrics
-    actualStallsProvided = stallsProvided;
-    
-    // ALWAYS create drive element (laid out from STEP 1, guaranteed inside envelope)
-    const driveGeom: Polygon = {
-      type: 'Polygon',
-      coordinates: [[
-        [bldgX, driveMinY],
-        [bldgX + actualBldgWidth, driveMinY],
-        [bldgX + actualBldgWidth, driveMaxY],
-        [bldgX, driveMaxY],
-        [bldgX, driveMinY],
-      ]],
-    };
-    
-    const driveElement: Element = {
-      id: 'commercial-drive-1',
-      type: 'circulation',
-      name: 'Access Drive',
-      geometry: driveGeom,
-      properties: {
-        circulationType: 'drive',
-        styleOverride: true,
-        color: '#D1D5DB',
-        opacity: 0.8,
-        strokeColor: '#6B7280',
-      },
-      metadata: meta,
-    };
-    generatedElements.push(driveElement);
-    
+    });
+
+    layout.stallRows.forEach((row, i) => {
+      const cells = canvasStallCells(row.coordinates[0] as [number, number][], parkingSpec.stallWidthFt * 0.3048);
+      generatedElements.push({
+        id: `commercial-parking-${i + 1}`,
+        type: 'parking',
+        name: cells > 0 ? `Parking · ${cells} stalls` : 'Parking area',
+        geometry: row,
+        properties: {
+          parkingType: 'surface',
+          stallCount: cells,
+          parkingSpaces: cells, // Canvas labels/readers use parkingSpaces
+          styleOverride: true,
+          color: '#E5E7EB',
+          opacity: 0.7,
+          strokeColor: '#9CA3AF',
+        },
+        metadata: meta,
+      });
+    });
+
+    if (layout.drive) {
+      generatedElements.push({
+        id: 'commercial-drive-1',
+        type: 'circulation',
+        name: layout.stallRows.length > 0 ? 'Access Drive' : 'Service Drive',
+        geometry: layout.drive,
+        properties: {
+          circulationType: 'drive',
+          styleOverride: true,
+          color: '#D1D5DB',
+          opacity: 0.8,
+          strokeColor: '#6B7280',
+        },
+        metadata: meta,
+      });
+    }
+
+    if (layout.landscape) {
+      generatedElements.push({
+        id: 'commercial-landscape-1',
+        type: 'greenspace',
+        name: 'Landscape strip',
+        geometry: layout.landscape,
+        properties: { styleOverride: true, color: '#D1FAE5', opacity: 0.7, strokeColor: '#6EE7B7' },
+        metadata: meta,
+      });
+    }
+
+    if (!gateNonGesturePlan(generatedElements, 'Commercial plate')) return;
+
     const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
-    
-    // Commercial metrics with actual parking stalls
-    const actualBuildingSqft = Math.min(actualFootprintSqft, maxGfaSqft);
+
+    const { stallsProvided, stallsRequired } = layout;
+    const parkingShort = stallsRequired > 0 && stallsProvided < stallsRequired;
+    const warnings: string[] = [];
+    if (parkingShort) {
+      warnings.push(
+        `${stallsProvided} on-site stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} at 1/${RETAIL_SQFT_PER_STALL} SF — ` +
+        `the plate takes the lot; balance by shared access / district exemptions.`
+      );
+    }
+    if (layout.flags.includes('parking_apron_below_aisle_standard')) {
+      warnings.push(`Rear apron ${Math.round(layout.depthsFt.drive)} ft — stalls back out across the rear setback (alley-loaded).`);
+    }
+    if (layout.flags.includes('footprint_trimmed_for_parking_module')) {
+      warnings.push(`Footprint trimmed ${Math.round(layout.giveBackSqft).toLocaleString()} SF so one parking module fits.`);
+    }
+    if (layout.flags.includes('footprint_capped_by_envelope')) {
+      warnings.push('The buildable envelope is smaller than the FAR allows — the plate fills it.');
+    }
+    if (layout.flags.includes('impervious_over_cap')) {
+      warnings.push(`Impervious ${Math.round(layout.imperviousSqft).toLocaleString()} SF exceeds the ${hc.max_impervious_pct ?? ''}% cap.`);
+    }
+
+    const achievedFAR = layout.achievedFar ?? (maxFar ?? 0);
     const plateMetrics = {
-      totalBuiltSF: actualBuildingSqft,
-      siteCoveragePct: 0,
-      achievedFAR: maxFar ?? 0,
-      parkingRatio: actualStallsProvided > 0 && actualBuildingSqft > 0 
-        ? actualStallsProvided / (actualBuildingSqft / 1000) // stalls per 1000 SF
-        : 0,
-      stallsProvided: actualStallsProvided,
-      stallsRequired: Math.ceil(actualBuildingSqft / 300), // ~1 per 300 SF retail target
+      totalBuiltSF: footprintSqft,
+      siteCoveragePct: layout.coveragePct ?? 0,
+      achievedFAR,
+      parkingRatio: stallsProvided > 0 && footprintSqft > 0 ? stallsProvided / (footprintSqft / 1000) : 0, // stalls per 1000 SF
+      stallsProvided,
+      stallsRequired,
       openSpacePct: 0,
       totalUnits: 0,
-      unitMixSummary: `${Math.round(actualBuildingSqft).toLocaleString()} SF retail`,
-      zoningCompliant: true,
+      unitMixSummary: `${footprintSqft.toLocaleString()} SF retail`,
+      zoningCompliant: !layout.flags.includes('impervious_over_cap'),
       violations: [] as string[],
-      warnings: [],
+      warnings,
       optimizationStatus: 'commercial_retail_schematic',
     } as NonNullable<typeof metrics>;
-    
+
     setPlanOutput([...base, ...generatedElements], plateMetrics);
-    setViolations([]);
+    setViolations(
+      warnings.map((message, i) => ({
+        code: i === 0 && parkingShort ? 'parking-short' : 'commercial-plate',
+        message,
+        severity: 'warning' as const,
+      }))
+    );
     setPlanLineage({
       solvedBy: 'client',
       contextId: snapshot.context_id,
-      generatorVersion: 'commercial_retail_schematic_v1',
-      flags: [],
+      generatorVersion: 'commercial_retail_schematic_v2_building_first',
+      flags: layout.flags,
       buildings: 1,
       floors: 1,
-      footprintSqft: Math.min(actualFootprintSqft, maxGfaSqft),
+      footprintSqft,
       standardsDirect: true,
     });
     setPlanStale(false);
     setServerPlanError(null);
+    const captured = maxGfaSqft > 0 ? Math.round((footprintSqft / maxGfaSqft) * 100) : null;
     setPlanBasis(
       `Single-tenant retail — ${ctx.zoningBase ?? 'zoning'} as-of-right · ` +
-      `${Math.round(Math.min(actualFootprintSqft, maxGfaSqft)).toLocaleString()} SF · ` +
-      `with parking and access`
+      `${footprintSqft.toLocaleString()} SF plate on the frontage` +
+      (captured != null ? ` (${captured}% of ${Math.round(maxGfaSqft).toLocaleString()} SF allowable, FAR ${achievedFAR.toFixed(2)})` : '') +
+      ` · ${Math.round(layout.depthsFt.building)} × ${Math.round(layout.widthFt)} ft · ` +
+      (stallsProvided > 0
+        ? `${stallsProvided} rear stall${stallsProvided === 1 ? '' : 's'} of ${stallsRequired} required`
+        : `no on-site parking fits (${stallsRequired} required)`) +
+      (layout.drive ? ' · rear drive' : '')
     );
-  }, [envelopeMeters, elements, setPlanOutput, setViolations, setPlanLineage, setPlanStale, setServerPlanError, setPlanBasis]);
+  }, [envelopeMeters, elements, config.designParameters.parking, gateNonGesturePlan, setPlanOutput, setViolations, setPlanLineage, setPlanStale, setServerPlanError, setPlanBasis]);
 
   /**
    * Brief Phase 2: market-grounded SF lot fit, appended to the plan.
