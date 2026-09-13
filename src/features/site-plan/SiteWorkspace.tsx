@@ -1501,7 +1501,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const minDriveDepth = 4.5; // ~15ft rear drive minimum
     const driveMaxY = envBbox.maxY - rearBuffer; // HARD CEILING, never exceeded
     const maxDriveSpace = Math.max(0, driveMaxY - envBbox.minY - frontInset - 3); // -3m min for bldg+park
-    const actualDriveDepth = Math.min(minDriveDepth, Math.max(3, maxDriveSpace * 0.25)); // fit what space allows
+    const availableRearForDrive = maxDriveSpace * 0.25; // ~25% of available depth for drive
+    const actualDriveDepth = Math.min(availableRearForDrive, Math.max(minDriveDepth, availableRearForDrive)); // never Math.max past envelope
     const driveMinY = driveMaxY - actualDriveDepth;
     
     // STEP 2: Lay out PARKING in front of drive
@@ -1516,7 +1517,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const bldgGap = 0.5;
     const bldgMaxY = parkingMinY - bldgGap; // HARD CEILING, never exceeded
     const bldgMinY = envBbox.minY + frontInset; // HARD FLOOR, never goes below
-    const actualBldgDepth = Math.max(0, bldgMaxY - bldgMinY); // EXACT fit, no minimums that push past
+    const actualBldgDepth = Math.max(0, bldgMaxY - bldgMinY); // EXACT fit, no Math.max(3,...) that could overflow
     const targetFootprintSqm = maxGfaSqft * 0.092903;
     const actualBldgWidth = Math.max(8, Math.min(envWidth - 2 * sideInset, 
       actualBldgDepth > 0 ? targetFootprintSqm / actualBldgDepth : 8));
@@ -1561,13 +1562,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const parkingWidthFt = (actualBldgWidth / 0.3048); // meters to feet
     const parkingDepthFt = (actualParkingDepth / 0.3048);
     const stallsPerRow = Math.floor(parkingWidthFt / 9); // 9ft stall width, strict floor
-    // Count rows that fit: if depth >= 14ft (compact) → at least 1 row if stripes render
+    // Match canvas renderParkingStripes: if actualParkingDepth > 0, at least 1 row renders
     // Standard: 18ft per stall + shared aisle between rows (42ft = 2 rows, 60ft = 3 rows)
-    let stallRows = 0;
-    if (parkingDepthFt >= 14) stallRows = 1; // First row if depth allows any striping
-    if (parkingDepthFt >= 42) stallRows = 2; // Second row with aisle
-    if (parkingDepthFt >= 60) stallRows = 3; // Third row
-    let stallsProvided = stallsPerRow * stallRows;
+    const stallRows = actualParkingDepth > 0
+      ? (parkingDepthFt < 42 ? 1 : 1 + Math.floor((parkingDepthFt - 42) / 18))
+      : 0;
+    let stallsProvided = Math.max(0, stallsPerRow) * stallRows;
     
     // ALWAYS create parking element (laid out from STEP 2, guaranteed inside envelope)
     const parkingGeom: Polygon = {
