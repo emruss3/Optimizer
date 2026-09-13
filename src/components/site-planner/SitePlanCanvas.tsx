@@ -696,9 +696,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     // Commercial plates have no interior detail — they're capacity footprints,
     // not unit layouts. Skip unit ticks and corridors for commercial buildings.
-    const isCommercial = element.id === 'commercial-plate-1' || 
-      (element.properties as { use?: string } | undefined)?.use === 'commercial';
-    if (isCommercial) return;
+      const isCommercial = element.id === 'commercial-plate-1' || 
+        element.id.startsWith('commercial-bldg-') ||
+        (element.properties as { use?: string } | undefined)?.use === 'commercial';
+      if (isCommercial) return;
 
     const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
     // Skip when detail would be sub-3px noise
@@ -1387,7 +1388,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // subdivision mapper's style overrides.
     const isSubdivision = elements.some(e => e.id.startsWith('subdiv-'));
     // Commercial plates are retail/office footprints — no unit mix vocabulary.
-    const isCommercial = elements.some(e => e.id === 'commercial-plate-1' || (e.properties as { use?: string } | undefined)?.use === 'commercial');
+    const isCommercial = elements.some(e => 
+      e.id === 'commercial-plate-1' || 
+      e.id.startsWith('commercial-bldg-') || 
+      (e.properties as { use?: string } | undefined)?.use === 'commercial'
+    );
     const entries: Array<[string, string]> = isSubdivision
       ? [
           ['Street (public ROW)', '#A9B4C0'],

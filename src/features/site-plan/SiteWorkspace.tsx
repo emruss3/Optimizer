@@ -1394,14 +1394,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     
     // Validate and normalize envelope geometry before using it
-    let plateGeometry: Polygon;
+    let envelopeGeom: Polygon;
     try {
-      // Normalize to ensure it's a valid simple polygon
-      plateGeometry = normalizeToPolygon(envelopeMeters);
-      if (!plateGeometry || !plateGeometry.coordinates || plateGeometry.coordinates.length === 0) {
+      envelopeGeom = normalizeToPolygon(envelopeMeters);
+      if (!envelopeGeom || !envelopeGeom.coordinates || envelopeGeom.coordinates.length === 0) {
         throw new Error('Invalid envelope geometry - empty coordinates');
       }
-      if (!plateGeometry.coordinates[0] || plateGeometry.coordinates[0].length < 3) {
+      if (!envelopeGeom.coordinates[0] || envelopeGeom.coordinates[0].length < 3) {
         throw new Error('Invalid envelope geometry - insufficient ring points');
       }
     } catch (err) {
@@ -1410,63 +1409,175 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return;
     }
     
-    // Draw a single retail plate on the buildable envelope
+    // Build a real single-tenant retail schematic (not an envelope clone):
+    // - Footprint sized to ≤ max GFA
+    // - Front setback for curb appeal / signage
+    // - Rear parking field
+    // - Drive aisle for access
     const now = new Date().toISOString();
     const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
+    const generatedElements: Element[] = [];
+    
+    const envCoords = envelopeGeom.coordinates[0];
+    const envBbox = {
+      minX: Math.min(...envCoords.map(c => c[0])),
+      maxX: Math.max(...envCoords.map(c => c[0])),
+      minY: Math.min(...envCoords.map(c => c[1])),
+      maxY: Math.max(...envCoords.map(c => c[1])),
+    };
+    const envWidth = envBbox.maxX - envBbox.minX;
+    const envHeight = envBbox.maxY - envBbox.minY;
+    
+    // Single-tenant retail: inset building from front (12th Ave), leave rear for parking
+    // Front setback: 5m (~16ft) for landscaping/signage
+    // Side clearance: 2m (~6ft) each side
+    // Rear: 18m (~60ft) for parking + drive
+    const frontSetback = 5;
+    const sideSetback = 2;
+    const rearSetback = 18;
+    
+    // Building footprint: sized to fit max GFA in single story, with realistic proportions
+    const targetFootprintSqm = maxGfaSqft * 0.092903; // sqft to sqm
+    const bldgDepth = Math.min(envHeight - frontSetback - rearSetback, 25); // ~80ft max depth
+    const bldgWidth = Math.min(envWidth - 2 * sideSetback, targetFootprintSqm / bldgDepth);
+    
+    const bldgX = envBbox.minX + sideSetback;
+    const bldgY = envBbox.minY + frontSetback;
+    
+    const buildingGeom: Polygon = {
+      type: 'Polygon',
+      coordinates: [[
+        [bldgX, bldgY],
+        [bldgX + bldgWidth, bldgY],
+        [bldgX + bldgWidth, bldgY + bldgDepth],
+        [bldgX, bldgY + bldgDepth],
+        [bldgX, bldgY],
+      ]],
+    };
+    
+    const actualFootprintSqft = (bldgWidth * bldgDepth) / 0.092903;
     
     const plateElement: Element = {
-      id: 'commercial-plate-1',
+      id: 'commercial-bldg-1',
       type: 'building',
-      name: 'Retail Plate',
-      geometry: plateGeometry,
+      name: 'Retail Building',
+      geometry: buildingGeom,
       properties: {
-        heightFt: snapshot.solver_brief.hard_constraints.max_height_ft ?? 30,
+        heightFt: snapshot.solver_brief.hard_constraints.max_height_ft ?? 20,
         floors: 1,
-        gfaSqft: maxGfaSqft,
+        gfaSqft: Math.min(actualFootprintSqft, maxGfaSqft),
         use: 'commercial',
         typology: 'retail',
         styleOverride: true,
         color: '#FEF3C7',
-        opacity: 0.8,
+        opacity: 0.85,
         strokeColor: '#F59E0B',
       },
       metadata: meta,
     };
+    generatedElements.push(plateElement);
     
-    const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && el.id !== 'commercial-plate-1');
+    // Parking field: rear of building
+    const parkingY = bldgY + bldgDepth + 1; // 1m (~3ft) gap
+    const parkingDepth = envBbox.maxY - parkingY - 2; // leave 2m for rear buffer
     
-    // Commercial plate metrics
+    if (parkingDepth > 5) {
+      // Standard retail parking: ~1 stall per 300 SF
+      const parkingNeeded = Math.ceil(maxGfaSqft / 300);
+      
+      const parkingGeom: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [bldgX, parkingY],
+          [bldgX + bldgWidth, parkingY],
+          [bldgX + bldgWidth, parkingY + parkingDepth],
+          [bldgX, parkingY + parkingDepth],
+          [bldgX, parkingY],
+        ]],
+      };
+      
+      const parkingElement: Element = {
+        id: 'commercial-parking-1',
+        type: 'parking',
+        name: `Parking · ${parkingNeeded} stalls`,
+        geometry: parkingGeom,
+        properties: {
+          parkingType: 'surface',
+          stallCount: parkingNeeded,
+          styleOverride: true,
+          color: '#E5E7EB',
+          opacity: 0.7,
+          strokeColor: '#9CA3AF',
+        },
+        metadata: meta,
+      };
+      generatedElements.push(parkingElement);
+      
+      // Drive aisle along side of parking
+      const driveWidth = 6; // ~20ft drive aisle
+      const driveGeom: Polygon = {
+        type: 'Polygon',
+        coordinates: [[
+          [bldgX - driveWidth, bldgY],
+          [bldgX, bldgY],
+          [bldgX, parkingY + parkingDepth],
+          [bldgX - driveWidth, parkingY + parkingDepth],
+          [bldgX - driveWidth, bldgY],
+        ]],
+      };
+      
+      const driveElement: Element = {
+        id: 'commercial-drive-1',
+        type: 'circulation',
+        name: 'Access Drive',
+        geometry: driveGeom,
+        properties: {
+          circulationType: 'drive',
+          styleOverride: true,
+          color: '#D1D5DB',
+          opacity: 0.8,
+          strokeColor: '#6B7280',
+        },
+        metadata: meta,
+      };
+      generatedElements.push(driveElement);
+    }
+    
+    const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el) && !el.id.startsWith('commercial-'));
+    
+    // Commercial metrics
     const plateMetrics = {
-      totalBuiltSF: maxGfaSqft,
-      siteCoveragePct: 0, // Not calculated for commercial
+      totalBuiltSF: Math.min(actualFootprintSqft, maxGfaSqft),
+      siteCoveragePct: 0,
       achievedFAR: maxFar ?? 0,
       parkingRatio: 0,
       openSpacePct: 0,
       totalUnits: 0,
-      unitMixSummary: `${maxGfaSqft.toLocaleString()} SF retail plate`,
+      unitMixSummary: `${Math.round(Math.min(actualFootprintSqft, maxGfaSqft)).toLocaleString()} SF retail`,
       zoningCompliant: true,
       violations: [] as string[],
       warnings: [],
-      optimizationStatus: 'commercial_plate',
+      optimizationStatus: 'commercial_retail_schematic',
     } as NonNullable<typeof metrics>;
     
-    setPlanOutput([...base, plateElement], plateMetrics);
+    setPlanOutput([...base, ...generatedElements], plateMetrics);
     setViolations([]);
     setPlanLineage({
       solvedBy: 'client',
       contextId: snapshot.context_id,
-      generatorVersion: 'commercial_plate_v1',
+      generatorVersion: 'commercial_retail_schematic_v1',
       flags: [],
       buildings: 1,
       floors: 1,
-      footprintSqft: maxGfaSqft,
+      footprintSqft: Math.min(actualFootprintSqft, maxGfaSqft),
       standardsDirect: true,
     });
     setPlanStale(false);
     setServerPlanError(null);
     setPlanBasis(
-      `Commercial plate — ${ctx.zoningBase ?? 'zoning'} as-of-right · ` +
-      `${maxGfaSqft.toLocaleString()} SF allowable (FAR ${maxFar?.toFixed(2) ?? '?'} × ${lotSqft?.toLocaleString() ?? '?'} SF lot)`
+      `Single-tenant retail — ${ctx.zoningBase ?? 'zoning'} as-of-right · ` +
+      `${Math.round(Math.min(actualFootprintSqft, maxGfaSqft)).toLocaleString()} SF · ` +
+      `with parking and access`
     );
   }, [envelopeMeters, elements, setPlanOutput, setViolations, setPlanLineage, setPlanStale, setServerPlanError, setPlanBasis]);
 

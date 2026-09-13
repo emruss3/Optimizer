@@ -77,11 +77,12 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   if (buildings.every(b => /^House\b/.test(b.name ?? ''))) return null;
   // Commercial plates (retail/office) have their own capacity card; the
   // "apartments" vocabulary would misdescribe them.
-  const isCommercial = buildings.some(b => 
-    b.id === 'commercial-plate-1' || 
-    (b.properties?.use as string | undefined) === 'commercial'
-  );
-  if (isCommercial) return null;
+    const isCommercial = buildings.some(b => 
+      b.id === 'commercial-plate-1' || 
+      b.id.startsWith('commercial-bldg-') ||
+      (b.properties?.use as string | undefined) === 'commercial'
+    );
+    if (isCommercial) return null;
 
   const storiesOf = (b: Element) =>
     Math.max(1, Math.floor(((b.properties?.floors as number) || (b.properties?.stories as number) || 1)));
