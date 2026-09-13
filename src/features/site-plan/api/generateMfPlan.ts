@@ -477,7 +477,10 @@ export function seedFamilyPlanToElements(
     // can sum one short of the engine's count (server-side rounding) — the
     // sheet must not show 69 under a headline that says 70.
     const mixUnits = mixes ? mixes[i].reduce((s, e) => s + e.count, 0) : null;
-    const unitsHere = structures.length === 1 ? (num(m.units) ?? mixUnits ?? unitsEst) : (mixUnits ?? unitsEst);
+    // RPC uses units_est (aliased via gfa_sqft/units_est path): when present,
+    // use it — never invent from footprint when the engine sent the truth.
+    const unitsFromMetrics = num(m.units_est) ?? num(m.units);
+    const unitsHere = structures.length === 1 ? (unitsFromMetrics ?? mixUnits ?? unitsEst) : (mixUnits ?? unitsEst);
     elements.push({
       id: `${prefix}-bldg-${b.structure_id ?? i + 1}`,
       type: 'building',
