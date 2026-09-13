@@ -332,11 +332,13 @@ export interface SeedFamilyAccess {
 }
 export interface SeedFamilyGreen {
   geom_2274?: SeedFamilyGeom | null;
+  geom?: SeedFamilyGeom | null;
   area_sqft?: number | null;
   kind?: string | null;
 }
 export interface SeedFamilyAmenity {
   geom_2274?: SeedFamilyGeom | null;
+  geom?: SeedFamilyGeom | null;
   area_sqft?: number | null;
   name?: string | null;
 }
@@ -351,13 +353,15 @@ export interface SeedFamilyResponse {
   buildings?: SeedFamilyStructure[];
   drives?: SeedFamilyDrive[];
   access?: SeedFamilyAccess | null;
-  parking?: SeedFamilyParking | null;
+  /** RPC contract: parking can be Array<{geom, stalls}> OR {bays: [...], stalls: N} */
+  parking?: SeedFamilyParking | Array<{ geom_2274?: SeedFamilyGeom | null; geom?: SeedFamilyGeom | null; stalls?: number | null; area_sqft?: number | null }> | null;
   greens?: SeedFamilyGreen[] | null;
   amenity?: SeedFamilyAmenity[] | null;
   metrics?: {
     gsf?: number | null;
     units?: number | null;
     stalls?: number | null;
+    stalls_required?: number | null;
     stories?: number | null;
     capture_pct?: number | null;
     parking_limited?: boolean | null;
@@ -499,27 +503,39 @@ export function seedFamilyPlanToElements(
     } as Element);
   });
 
-  // Parking bays: accept geom_2274 OR fallback to geom (EPSG:2274, same as buildings)
-  const bays = (resp.parking?.bays ?? []).filter(b => {
+  // Parking: accept EITHER array directly OR structured object with bays
+  // RPC contract: parking can be Array<{geom, stalls}> OR {bays: [...], stalls: N}
+  const parkingRaw = resp.parking as unknown;
+  const parkingArray = Array.isArray(parkingRaw) 
+    ? parkingRaw 
+    : (parkingRaw as { bays?: unknown[] } | null)?.bays ?? [];
+  
+  const bays = parkingArray.filter((b: unknown) => {
     const bay = b as { geom_2274?: unknown; geom?: unknown } | null | undefined;
     return bay?.geom_2274 || bay?.geom;
   });
-  const totalBayArea = bays.reduce((a, b) => a + (num(b.area_sqft) ?? 0), 0);
-  const stallsTotal = num(resp.parking?.stalls) ?? num(m.stalls) ?? 0;
-  bays.forEach((b, i) => {
+  
+  const totalBayArea = bays.reduce((a, b: { area_sqft?: unknown }) => a + (num(b.area_sqft) ?? 0), 0);
+  const stallsTotal = Array.isArray(parkingRaw)
+    ? bays.reduce((sum: number, b: { stalls?: unknown }) => sum + (num(b.stalls) ?? 0), 0)
+    : (num((parkingRaw as { stalls?: unknown } | null)?.stalls) ?? num(m.stalls) ?? 0);
+  
+  bays.forEach((b: unknown, i: number) => {
     let poly: Polygon;
     try {
-      const bay = b as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom };
-      // Use geom_2274 if present; fallback to geom (EPSG:2274)
-      const geom2274 = bay.geom_2274 ?? bay.geom;
-      poly = seedTo3857(geom2274 as Polygon);
+      const bay = b as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom; stalls?: number; area_sqft?: number };
+      // Accept geom_2274 OR geom fallback (both EPSG:2274)
+      const geomSrc = bay.geom_2274 ?? bay.geom;
+      if (!geomSrc) return;
+      poly = seedTo3857(geomSrc as Polygon);
     } catch {
       return;
     }
-    const share = totalBayArea > 0 ? (num(b.area_sqft) ?? 0) / totalBayArea : 1 / bays.length;
-    // the aisle-first seed counts each band's stalls itself; older payloads
-    // are shared out by area
-    const stalls = typeof b.stalls === 'number' && b.stalls >= 0 ? Math.round(b.stalls) : Math.max(0, Math.round(stallsTotal * share));
+    const share = totalBayArea > 0 ? (num((b as { area_sqft?: unknown }).area_sqft) ?? 0) / totalBayArea : 1 / bays.length;
+    // Direct array: use bay's own stalls. Structured: apportion by area.
+    const stalls = typeof (b as { stalls?: number }).stalls === 'number' && (b as { stalls?: number }).stalls! >= 0
+      ? Math.round((b as { stalls?: number }).stalls!)
+      : Math.max(0, Math.round(stallsTotal * share));
     elements.push({
       id: `${prefix}-park-${i + 1}`,
       type: 'parking',
@@ -542,11 +558,11 @@ export function seedFamilyPlanToElements(
     ...structures.map(b => {
       try { return seedTo3857(b.geom_2274 as Polygon); } catch { return null; }
     }),
-    ...bays.map(b => {
+    ...bays.map((b: unknown) => {
       try { 
         const bay = b as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom };
-        const geom2274 = bay.geom_2274 ?? bay.geom;
-        return seedTo3857(geom2274 as Polygon); 
+        const geomSrc = bay.geom_2274 ?? bay.geom;
+        return geomSrc ? seedTo3857(geomSrc as Polygon) : null;
       } catch { return null; }
     }),
   ].filter((p): p is Polygon => p != null)
@@ -628,42 +644,46 @@ export function seedFamilyPlanToElements(
   // courtyard geometry and open space render on canvas. designed_court_sf is
   // receipt-only metadata — court polygons live in greens[] with geom_2274.
   (resp.greens ?? []).forEach((g, idx) => {
-    if (!g?.geom_2274) return;
+    const green = g as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom; kind?: string | null; area_sqft?: number | null } | null | undefined;
+    const geomSrc = green?.geom_2274 ?? green?.geom;
+    if (!geomSrc) return;
     let poly: Polygon;
     try {
-      poly = seedTo3857(g.geom_2274 as Polygon);
+      poly = seedTo3857(geomSrc as Polygon);
     } catch {
       return;
     }
     elements.push({
       id: `${prefix}-green-${idx + 1}`,
       type: 'greenspace',
-      name: g.kind === 'courtyard' || g.kind === 'court' ? 'Courtyard' : 'Open space',
+      name: green.kind === 'courtyard' || green.kind === 'court' ? 'Courtyard' : 'Open space',
       geometry: poly,
       properties: { 
-        areaSqFt: num(g.area_sqft) ?? undefined,
+        areaSqFt: num(green.area_sqft) ?? undefined,
         color: '#86EFAC',
-        ...(g.kind ? { kind: g.kind } : {}),
+        ...(green.kind ? { kind: green.kind } : {}),
       },
       metadata: meta,
     } as Element);
   });
 
   (resp.amenity ?? []).forEach((a, idx) => {
-    if (!a?.geom_2274) return;
+    const amenity = a as { geom_2274?: SeedFamilyGeom; geom?: SeedFamilyGeom; name?: string | null; area_sqft?: number | null } | null | undefined;
+    const geomSrc = amenity?.geom_2274 ?? amenity?.geom;
+    if (!geomSrc) return;
     let poly: Polygon;
     try {
-      poly = seedTo3857(a.geom_2274 as Polygon);
+      poly = seedTo3857(geomSrc as Polygon);
     } catch {
       return;
     }
     elements.push({
       id: `${prefix}-amenity-${idx + 1}`,
       type: 'building',
-      name: a.name ?? 'Clubhouse',
+      name: amenity.name ?? 'Clubhouse',
       geometry: poly,
       properties: { 
-        areaSqFt: num(a.area_sqft) ?? undefined, 
+        areaSqFt: num(amenity.area_sqft) ?? undefined, 
         floors: 1, 
         stories: 1, 
         use: 'amenity', 
@@ -675,8 +695,14 @@ export function seedFamilyPlanToElements(
 
   const gsf = num(m.gsf);
   const units = num(m.units);
-  const stalls = num(m.stalls) ?? num(resp.parking?.stalls);
-  const stallsRequired = num(resp.parking?.stalls_required_at_placed) ?? num(resp.parking?.stalls_required);
+  
+  // Stalls: read from metrics first, then parking (array or structured)
+  const stallsFromParking = Array.isArray(parkingRaw)
+    ? parkingRaw.reduce((sum: number, p: { stalls?: unknown }) => sum + (num(p.stalls) ?? 0), 0)
+    : num((parkingRaw as { stalls?: unknown } | null)?.stalls);
+  const stalls = num(m.stalls) ?? stallsFromParking ?? 0;
+  const stallsRequired = num(m.stalls_required) ?? num((parkingRaw as { stalls_required_at_placed?: unknown; stalls_required?: unknown } | null)?.stalls_required_at_placed) ?? num((parkingRaw as { stalls_required?: unknown } | null)?.stalls_required) ?? 0;
+  
   const metrics: SiteMetrics | null = gsf
     ? ({
         totalBuiltSF: gsf,
@@ -693,10 +719,10 @@ export function seedFamilyPlanToElements(
         violations: [],
         warnings: [],
         zoningCompliant: true,
-        parkingPctOfPlacedNeed: num(resp.parking?.pct_of_placed_need) ?? undefined,
-        parkingPctOfMaxNeed: num(resp.parking?.pct_of_max_need) ?? undefined,
-        parkingStallsTargetAtMax: num(resp.parking?.stalls_target_at_max) ?? undefined,
-        parkingStrategy: resp.parking?.strategy ?? undefined,
+        parkingPctOfPlacedNeed: num((parkingRaw as { pct_of_placed_need?: unknown } | null)?.pct_of_placed_need) ?? undefined,
+        parkingPctOfMaxNeed: num((parkingRaw as { pct_of_max_need?: unknown } | null)?.pct_of_max_need) ?? undefined,
+        parkingStallsTargetAtMax: num((parkingRaw as { stalls_target_at_max?: unknown } | null)?.stalls_target_at_max) ?? undefined,
+        parkingStrategy: (parkingRaw as { strategy?: string } | null)?.strategy ?? undefined,
         parkingLimited: m.parking_limited === true,
         capturePct: num(m.capture_pct) ?? undefined,
       } as SiteMetrics)
