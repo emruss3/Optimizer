@@ -1052,3 +1052,202 @@ longer parking-limited because the seed now meets the need it was asked for.
   but fussy; a designer would landscape them.
 - Landlocked strips still get no reserved lane in the placer (§16), so the
   seed's connector does that work from the easement end alone.
+
+## 19. The Texas wrap: units round a garage, a court on the deck (2026-10-07)
+
+Eric sent the full plan set for **The Caroline, 101 Cool Springs Blvd,
+Franklin** (Kimley-Horn civil C0.0–C5.0 and L1.0, 906 Studio architectural
+A1.0–A4.0, development-plan resubmittal 3/7/2024) as "an example set of
+plans for a Texas wrap multifamily product". It is now the exemplar for a new
+plan pattern, and a generator draws that organization on Nashville parcels.
+
+### What the Caroline shows
+
+- **Site.** 2.906 ac (126,583 SF), RC-6 rezoned to PD at 65.4 DU/ac with
+  3,607 SF of commercial; 15-ft setbacks all round; 6 stories, Type VA over a
+  Type IA podium, 68'-5" to a 70-ft limit; landscape surface ratio 25%.
+- **One block, to the setbacks.** The building is 303 × 243 ft (72,070 SF per
+  floor) — 57% of the site. The rest is an L of private drives down the side
+  and across the rear (22-ft joint ingress/egress easement), the landscape
+  frontage on Cool Springs Blvd and the perimeter buffers. No curb cut on
+  the arterial: the site is entered from the perpendicular private drive.
+- **A two-level garage in the middle**, tucked into the 22-ft fall of the
+  site (levels at 692 and 703 ft; units start at 714). 148 + 166 = 314 stalls
+  inside, 18 visitor stalls outside parallel to the drives, 332 for a
+  requirement of 330 (1.5 per studio/1BR, 2.5 per 2BR, 3.33 per 1,000 SF of
+  commercial, a shared-parking reduction of 27). About 380 SF per stall per
+  level, 1.72 stalls per unit. Garage entries off the side drive and the rear
+  easement; the trash room is inside level 1 (mini roll-out dumpsters).
+- **Four double-loaded bars ring the courtyard on the deck** — a pool and
+  patio inside the ring, club (3,113 SF), fitness (1,795), lobby (1,721) and
+  leasing (3,980) at the street corner with the commercial. Liner units face
+  the drives and the street at the garage levels.
+- **190 units**: 12% studios (22, 617 SF), 66% 1BR (125, 852 SF), 22% 2BR
+  (43, 1,187 SF). Fire: Franklin Tower 2 autoturn on the perimeter drives,
+  fire-lane striping, standpipes.
+
+The organizing moves hold on any compact site of 2–5 acres where the parking
+regime is structured: block to the setbacks, drives round two sides, garage
+in the middle, ring on the deck. They are recorded as `site_plan_exemplar`
+row "The Caroline — 101 Cool Springs Blvd" (program JSON and six principles)
+and read back by `fn_plan_pattern` for every parcel whose pattern or
+alternates include the wrap.
+
+### The pattern layer
+
+`fn_plan_pattern` has a new branch ahead of `podium_tower`: multifamily
+as-of-right, **structured** parking regime, ≥ 1.75 ac, oriented-bounding-box
+aspect ≤ 2.4, short side ≥ 290 ft (two 67-ft bars, a 70-ft court, a 26-ft
+lane and the setbacks), stories allowed ≤ 8 → `wrap_garage_courtyard`,
+alternates `podium_tower` and `court_scheme_perpendicular_bars`, six
+principles in deal language, generator `fn_generate_wrap_site_plan`,
+aligned. `podium_tower` and the court scheme now name the wrap as an
+alternate. The selection basis carries `stories_allowed`. The RM40/RM20
+battery parcels are unchanged (553450 / 667574 court scheme, 669046
+landlocked bar, 488278 frontage bar): the rule is structured-regime only.
+
+Across the mixed-use and office districts (MUG, MUG-A, MUI, MUI-A, ORI, MUN,
+CS, CL, DTC, OR20/40) 531 Nashville parcels of 1.75–6 ac meet the shape
+test; the regime test narrows that to the ones whose FAR puts them in the
+structured regime.
+
+### What the generator does (`fn_generate_wrap_site_plan`, wrap_v1)
+
+In the frontage frame (a along the longest straight run of the primary
+frontage, n inward; a second frame on the lot's own axis is tried when the
+lot sits more than 8° off the street):
+
+1. **The lot lines, read in the frame.** Boundary segments that run with n
+   are side lines (left or right by where they sit), segments that run with
+   a in the back 40% of the lot are the rear line; the primary frontage's
+   straight run is taken out first, so a block lot with streets all round
+   keeps its other street edges as "lot lines" — the Caroline's rear drive
+   is an easement along such an edge.
+2. **The L of drives.** For each of twelve candidates (side + rear drives;
+   drives down both sides; one side drive, allowed only when the block's
+   rear wall stays within 150 ft of the street; each on the left and the
+   right, with and without an 8-ft visitor strip) the land the drives take
+   is reserved as a buffer *along the lot lines* — a 26-ft lane 3 ft in
+   from the line plus a 2-ft clear — and the largest rectangle square to the
+   frame is found inside the setback envelope less that land
+   (`fn_frame_inscribed_rect`: grid search over a, the front edge at the
+   front setback where it fits, the depth by bisection). The rectangle must
+   clear two bars and a 70-ft court each way, falling back to the site
+   standards' 40-ft minimum court; the candidate with the largest **ring**
+   (block less court) wins, and a candidate that gives up a drive must beat
+   the one before it by a quarter. Reserving the land along the lot lines
+   rather than in a straight band is what makes a slanted or bent lot line
+   work: the block clears a full lane everywhere, so the drives can then
+   hug the block (the side drive from the curb to just past the block's
+   rear, the rear drive along the rear wall out to the side drive, meeting
+   edge to edge) with the wedge between drive and lot line left as buffer —
+   the Caroline's organization exactly.
+3. **The ring and the court.** Four bars at the unit program's bar depth
+   (67.3 ft) round the block; the court inside. Pool deck in the court on
+   the street side beside the entry drive; the rest open space.
+4. **The garage** under everything but the frontage bar (liner units,
+   leasing, any retail face the street at those levels), at 370 SF per
+   stall per level. Levels to the need (1–3): units = GSF × 0.88 / the
+   frontier's average unit GSF, capped by the district's density; stalls at
+   the typology's ratio for that unit size; the top level is partial when a
+   full deck would over-park by more than 5% (flagged
+   `garage_top_level_partial_N_of_M_stalls`); a plan still short at three
+   levels is parking-limited exactly as the seed is. Stories = garage +
+   residential to the district's limit (3–8).
+5. **Capture** is stated against the frontier's **structured-parking
+   ceiling** (FAR / height / density, no parking land) when it carries one;
+   the surface frontier is the wrong yardstick for a garage plan and travels
+   as `capture_vs_surface_frontier_pct`. Capture under 50% and a court under
+   70 ft are flagged.
+6. **Entries.** The curb cut is where the side drive meets the frontage; the
+   garage is entered off the side drive near the rear corner and off the
+   rear drive — never from the frontage.
+
+The payload is the seed family: `buildings[]` are the four bars (`kind`
+`wrap_bar`, `name`, `residential_levels`, `over_garage`), `parking.garage`
+the structure (footprint, levels, stalls per level, capacity, entries),
+`parking.bays` the visitor strip, `drives[]` the L (`access` and
+`fire_lane`), `greens[]` the court, `amenity[]` the pool deck, metrics with
+`garage_levels`, `residential_levels`, `far`, `coverage_pct`,
+`density_du_ac`, `court_sqft`, `block_ft` and the ceilings; `plan_basis`
+reads "232425 GSF wrap plan @ 5 st (2 garage + 3 residential) · 54.8% of
+423765 structured ceiling · block 323 × 280 ft (63.9% of the site) · court
+188 × 145 · 131 units @ ~1550 GSF · 238/226 stalls (2 garage levels × 185 +
+0 outside) · access: side drive + rear drive · generator: wrap_v1 ·
+exemplar: The Caroline, 101 Cool Springs Blvd".
+
+The dispatcher (`fn_generate_mf_site_plan_v2`) serves the wrap plan when the
+pattern is `wrap_garage_courtyard` and falls through to the court search /
+seed when the generator refuses (`wrap_block_too_small`). That migration
+carries the live 2026-09-13 dispatcher body into the repository for the
+first time (see the drift note in the file; §16 of this audit and PR #111
+record the court-pattern regression it brought).
+
+### What it produces
+
+Seven candidate parcels (`qa/audits/2026-10-07/wrap_seven_parcels.png`):
+
+| parcel | district · acres | block (ft) · % of site | court | stories | units | GSF | stalls built / required | capture of structured ceiling | access |
+|---|---|---|---|---|---|---|---|---|---|
+| 2221 Murphy Ave (407697) | MUG-A · 3.70, corner | 396 × 295 · 72% | 261 × 160 | 5 (2 + 3) | 157 | 277,706 | 285 / 271 | 57.4% | side + rear, left |
+| 535 Main St (469303) | MUG-A · 3.24, corner | 323 × 280 · 64% | 188 × 145 | 5 (2 + 3) | 131 | 232,425 | 238 / 226 | 54.8% | side + rear, right |
+| 1023 21st Ave N (553602) | MUG · 2.88, streets all round | 307 × 268 · 66% | 172 × 134 | 5 (2 + 3) | 124 | 219,188 | 225 / 214 | 58.2% | side + rear, right |
+| 1019 18th Ave S (668798) | ORI · 3.15 | 450 × 216 · 71% | 316 × 82 | 5 (2 + 3) | 156 | 275,306 | 284 / 270 | 66.8% | side + rear, left |
+| 0 Cumberland Bnd (679320) | MUG · 3.36, curved frontage | 211 × 251 · 36% | 76 × 116 | 5 (2 + 3) | 91 | 160,531 | 165 / 157 | 36.6% (flagged) | side + rear, left |
+| 2135 Waterside Dr (707762) | MUI-A · 2.82, 262 ft deep | 300 × 177 · 43% | 165 × 42 (flagged) | 7 (3 + 4) | 138 | 244,694 | 251 / 239 | 39.9% (flagged) | both sides |
+| 1200 18th Ave S (662787) | ORI · 3.35, a 160-ft strip | refused: `wrap_block_too_small` — the pattern layer says `podium_tower` here, so the dispatcher never asks | | | | | | | |
+
+The Caroline for comparison: block 303 × 243 at 57% of 2.9 ac, 6 stories
+(2 + 4), 190 units, 1.72 stalls per unit. Our plans run 1.7–1.8 stalls per
+unit at 1,550-SF average units (the frontier's GSF-max option), 40–50 units
+per acre, five stories where the districts allow five. Waterside Dr is the
+case the 290-ft short-side rule now keeps out of the pattern: its 177-ft
+block leaves a 42-ft court, which is a light well, not a courtyard.
+
+### Client
+
+- `PATTERN_LABELS`: "Texas wrap: units wrapping a garage, courtyard on the
+  deck".
+- The seed-family mapper names the bars by their place in the ring
+  ("Frontage bar · 5 stories · 40 units"), shares the server's mix across
+  them by GSF, and adds the garage as a **structured** parking element
+  (dashed outline, "Garage · 2 lvl · 238 stalls", no surface stripes), the
+  court as open space and the pool deck as an amenity; `fire_lane` drives
+  carry their names ("Rear drive"); block coverage and FAR reach the KPI
+  strip.
+- The zero-overlap gate excludes a structured garage the way it excludes
+  greenspace: the deck is the same mass as the bars standing on it, not
+  parking under a building.
+- Battery: 535 Main St (469303) joins the fixture gate (`mode: server-plan`,
+  `requirePlanPattern: wrap_garage_courtyard`, `requireAccess`, utilization
+  floor 110% of the surface frontier); `ONLY_FID` runs one battery parcel.
+- A canvas crash found on the way: `SitePlanCanvas` has used `corridorLine`
+  without importing it since 2026-09-04 (ec5905a), so every building without
+  a unit mix — the single-family house on 303 E Palestine Ave, and now the
+  wrap's pool deck — threw in `renderBuildingDetail` and the sheet showed the
+  error boundary while the headline, the KPIs and the tabulation rendered.
+  The fixture gate passed because the evidence hook reads the workspace, not
+  the canvas, and `npm run typecheck` runs `tsc --noEmit` against the
+  solution-style `tsconfig.json` (`files: []`), which checks nothing; the app
+  config (`tsconfig.app.json`) carries hundreds of pre-existing
+  `exactOptionalPropertyTypes` errors, so the missing import never surfaced.
+  Fixed (the import), and the battery now fails any parcel whose sheet shows
+  "Site Planner Error" (`qa/audits/2026-10-07/393306_house_after_canvas_fix.png`).
+
+### Still open
+
+- **Corner lots.** The side drive runs inside the lot along the secondary
+  street and the curb cut lands at the lot corner (Murphy Ave, Main St); a
+  corner lot should enter from the secondary street mid-block and may not
+  need the drive at all where the street itself is the fire access.
+- **Dead ends.** The rear drive ends at the far lot line; the Caroline's
+  loops through the adjoining property. A hammerhead or a loop round the
+  block is the fire marshal's ask on anything over 150 ft.
+- **Liner program.** The frontage bar's garage levels count as residential
+  GSF; the Caroline puts leasing, club and 3,607 SF of commercial there.
+- **Grade.** The Caroline tucks its garage into 22 ft of fall; the generator
+  draws the deck flat. The DEM is already on the sheet (§15) and could set
+  which garage levels are below grade.
+- **Capture on odd lots.** Cumberland Bnd gets 36% of its structured ceiling
+  because the inscribed rectangle leaves the curved half of the lot empty; a
+  second block, or a bar along the curve, is the next generator move.
