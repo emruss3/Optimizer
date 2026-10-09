@@ -54,6 +54,20 @@
     "_access": "2026-09-09 aisle-first: the entry drive runs straight down the flag pole to a 24-ft loop round the bar, then two double-loaded aisles south of it (four rows, cut square at 667 ft from the easement), 99 stalls in 6 rows, one connected network.",
     "requirePlanPattern": "landlocked_axis_bar"
   },
+  "469303": {
+    "mode": "server-plan",
+    "minCapturePct": 110,
+    "_basis": "535 Main St (MUG-A, 3.24 ac, corner lot, structured parking regime) - the Texas wrap, wrap_v1 (2026-10-07, exemplar The Caroline, 101 Cool Springs Blvd): one 323 x 280 ft block to the setbacks (64% of the site), four 67-ft bars round a 188 x 145 court on a 2-level garage (185 stalls per level; 238 built for the 226 required, the top level partial), 5 stories = 2 garage + 3 residential, 131 units, 232,425 GSF. The basis line states capture against the STRUCTURED ceiling (54.8% of 423,765); the number this gate reads is the KPI utilization against the surface frontier (232,425 / 199,950 = 116%) - a garage plan clears the surface-parked frontier by construction, and the floor ratchets UP from here.",
+    "requireBriefEnvelope": true,
+    "requireNeighborLayers": {
+      "parcels": true,
+      "buildings": true
+    },
+    "requirePlanPattern": "wrap_garage_courtyard",
+    "requirePatternAligned": true,
+    "requireAccess": true,
+    "_access": "the L of drives: the side drive from the Main St curb along the right lot line to just past the block, the rear drive along the block's rear wall out to it (edge to edge, never overlapping). The garage is the one parking element the access check sees (no visitor strip fits beside this block) and the side drive touches it; the deck is marked structured so the zero-overlap gate reads the bars standing on it as the same mass."
+  },
   "393306": {
     "mode": "sf-suggestion",
     "_basis": "303 E Palestine Ave RS10 - MF refusal carries suggested_typology single_family ('envelope fits a house (3076 sqft, 28.8 ft wide)'); tap renders the 1,236 sf house + driveway (sf_seed_v1)",

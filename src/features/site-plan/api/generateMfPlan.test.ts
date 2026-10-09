@@ -608,3 +608,124 @@ describe('legacy mapper defense (Eric console crash 2026-08-04)', () => {
     expect(Array.isArray(r.elements)).toBe(true);
   });
 });
+
+// ── the wrap (2026-10-07): bars round a garage, a court on the deck ──────────
+import { patternLabel } from './planPattern';
+import { mfAccessSummary } from './mfAccess';
+
+const WRAP_RESP: SeedFamilyResponse = {
+  parcel_ogc_fid: 469303,
+  typology: 'multifamily',
+  seed: 1,
+  generator_version: 'wrap_v1',
+  plan_basis:
+    '232425 GSF wrap plan @ 5 st (2 garage + 3 residential) · 54.8% of 423765 structured ceiling · block 323 × 280 ft (63.9% of the site) · court 188 × 145 · 131 units @ ~1550 GSF · 238/226 stalls (2 garage levels × 194 + 0 outside) · access: side drive + rear drive · generator: wrap_v1 · exemplar: The Caroline, 101 Cool Springs Blvd',
+  // the block: 0..323 along the street, 0..280 inward; bars 67 ft deep
+  buildings: [
+    { structure_id: 1, kind: 'wrap_bar', name: 'frontage bar', geom_2274: rect2274(1727000, 670000, 323, 67), footprint_sqft: 21641, gsf: 108205, stories: 5, residential_levels: 5, over_garage: false, is_single_polygon: true },
+    { structure_id: 2, kind: 'wrap_bar', name: 'rear bar', geom_2274: rect2274(1727000, 670213, 323, 67), footprint_sqft: 21641, gsf: 64923, stories: 5, residential_levels: 3, over_garage: true, is_single_polygon: true },
+    { structure_id: 3, kind: 'wrap_bar', name: 'side bar', geom_2274: rect2274(1727000, 670067, 67, 146), footprint_sqft: 9782, gsf: 29346, stories: 5, residential_levels: 3, over_garage: true, is_single_polygon: true },
+    { structure_id: 4, kind: 'wrap_bar', name: 'side bar', geom_2274: rect2274(1727256, 670067, 67, 146), footprint_sqft: 9782, gsf: 29346, stories: 5, residential_levels: 3, over_garage: true, is_single_polygon: true },
+  ],
+  drives: [
+    { kind: 'access', name: 'Side drive', geom_2274: rect2274(1727325, 669980, 26, 328), area_sqft: 8528, lane_ft: 26,
+      entry_2274: { type: 'Point', coordinates: [1727338, 669980] },
+      spine_2274: { type: 'LineString', coordinates: [[1727338, 669980], [1727338, 670295]] } },
+    // the rear drive stops at the side drive's edge: the L meets, never overlaps
+    { kind: 'fire_lane', name: 'Rear drive', geom_2274: rect2274(1726972, 670282, 353, 26), area_sqft: 9178, lane_ft: 26 },
+  ],
+  access: { side: 'right', lane_ft: 26 },
+  parking: {
+    strategy: 'wrap_garage',
+    stalls: 238, stalls_required: 226, stalls_required_at_placed: 226, stalls_target_at_max: 412,
+    pct_of_placed_need: 105.3, pct_of_max_need: 57.8,
+    bays: [],
+    garage: { geom_2274: rect2274(1727000, 670067, 323, 213), area_sqft: 68799, levels: 2, stalls_per_level: 194, capacity_stalls: 388, stalls: 238, sf_per_stall: 370 },
+  },
+  greens: [{ name: 'Courtyard on the garage deck', geom_2274: rect2274(1727067, 670134, 189, 79), area_sqft: 27324 }],
+  amenity: [{ name: 'Pool deck', geom_2274: rect2274(1727180, 670146, 60, 30), area_sqft: 1800 }],
+  metrics: {
+    gsf: 232425, units: 131, stalls: 238, stories: 5, garage_levels: 2, residential_levels: 3,
+    capture_pct: 54.8, capture_vs_surface_frontier_pct: 116.2, parking_limited: false, far: 1.65, coverage_pct: 63.9, density_du_ac: 40.5,
+    mix: [
+      { pct: 10, type: 'studio', units: 13 },
+      { pct: 40, type: '1br', units: 52 },
+      { pct: 35, type: '2br', units: 45 },
+      { pct: 15, type: '3br', units: 19 },
+    ],
+  },
+  flags: ['wrap_v1_deterministic', 'pattern_wrap_garage_courtyard', 'garage_top_level_partial_44_of_194_stalls'],
+};
+
+describe('the wrap payload (wrap_v1) rides the seed family', () => {
+  it('is the seed family — native 2274 structures', () => {
+    expect(isSeedFamilyResponse(WRAP_RESP)).toBe(true);
+  });
+
+  it('renders the four bars by their place in the ring, the garage as a structured deck, the court and the pool', () => {
+    const { elements, metrics, basis, flags } = seedFamilyPlanToElements(WRAP_RESP);
+
+    const bars = elements.filter(e => e.type === 'building' && e.properties?.use === 'residential');
+    expect(bars).toHaveLength(4);
+    expect(bars.map(b => b.name)).toEqual([
+      expect.stringMatching(/^Frontage bar · 5 stories · \d+ units$/),
+      expect.stringMatching(/^Rear bar · 5 stories · \d+ units$/),
+      expect.stringMatching(/^Side bar · 5 stories · \d+ units$/),
+      expect.stringMatching(/^Side bar · 5 stories · \d+ units$/),
+    ]);
+    // the server's mix is shared across the bars by GSF — the plan's units, exactly
+    const unitsOnSheet = bars.reduce((s, b) => s + (b.properties?.unitMix as Array<{ count: number }>).reduce((t, u) => t + u.count, 0), 0);
+    expect(unitsOnSheet).toBe(129); // the mix rows sum to 129 (server rounding), never re-reconciled
+    expect(bars[0].properties?.overGarage).toBe(false);
+    expect(bars[1].properties?.overGarage).toBe(true);
+    expect(bars[1].properties?.residentialLevels).toBe(3);
+
+    const garage = elements.find(e => e.id === 'mfgen-garage');
+    expect(garage?.type).toBe('parking');
+    expect(garage?.name).toBe('Garage · 2 levels · 238 stalls');
+    expect(garage?.properties?.structured).toBe(true);
+    expect(garage?.properties?.levels).toBe(2);
+    expect(garage?.properties?.parkingSpaces).toBe(238);
+    expect(garage?.properties?.dashed).toBe(true);
+
+    const court = elements.find(e => e.type === 'greenspace');
+    expect(court?.name).toBe('Courtyard on the garage deck');
+    expect(court?.properties?.areaSqFt).toBe(27324);
+    const pool = elements.find(e => e.type === 'building' && e.properties?.use === 'amenity');
+    expect(pool?.name).toBe('Pool deck');
+
+    const drives = elements.filter(e => e.type === 'circulation');
+    expect(drives.map(d => d.name)).toEqual(['Access drive', 'Rear drive']);
+
+    expect(metrics?.totalBuiltSF).toBe(232425);
+    expect(metrics?.totalUnits).toBe(131);
+    expect(metrics?.stallsProvided).toBe(238);
+    expect(metrics?.stallsRequired).toBe(226);
+    expect(metrics?.siteCoveragePct).toBe(63.9);
+    expect(metrics?.achievedFAR).toBe(1.65);
+    expect(metrics?.parkingStrategy).toBe('wrap_garage');
+    expect(metrics?.capturePct).toBe(54.8);
+    expect(basis).toContain('access: side drive + rear drive');
+    expect(flags).toContain('pattern_wrap_garage_courtyard');
+
+    // The garage under the bars is the deck, not an overlap: the gate passes.
+    expect(validatePlanElements(elements).ok).toBe(true);
+    expect(elements.every(isMfPlanElement)).toBe(true);
+  });
+
+  it('the garage has a road: the side drive reaches the curb and touches the deck', () => {
+    const { elements } = seedFamilyPlanToElements(WRAP_RESP);
+    // the parcel line, 3 ft outside the drive's curb end, in the canvas frame
+    const parcel = elements.find(e => e.id === 'mfgen-drive-1')!.geometry.coordinates[0] as number[][];
+    const xs = parcel.map(p => p[0]); const ys = parcel.map(p => p[1]);
+    const ring = [[Math.min(...xs) - 200, Math.min(...ys) - 0.5], [Math.max(...xs) + 100, Math.min(...ys) - 0.5], [Math.max(...xs) + 100, Math.max(...ys) + 100], [Math.min(...xs) - 200, Math.max(...ys) + 100], [Math.min(...xs) - 200, Math.min(...ys) - 0.5]];
+    const a = mfAccessSummary(elements, ring);
+    expect(a.curb).toBe(true);
+    expect(a.bays).toBe(1); // the garage
+    expect(a.served).toBe(1);
+  });
+
+  it('names the pattern in deal language', () => {
+    expect(patternLabel('wrap_garage_courtyard')).toBe('Texas wrap: units wrapping a garage, courtyard on the deck');
+  });
+});

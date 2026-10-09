@@ -64,6 +64,7 @@ export const PATTERN_LABELS: Record<string, string> = {
   bar_on_frontage_rear_field: 'Bar on the frontage, parking field behind',
   court_scheme_perpendicular_bars: 'Perpendicular bars framing courts to the street',
   podium_tower: 'Podium parking with liner units, tower above',
+  wrap_garage_courtyard: 'Texas wrap: units wrapping a garage, courtyard on the deck',
   landlocked_axis_bar: 'Axis bar on a landlocked lot, easement access',
   retail_full_plate: 'Retail: single-tenant full plate at the FAR ceiling',
   retail_stacked_two_tenant: 'Retail: stacked two-tenant (retail below, restaurant + terrace above)',
