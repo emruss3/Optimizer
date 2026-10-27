@@ -1251,3 +1251,113 @@ block leaves a 42-ft court, which is a light well, not a courtyard.
 - **Capture on odd lots.** Cumberland Bnd gets 36% of its structured ceiling
   because the inscribed rectangle leaves the curved half of the lot empty; a
   second block, or a bar along the curve, is the next generator move.
+
+## 20. The by-right subdivision generator (sf_v1) in the product (2026-10-27)
+
+The handoff: `fn_sf_v1_plan(ogc_fid, opt)` and its earthwork exist in the
+Parcelmap database and nothing in the app called them. The app's live
+subdivision path was `fn_generate_subdivision` (§12–§13: 4–8 lots on 12–16
+ac with a quarter to half the land unassigned). The owner's standing
+instruction is **by right by default, from the base district of the
+parcel**: R / RS → `fn_sf_v1_plan`; RM / MUL / SP → attached homes
+(`fn_generate_th_site_plan_v3` once it is faster than its 1–5 minutes; v2
+stays the product default until then); an override is a second, flagged
+answer the user asks for — a lot module, the floodway-only fill scenario,
+setbacks, the entry position — never the default.
+
+### What is wired
+
+- **Routing** (`SiteWorkspace.handleGenerateLots`): the base district from
+  the plan-pattern layer's `selection_basis.zoning_base` (the parcel's
+  zoning string as fallback) goes through `sfV1Route`: `R6`, `RS20`,
+  `R80` … → the by-right generator; `RM20`, `MUL`, `SP` → the attached-home
+  path (unchanged today); anything else → not this path. A `status:
+  'skipped'` answer (no single-family standard for the district, landlocked)
+  is shown with its reason and nothing is drawn over it. Only an
+  unreachable service falls through to the legacy generators, and the strip
+  says so.
+- **The payload** (`api/sfV1Plan.ts`): geometry arrives as WKT in EPSG:2274
+  feet (`street_lines_wkt`, `row_wkt`, `pave_wkt`, `bulbs_wkt`, `lots_wkt`,
+  `pads_wkt`, `drives_wkt`, `open_wkt`, `pond_wkt`, `low_point_wkt`); a
+  small parser (`api/wkt.ts`) turns it into GeoJSON for the same
+  2274 → 4326 → 3857 pipeline every other layer uses. On the sheet: lots as
+  lot-line polygons carrying their kind (standard / edge / corner / pie; the
+  lot module's dimensions only on a standard lot), one house pad per lot
+  (drawn as a plain footprint — no corridor, no unit ticks), the right-of-way
+  band, the pavement and the cul-de-sac bulbs unioned into one street
+  network with the centrelines riding along for the stations and the
+  profile, driveways clipped to the pads, open space by kind (pond in blue,
+  buffer and wetland-side land hatched as greenway, pocket park, interior
+  remnant as the unassigned land it is), the wetlands from
+  `fn_th_v3_site(ogc_fid, flood)->>'nobuild_wkt'`, and the low point as a
+  marker. The gate (§5) passes the generator's own clean plan: lots and the
+  right-of-way are outside the overlap set, the street is one piece.
+- **The headline and the grade** (`ui/SfV1Panel.tsx`): lots, du/ac, pattern
+  (loop / 2 loops / single street / T street / frontage lots), the basis
+  chip (**By right** / **Override**), the flood hold; the numbers (lot
+  module, land split, street length and dead ends, storm pond and low point,
+  floodplain built on, street in wetland, open-space pieces, lots by kind);
+  then **tests as a checklist with their values and limits, fails in red,
+  notes verbatim** — they are the honesty of the answer. The KPI strip
+  carries the fails and the notes as the plan's warnings.
+- **Earthwork** (present when the plan builds in the SFHA or on ground over
+  8% slope): BFE, pad target, fill by component, pad fill min / median /
+  max, lots over 10 ft of fill, the cut (required, what the pond gives, the
+  open floodplain available to cut, the average depth, whether it closes on
+  site), street grade. **The fill-depth view** colours every pad by the fill
+  it needs — under 4 / 4–8 / 8–12 / over 12 ft — when the response carries
+  per-pad fill (read under `pad_fill_ft_by_lot`, `pad_fills_ft` or
+  `pads[].fill_ft`); when it carries only the min / median / max, the panel
+  says so and the pads keep their plan colour.
+- **The override control**: a lot module (width, depth, minimum lot area),
+  the fill scenario (`{"flood":"floodway"}`, holding out only the regulatory
+  floodway) and a **By right** reset. Every override re-runs the generator
+  and the result is labelled an override; a new parcel starts by right.
+- Evidence for the battery (`window.__planEvidence.sfV1`): status, lots,
+  pattern, basis, flood hold, fails, test and note counts, earthwork and
+  fill-view flags, density.
+
+### Not done, and why
+
+The Supabase connector refused every call during this work ("You do not
+have permission to perform this action", including plain reads), so nothing
+below could be checked against the live function. Each is written to fail
+soft until it is.
+
+1. **The payload shape is from the handoff, not from a live call.** The
+   client tolerates `tests` as a list or an object keyed by id, finds `fails`
+   from the failed tests when the list is absent, and looks for per-pad fill
+   under three plausible keys. The first live response for 682644 (R8 loop,
+   24 lots) must be read and the types tightened; `fn_sf_v1_draw` exposes
+   the same layers under the scratchpad renderer's names if that is easier.
+2. **Access.** The handoff says to call the generator with the service role;
+   the app calls RPCs with the anon key like every other generator. The
+   function (and `fn_th_v3_site`) needs `GRANT EXECUTE` to `anon` /
+   `authenticated` and `SECURITY DEFINER` (it reads `hazard_flood_2274`,
+   `parcel_topo`, `flood_bfe_2274`, `jurisdiction_zoning_standards`,
+   `planning_principle` and fetches 3DEP / FEMA on first use). Until then
+   the RPC fails, the client says "not reachable" and the legacy generator
+   draws — the honest fallback, not a by-right answer.
+3. **`fn_th_v3_site`'s argument names** are assumed (`p_ogc_fid`, `p_flood`);
+   the wetlands layer is simply absent when the call fails.
+4. **The ground-at-BFE contour** (`st_contour(rast, 1, 1, 0, array[bfe])` on
+   `parcel_topo`) needs a small RPC (`fn_sf_v1_bfe_contour(p_ogc_fid,
+   p_bfe_ft)` → WKT lines); the client's `fetchBfeContour` is ready for it
+   and the earthwork view draws without it for now.
+5. **Fixtures.** No battery parcel exercises the by-right path yet: in
+   fixture mode `fn_sf_v1_plan` misses the mock store, the client falls
+   through to the legacy generator and 2400 W Heiman (550510, R6) keeps its
+   `fn_generate_subdivision` expectation (34 lots). When the connector is
+   back: harvest 682644 (R8 loop, 24 lots) and 680719 (Martingale Dr, the
+   floodplain case: by right 0 lots; the fill scenario 127 lots failing
+   `flood.cut_fill_balance` with 565,000 cy of fill) into the store, add
+   them to the battery with `requireSfV1` expectations, and decide what
+   550510's floor becomes under sf_v1 (the handoff measures 17 lots there
+   against the old generator's 34 — a reviewed change, not a ratchet).
+6. **Known gaps in the generator itself** are the handoff's and are not to be
+   papered over in the UI: triangular leftovers at ring corners and between
+   streets and wetlands; streets reported but not realigned where they cross
+   wetlands; rings inset from the whole site, not the buildable land;
+   earthwork measured but not yet steering the layout; no lot-value or
+   infrastructure-cost objective; R80 estate lots crude; duplexes not
+   counted; `fn_sf_v1_strip_dbg` is a diagnostic copy, not for the product.

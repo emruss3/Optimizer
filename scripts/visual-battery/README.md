@@ -39,6 +39,14 @@ its expectation:
 (below) and raise the floors in the same PR. A solver improvement that
 can't clear its own previous numbers doesn't merge.
 
+**By-right subdivision (2026-10-27).** On an R / RS parcel the client now
+asks `fn_sf_v1_plan` first (the owner's routing rule) and falls through to
+`fn_generate_subdivision` only when that RPC is unreachable. In fixture mode
+the store carries no `rpc:fn_sf_v1_plan:<fid>:` key yet, so 2400 W Heiman
+still renders the legacy neighbourhood and its expectation stands; the first
+harvest of 682644 / 680719 turns the by-right path on in the gate (evidence:
+`__planEvidence.sfV1`).
+
 Nightly, **live mode** runs the same battery against the real backend
 (fixtures can't see a solver regression) plus one random cohort parcel
 (advisory) — enabled by the `BATTERY_SUPABASE_URL` /

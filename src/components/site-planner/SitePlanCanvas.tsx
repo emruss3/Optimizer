@@ -698,6 +698,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderBuildingDetail = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 4) return;
+    // A house pad (the by-right subdivision's lots, 2026-10-27) is one
+    // dwelling: no corridor, no unit ticks — the footprint is the drawing.
+    if (element.properties?.house) return;
 
     const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
     // Skip when detail would be sub-3px noise
