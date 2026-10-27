@@ -121,8 +121,11 @@ function isGroundFloorCarveOut(
  * Any pair intersecting by more than OVERLAP_TOLERANCE_M2 fails the plan.
  */
 export function validatePlanElements(elements: Element[]): PlanValidation {
+  // A structured garage (2026-10-07, the wrap) is the deck the bars stand
+  // on — the same mass, drawn as a dashed outline under them — never
+  // parking under a building. It is excluded like greenspace.
   const subjects = elements
-    .filter(e => OVERLAP_TYPES.includes(e.type))
+    .filter(e => OVERLAP_TYPES.includes(e.type) && (e.properties as { structured?: boolean } | undefined)?.structured !== true)
     .map(e => ({ el: e, rings: elementRings(e) }))
     .filter((s): s is { el: Element; rings: Ring[] } => s.rings != null)
     .map(s => ({ ...s, box: bbox(s.rings) }));

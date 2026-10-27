@@ -32,6 +32,11 @@ import {
   type SubdivisionParams, type SubdivisionSummary,
 } from './api/generateSubdivision';
 import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/SubdivisionPanel';
+import {
+  fetchSfV1Plan, fetchSfV1Nobuild, sfV1ToElements, sfV1Route, sfV1SummaryLine, isOverride,
+  type SfV1Options, type SfV1Summary,
+} from './api/sfV1Plan';
+import { SfV1Panel } from './ui/SfV1Panel';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
@@ -200,6 +205,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [subdivisionSummary, setSubdivisionSummary] = useState<SubdivisionSummary | null>(null);
   const [subdivisionScheme, setSubdivisionScheme] = useState<SubdivisionScheme>('district');
   const subdivisionParamsRef = useRef<SubdivisionParams>({});
+  // By-right subdivision (sf_v1, 2026-10-27): what the district's own
+  // standards draw, its self-grading tests, and the override the user asked
+  // for (a lot module, the floodway-only fill scenario) — never the default.
+  const [sfV1Summary, setSfV1Summary] = useState<SfV1Summary | null>(null);
+  const [sfV1Override, setSfV1Override] = useState<SfV1Options>({});
+  const sfV1OverrideRef = useRef<SfV1Options>({});
 
   // ── HBU / regime plan routing ─────────────────────────────────────────────
   // What we planned and WHY, shown under the KPI bar ("Plan basis: …").
@@ -1343,6 +1354,77 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setIsGeneratingLots(true);
     try {
       const pattern = await fetchPlanPattern(contextOgcFid).catch(() => null);
+      // 2026-10-27, the owner's routing rule: BY RIGHT by default, from the
+      // base district. R / RS → fn_sf_v1_plan draws the subdivision the
+      // district's own standards allow; an override (a lot module, the
+      // floodway-only fill scenario) is a second, flagged answer. A skip is
+      // shown with its reason, never papered over; only an unreachable
+      // service falls through to the legacy generators, and the strip says so.
+      const zoningBase =
+        (pattern?.selection_basis?.zoning_base as string | undefined)
+        ?? (typeof parcel.zoning === 'string' ? parcel.zoning : undefined)
+        ?? null;
+      if (sfV1Route(zoningBase) === 'sf_v1') {
+        const opt = sfV1OverrideRef.current;
+        const resp = await fetchSfV1Plan(contextOgcFid, opt);
+        if (resp) {
+          if (resp.status === 'skipped' || resp.error) {
+            const { summary: skipped } = sfV1ToElements(resp, { overrideRequested: isOverride(opt) });
+            setSubdivisionSummary(null);
+            setSfV1Summary(skipped);
+            setLotFitSummary(sfV1SummaryLine(skipped));
+            setPlanBasis(sfV1SummaryLine(skipped));
+            return;
+          }
+          const nobuild = await fetchSfV1Nobuild(contextOgcFid, opt.flood ?? null);
+          const { elements: drawn, summary: byRight } = sfV1ToElements(resp, { nobuildWkt: nobuild, overrideRequested: isOverride(opt) });
+          if (drawn.length === 0) {
+            setSfV1Summary(byRight);
+            setLotFitSummary(`${byRight.basisLine} — nothing drawable came back`);
+            return;
+          }
+          if (!gateNonGesturePlan(drawn, 'By-right subdivision')) return;
+          const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
+          // KPI strip: lots and land, the server's counts verbatim; the plan's
+          // own failed tests and notes are its warnings.
+          const byRightMetrics = {
+            totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0,
+            openSpacePct: byRight.openPct ?? 0,
+            totalUnits: byRight.lots,
+            unitMixSummary:
+              `${byRight.lots} lots` +
+              (byRight.lotWFt != null && byRight.lotDFt != null ? ` · ${byRight.lotWFt}×${byRight.lotDFt} ft` : ''),
+            zoningCompliant: byRight.fails.length === 0,
+            violations: [] as string[],
+            warnings: [...byRight.fails.map(f => `fails ${f}`), ...byRight.notes],
+            optimizationStatus: byRight.generatorVersion ?? 'sf_v1',
+          } as NonNullable<typeof metrics>;
+          setPlanOutput([...base, ...drawn], byRightMetrics);
+          setSubdivisionSummary(null);
+          setSfV1Summary(byRight);
+          setViolations([]);
+          setPlanLineage({
+            solvedBy: 'server',
+            contextId: null,
+            generatorVersion: byRight.generatorVersion ?? 'sf_v1',
+            flags: [...byRight.fails, ...(byRight.basis === 'override' ? ['override'] : [])],
+            buildings: drawn.filter(e => e.type === 'building').length,
+            floors: null,
+            footprintSqft: null,
+            // the generator reads the district standards itself (jurisdiction_zoning_standards, planning_principle)
+            standardsDirect: true,
+          });
+          setPlanStale(false);
+          setServerPlanError(null);
+          setPlanBasis(byRight.basisLine);
+          setLotFitSummary(byRight.basisLine);
+          return;
+        }
+        setSfV1Summary(null);
+        setLotFitSummary('By-right generator (fn_sf_v1_plan) not reachable — drawing with the legacy generator.');
+      } else {
+        setSfV1Summary(null);
+      }
       if (pattern?.pattern?.startsWith('subdivision')) {
         const sub = await generateSubdivision(contextOgcFid, subdivisionParamsRef.current);
         if (!sub) {
@@ -1425,13 +1507,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGeneratingLots(false);
     }
-  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan]);
+  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan, parcel.zoning]);
 
   /** Scheme switch on the neighbourhood panel: re-draws with the scheme's
    *  parameters (district lots / SP 25-ft townhomes / SP + amenity 10%). */
   const handleSubdivisionScheme = useCallback((scheme: SubdivisionScheme) => {
     setSubdivisionScheme(scheme);
     subdivisionParamsRef.current = schemeParams(scheme);
+    handleGenerateLots().catch(() => undefined);
+  }, [handleGenerateLots]);
+
+  /** The override control on the by-right panel (2026-10-27): a lot module or
+   *  the floodway-only fill scenario re-runs fn_sf_v1_plan, and the answer
+   *  comes back labelled an override. An empty option set is by right again. */
+  const handleSfV1Override = useCallback((opt: SfV1Options) => {
+    sfV1OverrideRef.current = opt;
+    setSfV1Override(opt);
     handleGenerateLots().catch(() => undefined);
   }, [handleGenerateLots]);
 
@@ -1736,6 +1827,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     fetchPlanPattern(contextOgcFid).then(pp => {
       if (!cancelled) setPlanPattern(pp);
     });
+    // a new parcel starts by right: no override carries over
+    setSfV1Summary(null);
+    setSfV1Override({});
+    sfV1OverrideRef.current = {};
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
@@ -2102,6 +2197,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sheetAnnotations = useMemo(() => buildSheetAnnotations(displayElements, topoGrid), [displayElements, topoGrid]);
   const streetProfiles = useMemo(() => buildStreetProfiles(displayElements, topoGrid), [displayElements, topoGrid]);
   const subdivisionOnSheet = !!subdivisionSummary && displayElements.some(e => e.id.startsWith('subdiv-'));
+  const sfV1OnSheet = !!sfV1Summary && sfV1Summary.status !== 'skipped' && displayElements.some(e => e.id.startsWith('sfv1-'));
   const sheetTitle = useMemo(
     () =>
       buildSheetTitleBlock({
@@ -2118,7 +2214,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               hazardCoverage: subdivisionSummary.hazardCoverage,
               crossingFt: subdivisionSummary.crossingFt,
             }
-          : null,
+          : sfV1OnSheet && sfV1Summary
+            ? {
+                lots: sfV1Summary.lots,
+                network: `${sfV1Summary.pattern ?? 'by right'}${sfV1Summary.basis === 'override' ? ' (override)' : ' (by right)'}`,
+                pctRow: sfV1Summary.rowPct,
+                pctHazard: null,
+                hazardCoverage: null,
+                crossingFt: null,
+              }
+            : null,
         hasPlan: displayElements.some(e => e.type === 'building' || e.type === 'parking'),
         topo: topoCanvas
           ? {
@@ -2131,7 +2236,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             }
           : null,
       }),
-    [parcel.address, parcel.ogc_fid, parcel.id, parcel.zoning, parcel.deeded_acres, subdivisionOnSheet, subdivisionSummary, displayElements, topoCanvas, topo],
+    [parcel.address, parcel.ogc_fid, parcel.id, parcel.zoning, parcel.deeded_acres, subdivisionOnSheet, subdivisionSummary, sfV1OnSheet, sfV1Summary, displayElements, topoCanvas, topo],
   );
 
   // The one-line plan-basis row (2026-09-04): the context state, the two lead
@@ -2204,6 +2309,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       subdivisionCrossingFt: subdivisionSummary?.crossingFt ?? null,
       subdivisionDeclinedCrossingFt: subdivisionSummary?.declinedCrossingFt ?? null,
       subdivisionScheme: subdivisionSummary ? subdivisionScheme : null,
+      // 2026-10-27 by-right subdivision (sf_v1): what the district draws, its own grade, whether an override was asked for
+      sfV1: sfV1Summary
+        ? {
+            status: sfV1Summary.status,
+            lots: sfV1Summary.lots,
+            pattern: sfV1Summary.pattern,
+            basis: sfV1Summary.basis,
+            floodHold: sfV1Summary.floodHold,
+            fails: sfV1Summary.fails,
+            tests: sfV1Summary.tests.length,
+            notes: sfV1Summary.notes.length,
+            earthwork: !!sfV1Summary.earthwork,
+            fillView: sfV1Summary.fillView,
+            densityDuAc: sfV1Summary.densityDuAc,
+          }
+        : null,
       commercialAllowableGsf:
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
           ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
@@ -2238,7 +2359,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -2461,6 +2582,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               summary={subdivisionSummary}
               scheme={subdivisionScheme}
               onScheme={handleSubdivisionScheme}
+              busy={isGeneratingLots}
+            />
+          )}
+          {sfV1Summary && (
+            <SfV1Panel
+              summary={sfV1Summary}
+              override={sfV1Override}
+              onOverride={handleSfV1Override}
               busy={isGeneratingLots}
             />
           )}

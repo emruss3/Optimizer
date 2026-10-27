@@ -21,6 +21,8 @@ const OUT = process.env.SHOTS_DIR
 fs.mkdirSync(OUT, { recursive: true });
 
 const ONE = process.env.ONE_PARCEL === '1';
+// ONLY_FID=<ogc_fid> runs that one battery parcel (iteration on a new fixture)
+const ONLY = process.env.ONLY_FID ? String(process.env.ONLY_FID) : null;
 const ASSERT = process.env.ASSERT === '1';
 
 const PARCELS = [
@@ -36,6 +38,9 @@ const PARCELS = [
   // Plan-pattern layer: the MDHA subdivision parcel — the pattern must be named
   // and the generator's non-alignment admitted.
   { ogc_fid: 550510, address: '2400 W HEIMAN ST', zoning: 'R6' },
+  // 2026-10-07 the Texas wrap (The Caroline pattern): a compact MUG-A block in
+  // the structured regime — four bars round a garage, the court on the deck.
+  { ogc_fid: 469303, address: '535 MAIN ST', zoning: 'MUG-A' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -65,6 +70,9 @@ function judge(exp, ev) {
   if (!exp) return [];
   if (!ev) return ['no plan evidence surfaced (window.__planEvidence missing — did the workspace mount?)'];
   const errs = [];
+  // Whatever the mode, the sheet must have drawn: a plan that computed but
+  // crashed the canvas is not a rendered plan.
+  if (ev._domPlannerError) errs.push('the canvas error boundary rendered ("Site Planner Error") — the plan computed but could not be drawn');
   if (exp.mode === 'server-plan') {
     if (ev.solvedBy !== 'server') {
       errs.push(`expected the SERVER plan to render, got solvedBy=${ev.solvedBy ?? 'none'}`);
@@ -221,7 +229,7 @@ function judge(exp, ev) {
   return errs;
 }
 
-for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
+for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? PARCELS.slice(0, 1) : PARCELS)) {
   const page = await ctx.newPage();
   const errs = [];
   page.on('console', m => {
@@ -279,6 +287,11 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
         _domPlanPattern: !!document.querySelector('[data-testid="plan-pattern-panel"]'),
         _domSfSwitch: !!document.querySelector('[data-testid="sf-seed-switch"]'),
         _domSubdivision: !!document.querySelector('[data-testid="subdivision-panel"]'),
+        // 2026-10-07: the canvas error boundary. The evidence hook reads the
+        // workspace, so a plan that computed but could not DRAW (the house and
+        // the wrap's pool deck both hit an undefined-import crash in the canvas)
+        // passed every assertion while the sheet showed "Site Planner Error".
+        _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? ''),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;

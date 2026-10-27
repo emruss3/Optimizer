@@ -297,6 +297,13 @@ export interface SeedFamilyStructure {
   is_single_polygon?: boolean | null;
   /** L-form seeds carry per-leg metadata for continuous unit striping. */
   legs_meta?: unknown;
+  /** 2026-10-07 wrap bars: the bar's name on the sheet ('frontage bar',
+   *  'rear bar', 'side bar'), kind 'wrap_bar', the levels that are units and
+   *  whether the bar stands on the garage deck. */
+  name?: string | null;
+  kind?: string | null;
+  residential_levels?: number | null;
+  over_garage?: boolean | null;
 }
 export interface SeedFamilyParking {
   /** 2026-09-09 aisle-first seed: a bay is a stall band beside an aisle and
@@ -311,6 +318,27 @@ export interface SeedFamilyParking {
   pct_of_max_need?: number | null;
   stalls_required_at_placed?: number | null;
   stalls_target_at_max?: number | null;
+  /** 2026-10-07 wrap: the garage under the deck — its footprint, levels and
+   *  stalls; the surface `bays` are the visitor strip only. */
+  garage?: SeedFamilyGarage | null;
+}
+export interface SeedFamilyGarage {
+  geom_2274?: SeedFamilyGeom | null;
+  area_sqft?: number | null;
+  levels?: number | null;
+  stalls_per_level?: number | null;
+  capacity_stalls?: number | null;
+  stalls?: number | null;
+  sf_per_stall?: number | null;
+  entry_2274?: SeedFamilyGeom | null;
+  entry_rear_2274?: SeedFamilyGeom | null;
+}
+/** A named open-space or amenity pad in native 2274 (the wrap's courtyard
+ *  on the deck, its pool deck). */
+export interface SeedFamilyPad {
+  name?: string | null;
+  geom_2274?: SeedFamilyGeom | null;
+  area_sqft?: number | null;
 }
 export interface SeedFamilyDrive {
   entry_2274?: SeedFamilyGeom | null;
@@ -319,6 +347,8 @@ export interface SeedFamilyDrive {
   /** 'access' = the seed's drive network (2026-09-04): lane from the curb,
    *  aisle strip along the building, connectors to every bay head */
   kind?: string | null;
+  /** the drive's name on the sheet when the generator gives one ('Rear drive') */
+  name?: string | null;
   area_sqft?: number | null;
   lane_ft?: number | null;
 }
@@ -341,6 +371,9 @@ export interface SeedFamilyResponse {
   drives?: SeedFamilyDrive[];
   access?: SeedFamilyAccess | null;
   parking?: SeedFamilyParking | null;
+  /** 2026-10-07 wrap: the courtyard on the deck and the pool deck in it */
+  greens?: SeedFamilyPad[] | null;
+  amenity?: SeedFamilyPad[] | null;
   metrics?: {
     gsf?: number | null;
     units?: number | null;
@@ -349,6 +382,13 @@ export interface SeedFamilyResponse {
     capture_pct?: number | null;
     parking_limited?: boolean | null;
     mix?: Array<{ pct?: number | null; type?: string | null; units?: number | null }> | null;
+    /** the wrap generator reports these; the seed does not */
+    garage_levels?: number | null;
+    residential_levels?: number | null;
+    far?: number | null;
+    coverage_pct?: number | null;
+    density_du_ac?: number | null;
+    capture_vs_surface_frontier_pct?: number | null;
   } | null;
   buildability?: Record<string, unknown> | null;
   plan_basis?: string;
@@ -451,12 +491,18 @@ export function seedFamilyPlanToElements(
     // sheet must not show 69 under a headline that says 70.
     const mixUnits = mixes ? mixes[i].reduce((s, e) => s + e.count, 0) : null;
     const unitsHere = structures.length === 1 ? (num(m.units) ?? mixUnits ?? unitsEst) : (mixUnits ?? unitsEst);
+    // A wrap bar is named by its place in the ring (2026-10-07): the frontage
+    // bar, the rear bar, the side bars — the sheet reads as the Caroline's does.
+    const isWrapBar = b.kind === 'wrap_bar' && typeof b.name === 'string' && b.name.length > 0;
+    const barLabel = isWrapBar
+      ? (b.name as string).charAt(0).toUpperCase() + (b.name as string).slice(1)
+      : structures.length === 1 ? 'Apartments' : `Bldg ${b.structure_id ?? i + 1}`;
     elements.push({
       id: `${prefix}-bldg-${b.structure_id ?? i + 1}`,
       type: 'building',
       name: opts.house
         ? `House · ${footprint != null ? Math.round(footprint).toLocaleString() : '?'} sf`
-        : `${structures.length === 1 ? 'Apartments' : `Bldg ${b.structure_id ?? i + 1}`} · ${stories} ${stories === 1 ? 'story' : 'stories'} · ${unitsHere} unit${unitsHere === 1 ? '' : 's'}`,
+        : `${barLabel} · ${stories} ${stories === 1 ? 'story' : 'stories'} · ${unitsHere} unit${unitsHere === 1 ? '' : 's'}`,
       geometry: poly,
       properties: {
         areaSqFt: footprint ?? undefined,
@@ -473,6 +519,8 @@ export function seedFamilyPlanToElements(
         color: '#3B82F6',
         ...(b.composition_note ? { compositionNote: b.composition_note } : {}),
         ...(b.legs_meta != null ? { legsMeta: b.legs_meta } : {}),
+        ...(isWrapBar ? { wrapBar: b.name, overGarage: b.over_garage === true } : {}),
+        ...(typeof b.residential_levels === 'number' ? { residentialLevels: b.residential_levels } : {}),
       },
       metadata: meta,
     } as Element);
@@ -500,6 +548,70 @@ export function seedFamilyPlanToElements(
       properties: { stalls, parkingSpaces: stalls, color: '#CBD5E1' },
       metadata: meta,
     } as Element);
+  });
+
+  // The garage under the deck (2026-10-07, the wrap): one parking element
+  // marked `structured` — its stalls are on levels below the plan, so the
+  // canvas draws a dashed outline and a levels · stalls label instead of
+  // surface stripes, and the geometry gate reads it as the same mass as the
+  // bars standing on it, not as parking under a building.
+  const garage = resp.parking?.garage;
+  if (garage?.geom_2274) {
+    try {
+      const poly = seedTo3857(garage.geom_2274 as Polygon);
+      const levels = Math.max(1, Math.round(num(garage.levels) ?? 1));
+      const garageStalls = Math.max(0, Math.round(num(garage.stalls) ?? 0));
+      elements.push({
+        id: `${prefix}-garage`,
+        type: 'parking',
+        name: `Garage · ${levels} level${levels === 1 ? '' : 's'} · ${garageStalls} stalls`,
+        geometry: poly,
+        properties: {
+          stalls: garageStalls,
+          parkingSpaces: garageStalls,
+          structured: true,
+          levels,
+          label: `Garage · ${levels} lvl · ${garageStalls} stalls`,
+          areaSqFt: num(garage.area_sqft) ?? undefined,
+          styleOverride: true,
+          color: '#E2E8F0',
+          opacity: 0.35,
+          strokeColor: '#475569',
+          dashed: true,
+        },
+        metadata: meta,
+      } as Element);
+    } catch { /* one malformed geometry must not sink the plan */ }
+  }
+
+  // Named pads: the courtyard on the deck is open space, the pool deck an
+  // amenity building of one story — the legacy mapper's vocabulary, so the
+  // legend and the gate already know them.
+  (resp.greens ?? []).forEach((g, i) => {
+    if (!g?.geom_2274) return;
+    try {
+      elements.push({
+        id: `${prefix}-green-${i + 1}`,
+        type: 'greenspace',
+        name: g.name ?? 'Open space',
+        geometry: seedTo3857(g.geom_2274 as Polygon),
+        properties: { areaSqFt: num(g.area_sqft) ?? undefined, color: '#86EFAC' },
+        metadata: meta,
+      } as Element);
+    } catch { /* skip malformed pad */ }
+  });
+  (resp.amenity ?? []).forEach((a, i) => {
+    if (!a?.geom_2274) return;
+    try {
+      elements.push({
+        id: `${prefix}-amenity-${i + 1}`,
+        type: 'building',
+        name: a.name ?? 'Clubhouse',
+        geometry: seedTo3857(a.geom_2274 as Polygon),
+        properties: { areaSqFt: num(a.area_sqft) ?? undefined, floors: 1, stories: 1, use: 'amenity', color: '#F59E0B' },
+        metadata: meta,
+      } as Element);
+    } catch { /* skip malformed pad */ }
   });
 
   // Drives. The engine's skeleton is a CENTERLINE + entry point — width is
@@ -560,7 +672,9 @@ export function seedFamilyPlanToElements(
               ? 'Driveway'
               : dr.kind === 'access'
                 ? (i === 0 && pi === 0 ? 'Access drive' : `Access drive ${i + 1}${pi > 0 ? `-${pi + 1}` : ''}`)
-                : `Drive ${i + 1}`,
+                : dr.kind === 'fire_lane'
+                  ? `${dr.name ?? 'Fire lane'}${pi > 0 ? ` ${pi + 1}` : ''}`
+                  : `Drive ${i + 1}`,
             geometry: piece as unknown as Polygon,
             properties: {
               // pavement, a shade darker than the striped bays so the road reads as a road
@@ -599,8 +713,10 @@ export function seedFamilyPlanToElements(
         // The seed payload doesn't report FAR/coverage/open-space and the
         // client never re-measures — zeros here mean "not reported" and the
         // KPI strip hides zero-valued stats rather than display fabricated 0s.
-        siteCoveragePct: 0,
-        achievedFAR: 0,
+        // The wrap generator (2026-10-07) does report its block coverage and
+        // FAR, and they show.
+        siteCoveragePct: num(m.coverage_pct) ?? 0,
+        achievedFAR: num(m.far) ?? 0,
         openSpacePct: 0,
         parkingRatio: units && stalls != null ? stalls / units : 0,
         totalUnits: units ?? undefined,
