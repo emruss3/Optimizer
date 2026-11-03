@@ -254,11 +254,14 @@ export function normalizeTests(tests: unknown): SfV1Test[] {
   return [];
 }
 
-/** Does the plan build in the flood hazard area (so fill, cut and the pad target mean something)? */
+/** Does the plan build in the flood hazard area (so fill, cut and the pad target mean something)?
+ *  A BFE on the parcel is not enough: a by-right plan that holds the SFHA out
+ *  carries the BFE (0 Pennington Bend Rd: BFE 421, nothing built below it)
+ *  and needs no fill. */
 export function earthworkHasFlood(ew: SfV1Earthwork | null | undefined): boolean {
   if (!ew) return false;
   const total = typeof ew.fill_cy === 'number' ? ew.fill_cy : num(ew.fill_cy?.total);
-  return (num(ew.sfha_ac) ?? 0) > 0 || (num(ew.lots_in_sfha) ?? 0) > 0 || (total ?? 0) > 0 || num(ew.bfe_ft) != null;
+  return (num(ew.sfha_ac) ?? 0) > 0 || (num(ew.lots_in_sfha) ?? 0) > 0 || (total ?? 0) > 0;
 }
 
 /** Per-pad fill in feet when the server gives it, under any of the keys it might use. */
@@ -664,7 +667,7 @@ export function sfV1SummaryLine(s: SfV1Summary): string {
   const land = s.rowPct != null && s.lotPct != null ? ` · ${s.rowPct}% ROW / ${s.lotPct}% lots${s.openPct != null ? ` / ${s.openPct}% open` : ''}` : '';
   const flood = s.floodHold ? ` · flood hold: ${s.floodHold}` : '';
   const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : s.tests.length > 0 ? ` · ${s.tests.length} tests pass` : '';
-  return `${s.lots} lots${module} ${basis}${s.pattern ? ` on a ${s.pattern}` : ''}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
+  return `${s.lots} lot${s.lots === 1 ? '' : 's'}${module} ${basis}${s.pattern ? ` on a ${s.pattern}` : ''}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
 }
 
 /** Fail-soft RPC: null when the service is unreachable; a server verdict

@@ -106,6 +106,56 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
     expect(onOverride).toHaveBeenLastCalledWith({});
   });
 
+  it('0 new lots offers the one house the lot carries, and says when it is drawn', () => {
+    const onDrawHouse = vi.fn();
+    const zero = {
+      ...SUMMARY, lots: 0, pattern: null, tests: [], fails: [], earthwork: null, fillView: false, hasFlood: false,
+      reason: 'no lot of 40000 sf (140 x 290 ft) fits on the frontage or beside a new street: 2.91 ac buildable',
+      basisLine: '0 lots by right — no lot of 40000 sf (140 x 290 ft) fits on the frontage or beside a new street: 2.91 ac buildable · generator: sf_v1',
+    };
+    const { rerender } = render(<SfV1Panel summary={zero} override={{}} onOverride={() => undefined} onDrawHouse={onDrawHouse} />);
+    expect(screen.getByTestId('sfv1-lots').textContent).toBe('0 lots');
+    expect(screen.getByTestId('sfv1-one-house').textContent).toContain('the parcel itself is one lot');
+    fireEvent.click(screen.getByTestId('sfv1-draw-house'));
+    expect(onDrawHouse).toHaveBeenCalledTimes(1);
+    rerender(<SfV1Panel summary={zero} override={{}} onOverride={() => undefined} onDrawHouse={onDrawHouse} houseDrawn />);
+    expect(screen.queryByTestId('sfv1-draw-house')).toBeNull();
+    expect(screen.getByTestId('sfv1-one-house').textContent).toContain('the house it carries is drawn');
+    // a plan with lots never offers it
+    rerender(<SfV1Panel summary={SUMMARY} override={{}} onOverride={() => undefined} onDrawHouse={onDrawHouse} />);
+    expect(screen.queryByTestId('sfv1-one-house')).toBeNull();
+  });
+
+  it('a skipped parcel shows no controls that cannot help, and the one-house offer', () => {
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, status: 'skipped', reason: 'no street edge and no vacant neighbour: landlocked', lots: 0, tests: [], fails: [], notes: [], earthwork: null, fillView: false }}
+        override={{}}
+        onOverride={() => undefined}
+        onDrawHouse={() => undefined}
+      />
+    );
+    expect(screen.getByTestId('sfv1-skipped').textContent).toContain('landlocked');
+    expect(screen.queryByTestId('sfv1-override-apply')).toBeNull();
+    expect(screen.queryByTestId('sfv1-override-floodway')).toBeNull();
+    expect(screen.queryByTestId('sfv1-override-reset')).toBeNull();
+    expect(screen.getByTestId('sfv1-draw-house')).toBeTruthy();
+  });
+
+  it('says when the generator did not use the lot module that was asked for', () => {
+    const { rerender } = render(
+      <SfV1Panel summary={{ ...SUMMARY, basis: 'override', lots: 0, lotWFt: 135, lotDFt: 300 }} override={{ lot_w_ft: 100, lot_d_ft: 400, min_lot_sf: 40000 }} onOverride={() => undefined} />
+    );
+    expect(screen.getByTestId('sfv1-module-ignored').textContent).toBe('You asked for 100 × 400 ft lots; the generator used 135 × 300 ft.');
+    rerender(<SfV1Panel summary={{ ...SUMMARY, basis: 'override', lotWFt: 50, lotDFt: 120 }} override={{ lot_w_ft: 50, lot_d_ft: 120, min_lot_sf: 6000 }} onOverride={() => undefined} />);
+    expect(screen.queryByTestId('sfv1-module-ignored')).toBeNull();
+  });
+
+  it('no cut is listed when the plan needs none', () => {
+    render(<SfV1Panel summary={{ ...SUMMARY, earthwork: { ...SUMMARY.earthwork, cut: { required_cy: 0, pond_cy: 0, closes_on_site: false } } }} override={{}} onOverride={() => undefined} />);
+    expect(screen.getByTestId('sfv1-earthwork').textContent).not.toContain('does not close on site');
+  });
+
   it('the override controls send a lot module and the fill scenario', () => {
     const onOverride = vi.fn();
     render(<SfV1Panel summary={SUMMARY} override={{}} onOverride={onOverride} />);

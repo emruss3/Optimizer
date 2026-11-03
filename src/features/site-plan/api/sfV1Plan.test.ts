@@ -118,11 +118,13 @@ describe('tests, fill bands, flood', () => {
     expect(padFillByLot({ pad_fill_ft: { min: 1 } })).toBeNull();
   });
 
-  it('a plan is in the flood hazard area when the SFHA acres, the lots in it, the fill or a BFE say so', () => {
+  it('a plan is in the flood hazard area when the SFHA acres, the lots in it or the fill say so — a BFE alone does not', () => {
     expect(earthworkHasFlood(PLAN.earthwork)).toBe(false);
     expect(earthworkHasFlood({ sfha_ac: 65.77 })).toBe(true);
+    expect(earthworkHasFlood({ lots_in_sfha: 10 })).toBe(true);
     expect(earthworkHasFlood({ fill_cy: { total: 361859 } })).toBe(true);
-    expect(earthworkHasFlood({ bfe_ft: 429 })).toBe(true);
+    // 0 Pennington Bend Rd by right: the parcel has a BFE (421) but the plan holds the SFHA out
+    expect(earthworkHasFlood({ bfe_ft: 421, pad_target_ft: 425, sfha_ac: 0, lots_in_sfha: 0, fill_cy: { total: 0 } })).toBe(false);
     expect(earthworkHasFlood(null)).toBe(false);
   });
 
@@ -234,5 +236,8 @@ describe('sfV1ToElements — the plan on the sheet', () => {
     const { fails: _omitted, ...planWithoutFails } = PLAN;
     void _omitted;
     expect(sfV1ToElements(planWithoutFails).summary.fails).toEqual(['open.unassigned', 'street.grade_max']);
+
+    // one lot reads as one lot (0 River Road Pike, R80, 26 ac)
+    expect(sfV1ToElements({ ...PLAN, lots: 1 }).summary.basisLine.startsWith('1 lot @ 65 × 125 ft by right')).toBe(true);
   });
 });

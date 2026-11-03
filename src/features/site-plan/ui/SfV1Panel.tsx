@@ -84,12 +84,15 @@ function TestRow({ t }: { t: SfV1Test }) {
 }
 
 export function SfV1Panel({
-  summary, override, onOverride, busy,
+  summary, override, onOverride, busy, onDrawHouse, houseDrawn,
 }: {
   summary: SfV1Summary;
   override: SfV1Options;
   onOverride: (opt: SfV1Options) => void;
   busy?: boolean;
+  /** 0 new lots (or skipped): the parcel is itself a lot — draw the one house it carries (the single-family seed) */
+  onDrawHouse?: () => void;
+  houseDrawn?: boolean;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
   const [lotD, setLotD] = useState<string>(override.lot_d_ft != null ? String(override.lot_d_ft) : '');
@@ -98,6 +101,15 @@ export function SfV1Panel({
   const fillScenario = override.flood === 'floodway';
   const ew = summary.earthwork;
   const fillByComponent = ew && ew.fill_cy && typeof ew.fill_cy === 'object' ? Object.entries(ew.fill_cy) : null;
+  const noNewLots = summary.status === 'skipped' || summary.lots === 0;
+  // The generator does not always use the module it is given (0 Harding Pl:
+  // 100 × 400 came back as 135 × 300) — say so instead of labelling the old
+  // module an override.
+  const askedW = override.lot_w_ft ?? null;
+  const askedD = override.lot_d_ft ?? null;
+  const moduleIgnored =
+    askedW != null && askedD != null && summary.lotWFt != null && summary.lotDFt != null &&
+    (Math.round(askedW) !== Math.round(summary.lotWFt) || Math.round(askedD) !== Math.round(summary.lotDFt));
 
   const applyModule = () => {
     const next: SfV1Options = { ...override };
@@ -118,7 +130,7 @@ export function SfV1Panel({
         <h3 className="text-sm font-semibold text-slate-800">By-right subdivision</h3>
         <div className="flex flex-wrap items-center gap-1">
           <span data-testid="sfv1-lots" className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-            {summary.lots} lots
+            {summary.lots} lot{summary.lots === 1 ? '' : 's'}
           </span>
           <span
             data-testid="sfv1-basis"
@@ -144,6 +156,11 @@ export function SfV1Panel({
       ) : (
         <>
           <p data-testid="sfv1-summary" className="mt-1 leading-snug text-slate-600">{summary.basisLine}</p>
+          {moduleIgnored && (
+            <p data-testid="sfv1-module-ignored" className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 leading-snug text-amber-800">
+              You asked for {askedW} × {askedD} ft lots; the generator used {summary.lotWFt} × {summary.lotDFt} ft.
+            </p>
+          )}
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
             <dt className="text-slate-500">Pattern</dt>
             <dd data-testid="sfv1-pattern">
@@ -239,6 +256,29 @@ export function SfV1Panel({
         </ul>
       )}
 
+      {/* 0 new lots is not "nothing can be built": the parcel is itself a lot
+          of record (0 Harding Pl, R40, 2.9 ac: the sheet was empty). */}
+      {noNewLots && onDrawHouse && (
+        <div data-testid="sfv1-one-house" className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11px] leading-snug text-sky-900">
+          {houseDrawn ? (
+            <span>No new lots by right. The parcel itself is one lot: the house it carries is drawn (single-family seed).</span>
+          ) : (
+            <>
+              <span>No new lots by right — but the parcel itself is one lot. </span>
+              <button
+                type="button"
+                data-testid="sfv1-draw-house"
+                disabled={busy}
+                onClick={onDrawHouse}
+                className="font-semibold text-sky-800 underline hover:text-sky-950 disabled:opacity-60"
+              >
+                Draw the one house it carries
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {ew && (summary.streetGrade || summary.hasFlood || ew.ground_min_ft != null) && (
         <div data-testid="sfv1-earthwork" data-flood={String(summary.hasFlood)} className="mt-2 rounded-md border border-orange-200 bg-orange-50 p-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-orange-800">Earthwork</h4>
@@ -303,7 +343,7 @@ export function SfV1Panel({
                     </dd>
                   </>
                 )}
-                {ew.cut && (
+                {ew.cut && (ew.cut.required_cy ?? 0) > 0 && (
                   <>
                     <dt className="text-orange-700">Cut</dt>
                     <dd className={ew.cut.closes_on_site === false ? 'font-medium text-red-700' : ''}>
@@ -336,6 +376,21 @@ export function SfV1Panel({
         </div>
       )}
 
+      {/* A skipped parcel (landlocked) is not fixed by a lot module or a fill
+          scenario: no controls that cannot help, only the way back. */}
+      {summary.status === 'skipped' ? (overridden ? (
+        <div className="mt-2 border-t border-slate-100 pt-2">
+          <button
+            type="button"
+            data-testid="sfv1-override-reset"
+            disabled={busy}
+            onClick={() => { setLotW(''); setLotD(''); setMinSf(''); onOverride({}); }}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            By right
+          </button>
+        </div>
+      ) : null) : (
       <div className="mt-2 border-t border-slate-100 pt-2">
         <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Override {overridden ? <span className="text-amber-700">· active</span> : <span className="text-slate-400">· none (by right)</span>}
@@ -396,6 +451,7 @@ export function SfV1Panel({
           </button>
         </div>
       </div>
+      )}
     </section>
   );
 }

@@ -1450,3 +1450,34 @@ generator over the new plan; the KPI strip is the apartment strip (stalls,
 "0 issues" over failed tests, a unit-type legend); estate and pie remnants
 read as waste; the route is silent and the override buried; twenty seconds
 to a two-second answer because the apartment-side compile runs first.
+
+## 22. Five more by right, drawn at random (2026-11-03)
+
+Eric: "Pull 5 more and give feedback." Unlike the curated ten (§21), these
+five were drawn by a fixed hash from the 3,148 vacant R / RS parcels of
+1–60 ac, one per size band, and had never been opened. Write-up and pictures:
+`qa/audits/2026-11-03b/`.
+
+The output: no subdivision on any of them. 0 Harding Pl (R40, 2.9 ac) and
+7610 Chipmunk Ln (R80, 7 ac) are 0 lots because the fixed module (140 × 290,
+270 × 300) fits neither shape; 1023 Wellmoor Ct (RS20, 4.1 ac) is skipped as
+landlocked although it touches its cul-de-sac for 6 ft and three vacant
+parcels; 0 Pennington Bend Rd (R15, 13.3 ac, 10 ac of SFHA) gets six
+credible frontage lots; 0 River Road Pike (R80, 26 ac, 33% mean slope) gets
+one lot and calls 23 ac "buildable … unassigned" while its own
+`open.unassigned` test passes. The override ignored the module asked for on
+two of three tries (100 × 400 → 135 × 300, 160 × 500 → 270 × 300).
+
+The first visit: topography 8–41 s with two fetches failing on the first try;
+River Road Pike's 41 s is over the anon role's 20-s statement timeout, so the
+contours very likely never load there in the app. The by-right plan waits for
+the planner compile (up to 5.5 s cold) and took 8–10 s on its first call on
+the two big parcels. §21's "twenty seconds" was the harness's own waits.
+
+Fixed in the client: a 0-lot or skipped answer offers the one house the lot
+itself carries (the single-family seed) instead of an empty sheet; a skip no
+longer leaves the header on "Generating plan…" or shows controls that cannot
+help; a plan that holds the floodplain out is no longer drawn as a floodplain
+plan because the parcel has a BFE; the panel says when the generator used a
+different module from the one asked for; "1 lot"; a seed with no footprint
+says so. The battery asserts the one-house offer on Martingale Dr.
