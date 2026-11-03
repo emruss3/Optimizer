@@ -68,6 +68,50 @@
     "requireAccess": true,
     "_access": "the L of drives: the side drive from the Main St curb along the right lot line to just past the block, the rear drive along the block's rear wall out to it (edge to edge, never overlapping). The garage is the one parking element the access check sees (no visitor strip fits beside this block) and the side drive touches it; the deck is marked structured so the zero-overlap gate reads the bars standing on it as the same mass."
   },
+  "682644": {
+    "mode": "server-plan",
+    "_basis": "4701 Bowfield Dr (R8, 10.73 ac) - the by-right subdivision, sf_v1 (2026-11-03): a loop street, 34 lots at 65 x 125 ft (min 8,000 SF), 3.17 du/ac gross, 20.7% ROW / 73.1% lots / 6.2% open, flood hold sfha with nothing in the SFHA. The generator's own tests: block.length, storm.low_point, street.dead_end_max and access.second_connection pass; open.unassigned (0.23 ac) and street.grade_max (26.8% against a 10% limit, 440 ft of street over it) FAIL and the panel shows them as such - the generator does not yet steer by grade (known gap). No capture floor: a subdivision has no GSF; the lot floor ratchets UP.",
+    "requireBriefEnvelope": true,
+    "requireNeighborLayers": {
+      "parcels": true
+    },
+    "requireTopo": true,
+    "requireSfV1": {
+      "status": "done",
+      "minLots": 34,
+      "pattern": "loop",
+      "basis": "by_right",
+      "floodHold": "sfha",
+      "hasFlood": false,
+      "failsInclude": ["street.grade_max"],
+      "minTests": 7
+    }
+  },
+  "680719": {
+    "mode": "server-plan",
+    "_basis": "0 Martingale Dr (R10, 70.6 ac, almost all FEMA SFHA) - BY RIGHT the generator holds the whole flood hazard area out and finds no 10,000-SF lot on the 1.59 buildable acres: 0 lots, with the reason on the sheet. The FILL SCENARIO (an override: hold out only the regulatory floodway) draws 145 lots on two loops and grades itself honestly: flood.cut_fill_balance FAILS (361,859 cy of fill to BFE 429 + 4 ft, a 46-ft compensating cut over the 4.8 ac of open floodplain left), block.length and open.unassigned fail, 1,124 ft of street crosses wetland. The earthwork view colours every pad by its fill from the DEM (fn_sf_v1_pad_fill) and draws the ground-at-BFE line (fn_sf_v1_bfe_contour).",
+    "requireBriefEnvelope": true,
+    "requireNeighborLayers": {
+      "parcels": true
+    },
+    "requireTopo": true,
+    "requireSfV1": {
+      "status": "done",
+      "maxLots": 0,
+      "basis": "by_right"
+    },
+    "requireSfV1Override": {
+      "status": "done",
+      "minLots": 145,
+      "pattern": "2 loops",
+      "basis": "override",
+      "floodHold": "floodway",
+      "hasFlood": true,
+      "fillView": true,
+      "bfeContour": true,
+      "failsInclude": ["flood.cut_fill_balance"]
+    }
+  },
   "393306": {
     "mode": "sf-suggestion",
     "_basis": "303 E Palestine Ave RS10 - MF refusal carries suggested_typology single_family ('envelope fits a house (3076 sqft, 28.8 ft wide)'); tap renders the 1,236 sf house + driveway (sf_seed_v1)",

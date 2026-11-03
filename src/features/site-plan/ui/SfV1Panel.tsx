@@ -13,9 +13,24 @@ function testLabel(id: string): string {
   return id.replace(/\./g, ' · ').replace(/_/g, ' ');
 }
 
+/** The open pieces grouped by kind with their count and acres — nineteen
+ *  pieces on Martingale Dr read as one line per kind, not a wall of text. */
+export function openSpaceByKind(pieces: Array<{ kind: string; acres: number | null }>): string {
+  const groups = new Map<string, { n: number; acres: number; known: boolean }>();
+  for (const p of pieces) {
+    const g = groups.get(p.kind) ?? { n: 0, acres: 0, known: false };
+    g.n += 1;
+    if (p.acres != null) { g.acres += p.acres; g.known = true; }
+    groups.set(p.kind, g);
+  }
+  return [...groups.entries()]
+    .map(([kind, g]) => `${kind}${g.n > 1 ? ` × ${g.n}` : ''}${g.known ? ` · ${Math.round(g.acres * 100) / 100} ac` : ''}`)
+    .join(' · ');
+}
+
 function fmtVal(v: unknown): string {
   if (v == null) return '';
-  if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : (Math.round(v * 10) / 10).toLocaleString();
+  if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : (Math.round(v * 100) / 100).toLocaleString();
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 }
@@ -24,10 +39,32 @@ function fmtCy(v: unknown): string {
   return typeof v === 'number' ? `${Math.round(v).toLocaleString()} cy` : fmtVal(v);
 }
 
+const TEST_META = new Set(['id', 'pass', 'ok', 'test', 'name', 'note', 'rule']);
+
+/** Every figure a test carries, in its own words: `value 26.8 · limit 10 · ft over limit 440`,
+ *  `acres 0.23`, `area sf 6,848 · needed sf 6,013`, `pad fill ft: min 3.5, median 9.8, max 16`. */
+export function testDetails(t: SfV1Test): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(t)) {
+    if (TEST_META.has(k) || v == null) continue;
+    const key = k.replace(/_/g, ' ');
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      const inner = Object.entries(v as Record<string, unknown>)
+        .filter(([, x]) => x != null)
+        .map(([kk, x]) => `${kk.replace(/_/g, ' ')} ${fmtVal(x)}`)
+        .join(', ');
+      parts.push(`${key}: ${inner}`);
+    } else {
+      parts.push(`${key} ${fmtVal(v)}`);
+    }
+  }
+  return parts.join(' · ');
+}
+
 function TestRow({ t }: { t: SfV1Test }) {
   const failed = t.pass === false;
-  const value = t.value != null ? fmtVal(t.value) : '';
-  const limit = t.limit != null ? fmtVal(t.limit) : '';
+  const details = testDetails(t);
+  const note = typeof t.rule === 'string' ? t.rule : typeof t.note === 'string' ? t.note : null;
   return (
     <li
       data-testid={`sfv1-test-${t.id}`}
@@ -39,12 +76,8 @@ function TestRow({ t }: { t: SfV1Test }) {
       </span>
       <span className="leading-snug">
         <span className="font-medium">{testLabel(t.id)}</span>
-        {(value || limit) && (
-          <span className="text-slate-500">
-            {' '}· {value}{limit ? ` vs ${limit}` : ''}
-          </span>
-        )}
-        {t.note ? <span className="text-slate-500"> — {t.note}</span> : null}
+        {details && <span className="text-slate-500"> · {details}</span>}
+        {note ? <span className="text-slate-500"> — {note}</span> : null}
       </span>
     </li>
   );
@@ -178,7 +211,7 @@ export function SfV1Panel({
             {summary.openPieces.length > 0 && (
               <>
                 <dt className="text-slate-500">Open space</dt>
-                <dd>{summary.openPieces.map(p => `${p.kind}${p.acres != null ? ` ${p.acres} ac` : ''}`).join(' · ')}</dd>
+                <dd data-testid="sfv1-open-space">{openSpaceByKind(summary.openPieces)}</dd>
               </>
             )}
           </dl>
@@ -206,57 +239,100 @@ export function SfV1Panel({
         </ul>
       )}
 
-      {ew && (
-        <div data-testid="sfv1-earthwork" className="mt-2 rounded-md border border-orange-200 bg-orange-50 p-2">
+      {ew && (summary.streetGrade || summary.hasFlood || ew.ground_min_ft != null) && (
+        <div data-testid="sfv1-earthwork" data-flood={String(summary.hasFlood)} className="mt-2 rounded-md border border-orange-200 bg-orange-50 p-2">
           <h4 className="text-[11px] font-semibold uppercase tracking-wide text-orange-800">Earthwork</h4>
           <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px]">
-            {ew.bfe_ft != null && (<><dt className="text-orange-700">BFE</dt><dd>{fmtVal(ew.bfe_ft)} ft</dd></>)}
-            {ew.pad_target_ft != null && (<><dt className="text-orange-700">Pad target</dt><dd>{fmtVal(ew.pad_target_ft)} ft</dd></>)}
-            {fillByComponent && fillByComponent.length > 0 && (
+            {ew.ground_min_ft != null && ew.ground_max_ft != null && (
               <>
-                <dt className="text-orange-700">Fill</dt>
-                <dd>{fillByComponent.map(([k, v]) => `${k.replace(/_/g, ' ')} ${fmtCy(v)}`).join(' · ')}</dd>
+                <dt className="text-orange-700">Ground</dt>
+                <dd>{fmtVal(ew.ground_min_ft)}–{fmtVal(ew.ground_max_ft)} ft · {fmtVal((ew.ground_max_ft ?? 0) - (ew.ground_min_ft ?? 0))} ft of fall</dd>
               </>
             )}
-            {typeof ew.fill_cy === 'number' && (<><dt className="text-orange-700">Fill</dt><dd>{fmtCy(ew.fill_cy)}</dd></>)}
-            {ew.pad_fill_ft && (
+            {summary.streetGrade && (
               <>
-                <dt className="text-orange-700">Pad fill</dt>
-                <dd>
-                  {[
-                    ew.pad_fill_ft.min != null ? `min ${fmtVal(ew.pad_fill_ft.min)}` : null,
-                    ew.pad_fill_ft.median != null ? `median ${fmtVal(ew.pad_fill_ft.median)}` : null,
-                    ew.pad_fill_ft.max != null ? `max ${fmtVal(ew.pad_fill_ft.max)}` : null,
-                  ].filter(Boolean).join(' · ')} ft
-                  {ew.lots_with_pad_fill_over_10ft != null ? ` · ${ew.lots_with_pad_fill_over_10ft} lots over 10 ft` : ''}
+                <dt className="text-orange-700">Street grade</dt>
+                <dd
+                  data-testid="sfv1-street-grade"
+                  className={summary.streetGrade.maxPct != null && summary.streetGrade.limitPct != null && summary.streetGrade.maxPct > summary.streetGrade.limitPct ? 'font-medium text-red-700' : ''}
+                >
+                  {summary.streetGrade.maxPct != null ? `max ${fmtVal(summary.streetGrade.maxPct)}%` : '—'}
+                  {summary.streetGrade.limitPct != null ? ` · limit ${fmtVal(summary.streetGrade.limitPct)}%` : ''}
+                  {summary.streetGrade.ftOverLimit != null && summary.streetGrade.ftOverLimit > 0 ? ` · ${fmtVal(summary.streetGrade.ftOverLimit)} ft of street over the limit` : ''}
                 </dd>
               </>
             )}
-            {ew.cut && (
+            {summary.hasFlood && (
               <>
-                <dt className="text-orange-700">Cut</dt>
-                <dd>
-                  {[
-                    ew.cut.required_cy != null ? `needs ${fmtCy(ew.cut.required_cy)}` : null,
-                    ew.cut.pond_cy != null ? `pond gives ${fmtCy(ew.cut.pond_cy)}` : null,
-                    ew.cut.open_floodplain_ac_available != null ? `${fmtVal(ew.cut.open_floodplain_ac_available)} ac of open floodplain to cut` : null,
-                    ew.cut.avg_depth_ft_needed != null ? `avg ${fmtVal(ew.cut.avg_depth_ft_needed)} ft deep` : null,
-                    ew.cut.closes_on_site != null ? (ew.cut.closes_on_site ? 'closes on site' : 'does not close on site') : null,
-                  ].filter(Boolean).join(' · ')}
-                </dd>
+                {(ew.sfha_ac != null || ew.lots_in_sfha != null) && (
+                  <>
+                    <dt className="text-orange-700">Flood hazard area</dt>
+                    <dd>
+                      {ew.sfha_ac != null ? `${fmtVal(ew.sfha_ac)} ac` : ''}
+                      {ew.lots_in_sfha != null ? `${ew.sfha_ac != null ? ' · ' : ''}${ew.lots_in_sfha} lots in it` : ''}
+                    </dd>
+                  </>
+                )}
+                {ew.bfe_ft != null && (
+                  <>
+                    <dt className="text-orange-700">BFE</dt>
+                    <dd>
+                      {fmtVal(ew.bfe_ft)} ft
+                      {ew.freeboard_ft != null ? ` + ${fmtVal(ew.freeboard_ft)} ft freeboard` : ''}
+                      {ew.pad_target_ft != null ? ` → pads at ${fmtVal(ew.pad_target_ft)} ft` : ''}
+                    </dd>
+                  </>
+                )}
+                {fillByComponent && fillByComponent.some(([, v]) => typeof v === 'number' && v > 0) && (
+                  <>
+                    <dt className="text-orange-700">Fill</dt>
+                    <dd>{fillByComponent.filter(([, v]) => typeof v === 'number' && v > 0).map(([k, v]) => `${k.replace(/_/g, ' ')} ${fmtCy(v)}`).join(' · ')}</dd>
+                  </>
+                )}
+                {typeof ew.fill_cy === 'number' && ew.fill_cy > 0 && (<><dt className="text-orange-700">Fill</dt><dd>{fmtCy(ew.fill_cy)}</dd></>)}
+                {ew.pad_fill_ft && (ew.pad_fill_ft.min != null || ew.pad_fill_ft.median != null || ew.pad_fill_ft.max != null) && (
+                  <>
+                    <dt className="text-orange-700">Pad fill</dt>
+                    <dd>
+                      {[
+                        ew.pad_fill_ft.min != null ? `min ${fmtVal(ew.pad_fill_ft.min)}` : null,
+                        ew.pad_fill_ft.median != null ? `median ${fmtVal(ew.pad_fill_ft.median)}` : null,
+                        ew.pad_fill_ft.max != null ? `max ${fmtVal(ew.pad_fill_ft.max)}` : null,
+                      ].filter(Boolean).join(' · ')} ft
+                      {ew.lots_with_pad_fill_over_10ft != null ? ` · ${ew.lots_with_pad_fill_over_10ft} lots over 10 ft` : ''}
+                    </dd>
+                  </>
+                )}
+                {ew.cut && (
+                  <>
+                    <dt className="text-orange-700">Cut</dt>
+                    <dd className={ew.cut.closes_on_site === false ? 'font-medium text-red-700' : ''}>
+                      {[
+                        ew.cut.required_cy != null ? `needs ${fmtCy(ew.cut.required_cy)}` : null,
+                        ew.cut.pond_cy != null ? `pond gives ${fmtCy(ew.cut.pond_cy)}` : null,
+                        ew.cut.open_floodplain_ac_available != null ? `${fmtVal(ew.cut.open_floodplain_ac_available)} ac of open floodplain to cut` : null,
+                        ew.cut.avg_depth_ft_needed != null ? `avg ${fmtVal(ew.cut.avg_depth_ft_needed)} ft deep` : null,
+                        ew.cut.closes_on_site != null ? (ew.cut.closes_on_site ? 'closes on site' : 'does not close on site') : null,
+                      ].filter(Boolean).join(' · ')}
+                    </dd>
+                  </>
+                )}
               </>
             )}
-            {ew.street_grade != null && (<><dt className="text-orange-700">Street grade</dt><dd>{fmtVal(ew.street_grade)}</dd></>)}
           </dl>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-orange-900">
-            <span className="font-semibold">Pads by fill:</span>
-            {summary.fillView ? FILL_BANDS.map(b => (
-              <span key={b.key} className="inline-flex items-center gap-1">
-                <span className="inline-block h-2.5 w-2.5 rounded-sm border border-orange-900/30" style={{ backgroundColor: b.color }} />
-                {b.label}
-              </span>
-            )) : <span className="italic">per-pad fill not in this response — pads keep their plan colour</span>}
-          </div>
+          {summary.hasFlood ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-orange-900">
+              <span className="font-semibold">Pads by fill:</span>
+              {summary.fillView ? FILL_BANDS.map(b => (
+                <span key={b.key} className="inline-flex items-center gap-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm border border-orange-900/30" style={{ backgroundColor: b.color }} />
+                  {b.label}
+                </span>
+              )) : <span className="italic">per-pad fill unavailable — pads keep their plan colour</span>}
+            </div>
+          ) : (
+            <p className="mt-1 text-[10px] text-orange-900/80">The plan stays out of the flood hazard area: no fill to a base flood elevation, no compensating cut.</p>
+          )}
         </div>
       )}
 

@@ -33,10 +33,12 @@ import {
 } from './api/generateSubdivision';
 import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/SubdivisionPanel';
 import {
-  fetchSfV1Plan, fetchSfV1Nobuild, sfV1ToElements, sfV1Route, sfV1SummaryLine, isOverride,
+  fetchSfV1Plan, fetchSfV1Nobuild, fetchPadFill, fetchBfeContour, earthworkHasFlood,
+  sfV1ToElements, sfV1Route, sfV1SummaryLine, isOverride,
   type SfV1Options, type SfV1Summary,
 } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
+import { line2274To3857 } from './api/parcelTopo';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
@@ -211,6 +213,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [sfV1Summary, setSfV1Summary] = useState<SfV1Summary | null>(null);
   const [sfV1Override, setSfV1Override] = useState<SfV1Options>({});
   const sfV1OverrideRef = useRef<SfV1Options>({});
+  // The ground-at-BFE contour of the earthwork view (EPSG:2274 lines from the DEM).
+  const [bfeContour, setBfeContour] = useState<{ bfeFt: number; lines: number[][][] } | null>(null);
 
   // ── HBU / regime plan routing ─────────────────────────────────────────────
   // What we planned and WHY, shown under the KPI bar ("Plan basis: …").
@@ -1372,15 +1376,49 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             const { summary: skipped } = sfV1ToElements(resp, { overrideRequested: isOverride(opt) });
             setSubdivisionSummary(null);
             setSfV1Summary(skipped);
+            setBfeContour(null);
             setLotFitSummary(sfV1SummaryLine(skipped));
             setPlanBasis(sfV1SummaryLine(skipped));
             return;
           }
           const nobuild = await fetchSfV1Nobuild(contextOgcFid, opt.flood ?? null);
-          const { elements: drawn, summary: byRight } = sfV1ToElements(resp, { nobuildWkt: nobuild, overrideRequested: isOverride(opt) });
+          // The earthwork view when the plan builds in the flood hazard area:
+          // fill per pad from the DEM (each pad coloured by its band) and the
+          // ground-at-BFE contour. Both fail soft.
+          const ew = resp.earthwork ?? null;
+          let padFill: Array<number | null> | null = null;
+          let bfe: { bfeFt: number; lines: number[][][] } | null = null;
+          if (ew && earthworkHasFlood(ew)) {
+            if (typeof ew.pad_target_ft === 'number' && typeof resp.pads_wkt === 'string') {
+              padFill = await fetchPadFill(contextOgcFid, resp.pads_wkt, ew.pad_target_ft);
+            }
+            if (typeof ew.bfe_ft === 'number') {
+              const lines = await fetchBfeContour(contextOgcFid, ew.bfe_ft);
+              if (lines) bfe = { bfeFt: ew.bfe_ft, lines: lines.map(l => l.coordinates as number[][]) };
+            }
+          }
+          setBfeContour(bfe);
+          const { elements: drawn, summary: byRight } = sfV1ToElements(resp, { nobuildWkt: nobuild, overrideRequested: isOverride(opt), padFillFt: padFill });
           if (drawn.length === 0) {
+            // 0 lots IS the by-right answer (Martingale Dr: the flood hazard area
+            // holds out all but 1.59 ac): the sheet is cleared, the reason stands.
+            const base0 = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
+            setPlanOutput(base0, {
+              totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0, openSpacePct: 0,
+              totalUnits: 0, unitMixSummary: '0 lots', zoningCompliant: true, violations: [] as string[],
+              warnings: byRight.notes, optimizationStatus: byRight.generatorVersion ?? 'sf_v1',
+            } as NonNullable<typeof metrics>);
+            setSubdivisionSummary(null);
             setSfV1Summary(byRight);
-            setLotFitSummary(`${byRight.basisLine} — nothing drawable came back`);
+            setViolations([]);
+            setPlanLineage({
+              solvedBy: 'server', contextId: null, generatorVersion: byRight.generatorVersion ?? 'sf_v1',
+              flags: byRight.basis === 'override' ? ['override'] : [], buildings: 0, floors: null, footprintSqft: null, standardsDirect: true,
+            });
+            setPlanStale(false);
+            setServerPlanError(null);
+            setPlanBasis(byRight.basisLine);
+            setLotFitSummary(byRight.basisLine);
             return;
           }
           if (!gateNonGesturePlan(drawn, 'By-right subdivision')) return;
@@ -1421,9 +1459,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           return;
         }
         setSfV1Summary(null);
+        setBfeContour(null);
         setLotFitSummary('By-right generator (fn_sf_v1_plan) not reachable — drawing with the legacy generator.');
       } else {
         setSfV1Summary(null);
+        setBfeContour(null);
       }
       if (pattern?.pattern?.startsWith('subdivision')) {
         const sub = await generateSubdivision(contextOgcFid, subdivisionParamsRef.current);
@@ -1831,6 +1871,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setSfV1Summary(null);
     setSfV1Override({});
     sfV1OverrideRef.current = {};
+    setBfeContour(null);
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
@@ -2192,7 +2233,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // The civil sheet's layers (2026-09-04): contours in the canvas frame, the
   // sample grid for spot grades and profiles, the callouts written on the
   // plan, the profile of every through-street, and the title block.
-  const topoCanvas = useMemo(() => (topo ? topoView(topo) : null), [topo]);
+  const topoCanvas = useMemo(() => {
+    const view = topo ? topoView(topo) : null;
+    if (!view || !bfeContour) return view;
+    // 2026-11-03: the ground-at-BFE line rides with the contours, drawn blue
+    const lines: number[][][] = [];
+    for (const l of bfeContour.lines) {
+      try { lines.push(line2274To3857(l as never) as number[][]); } catch { /* one bad piece never sinks the layer */ }
+    }
+    if (lines.length === 0) return view;
+    return { ...view, contours: [...view.contours, { elevationFt: bfeContour.bfeFt, index: true, bfe: true, lines }] };
+  }, [topo, bfeContour]);
   const topoGrid = useMemo(() => (topo ? new TopoGrid(topo) : null), [topo]);
   const sheetAnnotations = useMemo(() => buildSheetAnnotations(displayElements, topoGrid), [displayElements, topoGrid]);
   const streetProfiles = useMemo(() => buildStreetProfiles(displayElements, topoGrid), [displayElements, topoGrid]);
@@ -2219,9 +2270,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 lots: sfV1Summary.lots,
                 network: `${sfV1Summary.pattern ?? 'by right'}${sfV1Summary.basis === 'override' ? ' (override)' : ' (by right)'}`,
                 pctRow: sfV1Summary.rowPct,
-                pctHazard: null,
-                hazardCoverage: null,
-                crossingFt: null,
+                // the generator holds out real FEMA / NWI geometry (hazard_flood_2274, the site's no-build land)
+                pctHazard: sfV1Summary.heldPct,
+                hazardCoverage: 'ingested',
+                crossingFt: (sfV1Summary.streetInWetlandFt ?? 0) > 0 ? sfV1Summary.streetInWetlandFt : null,
               }
             : null,
         hasPlan: displayElements.some(e => e.type === 'building' || e.type === 'parking'),
@@ -2321,8 +2373,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             tests: sfV1Summary.tests.length,
             notes: sfV1Summary.notes.length,
             earthwork: !!sfV1Summary.earthwork,
+            hasFlood: sfV1Summary.hasFlood,
             fillView: sfV1Summary.fillView,
+            bfeContour: !!bfeContour,
+            streetGradeMaxPct: sfV1Summary.streetGrade?.maxPct ?? null,
             densityDuAc: sfV1Summary.densityDuAc,
+            ms: sfV1Summary.ms,
           }
         : null,
       commercialAllowableGsf:
@@ -2359,7 +2415,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel

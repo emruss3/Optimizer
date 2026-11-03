@@ -55,6 +55,8 @@ export interface CanvasContour {
   elevationFt: number;
   index: boolean;
   lines: number[][][];
+  /** 2026-11-03: the ground-at-BFE line of the by-right earthwork view, drawn in blue */
+  bfe?: boolean;
 }
 
 export interface ParcelTopoView {

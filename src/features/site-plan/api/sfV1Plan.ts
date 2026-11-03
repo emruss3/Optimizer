@@ -1,21 +1,28 @@
 /**
- * By-right subdivision generator client (sf_v1, 2026-10-27).
+ * By-right subdivision generator client (sf_v1, 2026-10-27; shaped to the
+ * live payload 2026-11-03).
  *
  * `fn_sf_v1_plan(ogc_fid, opt)` draws the single-family subdivision a parcel
  * gets BY RIGHT from the base district's own standards — the lot module, the
- * setbacks, the street pattern (loop / two loops / single street / T street /
- * frontage lots), the storm pond at the low point, the flood hold — and
- * grades itself: `tests` (pass / fail with values and limits), `fails`,
- * `notes`, and `earthwork` when the plan builds in the flood hazard area or
- * on ground over 8% slope. Every dimension and threshold comes from
- * `fn_sf_v1_params()` and `planning_principle`; nothing is parcel-specific.
+ * setbacks, the street pattern (loop / 2 loops / single street / T street /
+ * frontage lots, no new street), the storm pond at the low point, the flood
+ * hold — and grades itself: `tests` (an object keyed by test id, each with
+ * its pass and its own figures), `fails`, `notes`, and `earthwork` (ground,
+ * street grade, and the fill / cut when the plan builds in the flood hazard
+ * area). Every dimension and threshold comes from `fn_sf_v1_params()` and
+ * `planning_principle`; nothing is parcel-specific.
+ *
+ * The app reaches it through `fn_sf_v1_plan_app` / `fn_sf_v1_site_app`
+ * (SECURITY DEFINER wrappers, migration 20261103100000): the generator's own
+ * helpers are not granted to the anon role.
  *
  * Routing (the owner's standing instruction): by right by default from the
  * parcel's base district. R / RS → this generator. RM / MUL / SP → attached
  * homes (th v2 stays the product default until v3 is faster). An override —
  * a lot module, the floodway-only fill scenario, setbacks, the entry
  * position — is a second, flagged answer the user asks for, never the
- * default; the response says `basis: 'override'`.
+ * default. The live function keeps `basis: 'by_right'` under the fill
+ * scenario, so the client labels an override by what it asked for.
  *
  * Geometry arrives as WKT in EPSG:2274 feet and goes through the same
  * 2274 → 4326 → 3857 pipeline as everything else on the sheet.
@@ -30,15 +37,14 @@ import { wktLines, wktPoint, wktPolygons } from './wkt';
 
 export type SfV1Basis = 'by_right' | 'override';
 
-/** One self-grading test of the plan: `street.dead_end_max`, `access.second_connection`,
- *  `block.length`, `storm.low_point`, `yield.vs_arithmetic`; in the floodplain also
- *  `flood.freeboard`, `flood.cut_fill_balance`, `street.grade_max`. */
+/** One self-grading test: `street.dead_end_max`, `access.second_connection`,
+ *  `block.length`, `storm.low_point`, `open.unassigned`, `yield.vs_arithmetic`
+ *  (no pass — a ratio), and in the floodplain `flood.freeboard`,
+ *  `flood.cut_fill_balance`, `street.grade_max`. Each carries its own
+ *  figures (value / limit, acres, area_sf / needed_sf, fill_cy …). */
 export interface SfV1Test {
   id: string;
   pass: boolean | null;
-  value?: number | string | null;
-  limit?: number | string | null;
-  note?: string | null;
   [k: string]: unknown;
 }
 
@@ -51,17 +57,33 @@ export interface SfV1Cut {
   [k: string]: unknown;
 }
 
-/** Present when the plan builds in the SFHA or the ground is over 8% slope. */
+export interface SfV1StreetGrade {
+  max_pct?: number | null;
+  limit_pct?: number | null;
+  ft_over_limit?: number | null;
+  [k: string]: unknown;
+}
+
+/** Always present on a drawn plan: the ground and the street grade; the flood
+ *  figures are zero / null unless the plan builds in the SFHA. */
 export interface SfV1Earthwork {
   bfe_ft?: number | null;
   pad_target_ft?: number | null;
-  /** cubic yards by component (pads, streets, …) or one total */
+  freeboard_ft?: number | null;
+  sfha_ac?: number | null;
+  lots_in_sfha?: number | null;
+  cells_in_sfha?: number | null;
+  ground_min_ft?: number | null;
+  ground_max_ft?: number | null;
+  fill_max_ft?: number | null;
+  /** cubic yards by component (total, streets, graded_aprons, pads_and_drives) or one total */
   fill_cy?: Record<string, number | null> | number | null;
   pad_fill_ft?: { min?: number | null; median?: number | null; max?: number | null } | null;
   lots_with_pad_fill_over_10ft?: number | null;
   cut?: SfV1Cut | null;
-  street_grade?: unknown;
-  /** per-pad fill in feet, parallel to the pads, under whichever key the server uses */
+  street_grade?: SfV1StreetGrade | null;
+  notes?: string[] | null;
+  /** per-pad fill in feet, parallel to the pads, should the server ever send it */
   pad_fill_ft_by_lot?: Array<number | null> | null;
   pad_fills_ft?: Array<number | null> | null;
   pads?: Array<{ fill_ft?: number | null; [k: string]: unknown }> | null;
@@ -87,7 +109,9 @@ export interface SfV1Metrics {
 
 export interface SfV1OpenPiece {
   acres?: number | null;
-  /** pond / buffer / open space beside wetland / edge open space / pocket park on a street / interior remnant */
+  /** 'amenity: pond and its edge', 'amenity: street island / green (too shallow for a lot)',
+   *  'amenity: neighborhood park', 'natural: wetland / water buffer',
+   *  'unassigned: buildable land without a street or a lot' */
   kind?: string | null;
   [k: string]: unknown;
 }
@@ -98,6 +122,12 @@ export interface SfV1Response {
   error?: string | null;
   basis?: SfV1Basis | string;
   flood_hold?: string | null;
+  ogc_fid?: number | null;
+  address?: string | null;
+  zoning?: string | null;
+  site_acres?: number | null;
+  held_acres?: number | null;
+  ms?: number | null;
   lots?: number | null;
   pattern?: string | null;
   rings?: number | null;
@@ -110,14 +140,17 @@ export interface SfV1Response {
   lot_w_ft?: number | null;
   lot_d_ft?: number | null;
   min_lot_sf?: number | null;
+  block_depth_ft?: number | null;
   setbacks?: Record<string, unknown> | null;
   metrics?: SfV1Metrics | null;
   floodplain_built_on_ac?: number | null;
   street_in_wetland_ft?: number | null;
   open_pieces?: SfV1OpenPiece[] | null;
-  /** standard / edge / corner / pie, parallel to the lots */
+  /** standard / edge / corner / pie / estate, parallel to the lots */
   lot_kinds?: string[] | null;
-  tests?: SfV1Test[] | Record<string, unknown> | null;
+  /** square feet, parallel to the lots */
+  lot_areas_sf?: number[] | null;
+  tests?: Record<string, unknown> | SfV1Test[] | null;
   fails?: string[] | null;
   notes?: string[] | null;
   earthwork?: SfV1Earthwork | null;
@@ -131,9 +164,12 @@ export interface SfV1Response {
   drives_wkt?: string | null;
   open_wkt?: string | null;
   pond_wkt?: string | null;
+  park_wkt?: string | null;
+  reserve_wkt?: string | null;
+  deep_fill_hold_wkt?: string | null;
   low_point_wkt?: string | null;
+  origin_wkt?: string | null;
   generator_version?: string | null;
-  district?: string | null;
   [k: string]: unknown;
 }
 
@@ -192,25 +228,37 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
 const strings = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).filter((s): s is string => typeof s === 'string') : []);
 
-/** `tests` may arrive as a list of {id, pass, value, limit} or as an object keyed by id. */
+/** `tests` arrives as an object keyed by id (the live shape), each value an
+ *  object with `pass` and its own figures, or a bare boolean; a list of
+ *  {id, pass, …} is accepted too. A test without `pass` (yield.vs_arithmetic
+ *  is a ratio, not a verdict) keeps pass = null. */
 export function normalizeTests(tests: unknown): SfV1Test[] {
+  const passOf = (o: Record<string, unknown>): boolean | null =>
+    typeof o.pass === 'boolean' ? o.pass : typeof o.ok === 'boolean' ? o.ok : null;
   if (Array.isArray(tests)) {
     return (tests as unknown[]).flatMap(t => {
       if (!t || typeof t !== 'object') return [];
       const o = t as Record<string, unknown>;
       const id = str(o.id) ?? str(o.test) ?? str(o.name);
       if (!id) return [];
-      return [{ ...o, id, pass: typeof o.pass === 'boolean' ? o.pass : typeof o.ok === 'boolean' ? o.ok : null }];
+      return [{ ...o, id, pass: passOf(o) }];
     });
   }
   if (tests && typeof tests === 'object') {
     return Object.entries(tests as Record<string, unknown>).map(([id, v]) => {
       if (typeof v === 'boolean') return { id, pass: v };
       const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
-      return { ...o, id, pass: typeof o.pass === 'boolean' ? o.pass : typeof o.ok === 'boolean' ? o.ok : null };
+      return { ...o, id, pass: passOf(o) };
     });
   }
   return [];
+}
+
+/** Does the plan build in the flood hazard area (so fill, cut and the pad target mean something)? */
+export function earthworkHasFlood(ew: SfV1Earthwork | null | undefined): boolean {
+  if (!ew) return false;
+  const total = typeof ew.fill_cy === 'number' ? ew.fill_cy : num(ew.fill_cy?.total);
+  return (num(ew.sfha_ac) ?? 0) > 0 || (num(ew.lots_in_sfha) ?? 0) > 0 || (total ?? 0) > 0 || num(ew.bfe_ft) != null;
 }
 
 /** Per-pad fill in feet when the server gives it, under any of the keys it might use. */
@@ -226,6 +274,9 @@ export interface SfV1Summary {
   reason: string | null;
   basis: SfV1Basis;
   floodHold: string | null;
+  address: string | null;
+  zoning: string | null;
+  siteAcres: number | null;
   lots: number;
   pattern: string | null;
   densityDuAc: number | null;
@@ -245,14 +296,21 @@ export interface SfV1Summary {
   counts: { rings: number | null; crossStreets: number | null; culDeSacs: number | null; cornerLots: number | null; edgeLots: number | null; stubs: number | null; connections: number | null };
   floodplainBuiltOnAc: number | null;
   streetInWetlandFt: number | null;
+  /** land the generator held out of the site (the flood hold) and, with the natural pieces inside it, the share of the parcel */
+  heldAcres: number | null;
+  heldPct: number | null;
   openPieces: Array<{ kind: string; acres: number | null }>;
   lotKinds: Record<string, number>;
   tests: SfV1Test[];
   fails: string[];
   notes: string[];
   earthwork: SfV1Earthwork | null;
-  /** fill-depth colouring applied to the pads (per-pad fill from the server) */
+  /** the plan builds in the SFHA: fill, cut and the pad target apply */
+  hasFlood: boolean;
+  /** fill-depth colouring applied to the pads (per-pad fill from the DEM) */
   fillView: boolean;
+  streetGrade: { maxPct: number | null; limitPct: number | null; ftOverLimit: number | null } | null;
+  ms: number | null;
   generatorVersion: string | null;
   basisLine: string;
 }
@@ -287,31 +345,34 @@ function props(o: Record<string, unknown>): Element['properties'] {
   return out as Element['properties'];
 }
 
-/** Open-space kinds → how they draw. The pond is water; a buffer or the open
- *  space beside a wetland is held-out land; a pocket park is the amenity; an
- *  interior remnant is what the layout could not use, shown as such. */
-function openStyle(kind: string): { name: string; color: string; strokeColor: string; opacity: number; greenway?: boolean } {
+/** Open-space kinds ('amenity: …', 'natural: …', 'unassigned: …') → how they draw.
+ *  An amenity is green; natural land is held out, hatched; unassigned land is
+ *  what the layout could not use, drawn as such — never as an amenity. */
+export function openStyle(kind: string): { name: string; kind: string; color: string; strokeColor: string; opacity: number; greenway: boolean; label?: string } {
   const k = kind.toLowerCase();
-  if (k.includes('pond')) return { name: 'Pond', color: '#BFDBFE', strokeColor: '#2563EB', opacity: 0.85 };
-  if (k.includes('wetland') || k.includes('buffer')) return { name: kind, color: '#99F6E4', strokeColor: '#0D9488', opacity: 0.6, greenway: true };
-  if (k.includes('park')) return { name: 'Pocket park', color: '#86EFAC', strokeColor: '#22C55E', opacity: 0.6 };
-  if (k.includes('remnant')) return { name: 'Interior remnant', color: '#F1F5F9', strokeColor: '#CBD5E1', opacity: 0.4 };
-  return { name: kind, color: '#D9F99D', strokeColor: '#65A30D', opacity: 0.5 };
+  const after = kind.includes(':') ? kind.slice(kind.indexOf(':') + 1).trim() : kind;
+  const cap = after.charAt(0).toUpperCase() + after.slice(1);
+  if (k.startsWith('natural')) return { name: cap || 'Natural land', kind: 'greenway', color: '#99F6E4', strokeColor: '#0D9488', opacity: 0.6, greenway: true, label: cap };
+  if (k.startsWith('unassigned')) return { name: 'Unassigned', kind: 'reserve', color: '#F1F5F9', strokeColor: '#CBD5E1', opacity: 0.4, greenway: false };
+  if (k.startsWith('amenity')) return { name: cap || 'Amenity', kind: 'amenity', color: '#BBF7D0', strokeColor: '#16A34A', opacity: 0.6, greenway: false };
+  if (k.includes('wetland') || k.includes('buffer')) return { name: cap, kind: 'greenway', color: '#99F6E4', strokeColor: '#0D9488', opacity: 0.6, greenway: true, label: cap };
+  if (k.includes('pond')) return { name: 'Pond', kind: 'pond', color: '#BFDBFE', strokeColor: '#2563EB', opacity: 0.85, greenway: false };
+  return { name: cap || 'Open space', kind: 'open', color: '#D9F99D', strokeColor: '#65A30D', opacity: 0.5, greenway: false };
 }
 
 /**
  * Map the generator payload to canvas elements.
- *   lots                    → 'other'        (parcel-line style, below everything; "Lot N" carries the lot tag)
+ *   lots                    → 'other'        (parcel-line style, below everything; "Lot N" carries the lot tag with the server's area)
  *   pads                    → 'building'     (one house footprint each; coloured by fill depth in the earthwork view)
  *   right-of-way            → 'other'        (the band the street sits in)
  *   pavement + bulbs        → 'circulation'  (unioned: the street itself; centrelines ride along for the profile)
  *   driveways               → 'circulation'  (clipped to the pads they serve)
- *   open space by kind, the pond, the wetlands (nobuild) → 'greenspace'
+ *   open space by kind, the park, the reserve, the deep-fill hold, the pond, the wetlands → 'greenspace'
  *   the low point           → a small marker ('other')
  */
 export function sfV1ToElements(
   resp: SfV1Response,
-  opts: { nobuildWkt?: string | null; overrideRequested?: boolean } = {}
+  opts: { nobuildWkt?: string | null; overrideRequested?: boolean; padFillFt?: Array<number | null> | null } = {}
 ): { elements: Element[]; summary: SfV1Summary } {
   const now = new Date().toISOString();
   const meta = { createdAt: now, updatedAt: now, source: 'ai-generated' as const };
@@ -321,8 +382,9 @@ export function sfV1ToElements(
   const fails = strings(resp.fails).length > 0 ? strings(resp.fails) : tests.filter(t => t.pass === false).map(t => t.id);
   const notes = strings(resp.notes);
   const earthwork = resp.earthwork && typeof resp.earthwork === 'object' ? resp.earthwork : null;
-  const perPadFill = padFillByLot(earthwork);
-  const basis: SfV1Basis = resp.basis === 'override' || (resp.basis !== 'by_right' && opts.overrideRequested) ? 'override' : 'by_right';
+  const hasFlood = earthworkHasFlood(earthwork);
+  const perPadFill = opts.padFillFt ?? padFillByLot(earthwork);
+  const basis: SfV1Basis = opts.overrideRequested || resp.basis === 'override' ? 'override' : 'by_right';
 
   // Right-of-way: the band, drawn like a lot line so the pavement reads on top of it.
   polys3857(resp.row_wkt).forEach((poly, i) => {
@@ -362,8 +424,9 @@ export function sfV1ToElements(
     });
   });
 
-  // Lots, with their kind (standard / edge / corner / pie) riding along.
+  // Lots, with their kind (standard / edge / corner / pie / estate) and the server's area riding along.
   const lotKinds = strings(resp.lot_kinds);
+  const lotAreas = Array.isArray(resp.lot_areas_sf) ? resp.lot_areas_sf : [];
   const lotKindCounts: Record<string, number> = {};
   const lotPolys = polys3857(resp.lots_wkt);
   lotPolys.forEach((poly, i) => {
@@ -376,7 +439,8 @@ export function sfV1ToElements(
       geometry: poly,
       properties: props({
         lotKind: kind ?? undefined,
-        // the module is the standard lot's dimension; an edge, corner or pie lot has its own
+        areaSqFt: num(lotAreas[i]) ?? undefined,
+        // the module is the standard lot's dimension; an edge, corner, pie or estate lot has its own
         widthFt: kind === 'standard' ? num(resp.lot_w_ft) ?? undefined : undefined,
         depthFt: kind === 'standard' ? num(resp.lot_d_ft) ?? undefined : undefined,
         color: kind === 'pie' ? '#EEF2F7' : '#E5E7EB',
@@ -388,9 +452,9 @@ export function sfV1ToElements(
   // Pads: one house footprint per lot. In the earthwork view each pad is
   // coloured by the fill it needs (under 4 / 4–8 / 8–12 / over 12 ft).
   const padPolys = polys3857(resp.pads_wkt);
-  const fillView = !!earthwork && !!perPadFill;
+  const fillView = hasFlood && !!perPadFill && perPadFill.some(v => v != null);
   padPolys.forEach((poly, i) => {
-    const fill = perPadFill?.[i] ?? null;
+    const fill = fillView ? perPadFill?.[i] ?? null : null;
     elements.push({
       id: `${SFV1_ID_PREFIX}pad-${i + 1}`,
       type: 'building',
@@ -411,11 +475,16 @@ export function sfV1ToElements(
     });
   });
 
-  // Driveways: clipped to the pads they serve so the gate never sees a pad under pavement.
-  const padObstacles = padPolys.map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] }));
+  // Driveways: clipped to the pads they serve and to the street they meet, so
+  // the gate never sees a pad under pavement or a driveway lapping the street
+  // (2400 W Heiman: 18 m² of driveway over the pavement rejected the plan).
+  const driveObstacles = [
+    ...padPolys.map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] })),
+    ...(pavePieces as Poly3857[]),
+  ];
   const drivePieces = clipPolysToObstacles(
     polys3857(resp.drives_wkt).map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] })),
-    padObstacles,
+    driveObstacles,
     1
   );
   (drivePieces as Poly3857[]).forEach((piece, i) => {
@@ -433,11 +502,11 @@ export function sfV1ToElements(
   const pieces = Array.isArray(resp.open_pieces) ? resp.open_pieces : [];
   const openPolys = polys3857(resp.open_wkt);
   const openPieces: Array<{ kind: string; acres: number | null }> = pieces.map(p => ({ kind: str(p?.kind) ?? 'open space', acres: num(p?.acres) }));
-  let pondDrawn = false;
+  let naturalPieces = 0;
   openPolys.forEach((poly, i) => {
     const kind = str(pieces[i]?.kind) ?? 'open space';
     const style = openStyle(kind);
-    if (style.name === 'Pond') pondDrawn = true;
+    if (style.greenway) naturalPieces += 1;
     const acres = num(pieces[i]?.acres);
     elements.push({
       id: `${SFV1_ID_PREFIX}open-${i + 1}`,
@@ -445,9 +514,10 @@ export function sfV1ToElements(
       name: style.name,
       geometry: poly,
       properties: props({
-        kind: style.greenway ? 'greenway' : style.name === 'Pond' ? 'pond' : 'open',
+        kind: style.kind,
         openKind: kind,
         hazardKind: style.greenway ? 'wetland' : undefined,
+        label: style.label,
         areaSqFt: acres != null ? Math.round(acres * 43560) : undefined,
         styleOverride: true, color: style.color, opacity: style.opacity, strokeColor: style.strokeColor,
       }),
@@ -455,33 +525,52 @@ export function sfV1ToElements(
     });
   });
 
-  // The storm pond at the low point (when it is not already among the open pieces).
-  if (!pondDrawn) {
-    polys3857(resp.pond_wkt).forEach((poly, i) => {
+  // The park and the reserve, when the generator sets them aside.
+  polys3857(resp.park_wkt).forEach((poly, i) => {
+    elements.push({
+      id: `${SFV1_ID_PREFIX}park-${i + 1}`, type: 'greenspace', name: 'Park', geometry: poly,
+      properties: props({ kind: 'amenity', styleOverride: true, color: '#86EFAC', opacity: 0.6, strokeColor: '#22C55E' }), metadata: meta,
+    });
+  });
+  polys3857(resp.reserve_wkt).forEach((poly, i) => {
+    elements.push({
+      id: `${SFV1_ID_PREFIX}reserve-${i + 1}`, type: 'greenspace', name: 'Reserve', geometry: poly,
+      properties: props({ kind: 'reserve', styleOverride: true, color: '#F1F5F9', opacity: 0.35, strokeColor: '#CBD5E1' }), metadata: meta,
+    });
+  });
+  // Land held out because the fill to the pad target would exceed the cap.
+  polys3857(resp.deep_fill_hold_wkt).forEach((poly, i) => {
+    elements.push({
+      id: `${SFV1_ID_PREFIX}deep-fill-hold-${i + 1}`, type: 'greenspace', name: 'Deep-fill hold', geometry: poly,
+      properties: props({ kind: 'greenway', hazardKind: 'floodplain', label: 'Deep-fill hold (fill over the cap)', styleOverride: true, color: '#FECACA', opacity: 0.5, strokeColor: '#B91C1C' }), metadata: meta,
+    });
+  });
+
+  // Wetlands (the site's no-build land) hatched as greenway, unless the plan
+  // already carries its natural pieces (the same land, named by the generator).
+  if (naturalPieces === 0) {
+    polys3857(opts.nobuildWkt).forEach((poly, i) => {
       elements.push({
-        id: `${SFV1_ID_PREFIX}pond-${i + 1}`,
+        id: `${SFV1_ID_PREFIX}nobuild-${i + 1}`,
         type: 'greenspace',
-        name: 'Pond',
+        name: 'Wetland',
         geometry: poly,
-        properties: props({
-          kind: 'pond', areaSqFt: num(m.pond_sf) ?? undefined,
-          styleOverride: true, color: '#BFDBFE', opacity: 0.85, strokeColor: '#2563EB',
-        }),
+        properties: props({ kind: 'greenway', hazardKind: 'wetland', styleOverride: true, color: '#99F6E4', opacity: 0.5, strokeColor: '#0D9488' }),
         metadata: meta,
       });
     });
   }
 
-  // Wetlands (the site's no-build land) hatched as greenway.
-  polys3857(opts.nobuildWkt).forEach((poly, i) => {
+  // The storm pond at the low point, water-blue over whatever open piece holds it.
+  polys3857(resp.pond_wkt).forEach((poly, i) => {
     elements.push({
-      id: `${SFV1_ID_PREFIX}nobuild-${i + 1}`,
+      id: `${SFV1_ID_PREFIX}pond-${i + 1}`,
       type: 'greenspace',
-      name: 'Wetland',
+      name: 'Pond',
       geometry: poly,
       properties: props({
-        kind: 'greenway', hazardKind: 'wetland', bufferFt: undefined,
-        styleOverride: true, color: '#99F6E4', opacity: 0.5, strokeColor: '#0D9488',
+        kind: 'pond', areaSqFt: num(m.pond_sf) ?? undefined,
+        styleOverride: true, color: '#BFDBFE', opacity: 0.9, strokeColor: '#2563EB',
       }),
       metadata: meta,
     });
@@ -511,11 +600,19 @@ export function sfV1ToElements(
     });
   }
 
+  const sg = earthwork?.street_grade && typeof earthwork.street_grade === 'object' ? earthwork.street_grade : null;
+  const siteAcres = num(resp.site_acres);
+  const heldAcres = num(resp.held_acres);
+  const naturalAcres = openPieces.filter(p => p.kind.toLowerCase().startsWith('natural')).reduce((a, p) => a + (p.acres ?? 0), 0);
+  const heldPct = siteAcres != null && siteAcres > 0 ? Math.round((((heldAcres ?? 0) + naturalAcres) / (siteAcres + (heldAcres ?? 0))) * 1000) / 10 : null;
   const summary: SfV1Summary = {
     status: str(resp.status) ?? (resp.error ? 'error' : 'done'),
     reason: str(resp.reason) ?? str(resp.error),
     basis,
     floodHold: str(resp.flood_hold),
+    address: str(resp.address),
+    zoning: str(resp.zoning),
+    siteAcres,
     lots: num(resp.lots) ?? lotPolys.length,
     pattern,
     densityDuAc: num(m.gross_du_per_ac),
@@ -538,13 +635,18 @@ export function sfV1ToElements(
     },
     floodplainBuiltOnAc: num(resp.floodplain_built_on_ac),
     streetInWetlandFt: num(resp.street_in_wetland_ft),
+    heldAcres,
+    heldPct,
     openPieces,
     lotKinds: lotKindCounts,
     tests,
     fails,
     notes,
     earthwork,
+    hasFlood,
     fillView,
+    streetGrade: sg ? { maxPct: num(sg.max_pct), limitPct: num(sg.limit_pct), ftOverLimit: num(sg.ft_over_limit) } : null,
+    ms: num(resp.ms),
     generatorVersion: str(resp.generator_version) ?? 'sf_v1',
     basisLine: '',
   };
@@ -555,14 +657,14 @@ export function sfV1ToElements(
 /** One line for the basis row and the lot-fit strip. */
 export function sfV1SummaryLine(s: SfV1Summary): string {
   if (s.status === 'skipped') return `By-right subdivision skipped — ${s.reason ?? 'no reason given'}`;
-  const basis = s.basis === 'override' ? 'OVERRIDE' : 'by right';
+  const basis = s.basis === 'override' ? 'as an OVERRIDE' : 'by right';
+  if (s.lots === 0) return `0 lots ${basis}${s.reason ? ` — ${s.reason}` : ''} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
   const module = s.lotWFt != null && s.lotDFt != null ? ` @ ${s.lotWFt} × ${s.lotDFt} ft` : '';
   const dens = s.densityDuAc != null ? ` · ${s.densityDuAc} du/ac gross` : '';
   const land = s.rowPct != null && s.lotPct != null ? ` · ${s.rowPct}% ROW / ${s.lotPct}% lots${s.openPct != null ? ` / ${s.openPct}% open` : ''}` : '';
   const flood = s.floodHold ? ` · flood hold: ${s.floodHold}` : '';
   const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : s.tests.length > 0 ? ` · ${s.tests.length} tests pass` : '';
-  const reason = s.lots === 0 && s.reason ? ` — ${s.reason}` : '';
-  return `${s.lots} lots${module} by ${basis}${s.pattern ? ` on a ${s.pattern}` : ''}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}${reason}`;
+  return `${s.lots} lots${module} ${basis}${s.pattern ? ` on a ${s.pattern}` : ''}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
 }
 
 /** Fail-soft RPC: null when the service is unreachable; a server verdict
@@ -572,7 +674,7 @@ export async function fetchSfV1Plan(ogcFid: number, opt: SfV1Options = {}): Prom
     if (!supabase) return null;
     const clean: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(opt)) if (v !== undefined && v !== null) clean[k] = v;
-    const { data, error } = await supabase.rpc('fn_sf_v1_plan', { p_ogc_fid: ogcFid, p_opt: clean });
+    const { data, error } = await supabase.rpc('fn_sf_v1_plan_app', { p_ogc_fid: ogcFid, p_opt: clean });
     if (error) {
       console.warn('[sfV1Plan] RPC failed:', error.message ?? error);
       return null;
@@ -584,11 +686,11 @@ export async function fetchSfV1Plan(ogcFid: number, opt: SfV1Options = {}): Prom
   }
 }
 
-/** The site's no-build land (wetlands, hatched on the sheet): `fn_th_v3_site(ogc_fid, flood)->>'nobuild_wkt'`. */
+/** The site's no-build land (wetlands, hatched on the sheet): `fn_sf_v1_site_app(ogc_fid, flood)->>'nobuild_wkt'`. */
 export async function fetchSfV1Nobuild(ogcFid: number, flood: string | null | undefined): Promise<string | null> {
   try {
     if (!supabase) return null;
-    const { data, error } = await supabase.rpc('fn_th_v3_site', { p_ogc_fid: ogcFid, p_flood: flood ?? null });
+    const { data, error } = await supabase.rpc('fn_sf_v1_site_app', { p_ogc_fid: ogcFid, p_flood: flood ?? null });
     if (error || !data || typeof data !== 'object') return null;
     const wkt = (data as { nobuild_wkt?: unknown }).nobuild_wkt;
     return typeof wkt === 'string' ? wkt : null;
@@ -597,16 +699,29 @@ export async function fetchSfV1Nobuild(ogcFid: number, flood: string | null | un
   }
 }
 
-/** The ground-at-BFE contour for the earthwork view, EPSG:2274 lines from the
- *  parcel's DEM (`fn_sf_v1_bfe_contour`); null until that RPC exists. */
+/** Fill per pad to the pad target, from the parcel's DEM (`fn_sf_v1_pad_fill`); null when unavailable. */
+export async function fetchPadFill(ogcFid: number, padsWkt: string, padTargetFt: number): Promise<Array<number | null> | null> {
+  try {
+    if (!supabase) return null;
+    const { data, error } = await supabase.rpc('fn_sf_v1_pad_fill', { p_ogc_fid: ogcFid, p_pads_wkt: padsWkt, p_pad_target_ft: padTargetFt });
+    if (error || !Array.isArray(data)) return null;
+    return (data as unknown[]).map(v => num(v));
+  } catch {
+    return null;
+  }
+}
+
+/** The ground-at-BFE contour for the earthwork view: EPSG:2274 lines from the
+ *  parcel's DEM (`fn_sf_v1_bfe_contour`), or null. */
 export async function fetchBfeContour(ogcFid: number, bfeFt: number): Promise<LineString[] | null> {
   try {
     if (!supabase) return null;
     const { data, error } = await supabase.rpc('fn_sf_v1_bfe_contour', { p_ogc_fid: ogcFid, p_bfe_ft: bfeFt });
     if (error || !data) return null;
-    const wkt = typeof data === 'string' ? data : (data as { wkt?: unknown; contour_wkt?: unknown }).wkt ?? (data as { contour_wkt?: unknown }).contour_wkt;
-    if (typeof wkt === 'string') return wktLines(wkt);
-    return null;
+    const wkt = typeof data === 'string' ? data : (data as { wkt?: unknown }).wkt;
+    if (typeof wkt !== 'string') return null;
+    const lines = wktLines(wkt);
+    return lines.length > 0 ? lines : null;
   } catch {
     return null;
   }

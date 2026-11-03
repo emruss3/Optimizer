@@ -8,6 +8,12 @@ const SUMMARY: SfV1Summary = {
   reason: null,
   basis: 'by_right',
   floodHold: 'sfha',
+  address: '4701 BOWFIELD DR',
+  zoning: 'R8',
+  siteAcres: 10.73,
+  hasFlood: true,
+  streetGrade: { maxPct: 26.8, limitPct: 10, ftOverLimit: 440 },
+  ms: 1753,
   lots: 24,
   pattern: 'loop',
   densityDuAc: 3.1,
@@ -17,24 +23,30 @@ const SUMMARY: SfV1Summary = {
   counts: { rings: 1, crossStreets: 0, culDeSacs: 0, cornerLots: 4, edgeLots: 6, stubs: 1, connections: 1 },
   floodplainBuiltOnAc: 0.4,
   streetInWetlandFt: 0,
+  heldAcres: 0,
+  heldPct: 0,
   openPieces: [{ kind: 'pond', acres: 0.14 }, { kind: 'edge open space', acres: 0.9 }],
   lotKinds: { standard: 14, edge: 6, corner: 4 },
   tests: [
     { id: 'street.dead_end_max', pass: true, value: 0, limit: 750 },
-    { id: 'access.second_connection', pass: false, value: 1, limit: 2 },
-    { id: 'flood.freeboard', pass: true, value: 1, limit: 1 },
+    { id: 'access.second_connection', pass: false, value: 1, needed: 2 },
+    { id: 'flood.freeboard', pass: true, pad_fill_ft: { min: 0.5, median: 2.1, max: 6.4 }, lots_in_sfha: 24, pad_target_ft: 432 },
+    { id: 'open.unassigned', pass: false, rule: 'every open piece is a lot, an amenity or natural land', acres: 0.23 },
   ],
-  fails: ['access.second_connection'],
+  fails: ['access.second_connection', 'open.unassigned'],
   notes: ['0.4 ac of the plan is in the floodplain', 'two lots gave way to the pond'],
   earthwork: {
-    bfe_ft: 431, pad_target_ft: 432, fill_cy: { pads: 4200, streets: 1800 },
+    bfe_ft: 431, freeboard_ft: 1, pad_target_ft: 432, sfha_ac: 3.2, lots_in_sfha: 24,
+    ground_min_ft: 426.1, ground_max_ft: 441.8,
+    fill_cy: { total: 6000, streets: 1800, graded_aprons: 0, pads_and_drives: 4200 },
     pad_fill_ft: { min: 0.5, median: 2.1, max: 6.4 }, lots_with_pad_fill_over_10ft: 0,
     cut: { required_cy: 6000, pond_cy: 5200, open_floodplain_ac_available: 0.9, avg_depth_ft_needed: 0.6, closes_on_site: true },
+    street_grade: { max_pct: 26.8, limit_pct: 10, ft_over_limit: 440 },
     pad_fill_ft_by_lot: [0.5, 2.1],
   },
   fillView: true,
   generatorVersion: 'sf_v1',
-  basisLine: '24 lots @ 60 × 130 ft by by right on a loop · 3.1 du/ac gross',
+  basisLine: '24 lots @ 60 × 130 ft by right on a loop · 3.1 du/ac gross',
 };
 
 describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
@@ -45,19 +57,34 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
     expect(screen.getByTestId('sfv1-flood-hold').textContent).toContain('sfha');
     expect(screen.getByTestId('sfv1-pattern').textContent).toContain('loop');
     expect(screen.getByTestId('sfv1-density').textContent).toBe('3.1 du/ac gross');
-    // tests: every id on the list, the failed one marked
-    expect(screen.getByTestId('sfv1-tests').children).toHaveLength(3);
+    // tests: every id on the list, the failed ones marked, each with its own figures and rule
+    expect(screen.getByTestId('sfv1-tests').children).toHaveLength(4);
     expect(screen.getByTestId('sfv1-test-access.second_connection').getAttribute('data-pass')).toBe('false');
-    expect(screen.getByTestId('sfv1-test-access.second_connection').textContent).toContain('1 vs 2');
-    expect(screen.getByTestId('sfv1-fails').textContent).toBe('Fails: access.second_connection');
+    expect(screen.getByTestId('sfv1-test-access.second_connection').textContent).toContain('value 1 · needed 2');
+    expect(screen.getByTestId('sfv1-test-flood.freeboard').textContent).toContain('pad fill ft: min 0.5, median 2.1, max 6.4');
+    expect(screen.getByTestId('sfv1-test-open.unassigned').textContent).toContain('acres 0.23 — every open piece is a lot, an amenity or natural land');
+    expect(screen.getByTestId('sfv1-fails').textContent).toBe('Fails: access.second_connection, open.unassigned');
     expect(screen.getByTestId('sfv1-notes').textContent).toContain('two lots gave way to the pond');
-    // earthwork, with the fill legend because per-pad fill came back
+    // earthwork: the ground, the street grade (over the limit, in red), the flood figures, the fill legend
     const ew = screen.getByTestId('sfv1-earthwork').textContent ?? '';
-    expect(ew).toContain('431 ft');
-    expect(ew).toContain('pads 4,200 cy');
+    expect(ew).toContain('426.1–441.8 ft');
+    expect(screen.getByTestId('sfv1-street-grade').textContent).toBe('max 26.8% · limit 10% · 440 ft of street over the limit');
+    expect(screen.getByTestId('sfv1-street-grade').className).toContain('text-red-700');
+    expect(ew).toContain('431 ft + 1 ft freeboard → pads at 432 ft');
+    expect(ew).toContain('pads and drives 4,200 cy');
+    expect(ew).not.toContain('graded aprons'); // a zero component is not listed
     expect(ew).toContain('median 2.1');
     expect(ew).toContain('closes on site');
     expect(ew).toContain('over 12 ft');
+  });
+
+  it('out of the floodplain the earthwork block still states the ground and the street grade', () => {
+    render(<SfV1Panel summary={{ ...SUMMARY, hasFlood: false, fillView: false, earthwork: { ...SUMMARY.earthwork, sfha_ac: 0, lots_in_sfha: 0, bfe_ft: null, fill_cy: { total: 0 } } }} override={{}} onOverride={() => undefined} />);
+    const ew = screen.getByTestId('sfv1-earthwork');
+    expect(ew.getAttribute('data-flood')).toBe('false');
+    expect(ew.textContent).toContain('stays out of the flood hazard area');
+    expect(ew.textContent).not.toContain('BFE');
+    expect(screen.getByTestId('sfv1-street-grade').textContent).toContain('max 26.8%');
   });
 
   it('a skip is shown with its reason; an override is labelled and can be reset', () => {

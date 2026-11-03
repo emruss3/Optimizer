@@ -1361,3 +1361,92 @@ soft until it is.
    earthwork measured but not yet steering the layout; no lot-value or
    infrastructure-cost objective; R80 estate lots crude; duplexes not
    counted; `fn_sf_v1_strip_dbg` is a diagnostic copy, not for the product.
+
+### Update 2026-11-03: verified against the live function, and what changed
+
+The connector came back. The five items above, closed:
+
+1. **The payload, from a live call** (`fn_sf_v1_plan(682644)`, 1.75 s):
+   `tests` is an **object keyed by test id**, each with `pass` and its own
+   figures — `{pass, limit, value}` for `block.length` / `street.dead_end_max`
+   / `street.grade_max` (which also carries `ft_over_limit`), `{pass, rule,
+   acres}` for `open.unassigned` (a test the handoff did not list),
+   `{pass, area_sf, needed_sf}` for `storm.low_point`, `{pass, value, needed}`
+   for `access.second_connection`, `{lots, ratio, arithmetic_at_62pct}` with
+   **no pass** for `yield.vs_arithmetic` (a ratio, not a verdict), and in the
+   floodplain `{pass, pad_fill_ft, lots_in_sfha, pad_target_ft}` for
+   `flood.freeboard` and `{pass, fill_cy, cut_available_ac,
+   avg_cut_depth_ft_needed}` for `flood.cut_fill_balance`. The panel now
+   prints every figure a test carries in its own words and the rule as the
+   note. `earthwork` is **always** present — ground min/max, `street_grade`
+   {max_pct, limit_pct, ft_over_limit}, and the flood figures (`sfha_ac`,
+   `lots_in_sfha`, `bfe_ft`, `freeboard_ft`, `pad_target_ft`, `fill_cy` by
+   component with a `total`, `pad_fill_ft` min/median/max,
+   `lots_with_pad_fill_over_10ft`, `cut`) zero or null outside the SFHA; the
+   block shows the ground and the street grade always and the flood part only
+   when the plan builds in the SFHA. `open_pieces` kinds are prefixed —
+   `amenity: pond and its edge`, `amenity: street island / green (too shallow
+   for a lot)`, `amenity: neighborhood park`, `natural: wetland / water
+   buffer`, `unassigned: buildable land without a street or a lot` — and draw
+   by prefix (green, hatched, neutral). `lot_areas_sf` (per lot) feeds the
+   lot tags; `lot_kinds` includes `estate`. Extra layers `park_wkt`,
+   `reserve_wkt`, `deep_fill_hold_wkt` draw when present. `basis` stays
+   `by_right` under the fill scenario, so the client labels an override by
+   what it asked for. The ten test parcels today: 682644 34 lots (loop),
+   681118 16 (loop), 679703 14 (single street), 661361 14, 680145 12 (T
+   street), 558909 9, 678879 6 (frontage lots), 550510 18, 642043 3, 680719
+   0 by right / 145 under the fill scenario — the handoff's counts have moved
+   with the generator.
+2. **Access.** As `anon`, `fn_sf_v1_plan` fails inside `fn_th_v3_site` with
+   "permission denied for function fn_site_inputs" (the th_v3 helpers are
+   postgres / service_role only). Migration `20261103100000_sf_v1_app_access`
+   adds four SECURITY DEFINER wrappers the app calls instead:
+   `fn_sf_v1_plan_app(ogc_fid, opt)`, `fn_sf_v1_site_app(ogc_fid, flood)`
+   (the no-build / hold / site layers only), `fn_sf_v1_pad_fill(ogc_fid,
+   pads_wkt, pad_target_ft)` (fill per pad: the target less the DEM's mean
+   ground under the pad, from `parcel_topo`'s raster — 20-ft cells, EPSG:2274,
+   32-bit float feet) and `fn_sf_v1_bfe_contour(ogc_fid, bfe_ft)`
+   (`ST_Contour` at the BFE, WKT lines). Verified as `anon`: 682644 → 34
+   lots; 680719 fill scenario → 145 lots, 145 pad fills (2.3–15.9 ft), an 8-KB
+   BFE contour.
+3. `fn_th_v3_site(integer, text)` takes `p_ogc_fid, p_flood`; the app reaches
+   it through the site wrapper.
+4. **The BFE contour** rides with the topography layer as a blue dashed
+   contour labelled "BFE 429"; the pads take their fill band from
+   `fn_sf_v1_pad_fill`.
+5. **Fixtures and the gate.** 4701 Bowfield Dr (682644) and 0 Martingale Dr
+   (680719) are battery parcels; the battery presses the fill-scenario
+   override on Martingale and judges that answer on its own evidence
+   (`requireSfV1Override`): 145 lots on two loops, `flood.cut_fill_balance`
+   admitted as failed, the fill-depth view and the BFE line rendered.
+   2400 W Heiman keeps its legacy expectation until its by-right fixture is
+   harvested — by right it is 18 lots on a single street at 1.64 du/ac
+   against the old generator's 34, a reviewed change for Eric, not a ratchet.
+
+## 21. Ten parcels by right, as a user (2026-11-03)
+
+Eric: "Run 10 parcels as if you were a user, take screenshots, and provide
+candid feedback about making the experience and output better." The ten are
+the by-right generator's own test set, driven through the real client in
+fixture mode on responses pulled live the same afternoon. The pictures and
+the full write-up are in `qa/audits/2026-11-03/`.
+
+What the run found and this change fixed: the geometry gate rejected 2400 W
+Heiman because the generator's driveways lap into the pavement (the mapper
+now clips them to the street); every house pad carried a "House N" caption
+(the lot tag names the lot; pads carry none now); the open-space list ran to
+nineteen pieces on Martingale (grouped by kind with counts and acres); the
+basis line read "by by right".
+
+What a user would push back on, in order of weight: six of ten streets
+exceed the 10% grade limit (up to 76.8% on Morton Mill) and the plans say
+"done" — the generator does not steer by grade yet; W Heiman gets 18 lots
+on 27% of the land where the old generator drew 34, because the flood hold
+takes the northern half as "amenity: pond and its edge" — the two answers
+need reconciling before users see both; the open-space vocabulary is the
+engineer's; Bell Rd carries two opinions on its frontage (the parcel fabric
+says none, the generator fronts it); the pattern panel describes the old
+generator over the new plan; the KPI strip is the apartment strip (stalls,
+"0 issues" over failed tests, a unit-type legend); estate and pie remnants
+read as waste; the route is silent and the override buried; twenty seconds
+to a two-second answer because the apartment-side compile runs first.

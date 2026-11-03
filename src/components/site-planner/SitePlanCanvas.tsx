@@ -986,11 +986,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     // Label when the piece is big enough on screen to carry it
     if (Math.min(maxX - minX, maxY - minY) * zoom < 36 || Math.max(maxX - minX, maxY - minY) * zoom < 90) return;
-    const label = p.hazardKind === 'wetland'
-      ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''} · ${p.bufferFt ?? 25}-ft buffer`
-      : p.hazardKind === 'floodway'
-        ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
-        : `${p.zone ? `${p.zone} ` : ''}floodplain`;
+    const named = (element.properties as { label?: unknown } | undefined)?.label;
+    const label = typeof named === 'string' && named
+      ? named
+      : p.hazardKind === 'wetland'
+        ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''} · ${p.bufferFt ?? 25}-ft buffer`
+        : p.hazardKind === 'floodway'
+          ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
+          : `${p.zone ? `${p.zone} ` : ''}floodplain`;
     const fontSize = 11 / zoom;
     ctx.save();
     ctx.translate(cx, cy);
@@ -1525,8 +1528,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.lineJoin = 'round';
     for (const c of topo.contours) {
       if (!c.index && !drawMinor) continue;
-      ctx.strokeStyle = c.index ? 'rgba(120, 72, 32, 0.55)' : 'rgba(120, 72, 32, 0.28)';
-      ctx.lineWidth = (c.index ? 1.1 : 0.6) / zoom;
+      // The ground-at-BFE line (the by-right earthwork view): blue, dashed,
+      // on top of the brown contours — where the flood plain's water would stand.
+      ctx.strokeStyle = c.bfe ? 'rgba(37, 99, 235, 0.9)' : c.index ? 'rgba(120, 72, 32, 0.55)' : 'rgba(120, 72, 32, 0.28)';
+      ctx.lineWidth = (c.bfe ? 1.8 : c.index ? 1.1 : 0.6) / zoom;
+      ctx.setLineDash(c.bfe ? [8 / zoom, 4 / zoom] : []);
       ctx.beginPath();
       for (const line of c.lines) {
         if (line.length < 2) continue;
@@ -1534,10 +1540,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         for (let i = 1; i < line.length; i++) ctx.lineTo(line[i][0], line[i][1]);
       }
       ctx.stroke();
+      ctx.setLineDash([]);
     }
-    if (labelIndex) {
+    if (labelIndex || topo.contours.some(c => c.bfe)) {
       for (const c of topo.contours) {
         if (!c.index) continue;
+        if (!c.bfe && !labelIndex) continue;
         // label the longest piece at its midpoint, along the line
         let best: number[][] | null = null;
         let bestLen = 0;
@@ -1547,8 +1555,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         }
         if (!best || bestLen * zoom < 70) continue;
         const at = alongPolyline(best, bestLen / 2);
-        drawSheetText(ctx, zoom, at.x, at.y, at.angle, String(Math.round(c.elevationFt)), {
-          fontPx: 9.5, weight: 600, fill: 'rgba(120, 72, 32, 0.95)', halo: 'rgba(249, 250, 251, 0.95)',
+        drawSheetText(ctx, zoom, at.x, at.y, at.angle, c.bfe ? `BFE ${Math.round(c.elevationFt)}` : String(Math.round(c.elevationFt)), {
+          fontPx: c.bfe ? 10 : 9.5, weight: c.bfe ? 700 : 600, fill: c.bfe ? 'rgba(29, 78, 216, 0.98)' : 'rgba(120, 72, 32, 0.95)', halo: 'rgba(249, 250, 251, 0.95)',
         });
       }
     }
@@ -1813,7 +1821,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Render building labels on top of everything
     if (showLabels) {
       sortedElements.forEach((element) => {
-        if (element.type === 'building') {
+        // A house pad on a by-right lot is named by its lot tag, not a label
+        // per house (fourteen "House N" captions over a street read as noise).
+        if (element.type === 'building' && !element.properties?.house) {
           renderElementLabel(ctx, element, viewport.zoom);
         }
       });
