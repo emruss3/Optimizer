@@ -28,7 +28,11 @@ permissions:
 jobs:
   fixture-gate:
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    # Pinned 2026-11-03: `ubuntu-latest` began moving to Ubuntu 26 on
+    # 2026-10-19 and `playwright install --with-deps` failed there in one
+    # second (an unknown distribution for its apt step), taking the gate
+    # down before the battery ran.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -61,7 +65,7 @@ jobs:
 
   live-battery:
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
