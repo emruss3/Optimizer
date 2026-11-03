@@ -189,6 +189,8 @@ function judge(exp, ev) {
   if (exp.requireSfV1) {
     judgeSfV1(exp.requireSfV1, ev.sfV1, 'by right');
     if (!ev._domSfV1Panel) errs.push('by-right panel not rendered');
+    // 2026-11-03: 0 new lots is not "nothing can be built" — the lot itself carries a house
+    if (exp.requireSfV1.offersOneHouse && !ev._domSfV1OneHouse) errs.push('by right: 0 new lots, but the one-house offer (sfv1-draw-house) did not render');
   }
   if (exp.requireSfV1Override) {
     const o = ev._override;
@@ -329,6 +331,7 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
         // passed every assertion while the sheet showed "Site Planner Error".
         _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? ''),
         _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'),
+        _domSfV1OneHouse: !!document.querySelector('[data-testid="sfv1-draw-house"]'),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;

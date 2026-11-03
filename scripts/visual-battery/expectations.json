@@ -98,8 +98,10 @@
     "requireSfV1": {
       "status": "done",
       "maxLots": 0,
-      "basis": "by_right"
+      "basis": "by_right",
+      "offersOneHouse": true
     },
+    "_oneHouse": "2026-11-03: a 0-lot by-right answer offers the one house the parcel itself carries (the single-family seed) instead of leaving an empty sheet — found on 0 Harding Pl (R40, 2.9 ac) and 7610 Chipmunk Ln (R80, 7 ac) in the five-parcel run.",
     "requireSfV1Override": {
       "status": "done",
       "minLots": 145,

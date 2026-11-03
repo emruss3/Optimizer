@@ -94,10 +94,12 @@ Bell Rd and Martingale by right.
 11. **The override is buried.** On a floodplain parcel the verdict "0 lots by
     right" should offer the fill scenario in the same breath ("see what
     filling to BFE + 4 ft would give — an override"), not three panels down.
-12. **Twenty seconds to a two-second answer.** Each page settled in ~20 s
-    because the planner-context compile and the massing program run first;
-    the by-right plan itself takes 0.2–1.5 s. On an R / RS parcel the
-    by-right plan should render first and the apartment-side compile follow.
+12. ~~**Twenty seconds to a two-second answer.**~~ *Corrected in
+    `qa/audits/2026-11-03b`: the twenty seconds were this harness's fixed
+    waits, not the app. In fixture mode the client shows the by-right panel
+    0.7–1.3 s after the planner opens. The real first-visit wait is the
+    server's — the planner compile (0.7–5.5 s cold) runs before the by-right
+    plan (0.1–10 s on a first call), and the topography can take 8–41 s.*
 13. **The default use chip says "Two Family"** on R6 / R8 lots (the highest
     permitted use) over single-family lots — the 2026-09-16 finding, still
     there.

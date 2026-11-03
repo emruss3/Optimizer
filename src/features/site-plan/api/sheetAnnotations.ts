@@ -186,7 +186,7 @@ export function buildSheetTitleBlock(input: SheetTitleBlockInput): SheetTitleBlo
   if (input.zoning) sub.push(String(input.zoning));
   if (typeof input.acres === 'number' && input.acres > 0) sub.push(`${input.acres >= 10 ? input.acres.toFixed(1) : input.acres.toFixed(2)} ac`);
   if (subdivision) {
-    sub.push(`${subdivision.lots} lots`);
+    sub.push(`${subdivision.lots} lot${subdivision.lots === 1 ? '' : 's'}`);
     sub.push(`${subdivision.network} network`);
     if (typeof subdivision.pctRow === 'number') sub.push(`${subdivision.pctRow}% R.O.W.`);
   }
