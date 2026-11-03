@@ -1,10 +1,12 @@
 # Visual QA battery — and the pre-merge Battery Gate
 
-Screenshots 4 reference parcels (2600 W Heiman 553450 · 2622 W Heiman
-667574 · 1200 W H Davis 669046 · 1710 Meharry 488278) in 2D + 3D by
-driving the real app headlessly (Playwright + Chromium), and — in ASSERT
-mode — machine-checks each parcel against `expectations.json` so the
-battery can gate merges (audit 2026-07-21, Ordered Path item 2).
+Screenshots the reference parcels (2600 W Heiman 553450 · 2622 W Heiman
+667574 · 1200 W H Davis 669046 · 1710 Meharry 488278 · the SF-suggestion,
+commercial and subdivision parcels · 535 Main St 469303, the Texas wrap
+since 2026-10-07) in 2D + 3D by driving the real app headlessly
+(Playwright + Chromium), and — in ASSERT mode — machine-checks each parcel
+against `expectations.json` so the battery can gate merges (audit
+2026-07-21, Ordered Path item 2).
 
 ## The gate (`.github/workflows/battery-gate.yml`)
 
@@ -36,6 +38,21 @@ its expectation:
 **The ritual**: a PR that changes server behavior must refresh the fixtures
 (below) and raise the floors in the same PR. A solver improvement that
 can't clear its own previous numbers doesn't merge.
+
+**By-right subdivision (2026-10-27, gated 2026-11-03).** On an R / RS parcel
+the client asks `fn_sf_v1_plan_app` first (the owner's routing rule) and
+falls through to `fn_generate_subdivision` only when that RPC is unreachable.
+Two parcels gate it: 4701 Bowfield Dr (682644, R8 loop, 34 lots) and 0
+Martingale Dr (680719, the floodplain case: 0 lots by right; the battery then
+presses the fill-scenario override and judges that answer on its own —
+`sfV1Override: 'floodway'` on the parcel, `requireSfV1Override` in the
+expectation: 145 lots, `flood.cut_fill_balance` admitted as failed, the pads
+coloured by fill from the DEM, the ground-at-BFE line drawn). The mock keys
+an override apart from the by-right call (`:{"flood":"floodway"}` after the
+use, and `:floodway` for `p_flood`). 2400 W Heiman (R6) still carries no
+`rpc:fn_sf_v1_plan_app:550510:` key, so it renders the legacy neighbourhood
+and its expectation stands. Evidence: `__planEvidence.sfV1` (status, lots,
+pattern, basis, flood hold, fails, tests, hasFlood, fillView, bfeContour).
 
 Nightly, **live mode** runs the same battery against the real backend
 (fixtures can't see a solver regression) plus one random cohort parcel
@@ -100,8 +117,9 @@ reads return `[]`; auth returns no session.
 3. `npx vite --port 5199 &`
 4. `ASSERT=1 node scripts/visual-battery/battery.mjs`
    (`CHROMIUM_PATH=/opt/pw-browsers/chromium` in the agent sandbox;
-   `SHOTS_DIR=...` to redirect output; `ONE_PARCEL=1` for iteration;
-   `ALL_CONSOLE=1` for full console capture)
+   `SHOTS_DIR=...` to redirect output; `ONE_PARCEL=1` for the first parcel
+   only, `ONLY_FID=<ogc_fid>` for one named parcel — iterating on a new
+   fixture; `ALL_CONSOLE=1` for full console capture)
 
 Outputs: screenshots, `console_errors.json`, and `results.json` (the gate
 verdict per parcel).

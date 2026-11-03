@@ -6,7 +6,7 @@ import type { Element } from '../../engine/types';
 import type { ViewportState } from '../../hooks/useViewport';
 import { ElementService } from '../../services/elementService';
 import { feetToMeters, metersToFeet } from '../../engine/units';
-import { computeUnitTicks, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut, townhomeSlices } from './planRendering';
+import { computeUnitTicks, corridorLine, edgeDimensions, pickScaleBarFt, longestEdgeAngle, sortByZOrder, setbackLabelIndices, pointsAlongSegment, computeCurbCut, townhomeSlices } from './planRendering';
 import { computeFloorplate, UNIT_COLORS } from './unitLayout';
 import type { EdgeClassification } from '../../engine/setbacks';
 import type { ParcelTopoView } from '../../features/site-plan/api/parcelTopo';
@@ -214,17 +214,19 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   }, [onWheel]);
 
   // Get element color, opacity, and stroke based on type
-  const getElementStyle = useCallback((element: Element): { color: string; opacity: number; stroke: boolean; strokeColor?: string } => {
+  const getElementStyle = useCallback((element: Element): { color: string; opacity: number; stroke: boolean; strokeColor?: string; dash?: boolean } => {
     // Styled honesty (order-4): elements may OPT IN to explicit styling
     // (seed zones' subtle ground tints). Type defaults stay authoritative
     // for everything else — no existing element changes appearance.
-    const po = element.properties as { styleOverride?: boolean; color?: string; opacity?: number; strokeColor?: string } | undefined;
+    const po = element.properties as { styleOverride?: boolean; color?: string; opacity?: number; strokeColor?: string; dashed?: boolean } | undefined;
     if (po?.styleOverride && po.color) {
       return {
         color: po.color,
         opacity: po.opacity ?? 0.5,
         stroke: true,
         strokeColor: po.strokeColor ?? '#B6C2CE',
+        // a structure below the deck (the wrap's garage) is drawn dashed
+        dash: po.dashed === true,
       };
     }
     switch (element.type) {
@@ -472,7 +474,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (element.type !== 'parking' && element.type !== 'parking-bay') return;
     // Townhome garage aprons are private driveways, not a striped surface
     // lot — striping them was part of the "small multifamily" misread.
-    if (element.properties?.apron) return;
+    // A structured garage (the wrap's deck, 2026-10-07) has its stalls on
+    // levels below the plan: no surface stripes, a dashed outline instead.
+    if (element.properties?.apron || element.properties?.structured) return;
     if (!parkingViz) return;
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 3) return;
@@ -680,6 +684,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.strokeStyle = isSelected ? '#F59E0B' : (style.strokeColor ?? '#1E40AF');
       ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
       ctx.globalAlpha = 1;
+      if (style.dash && !isSelected) ctx.setLineDash([8 / zoom, 5 / zoom]);
       ctx.stroke();
     }
 
@@ -693,6 +698,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderBuildingDetail = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 4) return;
+    // A house pad (the by-right subdivision's lots, 2026-10-27) is one
+    // dwelling: no corridor, no unit ticks — the footprint is the drawing.
+    if (element.properties?.house) return;
 
     const UNIT_SPACING_M = feetToMeters(26); // ~typical unit module along the corridor
     // Skip when detail would be sub-3px noise
@@ -978,11 +986,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     // Label when the piece is big enough on screen to carry it
     if (Math.min(maxX - minX, maxY - minY) * zoom < 36 || Math.max(maxX - minX, maxY - minY) * zoom < 90) return;
-    const label = p.hazardKind === 'wetland'
-      ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''} · ${p.bufferFt ?? 25}-ft buffer`
-      : p.hazardKind === 'floodway'
-        ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
-        : `${p.zone ? `${p.zone} ` : ''}floodplain`;
+    const named = (element.properties as { label?: unknown } | undefined)?.label;
+    const label = typeof named === 'string' && named
+      ? named
+      : p.hazardKind === 'wetland'
+        ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''} · ${p.bufferFt ?? 25}-ft buffer`
+        : p.hazardKind === 'floodway'
+          ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
+          : `${p.zone ? `${p.zone} ` : ''}floodplain`;
     const fontSize = 11 / zoom;
     ctx.save();
     ctx.translate(cx, cy);
@@ -1006,6 +1017,22 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (!stalls || stalls <= 0) return;
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 4) return;
+
+    // A structured garage sits under the bars drawn after it: its outline is
+    // re-struck dashed in this top pass so the deck reads through the plan.
+    if (element.properties?.structured) {
+      ctx.save();
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([8 / zoom, 5 / zoom]);
+      ctx.beginPath();
+      ctx.moveTo(coords[0][0], coords[0][1]);
+      for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
 
     let cx = 0, cy = 0;
     const n = coords.length - 1;
@@ -1038,7 +1065,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Say what the number is: a bare "25" on a grey rectangle read as a
     // building bay (Eric, 2026-09-03: "building w/ 25, 25, 25, 18"). A bay
     // too narrow for the word gets the parking glyph instead ("P · 25").
-    const full = `${stalls} stall${stalls === 1 ? '' : 's'}`;
+    // A structured garage says what it is — levels and stalls — so the number
+    // never reads as a surface lot (2026-10-07, the wrap).
+    const custom = typeof element.properties?.label === 'string' ? (element.properties.label as string) : null;
+    const full = custom ?? `${stalls} stall${stalls === 1 ? '' : 's'}`;
     const text = ctx.measureText(full).width * zoom + 10 <= roomPx ? full : `P · ${stalls}`;
     const w = ctx.measureText(text).width + 8 / zoom;
     const h = fontSize * 1.5;
@@ -1498,8 +1528,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.lineJoin = 'round';
     for (const c of topo.contours) {
       if (!c.index && !drawMinor) continue;
-      ctx.strokeStyle = c.index ? 'rgba(120, 72, 32, 0.55)' : 'rgba(120, 72, 32, 0.28)';
-      ctx.lineWidth = (c.index ? 1.1 : 0.6) / zoom;
+      // The ground-at-BFE line (the by-right earthwork view): blue, dashed,
+      // on top of the brown contours — where the flood plain's water would stand.
+      ctx.strokeStyle = c.bfe ? 'rgba(37, 99, 235, 0.9)' : c.index ? 'rgba(120, 72, 32, 0.55)' : 'rgba(120, 72, 32, 0.28)';
+      ctx.lineWidth = (c.bfe ? 1.8 : c.index ? 1.1 : 0.6) / zoom;
+      ctx.setLineDash(c.bfe ? [8 / zoom, 4 / zoom] : []);
       ctx.beginPath();
       for (const line of c.lines) {
         if (line.length < 2) continue;
@@ -1507,10 +1540,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         for (let i = 1; i < line.length; i++) ctx.lineTo(line[i][0], line[i][1]);
       }
       ctx.stroke();
+      ctx.setLineDash([]);
     }
-    if (labelIndex) {
+    if (labelIndex || topo.contours.some(c => c.bfe)) {
       for (const c of topo.contours) {
         if (!c.index) continue;
+        if (!c.bfe && !labelIndex) continue;
         // label the longest piece at its midpoint, along the line
         let best: number[][] | null = null;
         let bestLen = 0;
@@ -1520,8 +1555,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         }
         if (!best || bestLen * zoom < 70) continue;
         const at = alongPolyline(best, bestLen / 2);
-        drawSheetText(ctx, zoom, at.x, at.y, at.angle, String(Math.round(c.elevationFt)), {
-          fontPx: 9.5, weight: 600, fill: 'rgba(120, 72, 32, 0.95)', halo: 'rgba(249, 250, 251, 0.95)',
+        drawSheetText(ctx, zoom, at.x, at.y, at.angle, c.bfe ? `BFE ${Math.round(c.elevationFt)}` : String(Math.round(c.elevationFt)), {
+          fontPx: c.bfe ? 10 : 9.5, weight: c.bfe ? 700 : 600, fill: c.bfe ? 'rgba(29, 78, 216, 0.98)' : 'rgba(120, 72, 32, 0.95)', halo: 'rgba(249, 250, 251, 0.95)',
         });
       }
     }
@@ -1786,7 +1821,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Render building labels on top of everything
     if (showLabels) {
       sortedElements.forEach((element) => {
-        if (element.type === 'building') {
+        // A house pad on a by-right lot is named by its lot tag, not a label
+        // per house (fourteen "House N" captions over a street read as noise).
+        if (element.type === 'building' && !element.properties?.house) {
           renderElementLabel(ctx, element, viewport.zoom);
         }
       });

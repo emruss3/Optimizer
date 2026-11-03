@@ -55,7 +55,9 @@ export function isSfPlanElement(el: Pick<Element, 'id'>): boolean {
   // drawn from the RefusalCard suggestion — same replace-on-regenerate class.
   // 'subdiv-' = the subdivision generator's neighbourhood (streets, alleys,
   // lots, courts) — one generated plan replaces another, whatever the family.
-  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-') || el.id.startsWith('sfseed-') || el.id.startsWith('subdiv-');
+  // 'sfv1-' = the by-right subdivision (fn_sf_v1_plan, 2026-10-27): lots,
+  // pads, streets, open space — the same replace-on-regenerate class.
+  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-') || el.id.startsWith('sfseed-') || el.id.startsWith('subdiv-') || el.id.startsWith('sfv1-');
 }
 
 /** Parse a geom that may arrive as an object or a JSON string; 4326 → 3857. */

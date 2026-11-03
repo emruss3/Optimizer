@@ -138,3 +138,26 @@ describe('validatePlanElements (ground-floor amenity carve-outs)', () => {
     expect(v.ok).toBe(false);
   });
 });
+
+describe('structured parking (2026-10-07, the wrap garage)', () => {
+  it('a garage under the bars is the deck they stand on, not parking under a building', () => {
+    const garage = rect('g', 'parking', 0, 0, 60, 40);
+    (garage.properties as Record<string, unknown>).structured = true;
+    const v = validatePlanElements([
+      garage,
+      rect('b1', 'building', 0, 0, 60, 12), // a bar on the deck
+      rect('b2', 'building', 0, 28, 60, 12), // the bar opposite
+      rect('d', 'circulation', 62, 0, 8, 40), // the side drive beside the block
+    ]);
+    expect(v.ok).toBe(true);
+    expect(v.overlaps).toHaveLength(0);
+  });
+
+  it('surface parking under a building still fails the gate', () => {
+    const v = validatePlanElements([
+      rect('p', 'parking', 0, 0, 60, 40),
+      rect('b1', 'building', 0, 0, 60, 12),
+    ]);
+    expect(v.ok).toBe(false);
+  });
+});

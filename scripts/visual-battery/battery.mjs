@@ -21,6 +21,8 @@ const OUT = process.env.SHOTS_DIR
 fs.mkdirSync(OUT, { recursive: true });
 
 const ONE = process.env.ONE_PARCEL === '1';
+// ONLY_FID=<ogc_fid> runs that one battery parcel (iteration on a new fixture)
+const ONLY = process.env.ONLY_FID ? String(process.env.ONLY_FID) : null;
 const ASSERT = process.env.ASSERT === '1';
 
 const PARCELS = [
@@ -36,6 +38,14 @@ const PARCELS = [
   // Plan-pattern layer: the MDHA subdivision parcel — the pattern must be named
   // and the generator's non-alignment admitted.
   { ogc_fid: 550510, address: '2400 W HEIMAN ST', zoning: 'R6' },
+  // 2026-10-07 the Texas wrap (The Caroline pattern): a compact MUG-A block in
+  // the structured regime — four bars round a garage, the court on the deck.
+  { ogc_fid: 469303, address: '535 MAIN ST', zoning: 'MUG-A' },
+  // 2026-11-03 the by-right subdivision (sf_v1): an R8 loop, and the
+  // floodplain case where by right is 0 lots and the fill scenario (the
+  // override pressed below) grades its own earthwork.
+  { ogc_fid: 682644, address: '4701 BOWFIELD DR', zoning: 'R8' },
+  { ogc_fid: 680719, address: '0 MARTINGALE DR', zoning: 'R10', sfV1Override: 'floodway' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -65,6 +75,9 @@ function judge(exp, ev) {
   if (!exp) return [];
   if (!ev) return ['no plan evidence surfaced (window.__planEvidence missing — did the workspace mount?)'];
   const errs = [];
+  // Whatever the mode, the sheet must have drawn: a plan that computed but
+  // crashed the canvas is not a rendered plan.
+  if (ev._domPlannerError) errs.push('the canvas error boundary rendered ("Site Planner Error") — the plan computed but could not be drawn');
   if (exp.mode === 'server-plan') {
     if (ev.solvedBy !== 'server') {
       errs.push(`expected the SERVER plan to render, got solvedBy=${ev.solvedBy ?? 'none'}`);
@@ -154,6 +167,37 @@ function judge(exp, ev) {
       errs.push('the subdivision was rejected by the geometry gate (overlapping pavement/lots)');
     }
   }
+  // 2026-11-03 by-right subdivision (sf_v1): the district's own answer, graded
+  // by its own tests — lots floors ratchet UP, the fails it admits must show.
+  const judgeSfV1 = (want, got, label) => {
+    if (!want) return;
+    if (!got) { errs.push(`${label}: by-right evidence missing (sfV1 absent — the route did not run or fn_sf_v1_plan_app was unreachable)`); return; }
+    if (want.status && got.status !== want.status) errs.push(`${label}: status '${got.status}', expected '${want.status}'`);
+    if (typeof want.minLots === 'number' && !(got.lots >= want.minLots)) errs.push(`${label}: ${got.lots} lots below the floor ${want.minLots} — floors only ratchet UP`);
+    if (typeof want.maxLots === 'number' && !(got.lots <= want.maxLots)) errs.push(`${label}: ${got.lots} lots, expected at most ${want.maxLots}`);
+    if (want.pattern && got.pattern !== want.pattern) errs.push(`${label}: pattern '${got.pattern ?? 'none'}', expected '${want.pattern}'`);
+    if (want.basis && got.basis !== want.basis) errs.push(`${label}: basis '${got.basis}', expected '${want.basis}'`);
+    if (want.floodHold && got.floodHold !== want.floodHold) errs.push(`${label}: flood hold '${got.floodHold ?? 'none'}', expected '${want.floodHold}'`);
+    if (typeof want.hasFlood === 'boolean' && !!got.hasFlood !== want.hasFlood) errs.push(`${label}: in the flood hazard area = ${!!got.hasFlood}, expected ${want.hasFlood}`);
+    if (want.fillView && !got.fillView) errs.push(`${label}: the fill-depth view did not render (per-pad fill from the DEM missing)`);
+    if (want.bfeContour && !got.bfeContour) errs.push(`${label}: the ground-at-BFE contour did not load`);
+    for (const f of want.failsInclude ?? []) {
+      if (!(got.fails ?? []).includes(f)) errs.push(`${label}: expected the plan to admit failing '${f}', fails were [${(got.fails ?? []).join(', ')}]`);
+    }
+    if (typeof want.minTests === 'number' && !(got.tests >= want.minTests)) errs.push(`${label}: ${got.tests} tests shown, expected at least ${want.minTests}`);
+  };
+  if (exp.requireSfV1) {
+    judgeSfV1(exp.requireSfV1, ev.sfV1, 'by right');
+    if (!ev._domSfV1Panel) errs.push('by-right panel not rendered');
+  }
+  if (exp.requireSfV1Override) {
+    const o = ev._override;
+    if (!o) errs.push('override: the fill-scenario control was never pressed (button missing on the panel?)');
+    else {
+      judgeSfV1(exp.requireSfV1Override, o.sfV1, 'override');
+      if (o._domPlannerError) errs.push('override: the canvas error boundary rendered');
+    }
+  }
   // Plan-organization layer: every gated parcel must resolve the expected
   // pattern, and the alignment verdict must be honest where asserted.
   if (exp.requirePlanPattern && ev.planPattern !== exp.requirePlanPattern) {
@@ -221,7 +265,7 @@ function judge(exp, ev) {
   return errs;
 }
 
-for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
+for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? PARCELS.slice(0, 1) : PARCELS)) {
   const page = await ctx.newPage();
   const errs = [];
   page.on('console', m => {
@@ -279,9 +323,33 @@ for (const p of (ONE ? PARCELS.slice(0, 1) : PARCELS)) {
         _domPlanPattern: !!document.querySelector('[data-testid="plan-pattern-panel"]'),
         _domSfSwitch: !!document.querySelector('[data-testid="sf-seed-switch"]'),
         _domSubdivision: !!document.querySelector('[data-testid="subdivision-panel"]'),
+        // 2026-10-07: the canvas error boundary. The evidence hook reads the
+        // workspace, so a plan that computed but could not DRAW (the house and
+        // the wrap's pool deck both hit an undefined-import crash in the canvas)
+        // passed every assertion while the sheet showed "Site Planner Error".
+        _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? ''),
+        _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;
+    // 2026-11-03 by-right subdivision: the override the parcel asks for (the
+    // floodway-only fill scenario) is pressed and judged on its own evidence.
+    if (evidence && p.sfV1Override === 'floodway') {
+      const btn = page.getByTestId('sfv1-override-floodway');
+      if (await btn.isVisible().catch(() => false)) {
+        await btn.click();
+        await page.waitForTimeout(9000);
+        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_override.png` });
+        evidence._override = await page.evaluate(() => {
+          const ev = window.__planEvidence ?? null;
+          return ev
+            ? { ...ev, _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'), _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? '') }
+            : null;
+        });
+      } else {
+        evidence._override = null;
+      }
+    }
     // Seed view (order-4 item 1): when the engine emits a placed seed, shoot
     // the stage-ordered render too — the single-L artifact.
     const seedToggle = page.getByTestId('seed-toggle');

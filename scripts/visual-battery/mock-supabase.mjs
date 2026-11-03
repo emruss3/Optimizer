@@ -27,7 +27,11 @@ const keyFor = (path, body) => {
   try { args = JSON.parse(body || '{}'); } catch { /* noop */ }
   const fid = args.p_ogc_fid ?? args.ogc_fid ?? '';
   const use = args.p_use ?? args.p_typology ?? '';
-  return `rpc:${fn}:${fid}:${use}`;
+  // 2026-11-03 by-right subdivision: an override (p_opt) and the flood hold
+  // (p_flood) are different answers from the same function — they key apart.
+  const opt = args.p_opt && typeof args.p_opt === 'object' && Object.keys(args.p_opt).length > 0 ? `:${JSON.stringify(args.p_opt)}` : '';
+  const flood = typeof args.p_flood === 'string' && args.p_flood ? `:${args.p_flood}` : '';
+  return `rpc:${fn}:${fid}:${use}${opt}${flood}`;
 };
 
 http.createServer((req, res) => {
