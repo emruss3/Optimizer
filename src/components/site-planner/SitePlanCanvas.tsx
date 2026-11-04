@@ -668,16 +668,23 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
     ctx.save();
 
-    // Fill
+    // Fill — every ring, even-odd, so a polygon's holes stay holes. A loop
+    // street is one polygon with the block inside it as a hole; drawn from the
+    // outer ring alone, every loop plan (4701 Bowfield Dr, 0 Brittany Park Dr)
+    // showed its inner block as solid pavement under the lots (2026-11-04).
+    const rings = (element.geometry?.coordinates ?? []) as number[][][];
     ctx.fillStyle = style.color;
     ctx.globalAlpha = isHovered ? Math.min(style.opacity + 0.2, 1) : style.opacity;
     ctx.beginPath();
-    ctx.moveTo(coords[0][0], coords[0][1]);
-    for (let i = 1; i < coords.length; i++) {
-      ctx.lineTo(coords[i][0], coords[i][1]);
+    for (const ring of rings) {
+      if (!ring || ring.length < 3 || typeof ring[0]?.[0] !== 'number') continue;
+      ctx.moveTo(ring[0][0], ring[0][1]);
+      for (let i = 1; i < ring.length; i++) {
+        ctx.lineTo(ring[i][0], ring[i][1]);
+      }
+      ctx.closePath();
     }
-    ctx.closePath();
-    ctx.fill();
+    ctx.fill('evenodd');
 
     // Stroke — ONLY for stroked styles and selected elements
     if (style.stroke || isSelected) {

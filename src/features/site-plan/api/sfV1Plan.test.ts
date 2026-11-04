@@ -335,6 +335,9 @@ describe('2026-11-04: the competition, the new layers, the options that are not 
     const hollow = summarizeCandidates({ status: 'done', best_requested: 'grid', lots_forgone_for_structure: 2, candidates: [cand('grid', 'grid', 15, g, 4.1), cand('neighborhood', 'neighborhood', 13, g, 4.2), cand('loop', 'T street', 5, g, 3)] })!;
     expect(hollow.sentence.startsWith("Every pattern's streets fail the grade limit here, so none is buildable as drawn")).toBe(true);
     expect(hollow.sentence).toContain('gives up 2 lots (15 → 13)');
+    // 0 Neelys Bend Rd: only one pattern draws lots, and its streets fail the grade
+    const neely = summarizeCandidates({ status: 'done', best_requested: 'neighborhood', lots_forgone_for_structure: 0, candidates: [cand('grid', null, 0, [], 0), cand('neighborhood', 'neighborhood', 2, g, 2.1), cand('loop', null, 0, [], 0)] })!;
+    expect(neely.sentence.startsWith('The only pattern that draws lots here fails the street grade')).toBe(true);
   });
 
   it('names the anon timeout in words a user can act on', async () => {

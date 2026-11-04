@@ -204,6 +204,8 @@ interface ContextPanelProps {
   onUseChange: (use: string) => void;
   /** Compile said this use is not permitted as-of-right */
   generationBlocked?: boolean;
+  /** why generation is blocked when it is not the use (a physical block: the floodplain) */
+  blockedMessage?: string | null;
 }
 
 /** Display-only context panel; SiteWorkspace owns the single active snapshot. */
@@ -217,6 +219,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
   use,
   onUseChange,
   generationBlocked,
+  blockedMessage,
 }) => {
   const priceBldgSf = fmtUsd(p(pricing, 'price_per_building_sf', 'p50'));
   const priceLotSf = fmtUsd(p(pricing, 'price_per_lot_sf', 'p50'));
@@ -272,8 +275,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
 
           {generationBlocked && (
             <div className="mb-2 text-xs font-medium px-2 py-1.5 rounded bg-red-50 text-red-700 border border-red-200">
-              This use is not permitted as-of-right — generation is blocked.
-              Pick a permitted use below.
+              {blockedMessage ?? 'This use is not permitted as-of-right — generation is blocked. Pick a permitted use below.'}
             </div>
           )}
 

@@ -189,6 +189,36 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
     expect(screen.getByTestId('sfv1-house-access').textContent).toContain('assumes an access easement');
   });
 
+  it('a flood skip offers the fill scenario as an override, and the house its flood caveat', () => {
+    const onOverride = vi.fn();
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, status: 'skipped', reason: 'floodplain leaves no buildable piece', lots: 0, tests: [], fails: [], notes: [], earthwork: null, fillView: false }}
+        override={{}}
+        onOverride={onOverride}
+        onDrawHouse={() => undefined}
+      />
+    );
+    fireEvent.click(screen.getByTestId('sfv1-override-floodway'));
+    expect(onOverride).toHaveBeenLastCalledWith({ flood: 'floodway' });
+    expect(screen.getByTestId('sfv1-house-flood').textContent).toContain('stands in the floodplain');
+    expect(screen.queryByTestId('sfv1-override-apply')).toBeNull(); // a lot module cannot answer it
+  });
+
+  it('a parcel smaller than the district minimum says so; street-only fill shows no pad legend', () => {
+    const zero = { ...SUMMARY, lots: 0, pattern: null, tests: [], fails: [], notes: ['no new street fits with 270 x 300 ft lots'], earthwork: null, fillView: false, hasFlood: false, minLotSf: 80000 };
+    const { rerender } = render(<SfV1Panel summary={zero} override={{}} onOverride={() => undefined} site={{ heldAcres: 0, siteAcres: 1.43, parcelAcres: 1.43 }} />);
+    expect(screen.getByTestId('sfv1-undersized').textContent).toContain('The parcel (62,291 SF) is smaller than the district\'s minimum lot (80,000 SF)');
+    rerender(
+      <SfV1Panel
+        summary={{ ...SUMMARY, hasFlood: true, fillView: false, earthwork: { ...SUMMARY.earthwork, lots_in_sfha: 0, sfha_ac: 0, fill_cy: { total: 20, streets: 20 } } }}
+        override={{}}
+        onOverride={() => undefined}
+      />
+    );
+    expect(screen.getByTestId('sfv1-street-only-fill').textContent).toContain('the fill is for the street');
+  });
+
   it('a skipped parcel shows no controls that cannot help, and the one-house offer', () => {
     render(
       <SfV1Panel

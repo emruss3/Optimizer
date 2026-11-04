@@ -83,4 +83,9 @@ describe('PlanPatternPanel over a by-right plan', () => {
     expect(screen.getByTestId('plan-pattern-alignment').textContent).toBe('drawn by right');
     expect(screen.getByTestId('plan-pattern-suggested').textContent).toContain('the pattern layer suggests subdivision on a public row spine');
   });
+
+  it('an override is not "drawn by right" (0 River Landing Way, the fill scenario)', () => {
+    render(<PlanPatternPanel plan={MDHA} drawn={{ label: '10 lots on a T street', source: 'sf_v1', chip: 'drawn as an override' }} />);
+    expect(screen.getByTestId('plan-pattern-alignment').textContent).toBe('drawn as an override');
+  });
 });
