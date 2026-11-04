@@ -185,6 +185,37 @@ function judge(exp, ev) {
       if (!(got.fails ?? []).includes(f)) errs.push(`${label}: expected the plan to admit failing '${f}', fails were [${(got.fails ?? []).join(', ')}]`);
     }
     if (typeof want.minTests === 'number' && !(got.tests >= want.minTests)) errs.push(`${label}: ${got.tests} tests shown, expected at least ${want.minTests}`);
+    // 2026-11-04: the flood hold drawn (the land taken out before the layout), and the competition state
+    if (typeof want.heldLayer === 'boolean' && !!got.heldLayer !== want.heldLayer) errs.push(`${label}: flood-hold layer on the sheet = ${!!got.heldLayer}, expected ${want.heldLayer}`);
+    if (want.competitionState && got.competition?.state !== want.competitionState) errs.push(`${label}: pattern competition '${got.competition?.state ?? 'absent'}', expected '${want.competitionState}'`);
+  };
+  // 2026-11-04 the pattern competition (fn_sf_v1_candidates): best and structured
+  // side by side, the price of the structure stated; the structured plan can be
+  // put on the sheet and is still by right.
+  const judgeCompetition = (want, gotEv, label) => {
+    if (!want) return;
+    const c = gotEv?.sfV1?.competition;
+    if (!c) { errs.push(`${label}: the pattern competition never ran (sfV1.competition absent)`); return; }
+    if (c.state !== (want.state ?? 'done')) { errs.push(`${label}: competition '${c.state}'${c.error ? ` (${c.error})` : ''}, expected '${want.state ?? 'done'}'`); return; }
+    if (want.bestRequested && c.bestRequested !== want.bestRequested) errs.push(`${label}: best plan from the '${c.bestRequested}' grammar, expected '${want.bestRequested}'`);
+    if (typeof want.minBestLots === 'number' && !(c.bestLots >= want.minBestLots)) errs.push(`${label}: best plan ${c.bestLots} lots below the floor ${want.minBestLots}`);
+    if (typeof want.structuredLots === 'number' && c.structuredLots !== want.structuredLots) errs.push(`${label}: structured plan ${c.structuredLots} lots, expected ${want.structuredLots}`);
+    if (typeof want.forgone === 'number' && c.forgone !== want.forgone) errs.push(`${label}: ${c.forgone} lots forgone for structure, expected ${want.forgone}`);
+    if (typeof want.rows === 'number' && (c.rows ?? []).length !== want.rows) errs.push(`${label}: ${(c.rows ?? []).length} candidates listed, expected ${want.rows}`);
+    if (!gotEv._domCompetition) errs.push(`${label}: the competition block did not render`);
+    for (const id of want.overLimitMarked ?? []) {
+      if (!(gotEv._domOverLimit ?? []).includes(`sfv1-test-${id}`)) errs.push(`${label}: '${id}' passes over its limit but the panel shows a plain tick`);
+    }
+    if (want.viewStructured) {
+      const v = gotEv._viewStructured;
+      if (!v) errs.push(`${label}: "View this plan" on the structured row was not offered`);
+      else {
+        if (v.shown !== 'neighborhood') errs.push(`${label}: after viewing the structured plan the sheet shows '${v.shown}'`);
+        if (typeof want.structuredLots === 'number' && v.lots !== want.structuredLots) errs.push(`${label}: structured plan on the sheet has ${v.lots} lots, expected ${want.structuredLots}`);
+        if (v.basis !== 'by_right') errs.push(`${label}: the structured plan is labelled '${v.basis}' — a pattern choice is not an override`);
+        if (v._domPlannerError) errs.push(`${label}: the canvas error boundary rendered on the structured plan`);
+      }
+    }
   };
   if (exp.requireSfV1) {
     judgeSfV1(exp.requireSfV1, ev.sfV1, 'by right');
@@ -192,6 +223,7 @@ function judge(exp, ev) {
     // 2026-11-03: 0 new lots is not "nothing can be built" — the lot itself carries a house
     if (exp.requireSfV1.offersOneHouse && !ev._domSfV1OneHouse) errs.push('by right: 0 new lots, but the one-house offer (sfv1-draw-house) did not render');
   }
+  judgeCompetition(exp.requireSfV1Competition, ev, 'competition');
   if (exp.requireSfV1Override) {
     const o = ev._override;
     if (!o) errs.push('override: the fill-scenario control was never pressed (button missing on the panel?)');
@@ -332,9 +364,29 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
         _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? ''),
         _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'),
         _domSfV1OneHouse: !!document.querySelector('[data-testid="sfv1-draw-house"]'),
+        _domCompetition: !!document.querySelector('[data-testid="sfv1-competition"]'),
+        _domOverLimit: Array.from(document.querySelectorAll('[data-over-limit="true"]')).map(e => e.getAttribute('data-testid')),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;
+    // 2026-11-04 the pattern competition: put the structured plan on the sheet
+    // and read what the page says about it.
+    if (evidence && expectations[String(p.ogc_fid)]?.requireSfV1Competition?.viewStructured) {
+      const view = page.getByTestId('sfv1-cand-view-neighborhood');
+      if (await view.isVisible().catch(() => false)) {
+        await view.click();
+        await page.waitForTimeout(4000);
+        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_structured.png` });
+        evidence._viewStructured = await page.evaluate(() => {
+          const ev = window.__planEvidence ?? null;
+          return ev?.sfV1
+            ? { shown: ev.sfV1.shown, lots: ev.sfV1.lots, basis: ev.sfV1.basis, pattern: ev.sfV1.pattern, _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? '') }
+            : null;
+        });
+      } else {
+        evidence._viewStructured = null;
+      }
+    }
     // 2026-11-03 by-right subdivision: the override the parcel asks for (the
     // floodway-only fill scenario) is pressed and judged on its own evidence.
     if (evidence && p.sfV1Override === 'floodway') {

@@ -70,7 +70,7 @@
   },
   "682644": {
     "mode": "server-plan",
-    "_basis": "4701 Bowfield Dr (R8, 10.73 ac) - the by-right subdivision, sf_v1 (2026-11-03): a loop street, 34 lots at 65 x 125 ft (min 8,000 SF), 3.17 du/ac gross, 20.7% ROW / 73.1% lots / 6.2% open, flood hold sfha with nothing in the SFHA. The generator's own tests: block.length, storm.low_point, street.dead_end_max and access.second_connection pass; open.unassigned (0.23 ac) and street.grade_max (26.8% against a 10% limit, 440 ft of street over it) FAIL and the panel shows them as such - the generator does not yet steer by grade (known gap). No capture floor: a subdivision has no GSF; the lot floor ratchets UP.",
+    "_basis": "4701 Bowfield Dr (R8, 10.73 ac) - the by-right subdivision, sf_v1. 2026-11-04 re-capture (the engine changed upstream on 2026-11-03 evening: unassigned land is no longer absorbed into lots beyond 2 ac, oversized lots are re-lotted from their frontage, street.grade_max passes with up to 100 ft of street over the limit): a loop street, 35 lots at 65 x 125 ft (floor 34 -> 35), 0 failed tests. street.grade_max passes at 12% against the 10% limit with 100 ft of street over it - the panel marks it 'passes over the limit, within the engine's allowance' rather than a plain tick (overLimitMarked). The 2026-11-03 fixture admitted street.grade_max at 26.8% (440 ft over); that plan no longer exists, so failsInclude is retired with it. No capture floor: a subdivision has no GSF; the lot floor ratchets UP.",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true
@@ -78,13 +78,26 @@
     "requireTopo": true,
     "requireSfV1": {
       "status": "done",
-      "minLots": 34,
+      "minLots": 35,
       "pattern": "loop",
       "basis": "by_right",
       "floodHold": "sfha",
       "hasFlood": false,
-      "failsInclude": ["street.grade_max"],
-      "minTests": 7
+      "minTests": 7,
+      "competitionState": "done"
+    },
+    "_competition": "2026-11-04 the pattern competition (fn_sf_v1_candidates_app): grid 25 lots (1 fail), neighborhood 25 (1 fail), loop 35 (0 fails). best = the loop (fewest failed tests, then most lots), structured = the neighborhood plan, 10 lots forgone for structure. 'View this plan' on the structured row puts the 25-lot neighborhood plan on the sheet, labelled by right (a pattern choice is not an override).",
+    "requireSfV1Competition": {
+      "state": "done",
+      "bestRequested": "loop",
+      "minBestLots": 35,
+      "structuredLots": 25,
+      "forgone": 10,
+      "rows": 3,
+      "overLimitMarked": [
+        "street.grade_max"
+      ],
+      "viewStructured": true
     }
   },
   "680719": {
@@ -99,20 +112,27 @@
       "status": "done",
       "maxLots": 0,
       "basis": "by_right",
-      "offersOneHouse": true
+      "offersOneHouse": true,
+      "heldLayer": true,
+      "competitionState": "done"
     },
     "_oneHouse": "2026-11-03: a 0-lot by-right answer offers the one house the parcel itself carries (the single-family seed) instead of leaving an empty sheet — found on 0 Harding Pl (R40, 2.9 ac) and 7610 Chipmunk Ln (R80, 7 ac) in the five-parcel run.",
     "requireSfV1Override": {
       "status": "done",
-      "minLots": 145,
+      "minLots": 147,
       "pattern": "2 loops",
       "basis": "override",
       "floodHold": "floodway",
       "hasFlood": true,
       "fillView": true,
       "bfeContour": true,
-      "failsInclude": ["flood.cut_fill_balance"]
-    }
+      "failsInclude": [
+        "flood.cut_fill_balance"
+      ],
+      "competitionState": "idle"
+    },
+    "_held": "2026-11-04: the land the flood hold takes out (fn_sf_v1_site_app hold_wkt, the SFHA) is drawn on the sheet, hatched, so a 0-lot answer shows why: nearly the whole 70.6 ac is held, 1.59 ac are left. The competition runs and says every grammar draws 0.",
+    "_override_2026_11_04": "re-captured: the fill scenario now draws 147 lots on two loops (floor 145 -> 147), 365,035 cy of fill to BFE 429 + 4 ft, an 88-ft compensating cut over 2.54 ac: flood.cut_fill_balance and block.length fail. The engine returns basis 'by_right' for the fill scenario; the client labels it an override because the user asked for it (the handoff: an override is a second, flagged answer). Under the fill scenario the competition waits to be asked (idle): each of its three runs is a 14-s plan here."
   },
   "393306": {
     "mode": "sf-suggestion",

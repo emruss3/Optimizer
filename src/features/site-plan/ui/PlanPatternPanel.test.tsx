@@ -75,3 +75,12 @@ describe('PlanPatternPanel (plan-organization layer)', () => {
     expect(patternLabel(undefined)).toBe('No pattern');
   });
 });
+
+describe('PlanPatternPanel over a by-right plan', () => {
+  it('names what the by-right generator drew and keeps the layer\'s suggestion as a note', () => {
+    render(<PlanPatternPanel plan={MDHA} drawn={{ label: '7 lots on a single street', source: 'sf_v1' }} />);
+    expect(screen.getByTestId('plan-pattern-name').textContent).toBe('7 lots on a single street');
+    expect(screen.getByTestId('plan-pattern-alignment').textContent).toBe('drawn by right');
+    expect(screen.getByTestId('plan-pattern-suggested').textContent).toContain('the pattern layer suggests subdivision on a public row spine');
+  });
+});

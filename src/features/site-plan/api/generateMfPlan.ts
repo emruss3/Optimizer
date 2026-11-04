@@ -517,6 +517,8 @@ export function seedFamilyPlanToElements(
           : (mixes ? mixes[i] : generateUnitMixForCount(unitsEst)),
         use: 'residential',
         color: '#3B82F6',
+        // a detached house for the tabulation; not `house` (that also drops the canvas caption)
+        ...(opts.house ? { singleFamilyHouse: true } : {}),
         ...(b.composition_note ? { compositionNote: b.composition_note } : {}),
         ...(b.legs_meta != null ? { legsMeta: b.legs_meta } : {}),
         ...(isWrapBar ? { wrapBar: b.name, overGarage: b.over_garage === true } : {}),

@@ -1481,3 +1481,53 @@ help; a plan that holds the floodplain out is no longer drawn as a floodplain
 plan because the parcel has a BFE; the panel says when the generator used a
 different module from the one asked for; "1 lot"; a seed with no footprint
 says so. The battery asserts the one-house offer on Martingale Dr.
+
+## 23. Five more, one by one; the pattern competition in the product (2026-11-04)
+
+Eric: "Grab 5 more and provide detailed feedback for each one." Drawn as in
+§22 (one per size band of the vacant R / RS parcels, by a fixed hash), and
+driven twice: as the app stood, and with the updated handoff wired in
+(`fn_sf_v1_candidates`, the competition of the grid, neighborhood and loop
+grammars). Write-up per parcel and pictures: `qa/audits/2026-11-04/`.
+
+The parcels: 1083 B Lakewalk Dr (RS10, 1.16 ac, 0 lots, land appraised at
+$200), 930 Morton Mill Rd (RS20, Metro Government, 4.47 ac mapped against
+7.71 on the record, 0 lots behind a 2.71-ac flood hold on a 28.5% slope),
+0 Riverfront Dr (RS15, an HOA's common land, skipped as landlocked), 3736 Old
+Clarksville Pike (RS40, 24.9 flat acres, 7 lots on a single street with
+15.2 ac blank; the competition's grid and neighborhood plans draw 16 but fail
+three tests each, so the fewest-fails rule ranks the 7-lot plan best), 0
+Sullivan Hollow Rd (R80, 48 ac, landlocked, 5 lots on a "public R.O.W." that
+runs 720 ft along a stranger's vacant parcel; every pattern fails the street
+grade, and the competition's best is an unbuildable 15-lot grid).
+
+The finding that matters most is ownership: across this round and §22, five
+of ten random "vacant" parcels are association-owned, Metro-owned or a $200
+remnant, and of the 3,169 parcels in `sf_v1_prefetch_queue`, 797 are owned by
+an owners' association and 192 by a public body. The planner's parcel record
+carries no owner, so the page cannot say so.
+
+Engine-side items (the write-up lists twelve): the fill scenario comes back
+`basis: 'by_right'`; `street.grade_max` passes with up to 100 ft over the
+limit and no rule saying so; the landlocked reason calls a 1,163-ft open edge
+"the longest touch on a street"; vacant-neighbour access is drawn as by right;
+the seed puts houses in the SFHA (all of Riverfront's) and returns no
+footprint on Lakewalk; `module_by_right` changes nothing on four estate or
+irregular parcels; first calls of 22 s and 47 s exceed the anon timeout; the
+handoff's lot counts are stale (Bowfield is 35 lots by right today, Martingale's
+fill scenario 147).
+
+In the client: the competition runs after the plan is on the sheet, through
+`fn_sf_v1_candidates_app` (migration 20261104100000), cached per parcel. It
+shows each pattern by what it drew, best and structured, the price of the
+structure in a sentence, and "View this plan". Pattern and `module_by_right`
+are not overrides. The flood hold, trail, green strip and reserve are drawn. The
+plan's follow-up calls run together. From the five: the server's MultiPolygon
+envelope is used, a 0-lot answer settles as existing conditions with its
+context layers, a failed house draw and a landlocked house say so, the fill
+scenario is hidden where nothing is held, a pass over the limit is marked, the
+KPI strip reads lots and the plan's own tests, the pattern card names the drawn
+plan, and the title block carries mapped and assessor acres. The battery
+asserts the competition on Bowfield (best loop 35, structured 25, 10 forgone,
+the structured plan viewed by right) and re-bases Bowfield (35 lots, no
+failed test) and Martingale's fill scenario (147 lots) to today's engine.

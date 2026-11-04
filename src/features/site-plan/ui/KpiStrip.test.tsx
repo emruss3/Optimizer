@@ -51,3 +51,20 @@ describe('KpiStrip — parking regime chip', () => {
     expect(screen.getByText('Tuck-under parking')).toBeTruthy();
   });
 });
+
+describe('KpiStrip — a by-right subdivision on the sheet', () => {
+  it('reads lots, du/ac and the plan\'s own tests, not stalls and "0 issues"', () => {
+    const sub = { ...base, totalUnits: 25, openSpacePct: 9, zoningCompliant: false } as SiteMetrics;
+    const { rerender } = render(
+      <KpiStrip metrics={sub} investment={null} subdivision={{ lots: 25, densityDuAc: 2.33, fails: ['street.grade_max'], status: 'done' }} />
+    );
+    expect(screen.getByTestId('kpi-subdivision').textContent).toContain('Lots25');
+    expect(screen.getByTestId('kpi-subdivision').textContent).toContain('du / ac2.33');
+    expect(screen.queryByText('Stalls')).toBeNull();
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('1 test fail');
+    rerender(<KpiStrip metrics={sub} investment={null} subdivision={{ lots: 35, densityDuAc: 3.26, fails: [], status: 'done' }} />);
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('All tests pass');
+    rerender(<KpiStrip metrics={sub} investment={null} subdivision={{ lots: 0, densityDuAc: null, fails: [], status: 'done' }} />);
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('No new lots by right');
+  });
+});
