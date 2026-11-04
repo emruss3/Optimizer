@@ -79,12 +79,56 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
   });
 
   it('out of the floodplain the earthwork block still states the ground and the street grade', () => {
-    render(<SfV1Panel summary={{ ...SUMMARY, hasFlood: false, fillView: false, earthwork: { ...SUMMARY.earthwork, sfha_ac: 0, lots_in_sfha: 0, bfe_ft: null, fill_cy: { total: 0 } } }} override={{}} onOverride={() => undefined} />);
+    const dry = { ...SUMMARY, hasFlood: false, fillView: false, earthwork: { ...SUMMARY.earthwork, sfha_ac: 0, lots_in_sfha: 0, bfe_ft: null, fill_cy: { total: 0 } } };
+    // flood land held out (the SFHA is there, the plan keeps out of it)
+    const { rerender } = render(<SfV1Panel summary={{ ...dry, heldAcres: 2.5 }} override={{}} onOverride={() => undefined} />);
     const ew = screen.getByTestId('sfv1-earthwork');
     expect(ew.getAttribute('data-flood')).toBe('false');
     expect(ew.textContent).toContain('stays out of the flood hazard area');
     expect(ew.textContent).not.toContain('BFE');
     expect(screen.getByTestId('sfv1-street-grade').textContent).toContain('max 26.8%');
+    expect(screen.getByTestId('sfv1-override-floodway')).toBeTruthy();
+    // nothing held, no BFE (3736 Old Clarksville Pike): no flood land at all, and no fill scenario to offer
+    rerender(<SfV1Panel summary={{ ...dry, heldAcres: 0 }} override={{}} onOverride={() => undefined} />);
+    expect(screen.getByTestId('sfv1-earthwork').textContent).toContain('No FEMA flood hazard area on the site');
+    expect(screen.queryByTestId('sfv1-override-floodway')).toBeNull();
+    expect(screen.getByTestId('sfv1-no-fill-scenario').textContent).toContain('no fill scenario');
+  });
+
+  it('the yield comparison reads as a sentence, not a formula', () => {
+    render(<SfV1Panel summary={{ ...SUMMARY, tests: [{ id: 'yield.vs_arithmetic', pass: null, lots: 7, ratio: 0.44, arithmetic_at_62pct: 16 }], fails: [] }} override={{}} onOverride={() => undefined} />);
+    expect(screen.getByTestId('sfv1-test-yield.vs_arithmetic').textContent).toContain('7 lots; a 62% net-to-gross estimate would say 16 (ratio 0.44)');
+  });
+
+  it('a pass over the limit is marked as the engine allowing it, not a plain tick', () => {
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, tests: [{ id: 'street.grade_max', pass: true, value: 12, limit: 10, ft_over_limit: 100 }], fails: [] }}
+        override={{}}
+        onOverride={() => undefined}
+      />
+    );
+    const row = screen.getByTestId('sfv1-test-street.grade_max');
+    expect(row.getAttribute('data-over-limit')).toBe('true');
+    expect(row.textContent).toContain("passes over the limit for 100 ft, within the engine's allowance");
+  });
+
+  it('leads with the steep-ground caveat; on a 0-lot answer the DEM says it when the engine did not', () => {
+    const steepNote = 'ground averages 36% slope with 325 ft of fall across the parcel: streets and pads here need grading the engine does not model yet';
+    const { rerender } = render(<SfV1Panel summary={{ ...SUMMARY, notes: [steepNote, 'two lots gave way to the pond'] }} override={{}} onOverride={() => undefined} />);
+    expect(screen.getByTestId('sfv1-steep').textContent).toContain('36% slope');
+    expect(screen.getByTestId('sfv1-notes').textContent).not.toContain('36% slope'); // said once
+    const zero = { ...SUMMARY, lots: 0, pattern: null, tests: [], fails: [], notes: ['no new street fits with 100 x 200 ft lots'], earthwork: null, fillView: false, hasFlood: false, heldAcres: null };
+    rerender(
+      <SfV1Panel summary={zero} override={{}} onOverride={() => undefined}
+        terrain={{ meanSlopePct: 28.5, maxSlopePct: 92.1, fallFt: 82 }} site={{ heldAcres: 2.71, siteAcres: 1.77 }} />
+    );
+    expect(screen.getByTestId('sfv1-steep').textContent).toContain('averages 29% slope (max 92%) with 82 ft of fall');
+    expect(screen.getByTestId('sfv1-steep').textContent).toContain('may not be what stops this plan');
+    expect(screen.getByTestId('sfv1-held').textContent).toContain('takes 2.71 ac out before the layout; 1.77 ac are left');
+    // flat ground: no caveat
+    rerender(<SfV1Panel summary={zero} override={{}} onOverride={() => undefined} terrain={{ meanSlopePct: 3.8, maxSlopePct: 15.8, fallFt: 10 }} />);
+    expect(screen.queryByTestId('sfv1-steep')).toBeNull();
   });
 
   it('a skip is shown with its reason; an override is labelled and can be reset', () => {
@@ -124,6 +168,25 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
     // a plan with lots never offers it
     rerender(<SfV1Panel summary={SUMMARY} override={{}} onOverride={() => undefined} onDrawHouse={onDrawHouse} />);
     expect(screen.queryByTestId('sfv1-one-house')).toBeNull();
+  });
+
+  it('a seed that could not place the house says so in place and stops offering the button', () => {
+    const zero = { ...SUMMARY, lots: 0, pattern: null, tests: [], fails: [], earthwork: null, fillView: false, hasFlood: false };
+    render(<SfV1Panel summary={zero} override={{}} onOverride={() => undefined} onDrawHouse={() => undefined} houseError="it returned a house with no footprint for this parcel." />);
+    expect(screen.queryByTestId('sfv1-draw-house')).toBeNull();
+    expect(screen.getByTestId('sfv1-house-error').textContent).toContain('could not place the house: it returned a house with no footprint');
+  });
+
+  it('a landlocked parcel: the one house assumes an access easement', () => {
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, status: 'skipped', reason: 'landlocked: the longest touch on a street is 1163 ft', lots: 0, tests: [], fails: [], notes: [], earthwork: null, fillView: false }}
+        override={{}}
+        onOverride={() => undefined}
+        onDrawHouse={() => undefined}
+      />
+    );
+    expect(screen.getByTestId('sfv1-house-access').textContent).toContain('assumes an access easement');
   });
 
   it('a skipped parcel shows no controls that cannot help, and the one-house offer', () => {

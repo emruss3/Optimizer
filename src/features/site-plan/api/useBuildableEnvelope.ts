@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SelectedParcel } from '../../../types/parcel';
-import type { Polygon } from 'geojson';
+import type { MultiPolygon, Polygon } from 'geojson';
 import { normalizeToPolygon } from '../../../engine/geometry';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { feetToMeters } from '../../../engine/units';
@@ -12,6 +12,29 @@ import {
   type EdgeClassification,
   type SetbackValues,
 } from '../../../engine/setbacks';
+
+/**
+ * The compiled brief's buildable envelope — WGS84 GeoJSON — in the canvas
+ * frame (3857 m). On an irregular parcel the context engine returns a
+ * MultiPolygon (1083 B Lakewalk Dr, 930 Morton Mill Rd, 2026-11-04); it was
+ * read as a Polygon, failed the ring check, and the page announced "Supabase
+ * envelope unavailable … default setbacks" over an envelope the server had
+ * sent. The largest piece is the envelope, as for a multi-part parcel.
+ */
+export function briefEnvelopeTo3857(raw: unknown): Polygon | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const g = raw as Polygon | MultiPolygon;
+  const usable =
+    g.type === 'Polygon' ? (g.coordinates?.[0]?.length ?? 0) >= 4
+    : g.type === 'MultiPolygon' ? (g.coordinates ?? []).some(p => (p?.[0]?.length ?? 0) >= 4)
+    : false;
+  if (!usable) return null;
+  try {
+    return normalizeToPolygon(feature4326To3857(g) as Polygon | MultiPolygon);
+  } catch {
+    return null;
+  }
+}
 
 type EnvelopeStatus = 'loading' | 'ready' | 'invalid';
 
@@ -86,15 +109,7 @@ export const useBuildableEnvelope = (parcel?: SelectedParcel | null, frontageBea
         };
 
         // Brief envelope is WGS84 GeoJSON → the canvas frame is 3857 metres.
-        let briefEnvelope3857: Polygon | null = null;
-        try {
-          const raw = brief.geometry?.buildable_envelope as Polygon | undefined;
-          if (raw?.coordinates?.[0]?.length >= 4) {
-            briefEnvelope3857 = normalizeToPolygon(feature4326To3857(raw) as Polygon);
-          }
-        } catch {
-          briefEnvelope3857 = null;
-        }
+        const briefEnvelope3857 = briefEnvelopeTo3857(brief.geometry?.buildable_envelope);
 
         // Convert the parcel's original geometry to 3857 for edge classification
         let parcelPoly3857: Polygon | null = null;

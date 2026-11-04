@@ -153,11 +153,16 @@ export interface SheetTitleBlockInput {
   address?: string | null;
   parcelId?: string | number | null;
   zoning?: string | null;
+  /** the mapped area of the parcel polygon on the sheet */
   acres?: number | null;
+  /** the assessor's acreage — stated beside the mapped area when they disagree by more than 5% */
+  assessorAcres?: number | null;
   /** the subdivision the server drew, when the plan is one */
   subdivision?: {
     lots: number;
     network: string;
+    /** the whole network phrase ("single street · by right"); without it, "<network> network" */
+    networkLabel?: string | null;
     pctRow: number | null;
     pctHazard: number | null;
     hazardCoverage: string | null;
@@ -184,10 +189,15 @@ export function buildSheetTitleBlock(input: SheetTitleBlockInput): SheetTitleBlo
   const title = subdivision ? 'CONCEPT LAYOUT PLAN' : input.hasPlan ? 'CONCEPT SITE PLAN' : 'EXISTING CONDITIONS';
   const sub: string[] = [];
   if (input.zoning) sub.push(String(input.zoning));
-  if (typeof input.acres === 'number' && input.acres > 0) sub.push(`${input.acres >= 10 ? input.acres.toFixed(1) : input.acres.toFixed(2)} ac`);
+  const acStr = (a: number) => `${a >= 10 ? a.toFixed(1) : a.toFixed(2)} ac`;
+  if (typeof input.acres === 'number' && input.acres > 0) {
+    const assessor = input.assessorAcres;
+    const disagree = typeof assessor === 'number' && assessor > 0 && Math.abs(assessor - input.acres) / input.acres > 0.05;
+    sub.push(disagree ? `${acStr(input.acres)} (assessor ${acStr(assessor)})` : acStr(input.acres));
+  }
   if (subdivision) {
     sub.push(`${subdivision.lots} lot${subdivision.lots === 1 ? '' : 's'}`);
-    sub.push(`${subdivision.network} network`);
+    sub.push(subdivision.networkLabel ? subdivision.networkLabel : `${subdivision.network} network`);
     if (typeof subdivision.pctRow === 'number') sub.push(`${subdivision.pctRow}% R.O.W.`);
   }
   // Terse: the block sits on the canvas, so each note is one short line; the

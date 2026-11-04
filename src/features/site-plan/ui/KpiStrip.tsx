@@ -45,10 +45,38 @@ const KpiStrip: React.FC<{
   planFlags?: string[];
   /** Achieved GSF / max-buildout GSF, 0–100+ (SF-first objective) */
   utilizationPct?: number | null;
-}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null }) => {
+  /** A by-right subdivision is on the sheet: its numbers are lots and du/ac and
+   *  its verdict is its own tests — not stalls, not "0 issues" over a plan that
+   *  admits a failed test (three audit rounds, 2026-11-03/04). */
+  subdivision?: { lots: number; densityDuAc: number | null; fails: string[]; status: string } | null;
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null }) => {
   if (!metrics) {
     return (
       <div className="text-sm text-gray-500">Generating plan…</div>
+    );
+  }
+
+  if (subdivision) {
+    const n = subdivision.fails.length;
+    const chip =
+      subdivision.status === 'skipped' ? { tone: 'bg-amber-50 text-amber-700', text: 'Skipped by the generator', ok: false }
+      : subdivision.lots === 0 ? { tone: 'bg-slate-100 text-slate-700', text: 'No new lots by right', ok: false }
+      : n > 0 ? { tone: 'bg-red-50 text-red-700', text: `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
+      : { tone: 'bg-green-50 text-green-700', text: 'All tests pass', ok: true };
+    return (
+      <div data-testid="kpi-subdivision" className="flex items-center gap-5 overflow-x-auto">
+        <Stat label="Lots" value={`${subdivision.lots}`} />
+        {subdivision.densityDuAc != null && subdivision.lots > 0 && <Stat label="du / ac" value={`${subdivision.densityDuAc}`} />}
+        {(metrics.openSpacePct ?? 0) > 0 && <Stat label="Open" value={`${metrics.openSpacePct.toFixed(0)}%`} />}
+        <div
+          data-testid="kpi-subdivision-verdict"
+          title={n > 0 ? `Fails: ${subdivision.fails.join(', ')}` : undefined}
+          className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${chip.tone}`}
+        >
+          {chip.ok ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+          {chip.text}
+        </div>
+      </div>
     );
   }
 

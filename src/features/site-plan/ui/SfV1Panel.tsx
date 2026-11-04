@@ -7,7 +7,8 @@
  */
 import { useState } from 'react';
 import type { SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, isOverride } from '../api/sfV1Plan';
+import { FILL_BANDS, isOverride, passesOverLimit, steepGroundNote } from '../api/sfV1Plan';
+import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
 
 function testLabel(id: string): string {
   return id.replace(/\./g, ' · ').replace(/_/g, ' ');
@@ -61,30 +62,51 @@ export function testDetails(t: SfV1Test): string {
   return parts.join(' · ');
 }
 
+/** yield.vs_arithmetic is a ratio, not a verdict: "7 lots; a 62% net-to-gross estimate would say 16 (ratio 0.44)". */
+function yieldSentence(t: SfV1Test): string | null {
+  if (t.id !== 'yield.vs_arithmetic') return null;
+  const lots = typeof t.lots === 'number' ? t.lots : null;
+  const ar = typeof t.arithmetic_at_62pct === 'number' ? t.arithmetic_at_62pct : null;
+  if (lots == null || ar == null) return null;
+  const ratio = typeof t.ratio === 'number' ? ` (ratio ${Math.round(t.ratio * 100) / 100})` : '';
+  return `${lots} lot${lots === 1 ? '' : 's'}; a 62% net-to-gross estimate would say ${ar}${ratio}`;
+}
+
 function TestRow({ t }: { t: SfV1Test }) {
   const failed = t.pass === false;
-  const details = testDetails(t);
+  const details = yieldSentence(t) ?? testDetails(t);
   const note = typeof t.rule === 'string' ? t.rule : typeof t.note === 'string' ? t.note : null;
+  // A pass with the value over the limit (street.grade_max 12% against 10%,
+  // 100 ft over): the engine allows some length over the limit. A plain tick
+  // beside a number over the limit reads as a test passing on its own failure.
+  const allowance = passesOverLimit(t);
   return (
     <li
       data-testid={`sfv1-test-${t.id}`}
       data-pass={t.pass == null ? 'unknown' : String(t.pass)}
-      className={'flex items-start gap-1.5 ' + (failed ? 'text-red-700' : t.pass ? 'text-slate-700' : 'text-slate-500')}
+      data-over-limit={allowance ? 'true' : undefined}
+      className={'flex items-start gap-1.5 ' + (failed ? 'text-red-700' : allowance ? 'text-amber-800' : t.pass ? 'text-slate-700' : 'text-slate-500')}
     >
-      <span aria-hidden className={'mt-px shrink-0 font-bold ' + (failed ? 'text-red-600' : t.pass ? 'text-emerald-600' : 'text-slate-400')}>
-        {failed ? '✗' : t.pass ? '✓' : '·'}
+      <span aria-hidden className={'mt-px shrink-0 font-bold ' + (failed ? 'text-red-600' : allowance ? 'text-amber-600' : t.pass ? 'text-emerald-600' : 'text-slate-400')}>
+        {failed ? '✗' : allowance ? '!' : t.pass ? '✓' : '·'}
       </span>
       <span className="leading-snug">
         <span className="font-medium">{testLabel(t.id)}</span>
         {details && <span className="text-slate-500"> · {details}</span>}
         {note ? <span className="text-slate-500"> — {note}</span> : null}
+        {allowance && (
+          <span className="text-amber-800">
+            {' '}— passes over the limit{allowance.ftOver != null && allowance.ftOver > 0 ? ` for ${Math.round(allowance.ftOver).toLocaleString()} ft` : ''}, within the engine's allowance
+          </span>
+        )}
       </span>
     </li>
   );
 }
 
 export function SfV1Panel({
-  summary, override, onOverride, busy, onDrawHouse, houseDrawn,
+  summary, override, onOverride, busy, onDrawHouse, houseDrawn, houseError,
+  competition, shownRequested, onViewCandidate, onRetryCompetition, terrain, site,
 }: {
   summary: SfV1Summary;
   override: SfV1Options;
@@ -93,6 +115,18 @@ export function SfV1Panel({
   /** 0 new lots (or skipped): the parcel is itself a lot — draw the one house it carries (the single-family seed) */
   onDrawHouse?: () => void;
   houseDrawn?: boolean;
+  /** the seed was asked and could not draw the house: say why, in place, and stop offering the button */
+  houseError?: string | null;
+  /** the pattern competition (fn_sf_v1_candidates) */
+  competition?: SfV1CompetitionState | null;
+  /** the grammar whose plan is on the sheet */
+  shownRequested?: string | null;
+  onViewCandidate?: (requested: string) => void;
+  onRetryCompetition?: () => void;
+  /** the parcel's ground from its DEM, for an answer that drew nothing */
+  terrain?: { meanSlopePct: number | null; maxSlopePct: number | null; fallFt: number | null } | null;
+  /** the site the generator worked on: what the flood hold took out */
+  site?: { heldAcres: number | null; siteAcres: number | null } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
   const [lotD, setLotD] = useState<string>(override.lot_d_ft != null ? String(override.lot_d_ft) : '');
@@ -102,6 +136,18 @@ export function SfV1Panel({
   const ew = summary.earthwork;
   const fillByComponent = ew && ew.fill_cy && typeof ew.fill_cy === 'object' ? Object.entries(ew.fill_cy) : null;
   const noNewLots = summary.status === 'skipped' || summary.lots === 0;
+  const landlocked = summary.status === 'skipped' && /landlocked/i.test(summary.reason ?? '');
+  // The engine's steep-ground caveat leads the panel: it measures terrain but
+  // does not lay out by it yet, so the lot module is not the whole story.
+  const steep = steepGroundNote(summary.notes);
+  const otherNotes = steep ? summary.notes.filter(n => n !== steep) : summary.notes;
+  // An answer that drew nothing on steep ground the engine did not remark on
+  // (930 Morton Mill Rd: 28.5% mean slope, "no lot of 20000 sf fits"): the
+  // DEM's figures, so the lot module is not blamed alone.
+  const steepFromDem = !steep && noNewLots && summary.status !== 'skipped' && terrain?.meanSlopePct != null && terrain.meanSlopePct > 15;
+  // Nothing held for flood and no BFE: the fill scenario cannot change the answer.
+  const heldAcres = summary.heldAcres ?? site?.heldAcres ?? null;
+  const noFloodLand = heldAcres === 0 && ew?.bfe_ft == null && !summary.hasFlood;
   // The generator does not always use the module it is given (0 Harding Pl:
   // 100 × 400 came back as 135 × 300) — say so instead of labelling the old
   // module an override.
@@ -156,6 +202,23 @@ export function SfV1Panel({
       ) : (
         <>
           <p data-testid="sfv1-summary" className="mt-1 leading-snug text-slate-600">{summary.basisLine}</p>
+          {steep && (
+            <p data-testid="sfv1-steep" className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 leading-snug text-amber-900">
+              ⚠ {steep}
+            </p>
+          )}
+          {steepFromDem && terrain && (
+            <p data-testid="sfv1-steep" className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 leading-snug text-amber-900">
+              ⚠ The ground averages {Math.round(terrain.meanSlopePct ?? 0)}% slope
+              {terrain.maxSlopePct != null ? ` (max ${Math.round(terrain.maxSlopePct)}%)` : ''}
+              {terrain.fallFt != null ? ` with ${Math.round(terrain.fallFt)} ft of fall` : ''} (USGS 3DEP). The engine measures terrain but does not lay out by it yet, so the lot module may not be what stops this plan.
+            </p>
+          )}
+          {noNewLots && site && site.heldAcres != null && site.heldAcres > 0 && (
+            <p data-testid="sfv1-held" className="mt-1 leading-snug text-slate-600">
+              The flood hold takes {site.heldAcres} ac out{site.siteAcres != null ? ` before the layout; ${site.siteAcres} ac are left to plan` : ''} (hatched blue on the sheet).
+            </p>
+          )}
           {moduleIgnored && (
             <p data-testid="sfv1-module-ignored" className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 leading-snug text-amber-800">
               You asked for {askedW} × {askedD} ft lots; the generator used {summary.lotWFt} × {summary.lotDFt} ft.
@@ -250,10 +313,20 @@ export function SfV1Panel({
           Fails: {summary.fails.join(', ')}
         </p>
       )}
-      {summary.notes.length > 0 && (
+      {otherNotes.length > 0 && (
         <ul data-testid="sfv1-notes" className="mt-2 space-y-0.5 text-[11px] text-amber-800">
-          {summary.notes.map((n, i) => <li key={i}>⚠ {n}</li>)}
+          {otherNotes.map((n, i) => <li key={i}>⚠ {n}</li>)}
         </ul>
+      )}
+
+      {competition && (
+        <SfV1CompetitionBlock
+          competition={competition}
+          shownRequested={shownRequested ?? null}
+          {...(onViewCandidate ? { onView: onViewCandidate } : {})}
+          {...(onRetryCompetition ? { onRetry: onRetryCompetition } : {})}
+          busy={busy ?? false}
+        />
       )}
 
       {/* 0 new lots is not "nothing can be built": the parcel is itself a lot
@@ -262,6 +335,12 @@ export function SfV1Panel({
         <div data-testid="sfv1-one-house" className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11px] leading-snug text-sky-900">
           {houseDrawn ? (
             <span>No new lots by right. The parcel itself is one lot: the house it carries is drawn (single-family seed).</span>
+          ) : houseError ? (
+            // 1083 B Lakewalk Dr (2026-11-04): the seed answered with no footprint;
+            // the click drew nothing and only a flag counter moved.
+            <span data-testid="sfv1-house-error" className="text-amber-900">
+              No new lots by right, and the single-family seed could not place the house: {houseError}
+            </span>
           ) : (
             <>
               <span>No new lots by right — but the parcel itself is one lot. </span>
@@ -275,6 +354,11 @@ export function SfV1Panel({
                 Draw the one house it carries
               </button>
             </>
+          )}
+          {landlocked && !houseError && (
+            <div data-testid="sfv1-house-access" className="mt-1 text-sky-900/80">
+              No street touches this parcel: a house here assumes an access easement across a neighbour, which is not by right.
+            </div>
           )}
         </div>
       )}
@@ -370,6 +454,8 @@ export function SfV1Panel({
                 </span>
               )) : <span className="italic">per-pad fill unavailable — pads keep their plan colour</span>}
             </div>
+          ) : noFloodLand ? (
+            <p className="mt-1 text-[10px] text-orange-900/80">No FEMA flood hazard area on the site: nothing held out, no fill, no compensating cut.</p>
           ) : (
             <p className="mt-1 text-[10px] text-orange-900/80">The plan stays out of the flood hazard area: no fill to a base flood elevation, no compensating cut.</p>
           )}
@@ -422,6 +508,12 @@ export function SfV1Panel({
           </button>
         </div>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {/* Nothing held for flood, no BFE (3736 Old Clarksville Pike, 0 Sullivan
+              Hollow Rd): the fill scenario would return the same plan — no control
+              that cannot change the answer. */}
+          {noFloodLand && !fillScenario ? (
+            <span data-testid="sfv1-no-fill-scenario" className="self-center text-[10px] text-slate-500">No flood land held out — no fill scenario to run.</span>
+          ) : (
           <button
             type="button"
             data-testid="sfv1-override-floodway"
@@ -440,6 +532,7 @@ export function SfV1Panel({
           >
             Fill scenario (floodway only)
           </button>
+          )}
           <button
             type="button"
             data-testid="sfv1-override-reset"

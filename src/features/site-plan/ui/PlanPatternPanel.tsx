@@ -9,28 +9,43 @@
 import React, { useState } from 'react';
 import { patternLabel, type PlanPattern } from '../api/planPattern';
 
-export const PlanPatternPanel: React.FC<{ plan: PlanPattern; defaultOpen?: boolean }> = ({ plan, defaultOpen = false }) => {
+export const PlanPatternPanel: React.FC<{
+  plan: PlanPattern;
+  defaultOpen?: boolean;
+  /** What the by-right generator actually drew on an R / RS parcel. The
+   *  pattern layer does not know sf_v1 exists: it named "a street grid with
+   *  rear alleys · generator follows this" over a loop with no alleys, a
+   *  single street, and a 0-lot answer (three audit rounds, 2026-11-03/04).
+   *  When given, the card names the drawn plan and keeps the layer's
+   *  suggestion as a note. */
+  drawn?: { label: string; source: string } | null;
+}> = ({ plan, defaultOpen = false, drawn = null }) => {
   const [open, setOpen] = useState(defaultOpen);
   const align = plan.generator_alignment;
   const aligned = align?.aligned === true;
   return (
-    <div data-testid="plan-pattern-panel" className="bg-white border border-gray-200 rounded-lg px-3 py-2">
+    <div data-testid="plan-pattern-panel" data-drawn={drawn ? 'true' : undefined} className="bg-white border border-gray-200 rounded-lg px-3 py-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-wide text-gray-500">How to organize this site</div>
           <div data-testid="plan-pattern-name" className="text-sm font-semibold text-gray-900 leading-snug">
-            {patternLabel(plan.pattern)}
+            {drawn ? drawn.label : patternLabel(plan.pattern)}
           </div>
+          {drawn && (
+            <div data-testid="plan-pattern-suggested" className="text-[10px] text-gray-500 leading-snug">
+              the pattern layer suggests {patternLabel(plan.pattern).toLowerCase()}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 pt-3">
           <span
             data-testid="plan-pattern-alignment"
-            title={align?.note ?? ''}
+            title={drawn ? drawn.source : align?.note ?? ''}
             className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-              aligned ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'
+              drawn ? 'bg-sky-100 text-sky-800' : aligned ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'
             }`}
           >
-            {aligned ? 'generator follows this' : 'generator: not yet'}
+            {drawn ? 'drawn by right' : aligned ? 'generator follows this' : 'generator: not yet'}
           </span>
           <button
             type="button"

@@ -33,11 +33,13 @@ import {
 } from './api/generateSubdivision';
 import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/SubdivisionPanel';
 import {
-  fetchSfV1Plan, fetchSfV1Nobuild, fetchPadFill, fetchBfeContour, earthworkHasFlood,
-  sfV1ToElements, sfV1Route, sfV1SummaryLine, isOverride,
-  type SfV1Options, type SfV1Summary,
+  fetchSfV1Plan, fetchSfV1Site, fetchPadFill, fetchBfeContour, earthworkHasFlood,
+  sfV1ToElements, sfV1Route, isOverride, withoutPattern,
+  fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
+  type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse,
 } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
+import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { line2274To3857 } from './api/parcelTopo';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
@@ -215,6 +217,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sfV1OverrideRef = useRef<SfV1Options>({});
   // The ground-at-BFE contour of the earthwork view (EPSG:2274 lines from the DEM).
   const [bfeContour, setBfeContour] = useState<{ bfeFt: number; lines: number[][][] } | null>(null);
+  // The site the generator worked on (what the flood hold took out) for the shown answer.
+  const [sfV1Site, setSfV1Site] = useState<SfV1Site | null>(null);
+  // The pattern competition (fn_sf_v1_candidates, 2026-11-04): grid,
+  // neighborhood and the loop grammar side by side; `best` and `structured`
+  // can each be put on the sheet. `sfV1Shown` names the grammar on the sheet
+  // ('loop' = the default by-right answer).
+  const [sfV1Competition, setSfV1Competition] = useState<SfV1CompetitionState | null>(null);
+  const [sfV1Shown, setSfV1Shown] = useState<string>('loop');
+  const sfV1CandidatesRef = useRef<SfV1CandidatesResponse | null>(null);
+  const sfV1DefaultRespRef = useRef<SfV1Response | null>(null);
+  const competitionSeqRef = useRef(0);
+  // The single-family seed was asked for the one house and could not place it.
+  const [sfSeedError, setSfSeedError] = useState<string | null>(null);
 
   // ── HBU / regime plan routing ─────────────────────────────────────────────
   // What we planned and WHY, shown under the KPI bar ("Plan basis: …").
@@ -1341,6 +1356,129 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, []);
 
   /**
+   * Put one by-right answer on the sheet — the default plan, an override, or a
+   * candidate of the pattern competition — through one path. The site layers
+   * (the wetlands, the land the flood hold takes out), the per-pad fill and the
+   * ground-at-BFE line are fetched together, not one after another, so the
+   * plan waits for the slowest of them, not their sum.
+   *
+   * An answer with nothing to draw — 0 lots (Martingale Dr, 0 Harding Pl) or
+   * skipped (1023 Wellmoor Ct, landlocked) — IS the by-right answer: the
+   * generated plan is cleared, the page settles (a skip once left the header on
+   * "Generating plan…"), the reason stands, and the wetlands and the flood hold
+   * stay on the sheet as context (1083 B Lakewalk Dr once titled its 0-lot
+   * sheet "CONCEPT LAYOUT PLAN · 0 lots" because the hatch counted as a plan).
+   */
+  const renderSfV1Answer = useCallback(async (resp: SfV1Response, opt: SfV1Options, shown: string): Promise<void> => {
+    if (contextOgcFid == null) return;
+    const settleEmpty = (s: SfV1Summary, warnings: string[], context: Element[] = []) => {
+      const base0 = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
+      setPlanOutput([...base0, ...context], {
+        totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0, openSpacePct: 0,
+        totalUnits: 0, unitMixSummary: s.status === 'skipped' ? 'skipped' : '0 lots', zoningCompliant: true,
+        violations: [] as string[], warnings, optimizationStatus: s.generatorVersion ?? 'sf_v1',
+      } as NonNullable<typeof metrics>);
+      setSubdivisionSummary(null);
+      setSfV1Summary(s);
+      setViolations([]);
+      setPlanLineage({
+        solvedBy: 'server', contextId: null, generatorVersion: s.generatorVersion ?? 'sf_v1',
+        flags: [...(s.status === 'skipped' ? ['skipped'] : []), ...(s.basis === 'override' ? ['override'] : [])],
+        buildings: 0, floors: null, footprintSqft: null, standardsDirect: true,
+      });
+      setPlanStale(false);
+      setServerPlanError(null);
+      setPlanBasis(s.basisLine);
+      setLotFitSummary(s.basisLine);
+    };
+    setSfV1Shown(shown);
+    if (resp.status === 'skipped' || resp.error) {
+      const { summary: skipped } = sfV1ToElements(resp, { overrideRequested: isOverride(opt) });
+      setBfeContour(null);
+      setSfV1Site(null);
+      settleEmpty(skipped, skipped.reason ? [skipped.reason] : []);
+      return;
+    }
+    // The earthwork view. The ground-at-BFE line is context wherever the parcel
+    // has a BFE (it shows why the flood land is held out); the pads are coloured
+    // by their fill only when the plan builds in the flood hazard area. All fail soft.
+    const ew = resp.earthwork ?? null;
+    const padTarget = ew && earthworkHasFlood(ew) && typeof ew.pad_target_ft === 'number' && typeof resp.pads_wkt === 'string' ? ew.pad_target_ft : null;
+    const bfeFt = ew && typeof ew.bfe_ft === 'number' ? ew.bfe_ft : null;
+    const [site, padFill, bfeLines] = await Promise.all([
+      fetchSfV1Site(contextOgcFid, opt.flood ?? null),
+      padTarget != null ? fetchPadFill(contextOgcFid, resp.pads_wkt as string, padTarget) : Promise.resolve(null),
+      bfeFt != null ? fetchBfeContour(contextOgcFid, bfeFt) : Promise.resolve(null),
+    ]);
+    setSfV1Site(site);
+    setBfeContour(bfeFt != null && bfeLines ? { bfeFt, lines: bfeLines.map(l => l.coordinates as number[][]) } : null);
+    const { elements: drawn, summary: answer } = sfV1ToElements(resp, {
+      nobuildWkt: site?.nobuildWkt ?? null,
+      holdWkt: site?.holdWkt ?? null,
+      overrideRequested: isOverride(opt),
+      padFillFt: padFill,
+    });
+    if (shown !== 'loop') answer.basisLine = `${answer.basisLine} · from the pattern competition`;
+    if (answer.lots === 0 || drawn.length === 0) {
+      settleEmpty(answer, answer.notes, drawn.filter(e => e.type === 'greenspace'));
+      return;
+    }
+    if (!gateNonGesturePlan(drawn, 'By-right subdivision')) return;
+    const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
+    // KPI strip: lots and land, the server's counts verbatim; the plan's
+    // own failed tests and notes are its warnings.
+    const answerMetrics = {
+      totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0,
+      openSpacePct: answer.openPct ?? 0,
+      totalUnits: answer.lots,
+      unitMixSummary:
+        `${answer.lots} lot${answer.lots === 1 ? '' : 's'}` +
+        (answer.lotWFt != null && answer.lotDFt != null ? ` · ${answer.lotWFt}×${answer.lotDFt} ft` : ''),
+      zoningCompliant: answer.fails.length === 0,
+      violations: [] as string[],
+      warnings: [...answer.fails.map(f => `fails ${f}`), ...answer.notes],
+      optimizationStatus: answer.generatorVersion ?? 'sf_v1',
+    } as NonNullable<typeof metrics>;
+    setPlanOutput([...base, ...drawn], answerMetrics);
+    setSubdivisionSummary(null);
+    setSfV1Summary(answer);
+    setViolations([]);
+    setPlanLineage({
+      solvedBy: 'server',
+      contextId: null,
+      generatorVersion: answer.generatorVersion ?? 'sf_v1',
+      flags: [...answer.fails, ...(answer.basis === 'override' ? ['override'] : [])],
+      buildings: drawn.filter(e => e.type === 'building').length,
+      floors: null,
+      footprintSqft: null,
+      // the generator reads the district standards itself (jurisdiction_zoning_standards, planning_principle)
+      standardsDirect: true,
+    });
+    setPlanStale(false);
+    setServerPlanError(null);
+    setPlanBasis(answer.basisLine);
+    setLotFitSummary(answer.basisLine);
+  }, [contextOgcFid, elements, setPlanOutput, gateNonGesturePlan]);
+
+  /** The pattern competition for the parcel and the option set (cached per
+   *  parcel in the client). A newer ask — a new parcel, a new override —
+   *  supersedes an older one still in flight. */
+  const runCompetition = useCallback((fid: number, opt: SfV1Options) => {
+    const seq = ++competitionSeqRef.current;
+    sfV1CandidatesRef.current = null;
+    setSfV1Competition({ state: 'loading', data: null, error: null });
+    void fetchSfV1Candidates(fid, opt).then(r => {
+      if (seq !== competitionSeqRef.current) return;
+      if (r.error || !r.data) {
+        setSfV1Competition({ state: 'error', data: null, error: competitionErrorText(r.error ?? 'the engine returned nothing') });
+        return;
+      }
+      sfV1CandidatesRef.current = r.data;
+      setSfV1Competition({ state: 'done', data: summarizeCandidates(r.data), error: null });
+    });
+  }, []);
+
+  /**
    * Brief Phase 2: market-grounded SF lot fit, appended to the plan.
    *
    * 2026-09-03: on a subdivision-pattern parcel (the plan-organization layer
@@ -1372,95 +1510,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         const opt = sfV1OverrideRef.current;
         const resp = await fetchSfV1Plan(contextOgcFid, opt);
         if (resp) {
-          // An answer with nothing to draw — 0 lots (Martingale Dr, 0 Harding Pl)
-          // or skipped (1023 Wellmoor Ct, landlocked) — IS the by-right answer:
-          // the generated plan is cleared, the page settles (a skip once left
-          // the header on "Generating plan…"), and the reason stands.
-          const settleEmpty = (s: SfV1Summary, warnings: string[]) => {
-            const base0 = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
-            setPlanOutput(base0, {
-              totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0, openSpacePct: 0,
-              totalUnits: 0, unitMixSummary: s.status === 'skipped' ? 'skipped' : '0 lots', zoningCompliant: true,
-              violations: [] as string[], warnings, optimizationStatus: s.generatorVersion ?? 'sf_v1',
-            } as NonNullable<typeof metrics>);
-            setSubdivisionSummary(null);
-            setSfV1Summary(s);
-            setViolations([]);
-            setPlanLineage({
-              solvedBy: 'server', contextId: null, generatorVersion: s.generatorVersion ?? 'sf_v1',
-              flags: [...(s.status === 'skipped' ? ['skipped'] : []), ...(s.basis === 'override' ? ['override'] : [])],
-              buildings: 0, floors: null, footprintSqft: null, standardsDirect: true,
-            });
-            setPlanStale(false);
-            setServerPlanError(null);
-            setPlanBasis(s.basisLine);
-            setLotFitSummary(s.basisLine);
-          };
+          sfV1DefaultRespRef.current = resp;
+          await renderSfV1Answer(resp, opt, 'loop');
+          // The pattern competition runs after the plan is on the sheet, never
+          // in front of it (three plan runs, 3–20 s). Under the fill scenario
+          // each run is the heavy one, so it waits to be asked.
           if (resp.status === 'skipped' || resp.error) {
-            const { summary: skipped } = sfV1ToElements(resp, { overrideRequested: isOverride(opt) });
-            setBfeContour(null);
-            settleEmpty(skipped, skipped.reason ? [skipped.reason] : []);
-            return;
+            competitionSeqRef.current += 1;
+            sfV1CandidatesRef.current = null;
+            setSfV1Competition(null);
+          } else if (opt.flood) {
+            competitionSeqRef.current += 1;
+            sfV1CandidatesRef.current = null;
+            setSfV1Competition({ state: 'idle', data: null, error: null });
+          } else {
+            runCompetition(contextOgcFid, opt);
           }
-          const nobuild = await fetchSfV1Nobuild(contextOgcFid, opt.flood ?? null);
-          // The earthwork view. The ground-at-BFE line is context wherever the
-          // parcel has a BFE (it shows why the flood land is held out); the pads
-          // are coloured by their fill only when the plan builds in the flood
-          // hazard area. Both fail soft.
-          const ew = resp.earthwork ?? null;
-          let padFill: Array<number | null> | null = null;
-          let bfe: { bfeFt: number; lines: number[][][] } | null = null;
-          if (ew && earthworkHasFlood(ew) && typeof ew.pad_target_ft === 'number' && typeof resp.pads_wkt === 'string') {
-            padFill = await fetchPadFill(contextOgcFid, resp.pads_wkt, ew.pad_target_ft);
-          }
-          if (ew && typeof ew.bfe_ft === 'number') {
-            const lines = await fetchBfeContour(contextOgcFid, ew.bfe_ft);
-            if (lines) bfe = { bfeFt: ew.bfe_ft, lines: lines.map(l => l.coordinates as number[][]) };
-          }
-          setBfeContour(bfe);
-          const { elements: drawn, summary: byRight } = sfV1ToElements(resp, { nobuildWkt: nobuild, overrideRequested: isOverride(opt), padFillFt: padFill });
-          if (drawn.length === 0) {
-            settleEmpty(byRight, byRight.notes);
-            return;
-          }
-          if (!gateNonGesturePlan(drawn, 'By-right subdivision')) return;
-          const base = elements.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
-          // KPI strip: lots and land, the server's counts verbatim; the plan's
-          // own failed tests and notes are its warnings.
-          const byRightMetrics = {
-            totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0,
-            openSpacePct: byRight.openPct ?? 0,
-            totalUnits: byRight.lots,
-            unitMixSummary:
-              `${byRight.lots} lot${byRight.lots === 1 ? '' : 's'}` +
-              (byRight.lotWFt != null && byRight.lotDFt != null ? ` · ${byRight.lotWFt}×${byRight.lotDFt} ft` : ''),
-            zoningCompliant: byRight.fails.length === 0,
-            violations: [] as string[],
-            warnings: [...byRight.fails.map(f => `fails ${f}`), ...byRight.notes],
-            optimizationStatus: byRight.generatorVersion ?? 'sf_v1',
-          } as NonNullable<typeof metrics>;
-          setPlanOutput([...base, ...drawn], byRightMetrics);
-          setSubdivisionSummary(null);
-          setSfV1Summary(byRight);
-          setViolations([]);
-          setPlanLineage({
-            solvedBy: 'server',
-            contextId: null,
-            generatorVersion: byRight.generatorVersion ?? 'sf_v1',
-            flags: [...byRight.fails, ...(byRight.basis === 'override' ? ['override'] : [])],
-            buildings: drawn.filter(e => e.type === 'building').length,
-            floors: null,
-            footprintSqft: null,
-            // the generator reads the district standards itself (jurisdiction_zoning_standards, planning_principle)
-            standardsDirect: true,
-          });
-          setPlanStale(false);
-          setServerPlanError(null);
-          setPlanBasis(byRight.basisLine);
-          setLotFitSummary(byRight.basisLine);
           return;
         }
         setSfV1Summary(null);
+        setSfV1Competition(null);
         setBfeContour(null);
         setLotFitSummary('By-right generator (fn_sf_v1_plan) not reachable — drawing with the legacy generator.');
       } else {
@@ -1549,7 +1618,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } finally {
       setIsGeneratingLots(false);
     }
-  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan, parcel.zoning]);
+  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan, parcel.zoning, renderSfV1Answer, runCompetition]);
 
   /** Scheme switch on the neighbourhood panel: re-draws with the scheme's
    *  parameters (district lots / SP 25-ft townhomes / SP + amenity 10%). */
@@ -1568,6 +1637,42 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     handleGenerateLots().catch(() => undefined);
   }, [handleGenerateLots]);
 
+  /** "View this plan" on a row of the pattern competition: `best` and
+   *  `structured` arrive whole with the competition; the default is the plan
+   *  already drawn; any other row is drawn on request (opt.pattern — still by
+   *  right, the engine's own standards). The override the user set carries. */
+  const handleViewSfV1Candidate = useCallback(async (requested: string) => {
+    if (contextOgcFid == null) return;
+    const opt = withoutPattern(sfV1OverrideRef.current);
+    const raw = sfV1CandidatesRef.current;
+    let resp: SfV1Response | null = null;
+    if (requested === 'loop' && sfV1DefaultRespRef.current) resp = sfV1DefaultRespRef.current;
+    else if (raw?.best && raw.best_requested === requested) resp = raw.best;
+    else if (raw?.structured && requested === 'neighborhood') resp = raw.structured;
+    setIsGeneratingLots(true);
+    try {
+      if (!resp) resp = await fetchSfV1Plan(contextOgcFid, requested === 'loop' ? opt : { ...opt, pattern: requested });
+      if (!resp) {
+        setViolations(v => [...v, {
+          code: 'sfv1-candidate',
+          message: `Could not draw that plan: the by-right service did not respond. The plan on the sheet is unchanged.`,
+          severity: 'warning',
+        }]);
+        return;
+      }
+      planModeRef.current = 'sf';
+      await renderSfV1Answer(resp, opt, requested);
+    } finally {
+      setIsGeneratingLots(false);
+    }
+  }, [contextOgcFid, renderSfV1Answer]);
+
+  /** Run (or re-run) the competition for the options on the panel. */
+  const handleRunCompetition = useCallback(() => {
+    if (contextOgcFid == null) return;
+    runCompetition(contextOgcFid, withoutPattern(sfV1OverrideRef.current));
+  }, [contextOgcFid, runCompetition]);
+
   /**
    * Order-6 item 1: the RefusalCard's pre-verified typology switch. Where MF
    * refuses but the server says a house fits (`suggested_typology`), one tap
@@ -1584,6 +1689,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         const why = seed?.error === 'sf_unbuildable'
           ? `the single-family check refused — ${(seed.buildability as { reason?: string } | null)?.reason ?? 'unbuildable'}`
           : 'the seed service did not respond';
+        setSfSeedError(`${why}.`);
         setViolations(v => [...v, {
           code: 'sf-seed',
           message: `Could not draw the house: ${why}.`,
@@ -1593,8 +1699,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }
       const mapped = seedFamilyPlanToElements(seed, { idPrefix: 'sfseed', house: true });
       if (mapped.elements.length === 0) {
-        // 1023 Wellmoor Ct (2026-11-03): the seed answered "1 house" with no
-        // house geometry and no size — a click that drew nothing must say so.
+        // 1023 Wellmoor Ct (2026-11-03), 1083 B Lakewalk Dr (2026-11-04): the
+        // seed answered "1 house" with no house geometry and no size — a click
+        // that drew nothing must say so, in the panel where it was clicked.
+        setSfSeedError('it returned a house with no footprint for this parcel.');
         setViolations(v => [...v, {
           code: 'sf-seed',
           message: 'Could not draw the house: the single-family seed returned a house with no footprint for this parcel.',
@@ -1603,6 +1711,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         return;
       }
       if (!gateNonGesturePlan(mapped.elements, 'SF seed')) return;
+      setSfSeedError(null);
       planModeRef.current = 'sf';
       const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
       setPlanOutput([...base, ...mapped.elements], mapped.metrics ?? metrics);
@@ -1878,11 +1987,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     fetchPlanPattern(contextOgcFid).then(pp => {
       if (!cancelled) setPlanPattern(pp);
     });
-    // a new parcel starts by right: no override carries over
+    // a new parcel starts by right: no override, no competition, no seed verdict carries over
     setSfV1Summary(null);
     setSfV1Override({});
     sfV1OverrideRef.current = {};
     setBfeContour(null);
+    setSfV1Site(null);
+    competitionSeqRef.current += 1;
+    sfV1CandidatesRef.current = null;
+    sfV1DefaultRespRef.current = null;
+    setSfV1Competition(null);
+    setSfV1Shown('loop');
+    setSfSeedError(null);
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
@@ -2259,14 +2375,34 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sheetAnnotations = useMemo(() => buildSheetAnnotations(displayElements, topoGrid), [displayElements, topoGrid]);
   const streetProfiles = useMemo(() => buildStreetProfiles(displayElements, topoGrid), [displayElements, topoGrid]);
   const subdivisionOnSheet = !!subdivisionSummary && displayElements.some(e => e.id.startsWith('subdiv-'));
-  const sfV1OnSheet = !!sfV1Summary && sfV1Summary.status !== 'skipped' && displayElements.some(e => e.id.startsWith('sfv1-'));
+  // A 0-lot answer keeps its wetland hatch and flood hold on the sheet as
+  // context; that is existing conditions, not a layout plan.
+  const sfV1OnSheet = !!sfV1Summary && sfV1Summary.status !== 'skipped' && sfV1Summary.lots > 0 && displayElements.some(e => e.id.startsWith('sfv1-lot-'));
+  // The mapped area of the parcel polygon on the sheet (Mercator-corrected);
+  // the assessor's acreage rides along when it disagrees (930 Morton Mill Rd:
+  // 4.47 ac drawn, 7.70 on the record).
+  const mappedAcres = useMemo((): number | null => {
+    try {
+      if (!parcel?.geometry) return null;
+      const geom = parcel.geometry as Polygon | MultiPolygon;
+      const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0]?.[0];
+      const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
+      const g3857 = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
+      const polys: Polygon[] = g3857.type === 'Polygon' ? [g3857] : g3857.coordinates.map(c => ({ type: 'Polygon', coordinates: c }) as Polygon);
+      const m2 = polys.reduce((a, p) => a + correctedAreaM2(p), 0);
+      return m2 > 0 ? m2 / 4046.8564224 : null;
+    } catch {
+      return null;
+    }
+  }, [parcel?.geometry]);
   const sheetTitle = useMemo(
     () =>
       buildSheetTitleBlock({
         address: parcel.address ?? null,
         parcelId: parcel.ogc_fid ?? parcel.id ?? null,
         zoning: (parcel.zoning as string | undefined) ?? null,
-        acres: typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null,
+        acres: mappedAcres ?? (typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null),
+        assessorAcres: typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null,
         subdivision: subdivisionOnSheet && subdivisionSummary
           ? {
               lots: subdivisionSummary.lots,
@@ -2279,7 +2415,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           : sfV1OnSheet && sfV1Summary
             ? {
                 lots: sfV1Summary.lots,
-                network: `${sfV1Summary.pattern ?? 'by right'}${sfV1Summary.basis === 'override' ? ' (override)' : ' (by right)'}`,
+                network: sfV1Summary.pattern ?? 'by right',
+                // "7 lots · single street · by right", not "single street (by right) network"
+                networkLabel: `${sfV1Summary.pattern ?? 'no new street'} · ${sfV1Summary.basis === 'override' ? 'OVERRIDE' : 'by right'}`,
                 pctRow: sfV1Summary.rowPct,
                 // the generator holds out real FEMA / NWI geometry (hazard_flood_2274, the site's no-build land)
                 pctHazard: sfV1Summary.heldPct,
@@ -2299,7 +2437,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             }
           : null,
       }),
-    [parcel.address, parcel.ogc_fid, parcel.id, parcel.zoning, parcel.deeded_acres, subdivisionOnSheet, subdivisionSummary, sfV1OnSheet, sfV1Summary, displayElements, topoCanvas, topo],
+    [parcel.address, parcel.ogc_fid, parcel.id, parcel.zoning, parcel.deeded_acres, mappedAcres, subdivisionOnSheet, subdivisionSummary, sfV1OnSheet, sfV1Summary, displayElements, topoCanvas, topo],
   );
 
   // The one-line plan-basis row (2026-09-04): the context state, the two lead
@@ -2390,6 +2528,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             streetGradeMaxPct: sfV1Summary.streetGrade?.maxPct ?? null,
             densityDuAc: sfV1Summary.densityDuAc,
             ms: sfV1Summary.ms,
+            heldLayer: displayElements.some(e => e.id.startsWith('sfv1-hold-')),
+            shown: sfV1Shown,
+            competition: sfV1Competition
+              ? {
+                  state: sfV1Competition.state,
+                  bestRequested: sfV1Competition.data?.bestRequested ?? null,
+                  bestLots: sfV1Competition.data?.bestLots ?? null,
+                  structuredLots: sfV1Competition.data?.structuredLots ?? null,
+                  forgone: sfV1Competition.data?.forgone ?? null,
+                  rows: sfV1Competition.data?.rows.map(r => ({ requested: r.requested, pattern: r.pattern, lots: r.lots, fails: r.fails.length })) ?? [],
+                  error: sfV1Competition.error,
+                }
+              : null,
           }
         : null,
       commercialAllowableGsf:
@@ -2426,7 +2577,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -2515,6 +2666,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
+          subdivision={
+            sfV1Summary && !displayElements.some(e => e.id.startsWith('sfseed-'))
+              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status }
+              : null
+          }
           utilizationPct={
             !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
               ? (metrics.totalBuiltSF / maxBuildout.max_gsf) * 100
@@ -2643,7 +2799,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
         {!leftRailCollapsed && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
-          {planPattern && <PlanPatternPanel plan={planPattern} />}
+          {planPattern && (
+            <PlanPatternPanel
+              plan={planPattern}
+              drawn={sfV1Summary && displayElements.some(e => e.id.startsWith('sfseed-'))
+                ? { label: 'One house on the lot', source: 'the single-family seed (sf_seed_v1) on a parcel the by-right generator gives no new lots' }
+                : sfV1Summary
+                ? {
+                    label: sfV1Summary.status === 'skipped'
+                      ? 'By-right subdivision skipped'
+                      : sfV1Summary.lots === 0
+                        ? 'No new lots by right — the parcel is one lot'
+                        : `${sfV1Summary.lots} lot${sfV1Summary.lots === 1 ? '' : 's'}${patternPhrase(sfV1Summary.pattern)}`,
+                    source: 'the by-right subdivision generator (sf_v1), from the district\'s own standards',
+                  }
+                : null}
+            />
+          )}
           {subdivisionSummary && (
             <SubdivisionPanel
               summary={subdivisionSummary}
@@ -2660,6 +2832,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               busy={isGeneratingLots || isGenerating}
               onDrawHouse={handleDrawSfSeed}
               houseDrawn={displayElements.some(e => e.id.startsWith('sfseed-'))}
+              houseError={sfSeedError}
+              competition={sfV1Competition}
+              shownRequested={sfV1Shown}
+              onViewCandidate={(r: string) => { void handleViewSfV1Candidate(r); }}
+              onRetryCompetition={handleRunCompetition}
+              terrain={topoCanvas ? {
+                meanSlopePct: topoCanvas.meanSlopePct,
+                maxSlopePct: topoCanvas.maxSlopePct,
+                fallFt: topoCanvas.zMinFt != null && topoCanvas.zMaxFt != null ? topoCanvas.zMaxFt - topoCanvas.zMinFt : null,
+              } : null}
+              site={sfV1Site ? { heldAcres: sfV1Site.heldAcres, siteAcres: sfV1Site.siteAcres } : null}
             />
           )}
           <ContextPanel

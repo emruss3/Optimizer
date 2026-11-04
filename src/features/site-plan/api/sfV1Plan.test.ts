@@ -241,3 +241,105 @@ describe('sfV1ToElements — the plan on the sheet', () => {
     expect(sfV1ToElements({ ...PLAN, lots: 1 }).summary.basisLine.startsWith('1 lot @ 65 × 125 ft by right')).toBe(true);
   });
 });
+
+describe('2026-11-04: the competition, the new layers, the options that are not overrides', () => {
+  it('a pattern choice and module_by_right are by-right choices, not overrides', async () => {
+    const { withoutPattern } = await import('./sfV1Plan');
+    expect(isOverride({ pattern: 'grid' })).toBe(false);
+    expect(isOverride({ pattern: 'neighborhood', module_by_right: true })).toBe(false);
+    expect(isOverride({ module_by_right: false })).toBe(false);
+    expect(isOverride({ pattern: 'grid', lot_w_ft: 50 })).toBe(true);
+    expect(isOverride({ flood: 'floodway' })).toBe(true);
+    expect(withoutPattern({ pattern: 'grid', flood: 'floodway' })).toEqual({ flood: 'floodway' });
+  });
+
+  it('a test that passes over its limit is reported as such; the steep-ground note is found', async () => {
+    const { passesOverLimit, steepGroundNote } = await import('./sfV1Plan');
+    expect(passesOverLimit({ id: 'street.grade_max', pass: true, value: 12, limit: 10, ft_over_limit: 100 })).toEqual({ over: 2, ftOver: 100 });
+    expect(passesOverLimit({ id: 'street.grade_max', pass: true, value: 8, limit: 10 })).toBeNull();
+    expect(passesOverLimit({ id: 'street.grade_max', pass: false, value: 26.8, limit: 10 })).toBeNull();
+    expect(steepGroundNote(['1 lots added', 'ground averages 36% slope with 325 ft of fall across the parcel: …'])).toContain('36% slope');
+    expect(steepGroundNote(['no new street fits with 100 x 200 ft lots'])).toBeNull();
+  });
+
+  it('the pattern reads as a phrase in the basis line', async () => {
+    const { patternPhrase } = await import('./sfV1Plan');
+    expect(patternPhrase('loop')).toBe(' on a loop');
+    expect(patternPhrase('2 loops')).toBe(' on two loops');
+    expect(patternPhrase('frontage lots, no new street')).toBe(' as frontage lots (no new street)');
+    expect(patternPhrase('grid')).toBe(' on a street grid');
+    expect(patternPhrase('neighborhood')).toBe(' as a neighborhood plan');
+    expect(patternPhrase(null)).toBe('');
+  });
+
+  it('draws the flood hold first, the trail as a band, the green strip and a reserve piece', async () => {
+    const { trailStrips3857 } = await import('./sfV1Plan');
+    const strips = trailStrips3857(`LINESTRING(${X} ${Y},${X + 300} ${Y},${X + 300} ${Y + 200})`);
+    expect(strips.length).toBe(1);
+    const { elements } = sfV1ToElements(
+      {
+        ...PLAN,
+        trail_wkt: `LINESTRING(${X} ${Y + 600},${X + 400} ${Y + 600})`,
+        green_strip_wkt: `POLYGON${rect(X, Y + 580, 400, 40)}`,
+        open_pieces: [{ kind: 'reserve', acres: 1.2 }],
+        open_wkt: `MULTIPOLYGON(${rect(X + 600, Y, 100, 100)})`,
+      },
+      { holdWkt: `POLYGON${rect(X - 500, Y, 400, 400)}` }
+    );
+    expect(elements[0]!.id).toBe('sfv1-hold-1');
+    expect(elements[0]!.name).toBe('Flood hazard area · held out');
+    expect(elements.some(e => e.id === 'sfv1-trail-1')).toBe(true);
+    expect(elements.some(e => e.id === 'sfv1-green-strip-1')).toBe(true);
+    expect(elements.find(e => e.id === 'sfv1-open-1')!.name).toBe('Reserve');
+    expect(openStyle('reserve: commercial').name).toBe('Reserve — commercial');
+    // the new layers are greenspace: the zero-overlap gate is untouched by them
+    expect(validatePlanElements(elements).ok).toBe(true);
+  });
+
+  it('summarizes the competition: rows by the drawn pattern, best, structured and the price of the structure', async () => {
+    const { summarizeCandidates } = await import('./sfV1Plan');
+    const cand = (requested: string, pattern: string | null, lots: number, fails: string[], total: number) => ({
+      requested, pattern, status: 'done', lots, fails, notes: [], street_ft: 2000, lots_per_100ft: 1.2, open_pct: 8, connections: 3,
+      score: { total, yield: { score: 6 }, geometry: { score: 7.6 } },
+    });
+    // 4701 Bowfield Dr: the loop is best (35, no fails), the neighborhood plan forgoes 10
+    const bowfield = summarizeCandidates({
+      status: 'done', best_requested: 'loop', best_by_score: 'loop', best_lots: 35, structured_lots: 25, lots_forgone_for_structure: 10, arithmetic: 36, ms: 4436,
+      candidates: [cand('grid', 'grid', 25, ['street.grade_max'], 5.7), cand('neighborhood', 'neighborhood', 25, ['street.grade_max'], 5.7), cand('loop', 'loop', 35, [], 5.9)],
+    })!;
+    expect(bowfield.rows.map(r => r.label)).toEqual(['grid', 'neighborhood', 'loop']);
+    expect(bowfield.rows.find(r => r.isBest)!.requested).toBe('loop');
+    expect(bowfield.rows.find(r => r.isStructured)!.requested).toBe('neighborhood');
+    expect(bowfield.sentence).toBe('The structured plan gives up 10 lots (35 → 25): the price of the structure. The owner decides.');
+    expect(bowfield.rows[0]!.criteria.map(c => c.name)).toEqual(['yield', 'geometry']);
+    // 3736 Old Clarksville Pike: the fewest-fails rule picks 7 lots on a single street over 16 that fail three tests
+    const clarksville = summarizeCandidates({
+      status: 'done', best_requested: 'loop', best_lots: 7, structured_lots: 16, lots_forgone_for_structure: -9,
+      candidates: [cand('grid', 'grid', 16, ['a', 'b', 'c'], 4.1), cand('neighborhood', 'neighborhood', 16, ['a', 'b', 'c'], 4.4), cand('loop', 'single street', 7, ['open.unassigned'], 4.3)],
+    })!;
+    expect(clarksville.rows[2]!.label).toBe('single street');
+    expect(clarksville.rows[2]!.fellBack).toBe(false); // the loop grammar drawing a single street is not a fallback
+    expect(clarksville.sentence).toContain('draws 9 lots more (16 against 7) but fails 3 tests to the best plan\'s 1');
+    // a neighborhood request that drew a grid says so; nothing drawn anywhere is one line
+    const fell = summarizeCandidates({ status: 'done', best_requested: 'grid', candidates: [cand('neighborhood', 'grid', 10, [], 5), cand('grid', 'grid', 10, [], 5)] })!;
+    expect(fell.rows[0]!.fellBack).toBe(true);
+    const none = summarizeCandidates({ status: 'done', best_lots: 0, candidates: [cand('grid', null, 0, [], 0), cand('neighborhood', null, 0, [], 0), cand('loop', null, 0, [], 0)] })!;
+    expect(none.allZero).toBe(true);
+    expect(none.rows[0]!.label).toBe('grid grammar: nothing drawn');
+    expect(none.sentence).toContain('all draw 0');
+    // 1083 B Lakewalk Dr: the grid draws 1 lot, the neighborhood nothing — not "gives up 1 lot"
+    const lake = summarizeCandidates({ status: 'done', best_requested: 'grid', lots_forgone_for_structure: 1, candidates: [cand('grid', 'grid', 1, [], 3.1), cand('neighborhood', null, 0, [], 0), cand('loop', null, 0, [], 0)] })!;
+    expect(lake.sentence).toBe('Only the grid draws lots here (1); the neighborhood grammar draws none, so there is no structured plan to weigh against it.');
+    // 0 Sullivan Hollow Rd: every pattern fails the street grade — said before the ranking
+    const g = ['street.dead_end_max', 'open.unassigned', 'street.grade_max'];
+    const hollow = summarizeCandidates({ status: 'done', best_requested: 'grid', lots_forgone_for_structure: 2, candidates: [cand('grid', 'grid', 15, g, 4.1), cand('neighborhood', 'neighborhood', 13, g, 4.2), cand('loop', 'T street', 5, g, 3)] })!;
+    expect(hollow.sentence.startsWith("Every pattern's streets fail the grade limit here, so none is buildable as drawn")).toBe(true);
+    expect(hollow.sentence).toContain('gives up 2 lots (15 → 13)');
+  });
+
+  it('names the anon timeout in words a user can act on', async () => {
+    const { competitionErrorText } = await import('./sfV1Plan');
+    expect(competitionErrorText('canceling statement due to statement timeout')).toContain('20 s the server allows the app');
+    expect(competitionErrorText('permission denied')).toBe('permission denied');
+  });
+});

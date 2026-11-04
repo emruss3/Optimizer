@@ -83,13 +83,17 @@ const TabulationPanel: React.FC<{
       }
     }
 
+    // A detached house rides the 'townhome' mix slot (the mix has no house
+    // type); on a sheet of houses only, the row says what it is — the single
+    // house on 0 Riverfront Dr was tabulated as a "Townhome" (2026-11-04).
+    const allHouses = buildings.length > 0 && buildings.every(b => b.properties?.house === true || b.properties?.singleFamilyHouse === true);
     return (Object.keys(TYPE_LABELS) as UnitMixEntry['type'][])
       .filter(t => byType.has(t))
       .map(t => {
         const v = byType.get(t)!;
         const ratio = PARKING_RATIO_DEFAULTS[t];
         return {
-          label: TYPE_LABELS[t],
+          label: allHouses && t === 'townhome' ? (v.units === 1 ? 'Single-family house' : 'Single-family houses') : TYPE_LABELS[t],
           units: v.units,
           pct: (v.units / total) * 100,
           avgSqft: v.units ? v.sf / v.units : 0,

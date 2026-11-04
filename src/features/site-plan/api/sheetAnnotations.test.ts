@@ -67,6 +67,17 @@ describe('buildSheetTitleBlock — what the sheet says about itself', () => {
   const topo = { source: 'USGS 3DEP 1 m DEM', spacingFt: 20, zMinFt: 406.6, zMaxFt: 444.6, meanSlopePct: 5.4, maxSlopePct: 31.8 };
   const date = new Date(2026, 8, 4);
 
+  it('states the assessor acreage beside the mapped area when they disagree; an sf_v1 network reads as a phrase', () => {
+    const date = new Date('2026-11-04T12:00:00Z');
+    const tb = buildSheetTitleBlock({
+      address: '3736 Old Clarksville Pike', zoning: 'RS40', acres: 24.9, assessorAcres: 24, hasPlan: false, topo: null, date,
+      subdivision: { lots: 7, network: 'single street', networkLabel: 'single street · by right', pctRow: 4.5, pctHazard: 0, hazardCoverage: 'ingested', crossingFt: null },
+    });
+    expect(tb.subtitle).toBe('RS40 · 24.9 ac · 7 lots · single street · by right · 4.5% R.O.W.');
+    const morton = buildSheetTitleBlock({ address: '930 Morton Mill Rd', zoning: 'RS20', acres: 4.47, assessorAcres: 7.7, hasPlan: false, topo: null, date });
+    expect(morton.subtitle).toBe('RS20 · 4.47 ac (assessor 7.70 ac)');
+  });
+
   it('names a subdivision a concept layout plan and states every basis', () => {
     const tb = buildSheetTitleBlock({
       address: '2400 W Heiman St', zoning: 'R6', acres: 13.15, hasPlan: false, topo, date,
