@@ -125,8 +125,8 @@ export function SfV1Panel({
   onRetryCompetition?: () => void;
   /** the parcel's ground from its DEM, for an answer that drew nothing */
   terrain?: { meanSlopePct: number | null; maxSlopePct: number | null; fallFt: number | null } | null;
-  /** the site the generator worked on: what the flood hold took out */
-  site?: { heldAcres: number | null; siteAcres: number | null } | null;
+  /** the site the generator worked on: what the flood hold took out, and the mapped parcel */
+  site?: { heldAcres: number | null; siteAcres: number | null; parcelAcres?: number | null } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
   const [lotD, setLotD] = useState<string>(override.lot_d_ft != null ? String(override.lot_d_ft) : '');
@@ -137,6 +137,10 @@ export function SfV1Panel({
   const fillByComponent = ew && ew.fill_cy && typeof ew.fill_cy === 'object' ? Object.entries(ew.fill_cy) : null;
   const noNewLots = summary.status === 'skipped' || summary.lots === 0;
   const landlocked = summary.status === 'skipped' && /landlocked/i.test(summary.reason ?? '');
+  // "floodplain leaves no buildable piece" (0 Temple Rd, 0 River Landing Way):
+  // the one skip a control can answer — the fill scenario holds out only the
+  // regulatory floodway (River Landing Way: 10 lots, with the fill it costs).
+  const floodSkip = summary.status === 'skipped' && /flood/i.test(summary.reason ?? '');
   // The engine's steep-ground caveat leads the panel: it measures terrain but
   // does not lay out by it yet, so the lot module is not the whole story.
   const steep = steepGroundNote(summary.notes);
@@ -212,6 +216,13 @@ export function SfV1Panel({
               ⚠ The ground averages {Math.round(terrain.meanSlopePct ?? 0)}% slope
               {terrain.maxSlopePct != null ? ` (max ${Math.round(terrain.maxSlopePct)}%)` : ''}
               {terrain.fallFt != null ? ` with ${Math.round(terrain.fallFt)} ft of fall` : ''} (USGS 3DEP). The engine measures terrain but does not lay out by it yet, so the lot module may not be what stops this plan.
+            </p>
+          )}
+          {noNewLots && summary.status !== 'skipped' && site?.parcelAcres != null && summary.minLotSf != null && site.parcelAcres * 43560 < summary.minLotSf && (
+            // 0 Couchville Pike (RS80, 1.43 ac): the reason said "no lot of
+            // 80000 sf fits" — the parcel itself is smaller than one lot.
+            <p data-testid="sfv1-undersized" className="mt-1 leading-snug text-slate-600">
+              The parcel ({Math.round(site.parcelAcres * 43560).toLocaleString()} SF) is smaller than the district's minimum lot ({summary.minLotSf.toLocaleString()} SF): no new lot can be made. As a lot of record it may still carry one house.
             </p>
           )}
           {noNewLots && site && site.heldAcres != null && site.heldAcres > 0 && (
@@ -360,6 +371,11 @@ export function SfV1Panel({
               No street touches this parcel: a house here assumes an access easement across a neighbour, which is not by right.
             </div>
           )}
+          {floodSkip && !houseError && (
+            <div data-testid="sfv1-house-flood" className="mt-1 text-sky-900/80">
+              The flood hazard area leaves no buildable piece: a house here stands in the floodplain, on fill to the base flood elevation and with a floodplain permit.
+            </div>
+          )}
         </div>
       )}
 
@@ -444,7 +460,11 @@ export function SfV1Panel({
               </>
             )}
           </dl>
-          {summary.hasFlood ? (
+          {summary.hasFlood && !summary.fillView && (ew?.lots_in_sfha ?? 0) === 0 ? (
+            // 0 Neelys Bend Rd: 20 cy of fill for a street crossing the flood
+            // hazard area, no lot in it — a pad-fill legend there is noise.
+            <p data-testid="sfv1-street-only-fill" className="mt-1 text-[10px] text-orange-900/80">No lot stands in the flood hazard area: the fill is for the street that crosses it.</p>
+          ) : summary.hasFlood ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-orange-900">
               <span className="font-semibold">Pads by fill:</span>
               {summary.fillView ? FILL_BANDS.map(b => (
@@ -464,17 +484,32 @@ export function SfV1Panel({
 
       {/* A skipped parcel (landlocked) is not fixed by a lot module or a fill
           scenario: no controls that cannot help, only the way back. */}
-      {summary.status === 'skipped' ? (overridden ? (
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <button
-            type="button"
-            data-testid="sfv1-override-reset"
-            disabled={busy}
-            onClick={() => { setLotW(''); setLotD(''); setMinSf(''); onOverride({}); }}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            By right
-          </button>
+      {summary.status === 'skipped' ? ((overridden || floodSkip) ? (
+        <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2">
+          {floodSkip && !fillScenario && (
+            <button
+              type="button"
+              data-testid="sfv1-override-floodway"
+              aria-pressed={false}
+              disabled={busy}
+              title="Fill scenario: hold out only the regulatory floodway and fill the rest of the floodplain to the pad target"
+              onClick={() => onOverride({ ...override, flood: 'floodway' })}
+              className="rounded-md border border-amber-500 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+            >
+              Try the fill scenario (floodway only) — an override
+            </button>
+          )}
+          {overridden && (
+            <button
+              type="button"
+              data-testid="sfv1-override-reset"
+              disabled={busy}
+              onClick={() => { setLotW(''); setLotD(''); setMinSf(''); onOverride({}); }}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              By right
+            </button>
+          )}
         </div>
       ) : null) : (
       <div className="mt-2 border-t border-slate-100 pt-2">

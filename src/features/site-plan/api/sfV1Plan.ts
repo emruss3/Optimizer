@@ -1022,8 +1022,11 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
   // 0 Sullivan Hollow Rd (36% mean slope): every pattern's streets exceed the
   // grade limit, and the ranking is between plans the ground does not allow.
   const drawnRows = done.filter(r => r.lots > 0);
-  if (drawnRows.length > 0 && drawnRows.every(r => r.fails.includes('street.grade_max'))) {
+  if (drawnRows.length > 1 && drawnRows.every(r => r.fails.includes('street.grade_max'))) {
     sentence = `Every pattern's streets fail the grade limit here, so none is buildable as drawn; the engine does not lay out by slope yet. ${sentence}`;
+  } else if (drawnRows.length === 1 && drawnRows[0]!.fails.includes('street.grade_max')) {
+    // 0 Neelys Bend Rd: one pattern draws lots at all, and its streets fail the grade
+    sentence = `The only pattern that draws lots here fails the street grade, so it is not buildable as drawn; the engine does not lay out by slope yet. ${sentence}`;
   }
   return {
     status, reason: str(resp.reason) ?? str(resp.error), rows,

@@ -1531,3 +1531,36 @@ plan, and the title block carries mapped and assessor acres. The battery
 asserts the competition on Bowfield (best loop 35, structured 25, 10 forgone,
 the structured plan viewed by right) and re-bases Bowfield (35 lots, no
 failed test) and Martingale's fill scenario (147 lots) to today's engine.
+
+## 24. Ten more by right (2026-11-04)
+
+Eric: "Run 10 more and provide feedback again." Two per size band from the
+vacant R / RS parcels of 1–60 ac, by a fixed hash, this time excluding the
+non-sites §23 found (association-owned including "O.I.C.", public, appraised
+under $5,000): 1,679 of 3,125 parcels remain, so 46% of the pool is not a
+plausible site. Write-up per parcel and pictures: `qa/audits/2026-11-04b/`.
+
+Two client defects affected every plan of their kind. Every loop street was
+drawn as a solid slab because the canvas filled a polygon's outer ring and
+ignored its holes; Bowfield's loop had shown it since the first loop shipped,
+and two rounds of pictures missed it. And a flood parcel never reached the
+by-right generator: the compile's `physical.developable: false` set
+`generation_allowed: false`, and the page said "single family is not
+permitted as-of-right — pick a permitted use" on RS40 and R15 lots
+whose only use is single family. Both are fixed. A physical-only block on
+R / RS goes to the generator, and a flood skip offers the fill scenario. On
+0 River Landing Way the fill scenario draws 10 lots on 9–19 ft of fill
+(56,277 cy) with a cut that cannot close. Also fixed: an undersized lot says
+so, the one-pattern grade wording, the street-only fill legend, and the
+override chip on the pattern card.
+
+Engine side: the competition's rule picked a new 562-ft street over none for
+the same 8 lots (Nashboro Blvd), 2 lots over 3 (Eatons Creek Rd), 6 over 7
+(Newsom Station Rd), and 2 lots on 3,555 ft of street over nothing (Neelys
+Bend Rd). Notes come from plans that were not drawn. The cut test divides by
+0 ac of open floodplain. Hessey Rd shows two bulbs and reports one cul-de-sac.
+Newsom Station is all pie lots. Temple Rd's skip reason omits that it is
+landlocked. The fill scenario is labelled by right. First calls of 20.6 s
+(Brittany Park Dr) and 21.3 s (River Landing Way's fill scenario) exceed the
+anon timeout. Use codes contradict the zoning: "vacant commercial" on R10,
+"zoned multi family" on RS20 for a $3 M parcel owned by a housing partnership.

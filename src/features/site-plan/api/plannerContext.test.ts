@@ -380,3 +380,28 @@ describe('order-8 receipts through the compiled context (forward-compatible)', (
     expect(plannerContextToDesignContext(RESP).heightPlane).toBeUndefined();
   });
 });
+
+describe('physicalOnlyBlock (2026-11-04: 0 Temple Rd, 0 River Landing Way)', () => {
+  it('names a physical block on a by-right use, and is null for a legal one or none', async () => {
+    const { physicalOnlyBlock } = await import('./plannerContext');
+    const blocked = {
+      ...RESP, generation_allowed: false,
+      context: {
+        typology: 'single_family',
+        legal: { permitted_as_of_right: true, zoning_base: 'RS40' },
+        physical: {
+          developable: false,
+          flood: { zone: 'AE', class: 'sfha_100yr' },
+          hazard_carve: { pct_land_hazard: 97.8, residual_sqft: 2703, min_residual_sqft: 15000 },
+        },
+      },
+    } as unknown as PlannerContextResponse;
+    expect(physicalOnlyBlock(blocked)?.reason).toBe(
+      '97.8% of the parcel is FEMA flood hazard area (zone AE) or wetland buffer; 2,703 SF is left outside it, under the 15,000 SF a building needs'
+    );
+    // a legal block (the use is not by right) is not physical
+    expect(physicalOnlyBlock({ ...blocked, context: { ...blocked.context, legal: { permitted_as_of_right: false } } } as unknown as PlannerContextResponse)).toBeNull();
+    // nothing blocked
+    expect(physicalOnlyBlock(RESP)).toBeNull();
+  });
+});

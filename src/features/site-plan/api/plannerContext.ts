@@ -785,3 +785,32 @@ export function plannerContextSummary(resp: PlannerContextResponse): string {
   ];
   return parts.join(' · ');
 }
+
+/**
+ * generation_allowed=false for a PHYSICAL reason while the use itself is by
+ * right: the context engine marks the site not developable as mapped (0 Temple
+ * Rd: 97.8% FEMA flood hazard area or wetland buffer; 0 River Landing Way:
+ * 100%). The page used to say "single family is not permitted as-of-right on
+ * this parcel — pick a permitted use", on an RS40 lot where single family is
+ * the only use there is. Null when the block is legal, or there is none.
+ */
+export function physicalOnlyBlock(resp: PlannerContextResponse | null | undefined): { reason: string; pctHazard: number | null } | null {
+  if (!resp || resp.generation_allowed) return null;
+  if (resp.context?.legal?.permitted_as_of_right !== true) return null;
+  const phys = resp.context?.physical as Record<string, unknown> | undefined;
+  if (!phys || phys.developable !== false) return null;
+  const carve = (phys.hazard_carve ?? {}) as Record<string, unknown>;
+  const flood = (phys.flood ?? {}) as Record<string, unknown>;
+  const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const pct = n(carve.pct_land_hazard);
+  const residual = n(carve.residual_sqft);
+  const minResidual = n(carve.min_residual_sqft);
+  const zone = typeof flood.zone === 'string' ? flood.zone : null;
+  const parts: string[] = [];
+  if (pct != null) parts.push(`${Math.round(pct * 10) / 10}% of the parcel is FEMA flood hazard area${zone ? ` (zone ${zone})` : ''} or wetland buffer`);
+  else if (zone) parts.push(`the parcel lies in FEMA flood zone ${zone}`);
+  if (residual != null && minResidual != null && residual < minResidual) {
+    parts.push(`${Math.round(residual).toLocaleString()} SF is left outside it, under the ${Math.round(minResidual).toLocaleString()} SF a building needs`);
+  }
+  return { reason: parts.length > 0 ? parts.join('; ') : 'the site is not developable as mapped', pctHazard: pct };
+}

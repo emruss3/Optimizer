@@ -18,7 +18,7 @@ export const PlanPatternPanel: React.FC<{
    *  single street, and a 0-lot answer (three audit rounds, 2026-11-03/04).
    *  When given, the card names the drawn plan and keeps the layer's
    *  suggestion as a note. */
-  drawn?: { label: string; source: string } | null;
+  drawn?: { label: string; source: string; chip?: string } | null;
 }> = ({ plan, defaultOpen = false, drawn = null }) => {
   const [open, setOpen] = useState(defaultOpen);
   const align = plan.generator_alignment;
@@ -42,10 +42,10 @@ export const PlanPatternPanel: React.FC<{
             data-testid="plan-pattern-alignment"
             title={drawn ? drawn.source : align?.note ?? ''}
             className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-              drawn ? 'bg-sky-100 text-sky-800' : aligned ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'
+              drawn ? (drawn.chip && drawn.chip !== 'drawn by right' ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800') : aligned ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'
             }`}
           >
-            {drawn ? 'drawn by right' : aligned ? 'generator follows this' : 'generator: not yet'}
+            {drawn ? (drawn.chip ?? 'drawn by right') : aligned ? 'generator follows this' : 'generator: not yet'}
           </span>
           <button
             type="button"

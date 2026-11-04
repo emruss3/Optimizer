@@ -63,6 +63,20 @@ vi.mock('./api/generateSfPlan', async importOriginal => ({
   ...(await importOriginal<typeof import('./api/generateSfPlan')>()),
   generateSfSitePlan: () => genSfMock(),
 }));
+const sfV1PlanMock = vi.fn(async (): Promise<Record<string, unknown> | null> => null);
+// The plan-pattern layer is a network call; with a local stand-in running it
+// answers for the real parcel 669046 (RM40), whose zoning would outrank the
+// test parcel's. No pattern here: the parcel's own zoning decides the route.
+vi.mock('./api/planPattern', async importOriginal => ({
+  ...(await importOriginal<typeof import('./api/planPattern')>()),
+  fetchPlanPattern: async () => null,
+}));
+vi.mock('./api/sfV1Plan', async importOriginal => ({
+  ...(await importOriginal<typeof import('./api/sfV1Plan')>()),
+  fetchSfV1Plan: (fid: number, opt: Record<string, unknown>) => (sfV1PlanMock as unknown as (f: number, o: Record<string, unknown>) => Promise<unknown>)(fid, opt),
+  fetchSfV1Site: async () => null,
+  fetchSfV1Candidates: async () => ({ data: null, error: 'not in this test' }),
+}));
 vi.mock('./api/plannerFeedback', () => ({
   recordPlannerFeedback: vi.fn(async () => undefined),
 }));
@@ -275,6 +289,7 @@ beforeEach(() => {
   genLegacyMock.mockResolvedValue(null);
   genSfMock.mockResolvedValue(null);
   listCandidatesMock.mockResolvedValue([]);
+  sfV1PlanMock.mockResolvedValue(null);
   compileMock.mockImplementation(() => new Promise(() => undefined)); // pending unless a test says otherwise
 });
 
@@ -378,6 +393,30 @@ describe('SiteWorkspace: generation gate (generation_allowed=false)', () => {
     // The user can still pick another permitted use
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'single_family' } });
     await waitFor(() => expect(compileMock).toHaveBeenCalledWith(669046, 'single_family'));
+  });
+});
+
+describe('SiteWorkspace: a physical block on a by-right parcel goes to the by-right generator (2026-11-04)', () => {
+  it('0 Temple Rd: the floodplain, not the use — the generator answers and offers the fill scenario', async () => {
+    permittedUsesMock.mockResolvedValue(['single_family']);
+    const physicalBlock = ctxResp('single_family', 'ctx-flood', { generation_allowed: false });
+    (physicalBlock as unknown as { context: Record<string, unknown> }).context = {
+      ...(physicalBlock as unknown as { context: Record<string, unknown> }).context,
+      generation_allowed: false,
+      legal: { permitted_as_of_right: true, zoning_base: 'RS40', confidence: 'high' },
+      physical: { developable: false, flood: { zone: 'AE' }, hazard_carve: { pct_land_hazard: 97.8, residual_sqft: 2703, min_residual_sqft: 15000 } },
+    };
+    compileMock.mockImplementation(async () => physicalBlock);
+    sfV1PlanMock.mockResolvedValue({ status: 'skipped', reason: 'floodplain leaves no buildable piece', ogc_fid: 669046 });
+
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS40' } as never} />);
+
+    await waitFor(() => expect(sfV1PlanMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId('sfv1-skipped').textContent).toContain('floodplain leaves no buildable piece'));
+    expect(screen.getByTestId('sfv1-override-floodway')).toBeTruthy();
+    // not reported as a use that is not permitted
+    expect(screen.queryByText(/not permitted as-of-right — generation is blocked/)).toBeNull();
+    expect(genV2Mock).not.toHaveBeenCalled();
   });
 });
 
