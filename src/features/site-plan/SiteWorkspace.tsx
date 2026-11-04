@@ -36,6 +36,7 @@ import {
   fetchSfV1Plan, fetchSfV1Site, fetchPadFill, fetchBfeContour, earthworkHasFlood,
   sfV1ToElements, sfV1Route, isOverride, withoutPattern,
   fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
+  parcelHoles3857, lotsOnParcelHoles, autoBestEligible, type HoleOverlap,
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse,
 } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
@@ -233,6 +234,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [sfSeedError, setSfSeedError] = useState<string | null>(null);
   // The compile's physical verdict when it blocks a by-right use (the floodplain).
   const [physicalBlockReason, setPhysicalBlockReason] = useState<string | null>(null);
+  // Drawn lots lying in the parcel's holes (other owners' lots inside it: 0 Longwood Pl).
+  const [sfV1HoleOverlap, setSfV1HoleOverlap] = useState<HoleOverlap | null>(null);
+  // The competition's best put on the sheet because the default answer drew no lots.
+  const [sfV1AutoBest, setSfV1AutoBest] = useState<string | null>(null);
+  const sfV1ShownRef = useRef<string>('loop');
+  const renderSfV1Ref = useRef<((resp: SfV1Response, opt: SfV1Options, shown: string) => Promise<void>) | null>(null);
+  const elementsRef = useRef<Element[]>([]);
 
   // ── HBU / regime plan routing ─────────────────────────────────────────────
   // What we planned and WHY, shown under the KPI bar ("Plan basis: …").
@@ -1395,7 +1403,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setLotFitSummary(s.basisLine);
     };
     setSfV1Shown(shown);
+    sfV1ShownRef.current = shown;
     if (resp.status === 'skipped' || resp.error) {
+      setSfV1HoleOverlap(null);
       const { summary: skipped } = sfV1ToElements(resp, { overrideRequested: isOverride(opt) });
       setBfeContour(null);
       setSfV1Site(null);
@@ -1422,6 +1432,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       padFillFt: padFill,
     });
     if (shown !== 'loop') answer.basisLine = `${answer.basisLine} · from the pattern competition`;
+    // Lots on land that is not this parcel: its holes (other owners' lots inside it).
+    try {
+      const geom = parcel?.geometry as Polygon | MultiPolygon | undefined;
+      const c0 = geom ? (geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0]?.[0]) : null;
+      const is3857 = Math.abs(c0?.[0]?.[0] ?? 0) > 1000 || Math.abs(c0?.[0]?.[1] ?? 0) > 1000;
+      const g3857 = geom ? (is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon)) : null;
+      const lotPolys = drawn.filter(e => e.id.startsWith('sfv1-lot-')).map(e => e.geometry as Polygon);
+      setSfV1HoleOverlap(lotsOnParcelHoles(lotPolys, parcelHoles3857(g3857), (a, b) => polygons(intersection(a, b))));
+    } catch {
+      setSfV1HoleOverlap(null);
+    }
     if (answer.lots === 0 || drawn.length === 0) {
       settleEmpty(answer, answer.notes, drawn.filter(e => e.type === 'greenspace'));
       return;
@@ -1461,13 +1482,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setServerPlanError(null);
     setPlanBasis(answer.basisLine);
     setLotFitSummary(answer.basisLine);
-  }, [contextOgcFid, elements, setPlanOutput, gateNonGesturePlan]);
+  }, [contextOgcFid, elements, setPlanOutput, gateNonGesturePlan, parcel?.geometry]);
+  renderSfV1Ref.current = renderSfV1Answer;
+  elementsRef.current = elements;
 
   /** The pattern competition for the parcel and the option set (cached per
    *  parcel in the client). A newer ask — a new parcel, a new override —
    *  supersedes an older one still in flight. */
   const runCompetition = useCallback((fid: number, opt: SfV1Options) => {
     const seq = ++competitionSeqRef.current;
+    setSfV1AutoBest(null);
     sfV1CandidatesRef.current = null;
     setSfV1Competition({ state: 'loading', data: null, error: null });
     void fetchSfV1Candidates(fid, opt).then(r => {
@@ -1478,6 +1502,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       }
       sfV1CandidatesRef.current = r.data;
       setSfV1Competition({ state: 'done', data: summarizeCandidates(r.data), error: null });
+      // 2026-11-04 (1019 Hitt Ln: 0 lots by the default grammar, 19 by the
+      // grid; five of ten parcels like it): when the default answer draws no
+      // lots and the competition's best draws a subdivision, the best goes on
+      // the sheet — still by right, a pattern choice — and the panel says why.
+      // A one-lot "best" is the lot of record, not a subdivision; a plan the
+      // user already chose (a house, another row) is left alone.
+      // Third audit: only a plan the engine calls buildable (best_buildable,
+      // no code fails) goes on the sheet unasked; a best that fails a code
+      // test stays in the competition with the engine's verdict beside it.
+      const bestReq = autoBestEligible(r.data);
+      const def = sfV1DefaultRespRef.current;
+      const seedDrawn = elementsRef.current.some(e => e.id.startsWith('sfseed-'));
+      if (bestReq && r.data.best && def && def.status === 'done' && (def.lots ?? 0) === 0
+        && sfV1ShownRef.current === 'loop' && !seedDrawn && renderSfV1Ref.current) {
+        setSfV1AutoBest(bestReq);
+        void renderSfV1Ref.current(r.data.best, opt, bestReq);
+      }
     });
   }, []);
 
@@ -1646,6 +1687,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    *  right, the engine's own standards). The override the user set carries. */
   const handleViewSfV1Candidate = useCallback(async (requested: string) => {
     if (contextOgcFid == null) return;
+    setSfV1AutoBest(null);
     const opt = withoutPattern(sfV1OverrideRef.current);
     const raw = sfV1CandidatesRef.current;
     let resp: SfV1Response | null = null;
@@ -2001,6 +2043,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     sfV1DefaultRespRef.current = null;
     setSfV1Competition(null);
     setSfV1Shown('loop');
+    sfV1ShownRef.current = 'loop';
+    setSfV1AutoBest(null);
+    setSfV1HoleOverlap(null);
     setSfSeedError(null);
     return () => { cancelled = true; };
   }, [contextOgcFid]);
@@ -2404,7 +2449,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const is3857 = Math.abs(coords?.[0]?.[0] ?? 0) > 1000 || Math.abs(coords?.[0]?.[1] ?? 0) > 1000;
       const g3857 = is3857 ? geom : (feature4326To3857(geom) as Polygon | MultiPolygon);
       const polys: Polygon[] = g3857.type === 'Polygon' ? [g3857] : g3857.coordinates.map(c => ({ type: 'Polygon', coordinates: c }) as Polygon);
-      const m2 = polys.reduce((a, p) => a + correctedAreaM2(p), 0);
+      // the holes are not the parcel's (0 Longwood Pl: 8.30 ac outer ring, 4.41 ac owned)
+      const m2 = polys.reduce((a, p) => a + correctedAreaM2(p)
+        - (p.coordinates as number[][][]).slice(1).reduce((h, ring) => h + correctedAreaM2({ type: 'Polygon', coordinates: [ring] }), 0), 0);
       return m2 > 0 ? m2 / 4046.8564224 : null;
     } catch {
       return null;
@@ -2544,6 +2591,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             densityDuAc: sfV1Summary.densityDuAc,
             ms: sfV1Summary.ms,
             heldLayer: displayElements.some(e => e.id.startsWith('sfv1-hold-')),
+            autoBest: sfV1AutoBest,
+            lotsOnHoles: sfV1HoleOverlap?.lotsOnHoles ?? null,
             shown: sfV1Shown,
             competition: sfV1Competition
               ? {
@@ -2552,6 +2601,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                   bestLots: sfV1Competition.data?.bestLots ?? null,
                   structuredLots: sfV1Competition.data?.structuredLots ?? null,
                   forgone: sfV1Competition.data?.forgone ?? null,
+                  verdict: sfV1Competition.data?.verdict ?? null,
+                  bestBuildable: sfV1Competition.data?.bestBuildable ?? null,
                   rows: sfV1Competition.data?.rows.map(r => ({ requested: r.requested, pattern: r.pattern, lots: r.lots, fails: r.fails.length })) ?? [],
                   error: sfV1Competition.error,
                 }
@@ -2592,7 +2643,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -2861,6 +2912,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 fallFt: topoCanvas.zMinFt != null && topoCanvas.zMaxFt != null ? topoCanvas.zMaxFt - topoCanvas.zMinFt : null,
               } : null}
               site={sfV1Site || mappedAcres != null ? { heldAcres: sfV1Site?.heldAcres ?? null, siteAcres: sfV1Site?.siteAcres ?? null, parcelAcres: mappedAcres } : null}
+              autoBest={sfV1AutoBest}
+              holeOverlap={sfV1HoleOverlap}
+              frontageLandlocked={frontage?.landlocked === true}
             />
           )}
           <ContextPanel

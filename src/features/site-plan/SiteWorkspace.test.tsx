@@ -64,6 +64,7 @@ vi.mock('./api/generateSfPlan', async importOriginal => ({
   generateSfSitePlan: () => genSfMock(),
 }));
 const sfV1PlanMock = vi.fn(async (): Promise<Record<string, unknown> | null> => null);
+const sfV1CandMock = vi.fn(async (): Promise<{ data: Record<string, unknown> | null; error: string | null }> => ({ data: null, error: 'not in this test' }));
 // The plan-pattern layer is a network call; with a local stand-in running it
 // answers for the real parcel 669046 (RM40), whose zoning would outrank the
 // test parcel's. No pattern here: the parcel's own zoning decides the route.
@@ -75,7 +76,7 @@ vi.mock('./api/sfV1Plan', async importOriginal => ({
   ...(await importOriginal<typeof import('./api/sfV1Plan')>()),
   fetchSfV1Plan: (fid: number, opt: Record<string, unknown>) => (sfV1PlanMock as unknown as (f: number, o: Record<string, unknown>) => Promise<unknown>)(fid, opt),
   fetchSfV1Site: async () => null,
-  fetchSfV1Candidates: async () => ({ data: null, error: 'not in this test' }),
+  fetchSfV1Candidates: () => sfV1CandMock(),
 }));
 vi.mock('./api/plannerFeedback', () => ({
   recordPlannerFeedback: vi.fn(async () => undefined),
@@ -290,6 +291,7 @@ beforeEach(() => {
   genSfMock.mockResolvedValue(null);
   listCandidatesMock.mockResolvedValue([]);
   sfV1PlanMock.mockResolvedValue(null);
+  sfV1CandMock.mockResolvedValue({ data: null, error: 'not in this test' });
   compileMock.mockImplementation(() => new Promise(() => undefined)); // pending unless a test says otherwise
 });
 
@@ -417,6 +419,54 @@ describe('SiteWorkspace: a physical block on a by-right parcel goes to the by-ri
     // not reported as a use that is not permitted
     expect(screen.queryByText(/not permitted as-of-right — generation is blocked/)).toBeNull();
     expect(genV2Mock).not.toHaveBeenCalled();
+  });
+});
+
+describe('SiteWorkspace: the competition\'s best goes on the sheet when the default draws nothing (2026-11-04)', () => {
+  const setup = (cand: Record<string, unknown>) => {
+    permittedUsesMock.mockResolvedValue(['single_family']);
+    const sf = ctxResp('single_family', 'ctx-sf');
+    (sf as unknown as { context: Record<string, unknown> }).context = {
+      ...(sf as unknown as { context: Record<string, unknown> }).context,
+      legal: { permitted_as_of_right: true, zoning_base: 'RS15', confidence: 'high' },
+    };
+    compileMock.mockImplementation(async () => sf);
+    sfV1PlanMock.mockResolvedValue({ status: 'done', lots: 0, basis: 'by_right', reason: 'no lot of 15000 sf (85 x 180 ft) fits', ogc_fid: 669046 });
+    sfV1CandMock.mockResolvedValue({ data: cand, error: null });
+  };
+
+  it('3905 Lunn Dr: 0 lots by the loop grammar, 2 buildable lots by the neighborhood — shown, and the panel says why', async () => {
+    setup({
+      status: 'done', best_requested: 'neighborhood', best_lots: 2, structured_lots: 2, lots_forgone_for_structure: 0,
+      best_buildable: true, verdict: 'buildable as drawn', best_code_fails: [],
+      candidates: [
+        { requested: 'grid', pattern: 'grid', status: 'done', lots: 1, fails: [] },
+        { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 2, fails: [] },
+        { requested: 'loop', pattern: null, status: 'done', lots: 0, fails: [] },
+      ],
+      best: { status: 'done', lots: 2, pattern: 'neighborhood', basis: 'by_right', fails: [] },
+    });
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS15' } as never} />);
+    await waitFor(() => expect(screen.getByTestId('sfv1-auto-best').textContent).toContain('the neighborhood grammar'));
+    expect(screen.getByTestId('sfv1-lots').textContent).toBe('2 lots');
+    expect(screen.getByTestId('sfv1-basis').textContent).toBe('By right');
+  });
+
+  it('1019 Hitt Ln: the best fails a code test — the sheet keeps the default, the verdict is shown', async () => {
+    setup({
+      status: 'done', best_requested: 'grid', best_lots: 19, structured_lots: 19, lots_forgone_for_structure: 0,
+      best_buildable: false, verdict: 'the best plan fails a code test: not buildable as drawn', best_code_fails: ['street.grade_max'],
+      candidates: [
+        { requested: 'grid', pattern: 'grid', status: 'done', lots: 19, fails: ['street.grade_max'] },
+        { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 19, fails: ['street.grade_max'] },
+        { requested: 'loop', pattern: null, status: 'done', lots: 0, fails: [] },
+      ],
+      best: { status: 'done', lots: 19, pattern: 'grid', basis: 'by_right', fails: ['street.grade_max'] },
+    });
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS15' } as never} />);
+    await waitFor(() => expect(screen.getByTestId('sfv1-competition-verdict').textContent).toContain('not buildable as drawn'));
+    expect(screen.queryByTestId('sfv1-auto-best')).toBeNull();
+    expect(screen.getByTestId('sfv1-lots').textContent).toBe('0 lots');
   });
 });
 

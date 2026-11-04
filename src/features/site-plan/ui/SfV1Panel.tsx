@@ -6,7 +6,7 @@
  * answer the user asks for here, and the result is labelled as one.
  */
 import { useState } from 'react';
-import type { SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
+import type { HoleOverlap, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
 import { FILL_BANDS, isOverride, passesOverLimit, steepGroundNote } from '../api/sfV1Plan';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
 
@@ -107,6 +107,7 @@ function TestRow({ t }: { t: SfV1Test }) {
 export function SfV1Panel({
   summary, override, onOverride, busy, onDrawHouse, houseDrawn, houseError,
   competition, shownRequested, onViewCandidate, onRetryCompetition, terrain, site,
+  autoBest, holeOverlap, frontageLandlocked,
 }: {
   summary: SfV1Summary;
   override: SfV1Options;
@@ -127,6 +128,12 @@ export function SfV1Panel({
   terrain?: { meanSlopePct: number | null; maxSlopePct: number | null; fallFt: number | null } | null;
   /** the site the generator worked on: what the flood hold took out, and the mapped parcel */
   site?: { heldAcres: number | null; siteAcres: number | null; parcelAcres?: number | null } | null;
+  /** the default grammar drew no lots, so the competition's best is on the sheet (the grammar named) */
+  autoBest?: string | null;
+  /** drawn lots lying in the parcel's holes — other owners' lots inside it */
+  holeOverlap?: HoleOverlap | null;
+  /** the frontage layer finds no street on the parcel */
+  frontageLandlocked?: boolean;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
   const [lotD, setLotD] = useState<string>(override.lot_d_ft != null ? String(override.lot_d_ft) : '');
@@ -206,6 +213,33 @@ export function SfV1Panel({
       ) : (
         <>
           <p data-testid="sfv1-summary" className="mt-1 leading-snug text-slate-600">{summary.basisLine}</p>
+          {autoBest && (
+            // 1019 Hitt Ln: "0 lots by right" while the grid drew 19 — the
+            // sheet now leads with the plan, and says it is the competition's.
+            <p data-testid="sfv1-auto-best" className="mt-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 leading-snug text-indigo-900">
+              The default (loop) grammar draws no lots here, so the sheet shows the competition's best plan, the {autoBest} grammar. It is still by right.{' '}
+              {onViewCandidate && (
+                <button type="button" data-testid="sfv1-auto-best-back" disabled={busy} onClick={() => onViewCandidate('loop')}
+                  className="font-semibold underline disabled:opacity-60">
+                  Show the default answer (0 lots)
+                </button>
+              )}
+            </p>
+          )}
+          {holeOverlap && holeOverlap.lotsOnHoles > 0 && (
+            // 0 Longwood Pl: a cooperative's land around 31 house lots of
+            // other owners; the generator planned on the outer ring.
+            <p data-testid="sfv1-holes" className="mt-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 leading-snug text-red-800">
+              ✗ {holeOverlap.lotsOnHoles} of {holeOverlap.lots} lots lie partly on land that is not this parcel ({holeOverlap.overlapSf.toLocaleString()} SF). The parcel has {holeOverlap.holes} hole{holeOverlap.holes === 1 ? '' : 's'} ({holeOverlap.holesAcres} ac: other owners' lots inside it), and the generator planned on its outer boundary. This plan cannot be built as drawn.
+            </p>
+          )}
+          {frontageLandlocked && summary.lots > 0 && /^frontage lots/i.test(summary.pattern ?? '') && (
+            // 7963 Charlotte Pike: twelve "frontage lots" on a parcel no street
+            // touches — the nearest road 1,159 ft away; they front a neighbour.
+            <p data-testid="sfv1-frontage-landlocked" className="mt-1 rounded-md border border-red-300 bg-red-50 px-2 py-1 leading-snug text-red-800">
+              ✗ These are drawn as frontage lots with no new street, but the frontage layer finds no street on this parcel: the lots front a property line. Each would need an access easement across a neighbour.
+            </p>
+          )}
           {steep && (
             <p data-testid="sfv1-steep" className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 leading-snug text-amber-900">
               ⚠ {steep}

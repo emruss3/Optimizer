@@ -319,7 +319,8 @@ describe('2026-11-04: the competition, the new layers, the options that are not 
     })!;
     expect(clarksville.rows[2]!.label).toBe('single street');
     expect(clarksville.rows[2]!.fellBack).toBe(false); // the loop grammar drawing a single street is not a fallback
-    expect(clarksville.sentence).toContain('draws 9 lots more (16 against 7) but fails 3 tests to the best plan\'s 1');
+    // open.unassigned is a quality flag, not a code fail (third audit): the single street fails no code test
+    expect(clarksville.sentence).toContain('draws 9 lots more (16 against 7) but fails 3 tests of the code to the best plan\'s 0');
     // a neighborhood request that drew a grid says so; nothing drawn anywhere is one line
     const fell = summarizeCandidates({ status: 'done', best_requested: 'grid', candidates: [cand('neighborhood', 'grid', 10, [], 5), cand('grid', 'grid', 10, [], 5)] })!;
     expect(fell.rows[0]!.fellBack).toBe(true);
@@ -344,5 +345,38 @@ describe('2026-11-04: the competition, the new layers, the options that are not 
     const { competitionErrorText } = await import('./sfV1Plan');
     expect(competitionErrorText('canceling statement due to statement timeout')).toContain('20 s the server allows the app');
     expect(competitionErrorText('permission denied')).toBe('permission denied');
+  });
+});
+
+describe('lots on a parcel\'s holes (0 Longwood Pl, 2026-11-04)', () => {
+  it('finds the lots that lie in the holes and how much', async () => {
+    const { parcelHoles3857, lotsOnParcelHoles } = await import('./sfV1Plan');
+    const { intersection, polygons } = await import('../../../engine/geometry');
+    const sq = (x: number, y: number, d: number) => [[x, y], [x + d, y], [x + d, y + d], [x, y + d], [x, y]];
+    // a 200 x 200 m parcel near Nashville's latitude with a 60 x 60 m hole
+    const X = -9650000, Y = 4310000;
+    const parcel = { type: 'Polygon', coordinates: [sq(X, Y, 200), sq(X + 20, Y + 20, 60)] };
+    const holes = parcelHoles3857(parcel);
+    expect(holes.length).toBe(1);
+    const lotIn = { type: 'Polygon', coordinates: [sq(X + 30, Y + 30, 30)] } as never;
+    const lotOut = { type: 'Polygon', coordinates: [sq(X + 120, Y + 120, 30)] } as never;
+    const r = lotsOnParcelHoles([lotIn, lotOut], holes, (a, b) => polygons(intersection(a, b)))!;
+    expect(r.lotsOnHoles).toBe(1);
+    expect(r.lots).toBe(2);
+    expect(r.overlapSf).toBeGreaterThan(5000); // 900 m² less the Mercator scale ≈ 6,300 SF
+    expect(lotsOnParcelHoles([lotIn], [], () => [])).toBeNull();
+  });
+});
+
+describe('autoBestEligible (third audit)', () => {
+  it('only a buildable best with two lots or more that the client can draw', async () => {
+    const { autoBestEligible } = await import('./sfV1Plan');
+    expect(autoBestEligible({ best_requested: 'neighborhood', best_buildable: true, best: { lots: 2, fails: [] } })).toBe('neighborhood');
+    expect(autoBestEligible({ best_requested: 'grid', best_buildable: false, best: { lots: 19, fails: ['street.grade_max'] } })).toBeNull();
+    expect(autoBestEligible({ best_requested: 'grid', best_buildable: true, best: { lots: 1, fails: [] } })).toBeNull();
+    expect(autoBestEligible({ best_requested: 'townhome', best_buildable: true, best: { lots: 32, product: 'attached', full_plan_call: 'fn_generate_th_site_plan_v3' } as never })).toBeNull();
+    expect(autoBestEligible({ best_requested: 'loop', best_buildable: true, best: { lots: 35, fails: [] } })).toBeNull();
+    // no verdict fields (an older engine): code fails decide
+    expect(autoBestEligible({ best_requested: 'grid', best: { lots: 5, fails: ['open.unassigned'] } })).toBe('grid');
   });
 });

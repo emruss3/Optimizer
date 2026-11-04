@@ -47,3 +47,41 @@ describe('SfV1CompetitionBlock (best and structured, side by side)', () => {
     expect(screen.getByTestId('sfv1-competition-sentence').textContent).toContain('all draw 0');
   });
 });
+
+describe('SfV1CompetitionBlock — the third audit and the townhome candidate (2026-11-04)', () => {
+  it('shows the engine verdict verbatim, code fails apart from quality flags, density and the townhome row', () => {
+    const data = summarizeCandidates({
+      status: 'done', best_requested: 'townhome', best_lots: 32, structured_lots: 12, lots_forgone_for_structure: 20,
+      verdict: 'buildable as drawn', best_buildable: true, best_code_fails: [], homes_allowed_by_density: 129, attached_permitted: true,
+      candidates: [
+        { requested: 'grid', pattern: 'grid', status: 'done', lots: 12, fails: ['cost.street_ft_per_lot'] },
+        { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 12, fails: ['street.grade_max', 'open.unassigned'] },
+        { requested: 'loop', pattern: 'single street', status: 'done', lots: 12, fails: [] },
+        { requested: 'townhome', pattern: 'townhomes (mews)', status: 'done', lots: 32, fails: [], product: 'attached' } as never,
+      ],
+      best: { status: 'done', lots: 32, product: 'attached', full_plan_call: "fn_generate_th_site_plan_v3(ogc_fid, 'aor')" } as never,
+    });
+    render(<SfV1CompetitionBlock competition={{ state: 'done', data, error: null }} shownRequested="loop" onView={() => undefined} />);
+    expect(screen.getByTestId('sfv1-competition-verdict').textContent).toBe('Engine verdict: buildable as drawn');
+    expect(screen.getByTestId('sfv1-competition-density').textContent).toContain('allows 129 homes');
+    expect(screen.getByTestId('sfv1-cand-townhome').textContent).toContain('32 homes');
+    expect(screen.getByTestId('sfv1-cand-engine-townhome').textContent).toContain('fn_generate_th_site_plan_v3');
+    expect(screen.queryByTestId('sfv1-cand-view-townhome')).toBeNull();
+    const nb = screen.getByTestId('sfv1-cand-neighborhood').textContent ?? '';
+    expect(nb).toContain('fails street.grade_max');
+    expect(nb).toContain('flags open.unassigned');
+    expect(screen.getByTestId('sfv1-cand-grid').textContent).toContain('no code fails');
+  });
+
+  it('a best that fails a code test says so in red', () => {
+    const data = summarizeCandidates({
+      status: 'done', best_requested: 'grid', best_lots: 19, verdict: 'the best plan fails a code test: not buildable as drawn',
+      best_buildable: false, best_code_fails: ['street.dead_end_max', 'street.grade_max'],
+      candidates: [{ requested: 'grid', pattern: 'grid', status: 'done', lots: 19, fails: ['street.dead_end_max', 'street.grade_max'] }],
+    });
+    render(<SfV1CompetitionBlock competition={{ state: 'done', data, error: null }} shownRequested="loop" />);
+    const v = screen.getByTestId('sfv1-competition-verdict');
+    expect(v.getAttribute('data-buildable')).toBe('false');
+    expect(v.textContent).toBe('Engine verdict: the best plan fails a code test: not buildable as drawn (street.dead_end_max, street.grade_max)');
+  });
+});
