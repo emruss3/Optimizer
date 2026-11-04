@@ -76,6 +76,13 @@ describe('buildSheetTitleBlock — what the sheet says about itself', () => {
     expect(tb.subtitle).toBe('RS40 · 24.9 ac · 7 lots · single street · by right · 4.5% R.O.W.');
     const morton = buildSheetTitleBlock({ address: '930 Morton Mill Rd', zoning: 'RS20', acres: 4.47, assessorAcres: 7.7, hasPlan: false, topo: null, date });
     expect(morton.subtitle).toBe('RS20 · 4.47 ac (assessor 7.70 ac)');
+    // the townhome engine's plan counts townhomes (multifamily land, 2026-11-04)
+    const mtView = buildSheetTitleBlock({
+      address: '5525 Mt View Rd', zoning: 'RM15', acres: 2.14, hasPlan: true, topo: null, date,
+      subdivision: { lots: 27, unit: 'townhome', network: 'mews', networkLabel: 'mews · by right', pctRow: null, pctHazard: 0, hazardCoverage: 'ingested', crossingFt: null },
+    });
+    expect(mtView.title).toBe('CONCEPT LAYOUT PLAN');
+    expect(mtView.subtitle).toBe('RM15 · 2.14 ac · 27 townhomes · mews · by right');
   });
 
   it('names a subdivision a concept layout plan and states every basis', () => {

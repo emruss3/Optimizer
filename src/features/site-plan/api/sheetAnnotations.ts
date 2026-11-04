@@ -160,6 +160,8 @@ export interface SheetTitleBlockInput {
   /** the subdivision the server drew, when the plan is one */
   subdivision?: {
     lots: number;
+    /** what the count is: lots (default) or townhomes (the townhome engine's plan) */
+    unit?: 'lot' | 'townhome';
     network: string;
     /** the whole network phrase ("single street · by right"); without it, "<network> network" */
     networkLabel?: string | null;
@@ -196,7 +198,7 @@ export function buildSheetTitleBlock(input: SheetTitleBlockInput): SheetTitleBlo
     sub.push(disagree ? `${acStr(input.acres)} (assessor ${acStr(assessor)})` : acStr(input.acres));
   }
   if (subdivision) {
-    sub.push(`${subdivision.lots} lot${subdivision.lots === 1 ? '' : 's'}`);
+    sub.push(`${subdivision.lots} ${subdivision.unit === 'townhome' ? 'townhome' : 'lot'}${subdivision.lots === 1 ? '' : 's'}`);
     sub.push(subdivision.networkLabel ? subdivision.networkLabel : `${subdivision.network} network`);
     if (typeof subdivision.pctRow === 'number') sub.push(`${subdivision.pctRow}% R.O.W.`);
   }

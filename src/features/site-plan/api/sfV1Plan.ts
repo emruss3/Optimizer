@@ -967,6 +967,8 @@ export interface SfV1CompetitionRow {
   isTopScore: boolean;
   /** 'attached' for the townhome candidate (drawn by its own engine) */
   product: string | null;
+  /** the townhome candidate's engine: 'v3' (drawn here, fn_generate_th_site_plan_v3_app) or 'v2' */
+  engine: string | null;
   /** the townhome engine's call: the candidate's plan carries metrics only */
   fullPlanCall: string | null;
 }
@@ -995,6 +997,7 @@ export interface SfV1Competition {
 }
 
 const lotsWord = (n: number) => `${n} lot${n === 1 ? '' : 's'}`;
+const homesWord = (n: number) => `${n} home${n === 1 ? '' : 's'}`;
 const testsWord = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
 
 /** The candidates response → the rows and the sentence the panel shows. */
@@ -1026,6 +1029,7 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
       isStructured: requested === 'neighborhood',
       isTopScore: bestByScore != null && requested === bestByScore,
       product: str((c as Record<string, unknown>)?.product),
+      engine: str((c as Record<string, unknown>)?.engine),
       fullPlanCall: null,
     };
   });
@@ -1043,9 +1047,12 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
   else if (allZero) sentence = 'No pattern fits a lot here: the grid, the neighborhood and the loop grammar all draw 0.';
   else if (!structured || structured.status !== 'done') sentence = `No structured plan: ${structured?.error ?? 'the neighborhood grammar did not run'}.`;
   else if (best && best === structured) sentence = `The structured plan is also the best plan: ${lotsWord(structured.lots)}, ${testsWord(codeFails(structured.fails).length)} of the code failed.`;
+  // the townhome candidate counts homes, not lots (multifamily land, 2026-11-04)
+  else if (best && best.product === 'attached' && structured.lots === 0) sentence = `The ${best.label} place ${homesWord(best.lots)}; the neighborhood grammar draws no lots, so there is no structured plan to weigh against them.`;
+  else if (best && best.product === 'attached' && forgone != null && forgone > 0) sentence = `The structured plan (house lots) places ${forgone} fewer home${forgone === 1 ? '' : 's'} than the ${best.label}: ${best.lots} → ${structured.lots}. The owner decides.`;
   else if (best && structured.lots === 0 && best.lots > 0) sentence = `Only the ${best.label} draws lots here (${best.lots}); the neighborhood grammar draws none, so there is no structured plan to weigh against it.`;
   else if (best && forgone != null && forgone > 0) sentence = `The structured plan gives up ${lotsWord(forgone)} (${best.lots} → ${structured.lots}): the price of the structure. The owner decides.`;
-  else if (best && forgone != null && forgone < 0) sentence = `The structured plan draws ${lotsWord(-forgone)} more (${structured.lots} against ${best.lots}) but fails ${testsWord(codeFails(structured.fails).length)} of the code to the best plan's ${codeFails(best.fails).length}: the engine ranks the fewest code fails first, then lots.`;
+  else if (best && forgone != null && forgone < 0) sentence = `The structured plan draws ${best.product === 'attached' ? homesWord(-forgone) : lotsWord(-forgone)} more (${structured.lots} against ${best.lots}) but fails ${testsWord(codeFails(structured.fails).length)} of the code to the best plan's ${codeFails(best.fails).length}: the engine ranks the fewest code fails first, then lots.`;
   else if (best) sentence = `The structured plan costs no lots (${best.lots} each).`;
   else sentence = 'No best plan among the candidates.';
   // 0 Sullivan Hollow Rd (36% mean slope): every pattern's streets exceed the

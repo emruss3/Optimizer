@@ -1404,8 +1404,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // the product was being drawn as small multifamily.
     const thEl = elements.find(e => (e.properties as Record<string, unknown> | undefined)?.th);
     const thW = (thEl?.properties as { th?: { unitWFt?: number | null } } | undefined)?.th?.unitWFt;
+    // A sheet of house lots (the by-right subdivision) keys its houses, not an
+    // apartment mix (1200 W H Davis, 2026-11-04: "Studio · 550 SF" beside 12 house lots).
+    const dwellings = elements.filter(e => e.type === 'building' && (e.properties?.use ?? 'residential') !== 'amenity');
+    const allHouses = dwellings.length > 0 && dwellings.every(e => e.properties?.house === true || e.properties?.singleFamilyHouse === true);
     const unitRows: Array<[string, string]> = thEl
       ? [[`Townhome${thW ? ` · ${Math.round(thW)} ft wide` : ''}`, UNIT_COLORS['townhome']]]
+      : allHouses
+      ? [['House (one per lot)', '#3B82F6']]
       : [
           ['Studio · 550 SF', UNIT_COLORS['studio']],
           ['1 Bed · 700 SF', UNIT_COLORS['1br']],
@@ -1432,7 +1438,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         ]
       : [
           ...unitRows,
-          ['Core / stairs', '#94A3B8'],
+          // townhomes and houses have no corridor core
+          ...(thEl || allHouses ? [] : [['Core / stairs', '#94A3B8'] as [string, string]]),
           ['Parking', '#E2E8F0'],
           ['Drive / aisle', '#9AA8B8'],
           ['Open space', '#BBF7D0'],
@@ -1829,8 +1836,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (showLabels) {
       sortedElements.forEach((element) => {
         // A house pad on a by-right lot is named by its lot tag, not a label
-        // per house (fourteen "House N" captions over a street read as noise).
-        if (element.type === 'building' && !element.properties?.house) {
+        // per house (fourteen "House N" captions over a street read as noise);
+        // the townhome engine's homes likewise (27 "Townhome N" captions over
+        // a mews collided at 5525 Mt View Rd, 2026-11-04).
+        if (element.type === 'building' && !element.properties?.house && !element.properties?.townhome) {
           renderElementLabel(ctx, element, viewport.zoom);
         }
       });

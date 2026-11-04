@@ -41,6 +41,9 @@ import {
 } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
+import { fetchThV3Plan, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
+import { chooseLayout, type LayoutKind } from './api/layoutChoice';
+import { LayoutChoicePanel } from './ui/LayoutChoicePanel';
 import { line2274To3857 } from './api/parcelTopo';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
@@ -241,6 +244,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sfV1ShownRef = useRef<string>('loop');
   const renderSfV1Ref = useRef<((resp: SfV1Response, opt: SfV1Options, shown: string) => Promise<void>) | null>(null);
   const elementsRef = useRef<Element[]>([]);
+  // The layout choice on multifamily land (the owner, 2026-11-04): the
+  // multifamily plan by default where it places more homes, with a switch to
+  // the neighborhood layout (the competition's best: townhomes from th_v3, or
+  // house lots). The multifamily side is the plan last drawn by the massing
+  // engine; `layoutAuto` = the neighborhood went on the sheet by itself.
+  const [mfLayoutHomes, setMfLayoutHomes] = useState<{ homes: number | null; product: 'apartments' | 'townhomes'; failed: boolean } | null>(null);
+  const mfLayoutHomesRef = useRef<{ homes: number | null; product: 'apartments' | 'townhomes'; failed: boolean } | null>(null);
+  const [layoutAuto, setLayoutAuto] = useState(false);
+  const layoutUserChoseRef = useRef(false);
+  const layoutCompetitionRanRef = useRef(false);
+  const [thV3Summary, setThV3Summary] = useState<ThV3Summary | null>(null);
+  const [thV3Error, setThV3Error] = useState<string | null>(null);
+  const drawNeighborhoodRef = useRef<((requested: string) => Promise<boolean>) | null>(null);
+  const runLayoutCompetitionRef = useRef<((fid: number) => void) | null>(null);
+  const layoutChoiceRef = useRef<ReturnType<typeof chooseLayout> | null>(null);
 
   // ── HBU / regime plan routing ─────────────────────────────────────────────
   // What we planned and WHY, shown under the KPI bar ("Plan basis: …").
@@ -708,6 +726,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (resp.candidate_id) setActiveCandidateId(resp.candidate_id);
     const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
+    // The multifamily side of the layout choice is the plan last drawn here;
+    // a neighborhood plan's panels leave the sheet with the neighborhood.
+    const mfHomes = { homes: serverMetrics?.totalUnits ?? null, product: effectiveProduct, failed: false };
+    mfLayoutHomesRef.current = mfHomes;
+    setMfLayoutHomes(mfHomes);
+    setSfV1Summary(null);
+    setThV3Summary(null);
+    setSfV1HoleOverlap(null);
+    setBfeContour(null);
     // Pinned best-effort honesty: any cap the user's placed building EXCEEDED
     // is a red violation on a rendered plan — the edit shows, the breach is
     // loud (and auto-surfaces the Flags dock). Clamps stay amber in the KPI.
@@ -1719,6 +1746,156 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [contextOgcFid, runCompetition]);
 
   /**
+   * The townhome engine's plan on the sheet (th_v3): the neighborhood layout
+   * on multifamily land when its best plan is the townhome candidate. The
+   * candidate itself carries metrics only; this is its full_plan_call. False
+   * when nothing was drawn: the reason goes to the layout panel and the plan
+   * on the sheet stays.
+   */
+  const renderThV3Plan = useCallback(async (): Promise<boolean> => {
+    if (contextOgcFid == null) return false;
+    const r = await fetchThV3Plan(contextOgcFid);
+    if (r.error || !r.data) {
+      setThV3Error(r.error ?? 'the townhome engine did not answer');
+      return false;
+    }
+    const { elements: drawn, summary } = thV3ToElements(r.data);
+    if (summary.status !== 'done' || summary.homes === 0 || drawn.length === 0) {
+      setThV3Error(summary.status === 'searching' ? 'its search has not finished yet — try again' : summary.reason ?? 'it placed no homes');
+      return false;
+    }
+    if (!gateNonGesturePlan(drawn, 'Townhome plan')) {
+      setThV3Error('its drawing failed the overlap check');
+      return false;
+    }
+    const base = elementsRef.current.filter(el => !isSfPlanElement(el) && !isMfPlanElement(el));
+    // KPI strip: homes and land, the engine's counts verbatim; its failed
+    // required tests are the warnings. No GSF: the engine plans footprints.
+    const thMetrics = {
+      totalBuiltSF: 0, siteCoveragePct: 0, achievedFAR: 0, parkingRatio: 0,
+      openSpacePct: summary.usableOpenPct ?? 0,
+      totalUnits: summary.homes,
+      unitMixSummary: `${summary.homes} townhomes${summary.unitWFt != null && summary.unitDFt != null ? ` · ${summary.unitWFt}×${summary.unitDFt} ft` : ''}`,
+      zoningCompliant: summary.requiredFails.length === 0,
+      violations: [] as string[],
+      warnings: [...summary.requiredFails.map(f => `fails ${f}`), ...summary.notes],
+      optimizationStatus: summary.generatorVersion,
+    } as NonNullable<typeof metrics>;
+    planModeRef.current = 'sf';
+    setPlanOutput([...base, ...drawn], thMetrics);
+    setThV3Error(null);
+    setThV3Summary(summary);
+    setSfV1Summary(null);
+    setSfV1HoleOverlap(null);
+    setBfeContour(null);
+    setSubdivisionSummary(null);
+    setViolations([]);
+    setPlanLineage({
+      solvedBy: 'server',
+      contextId: null,
+      generatorVersion: summary.generatorVersion,
+      flags: summary.requiredFails,
+      buildings: summary.homes,
+      floors: null,
+      footprintSqft: null,
+      // the engine reads the attached-home standards itself (fn_attached_home_rules)
+      standardsDirect: true,
+    });
+    setPlanStale(false);
+    setServerPlanError(null);
+    setPlanBasis(summary.basisLine);
+    sfV1ShownRef.current = 'townhome';
+    setSfV1Shown('townhome');
+    return true;
+  }, [contextOgcFid, gateNonGesturePlan, setPlanOutput]);
+
+  /** One neighborhood plan of the competition on the sheet: the townhome
+   *  engine's, or a street pattern's house lots (still by right). */
+  const drawNeighborhood = useCallback(async (requested: string): Promise<boolean> => {
+    if (requested === 'townhome') {
+      setIsGeneratingLots(true);
+      try {
+        return await renderThV3Plan();
+      } finally {
+        setIsGeneratingLots(false);
+      }
+    }
+    setThV3Summary(null);
+    await handleViewSfV1Candidate(requested);
+    return true;
+  }, [renderThV3Plan, handleViewSfV1Candidate]);
+
+  /**
+   * The competition on multifamily land, after the multifamily plan is on the
+   * sheet (never in front of it). When it settles, the neighborhood goes on
+   * the sheet by itself only if it places more homes, the engine calls it
+   * buildable, the sheet can draw it, and the user has not picked a layout.
+   */
+  const runLayoutCompetition = useCallback((fid: number) => {
+    const seq = ++competitionSeqRef.current;
+    layoutCompetitionRanRef.current = true;
+    sfV1CandidatesRef.current = null;
+    setSfV1Competition({ state: 'loading', data: null, error: null });
+    void fetchSfV1Candidates(fid, {}).then(r => {
+      if (seq !== competitionSeqRef.current) return;
+      if (r.error || !r.data) {
+        setSfV1Competition({ state: 'error', data: null, error: competitionErrorText(r.error ?? 'the engine returned nothing') });
+        return;
+      }
+      sfV1CandidatesRef.current = r.data;
+      const comp = summarizeCandidates(r.data);
+      setSfV1Competition({ state: 'done', data: comp, error: null });
+      const mf = mfLayoutHomesRef.current;
+      const choice = chooseLayout({ multifamilyHomes: mf?.homes ?? null, multifamilyProduct: mf?.product ?? 'apartments', competition: comp });
+      const neighborhoodOnSheet = elementsRef.current.some(e => isSfPlanElement(e));
+      if (choice.defaultKind === 'neighborhood' && choice.neighborhood && !layoutUserChoseRef.current && !neighborhoodOnSheet) {
+        setLayoutAuto(true);
+        // the newest draw (the sheet it lands on has moved on since the ask)
+        void drawNeighborhoodRef.current?.(choice.neighborhood.requested);
+      }
+    });
+  }, []);
+  drawNeighborhoodRef.current = drawNeighborhood;
+  runLayoutCompetitionRef.current = runLayoutCompetition;
+
+  /**
+   * The layout switch. The neighborhood draws the competition's best plan
+   * (the rows below it draw the others); multifamily re-draws the massing
+   * plan from its own seed and pins (deterministic, not persisted again).
+   * Either is the user's choice from here on: nothing switches by itself.
+   */
+  const handleLayoutChoose = useCallback((kind: LayoutKind) => {
+    layoutUserChoseRef.current = true;
+    setLayoutAuto(false);
+    const onSheet = elementsRef.current.some(e => isMfPlanElement(e)) ? 'multifamily'
+      : elementsRef.current.some(e => isSfPlanElement(e)) ? 'neighborhood' : null;
+    if (kind === onSheet) return;
+    if (kind === 'neighborhood') {
+      const nb = layoutChoiceRef.current?.neighborhood;
+      if (!nb || !nb.drawable) return;
+      void drawNeighborhood(nb.requested);
+      return;
+    }
+    if (generationBlockedRef.current) return;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: mfSeedRef.current, pins: mfPinsRef.current, persist: false, product: mfLayoutHomesRef.current?.product ?? productRef.current })
+      .then(ok => {
+        if (!ok && !generationBlockedRef.current && !compileBlockedRef.current) {
+          setServerPlanError(serverFailCauseRef.current ?? 'The massing service did not respond.');
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setIsGenerating(false));
+  }, [drawNeighborhood, runServerMfPlan]);
+
+  /** A row of the neighborhood plans: the user's pick of layout and plan. */
+  const handleViewNeighborhood = useCallback((requested: string) => {
+    layoutUserChoseRef.current = true;
+    setLayoutAuto(false);
+    void drawNeighborhood(requested);
+  }, [drawNeighborhood]);
+
+  /**
    * Order-6 item 1: the RefusalCard's pre-verified typology switch. Where MF
    * refuses but the server says a house fits (`suggested_typology`), one tap
    * draws the single-family seed — house + driveway, engine EPSG:2274 truth
@@ -2047,6 +2224,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setSfV1AutoBest(null);
     setSfV1HoleOverlap(null);
     setSfSeedError(null);
+    // nor a layout choice: the new parcel's multifamily plan and neighborhood are its own
+    mfLayoutHomesRef.current = null;
+    setMfLayoutHomes(null);
+    setLayoutAuto(false);
+    layoutUserChoseRef.current = false;
+    layoutCompetitionRanRef.current = false;
+    setThV3Summary(null);
+    setThV3Error(null);
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
@@ -2099,10 +2284,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // already name themselves. false = the card-worthy failures.
       if (!ok && !generationBlockedRef.current && !compileBlockedRef.current) {
         setServerPlanError(serverFailCauseRef.current ?? 'The massing service did not respond.');
+        const failed = { homes: null, product: productRef.current, failed: true };
+        mfLayoutHomesRef.current = failed;
+        setMfLayoutHomes(failed);
+      }
+      // The layout choice (the owner, 2026-11-04): on multifamily land the
+      // neighborhood plans are drawn next, once per parcel, to weigh against
+      // the plan just drawn (or the one that failed).
+      const zoningBase = ctx?.zoningBase ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
+      if (contextOgcFid != null && !generationBlockedRef.current && !compileBlockedRef.current
+        && sfV1Route(zoningBase) === 'th' && !layoutCompetitionRanRef.current) {
+        runLayoutCompetitionRef.current?.(contextOgcFid);
       }
     })();
-    void ctx;
-  }, [runServerMfPlan]);
+  }, [runServerMfPlan, contextOgcFid, parcel.zoning]);
 
   /**
    * HBU-routed auto-plan: the resolved USE/TYPOLOGY decides WHAT gets planned
@@ -2438,6 +2633,25 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // A 0-lot answer keeps its wetland hatch and flood hold on the sheet as
   // context; that is existing conditions, not a layout plan.
   const sfV1OnSheet = !!sfV1Summary && sfV1Summary.status !== 'skipped' && sfV1Summary.lots > 0 && displayElements.some(e => e.id.startsWith('sfv1-lot-'));
+  // The layout choice on multifamily land: what the sheet shows, and which side the default is.
+  const thV3OnSheet = !!thV3Summary && displayElements.some(e => e.id.startsWith('thv3-home-'));
+  const layoutZoningBase = plannerCtx?.context?.legal?.zoning_base ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
+  const isRmLayout = sfV1Route(layoutZoningBase) === 'th' && plannerCtx?.context.typology === 'multifamily' && sfV1Competition != null;
+  const layoutShown: LayoutKind | null = displayElements.some(e => isMfPlanElement(e)) ? 'multifamily'
+    : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
+    : null;
+  const layoutShownRequested = layoutShown === 'neighborhood' ? (thV3OnSheet ? 'townhome' : sfV1Shown) : null;
+  const layoutChoice = useMemo(
+    () => (isRmLayout
+      ? chooseLayout({
+          multifamilyHomes: mfLayoutHomes?.homes ?? null,
+          multifamilyProduct: mfLayoutHomes?.product ?? 'apartments',
+          competition: sfV1Competition?.state === 'done' ? sfV1Competition.data : null,
+        })
+      : null),
+    [isRmLayout, mfLayoutHomes, sfV1Competition],
+  );
+  layoutChoiceRef.current = layoutChoice;
   // The mapped area of the parcel polygon on the sheet (Mercator-corrected);
   // the assessor's acreage rides along when it disagrees (930 Morton Mill Rd:
   // 4.47 ac drawn, 7.70 on the record).
@@ -2486,7 +2700,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 hazardCoverage: 'ingested',
                 crossingFt: (sfV1Summary.streetInWetlandFt ?? 0) > 0 ? sfV1Summary.streetInWetlandFt : null,
               }
-            : null,
+            : thV3OnSheet && thV3Summary
+              ? {
+                  lots: thV3Summary.homes,
+                  unit: 'townhome' as const,
+                  network: thV3Summary.pattern ?? 'townhomes',
+                  networkLabel: `${thV3Summary.pattern ?? 'townhomes'} · by right`,
+                  pctRow: null,
+                  // the land drawn as held out (the stream buffer at 2622 W Heiman), not only the flood hold
+                  pctHazard: thV3Summary.heldOutAcres != null && thV3Summary.siteAcres != null && thV3Summary.siteAcres > 0
+                    ? Math.round((thV3Summary.heldOutAcres / Math.max(thV3Summary.siteAcres, thV3Summary.heldOutAcres)) * 1000) / 10
+                    : null,
+                  hazardCoverage: 'ingested',
+                  crossingFt: null,
+                }
+              : null,
         hasPlan: displayElements.some(e => e.type === 'building' || e.type === 'parking'),
         topo: topoCanvas
           ? {
@@ -2499,7 +2727,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             }
           : null,
       }),
-    [parcel.address, parcel.ogc_fid, parcel.id, parcel.zoning, parcel.deeded_acres, mappedAcres, subdivisionOnSheet, subdivisionSummary, sfV1OnSheet, sfV1Summary, displayElements, topoCanvas, topo],
+    [parcel.address, parcel.ogc_fid, parcel.id, parcel.zoning, parcel.deeded_acres, mappedAcres, subdivisionOnSheet, subdivisionSummary, sfV1OnSheet, sfV1Summary, thV3OnSheet, thV3Summary, displayElements, topoCanvas, topo],
   );
 
   // The one-line plan-basis row (2026-09-04): the context state, the two lead
@@ -2609,6 +2837,35 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               : null,
           }
         : null,
+      // 2026-11-04 the layout choice on multifamily land: what the sheet shows, the default and why
+      layout: layoutChoice
+        ? {
+            shown: layoutShown,
+            shownRequested: layoutShownRequested,
+            defaultKind: layoutChoice.defaultKind,
+            auto: layoutAuto,
+            multifamilyHomes: layoutChoice.multifamilyHomes,
+            neighborhoodHomes: layoutChoice.neighborhood?.homes ?? null,
+            neighborhoodRequested: layoutChoice.neighborhood?.requested ?? null,
+            neighborhoodBuildable: layoutChoice.neighborhood?.buildable ?? null,
+            neighborhoodDrawable: layoutChoice.neighborhood?.drawable ?? null,
+            densityCap: layoutChoice.densityCap,
+            competitionState: sfV1Competition?.state ?? null,
+            sentence: layoutChoice.sentence,
+          }
+        : null,
+      thV3: thV3OnSheet && thV3Summary
+        ? {
+            homes: thV3Summary.homes,
+            pattern: thV3Summary.pattern,
+            requiredFails: thV3Summary.requiredFails,
+            homesDrawn: displayElements.filter(e => e.id.startsWith('thv3-home-')).length,
+            alleys: displayElements.filter(e => e.id.startsWith('thv3-alley-')).length,
+            greens: displayElements.filter(e => e.id.startsWith('thv3-green-')).length,
+            overDensityBy: thV3Summary.overDensityBy,
+          }
+        : null,
+      thV3Error,
       commercialAllowableGsf:
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
           ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
@@ -2643,7 +2900,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -2680,7 +2937,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         />
       )}
-      {!nonResidentialOnly && isRefusal(buildability) && product === 'apartments' && buildability && (
+      {!nonResidentialOnly && isRefusal(buildability) && product === 'apartments' && buildability && layoutShown !== 'neighborhood' && (
         <RefusalCard
           buildability={buildability}
           onSwitchToTownhomes={() => handleProductChange('townhomes')}
@@ -2733,7 +2990,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
           subdivision={
-            sfV1Summary && !displayElements.some(e => e.id.startsWith('sfseed-'))
+            thV3OnSheet && thV3Summary
+              ? { lots: thV3Summary.homes, densityDuAc: thV3Summary.homesPerAcre, fails: thV3Summary.requiredFails, status: 'done', label: 'Townhomes', densityLabel: 'homes / ac' }
+              : sfV1Summary && !displayElements.some(e => e.id.startsWith('sfseed-'))
               ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status }
               : null
           }
@@ -2867,10 +3126,31 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
         {!leftRailCollapsed && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
+          {isRmLayout && (
+            <LayoutChoicePanel
+              choice={layoutChoice}
+              competition={sfV1Competition}
+              shown={layoutShown}
+              shownRequested={layoutShownRequested}
+              auto={layoutAuto}
+              busy={isGeneratingLots || isGenerating}
+              onChoose={handleLayoutChoose}
+              onViewCandidate={handleViewNeighborhood}
+              onRetry={() => { if (contextOgcFid != null) runLayoutCompetition(contextOgcFid); }}
+              thV3={thV3OnSheet ? thV3Summary : null}
+              thV3Error={thV3Error}
+            />
+          )}
           {planPattern && (
             <PlanPatternPanel
               plan={planPattern}
-              drawn={sfV1Summary && displayElements.some(e => e.id.startsWith('sfseed-'))
+              drawn={thV3OnSheet && thV3Summary
+                ? {
+                    label: `${thV3Summary.homes} townhomes${thV3Summary.pattern ? ` (${thV3Summary.pattern})` : ''}`,
+                    source: 'the townhome engine (th_v3): the neighborhood layout, attached homes by right',
+                    chip: 'drawn by right',
+                  }
+                : sfV1Summary && displayElements.some(e => e.id.startsWith('sfseed-'))
                 ? { label: 'One house on the lot', source: 'the single-family seed (sf_seed_v1) on a parcel the by-right generator gives no new lots' }
                 : sfV1Summary
                 ? {
@@ -2897,12 +3177,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             <SfV1Panel
               summary={sfV1Summary}
               override={sfV1Override}
-              onOverride={handleSfV1Override}
+              // on multifamily land the lot fit routes to the townhome engine: no override re-runs here
+              onOverride={isRmLayout ? undefined : handleSfV1Override}
               busy={isGeneratingLots || isGenerating}
               onDrawHouse={handleDrawSfSeed}
               houseDrawn={displayElements.some(e => e.id.startsWith('sfseed-'))}
               houseError={sfSeedError}
-              competition={sfV1Competition}
+              competition={isRmLayout ? null : sfV1Competition}
               shownRequested={sfV1Shown}
               onViewCandidate={(r: string) => { void handleViewSfV1Candidate(r); }}
               onRetryCompetition={handleRunCompetition}

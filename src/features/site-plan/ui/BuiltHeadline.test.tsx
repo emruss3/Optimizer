@@ -59,6 +59,9 @@ describe('builtSummary — what is being built, in one sentence', () => {
     expect(builtSummary(metrics, [parking])).toBeNull();
     const house = { ...building, id: 'sf-house', name: 'House · 1,236 sf', properties: { ...building.properties, floors: 1, stories: 1, unitMix: [{ type: 'townhome', count: 1, avgSqft: 1236 }] } } as Element;
     expect(builtSummary(metrics, [house])).toBeNull();
+    // the townhome engine's homes (th_v3): footprints, no unit mix — the layout panel carries them
+    const th = { ...building, id: 'thv3-home-1', name: 'Townhome 1', properties: { floors: 3, stories: 3, use: 'residential', townhome: true, townhomeEngine: 'th_v3' } } as Element;
+    expect(builtSummary(metrics, [th])).toBeNull();
   });
 
   it('puts the generator notes into words', () => {

@@ -73,6 +73,29 @@ describe('SfV1CompetitionBlock — the third audit and the townhome candidate (2
     expect(screen.getByTestId('sfv1-cand-grid').textContent).toContain('no code fails');
   });
 
+  it('a townhome row from the v3 engine is drawable here; one from v2 is not (multifamily land, 2026-11-04)', () => {
+    const onView = vi.fn();
+    const data = summarizeCandidates({
+      status: 'done', best_requested: 'townhome', best_lots: 24, structured_lots: 6, lots_forgone_for_structure: 18, best_buildable: true,
+      candidates: [
+        { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 6, fails: [] },
+        { requested: 'townhome', pattern: 'townhomes (mews)', status: 'done', lots: 24, fails: [], product: 'attached', engine: 'v3' } as never,
+      ],
+    });
+    const { rerender } = render(<SfV1CompetitionBlock competition={{ state: 'done', data, error: null }} shownRequested={null} onView={onView} />);
+    fireEvent.click(screen.getByTestId('sfv1-cand-view-townhome'));
+    expect(onView).toHaveBeenLastCalledWith('townhome');
+    // homes, not lots, when the best is the townhome candidate
+    expect(screen.getByTestId('sfv1-competition-sentence').textContent).toBe('The structured plan (house lots) places 18 fewer homes than the townhomes (mews): 24 → 6. The owner decides.');
+    const v2 = summarizeCandidates({
+      status: 'done', best_requested: 'townhome', best_lots: 24,
+      candidates: [{ requested: 'townhome', pattern: 'townhomes (alleys)', status: 'done', lots: 24, fails: [], product: 'attached', engine: 'v2' } as never],
+    });
+    rerender(<SfV1CompetitionBlock competition={{ state: 'done', data: v2, error: null }} shownRequested={null} onView={onView} />);
+    expect(screen.queryByTestId('sfv1-cand-view-townhome')).toBeNull();
+    expect(screen.getByTestId('sfv1-cand-engine-townhome')).toBeTruthy();
+  });
+
   it('a best that fails a code test says so in red', () => {
     const data = summarizeCandidates({
       status: 'done', best_requested: 'grid', best_lots: 19, verdict: 'the best plan fails a code test: not buildable as drawn',

@@ -1588,3 +1588,62 @@ attached homes are permitted. RM routing is not switched: on 2622 W Heiman
 the competition's best is 32 townhomes and the apartment plan places 89
 units, and the competition has no apartment candidate. That is left for the
 owner to decide.
+
+## 26. The layout choice on multifamily land (2026-11-04)
+
+Eric, on RM routing: "If a traditional multifamily design makes more sense,
+we should default to that with an option to switch to a neighborhood layout."
+
+Makes more sense = places more homes (the owner's objective of the same day).
+On RM / MUL / SP land the app draws the multifamily plan first, as before, and
+then runs the pattern competition (`fn_sf_v1_candidates`: the grid, the
+neighborhood, the loop grammar and the townhome engine). A Layout panel at the
+top of the rail puts the two side by side with the homes each places:
+
+- **Multifamily**: the massing engine's plan (apartments, or townhome rows
+  when that product is picked).
+- **Neighborhood**: the competition's best: townhomes from the townhome
+  engine, or house lots on a street pattern.
+
+The default is the one with more homes. A tie stays multifamily. The
+neighborhood takes the sheet by itself only when it places more homes, the
+engine calls it buildable (`best_buildable`, no code fails) and the sheet can
+draw it; the panel then says so and offers the multifamily plan back. Either
+switch is one tap, and every neighborhood plan in the competition can be
+drawn from the list under it.
+
+The townhome candidate carries metrics only; its drawing is its
+`full_plan_call`, `fn_generate_th_site_plan_v3(ogc_fid, 'aor')`, now reached
+through `fn_generate_th_site_plan_v3_app` (SECURITY DEFINER, as of right only,
+budget clamped to 15 s, migration 20261104120000). The client draws its homes
+as attached party-wall dwellings (20 × 40-ft footprints; no unit mix, no floor
+area, since the engine plans neither; the 3D view assumes three stories), the
+alleys, courtyards, guest pockets, stormwater and held-out land. A v2 townhome
+candidate (`fn_generate_th_site_plan_v2`) is not drawable here yet and is
+never the default.
+
+Measured live, 2026-11-04:
+
+| parcel | multifamily | neighborhood's best | default |
+|---|---|---|---|
+| 2622 W Heiman (RM40) | 89 apartments | 32 townhomes (mews), density allows 129 | multifamily |
+| 2600 W Heiman (RM40) | 73 | 16 townhomes | multifamily |
+| 1200 W H Davis (RM40) | 57 | 12 frontage house lots (the townhomes' 19 fail two required tests) | multifamily |
+| 1710 Meharry (RM20) | 30 | 24 townhomes | multifamily |
+| 5525 Mt View Rd (RM15) | 24 | 27 townhomes, every required test passing | **neighborhood** |
+| 407 Old Hickory Blvd (RM4) | 8 | 8 townhomes (both at the density cap) | multifamily (tie) |
+| 0 Hicks Rd (RM4) | 15 | none ("no street entry reachable from the frontage") | multifamily |
+
+The battery asserts all five of the first rows, and on 2622 W Heiman, 1200 W H
+Davis and 5525 Mt View Rd it switches to the other layout and back.
+
+Engine-side, seen on the way: the competition caps the townhome candidate's
+count at the density limit but not its drawing, so a parcel where the engine
+places more townhomes than density allows would show more homes than the row
+claims. The panel flags that in red when it happens. `fn_sf_v1_candidates`
+returns before the townhome engine runs when the grid plan is skipped
+(landlocked RM land such as 0 Woodland Hills Dr), so such parcels get no
+neighborhood option even where townhomes might fit. A cold 3-acre RM9
+competition (0 Cedarstone Way) took about 30 s, over the app's 20-s limit; the
+panel says the neighborhood plans are unavailable and the multifamily plan
+stands.

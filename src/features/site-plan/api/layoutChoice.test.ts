@@ -1,0 +1,100 @@
+import { describe, it, expect } from 'vitest';
+import { chooseLayout, neighborhoodOption, homesPhrase } from './layoutChoice';
+import { summarizeCandidates, type SfV1CandidatesResponse } from './sfV1Plan';
+
+const row = (requested: string, pattern: string | null, lots: number, fails: string[] = [], extra: Record<string, unknown> = {}) =>
+  ({ requested, pattern, status: 'done', lots, fails, ...extra });
+
+const comp = (resp: Partial<SfV1CandidatesResponse> & Record<string, unknown>) => summarizeCandidates({ status: 'done', ...resp } as SfV1CandidatesResponse);
+
+// 2622 W Heiman (RM40, 3.25 ac), live 2026-11-04: townhomes 32, density 129
+const HEIMAN = comp({
+  best_requested: 'townhome', best_lots: 32, best_buildable: true, verdict: 'buildable as drawn', best_code_fails: [],
+  homes_allowed_by_density: 129, attached_permitted: true,
+  candidates: [
+    row('grid', 'grid', 10, ['cost.street_ft_per_lot']), row('neighborhood', 'neighborhood', 10, ['cost.street_ft_per_lot']),
+    row('loop', 'frontage lots, no new street', 6), row('townhome', 'townhomes (mews)', 32, [], { product: 'attached', engine: 'v3' }),
+  ] as never,
+});
+
+describe('chooseLayout (the owner, 2026-11-04: multifamily where it makes more sense, a switch to the neighborhood)', () => {
+  it('2622 W Heiman: apartments place 89 homes, the neighborhood 32 townhomes — multifamily is the default', () => {
+    const c = chooseLayout({ multifamilyHomes: 89, competition: HEIMAN });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.neighborhood).toMatchObject({ requested: 'townhome', homes: 32, attached: true, buildable: true, drawable: true, label: 'townhomes (mews)' });
+    expect(c.densityCap).toBe(129);
+    expect(c.sentence).toBe('Apartments place more homes here: 89 apartments against the neighborhood\'s best of 32 townhomes (mews), so they are the default.');
+  });
+
+  it('5525 Mt View Rd: 24 apartments, 27 townhomes — the neighborhood is the default', () => {
+    const mtView = comp({
+      best_requested: 'townhome', best_lots: 27, best_buildable: true, verdict: 'buildable as drawn', homes_allowed_by_density: 32,
+      candidates: [row('grid', 'grid', 10, ['street.grade_max']), row('townhome', 'townhomes (mews)', 27, [], { product: 'attached', engine: 'v3' })] as never,
+    });
+    const c = chooseLayout({ multifamilyHomes: 24, competition: mtView });
+    expect(c.defaultKind).toBe('neighborhood');
+    expect(c.sentence).toBe('The neighborhood places more homes here: 27 townhomes (mews) against 24 apartments, so it is the default.');
+  });
+
+  it('407 Old Hickory Blvd (RM4): both reach the density cap of 8 — multifamily stays', () => {
+    const tie = comp({
+      best_requested: 'townhome', best_lots: 8, best_buildable: true, homes_allowed_by_density: 8,
+      candidates: [row('loop', 'frontage lots, no new street', 2), row('townhome', 'townhomes (lane)', 8, [], { product: 'attached', engine: 'v3' })] as never,
+    });
+    const c = chooseLayout({ multifamilyHomes: 8, competition: tie });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.sentence).toBe('Both place 8 homes, the most the district\'s density allows; apartments stay the default.');
+  });
+
+  it('a neighborhood that places more homes but fails a code test is never the default', () => {
+    const fails = comp({
+      best_requested: 'grid', best_lots: 30, best_buildable: false, verdict: 'the best plan fails a code test: not buildable as drawn',
+      best_code_fails: ['street.grade_max'], candidates: [row('grid', 'grid', 30, ['street.grade_max'])] as never,
+    });
+    const c = chooseLayout({ multifamilyHomes: 20, competition: fails });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.neighborhood?.buildable).toBe(false);
+    expect(c.sentence).toContain('fails a code test (street.grade_max)');
+  });
+
+  it('townhomes from the v2 engine cannot be drawn here, so they are not the default', () => {
+    const v2 = comp({
+      best_requested: 'townhome', best_lots: 40, best_buildable: true,
+      candidates: [row('townhome', 'townhomes (alleys)', 40, [], { product: 'attached', engine: 'v2' })] as never,
+    });
+    const c = chooseLayout({ multifamilyHomes: 30, competition: v2 });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.neighborhood?.drawable).toBe(false);
+    expect(c.sentence).toContain('cannot draw yet');
+  });
+
+  it('a multifamily plan that failed: a buildable neighborhood takes the sheet', () => {
+    const c = chooseLayout({ multifamilyHomes: null, competition: HEIMAN });
+    expect(c.defaultKind).toBe('neighborhood');
+    expect(c.sentence).toBe('The multifamily plan did not draw; the neighborhood places 32 townhomes (mews), so it is the default.');
+  });
+
+  it('house lots count one home each; townhome rows of the multifamily engine say so', () => {
+    const lots = comp({
+      best_requested: 'loop', best_lots: 12, best_buildable: true,
+      candidates: [row('loop', 'frontage lots, no new street', 12), row('townhome', 'townhomes (mews)', 19, ['alley.street_to_street'], { product: 'attached', engine: 'v3' })] as never,
+    });
+    const c = chooseLayout({ multifamilyHomes: 57, multifamilyProduct: 'townhomes', competition: lots });
+    expect(c.neighborhood).toMatchObject({ requested: 'loop', homes: 12, attached: false });
+    expect(c.sentence).toBe('The townhome rows place more homes here: 57 townhomes in rows against the neighborhood\'s best of 12 house lots (frontage lots, no new street), so they are the default.');
+  });
+
+  it('no neighborhood plan: every pattern draws nothing, the competition skipped, or it has not run', () => {
+    const none = comp({ best_requested: 'grid', best_lots: 0, candidates: [row('grid', null, 0), row('loop', null, 0)] as never });
+    expect(neighborhoodOption(none)).toBeNull();
+    expect(chooseLayout({ multifamilyHomes: 15, competition: none }).sentence).toBe('No neighborhood pattern places a home here, so the sheet stays multifamily.');
+    const skipped = summarizeCandidates({ status: 'skipped', reason: 'landlocked: no edge touches a mapped street' } as SfV1CandidatesResponse);
+    expect(chooseLayout({ multifamilyHomes: 15, competition: skipped }).sentence).toBe('No neighborhood plan: landlocked: no edge touches a mapped street, so the sheet stays multifamily.');
+    expect(chooseLayout({ multifamilyHomes: 15, competition: null }).defaultKind).toBe('multifamily');
+  });
+
+  it('homesPhrase', () => {
+    expect(homesPhrase(1, true)).toBe('1 townhome');
+    expect(homesPhrase(12, false)).toBe('12 house lots');
+  });
+});

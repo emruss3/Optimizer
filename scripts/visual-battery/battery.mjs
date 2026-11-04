@@ -46,6 +46,11 @@ const PARCELS = [
   // override pressed below) grades its own earthwork.
   { ogc_fid: 682644, address: '4701 BOWFIELD DR', zoning: 'R8' },
   { ogc_fid: 680719, address: '0 MARTINGALE DR', zoning: 'R10', sfV1Override: 'floodway' },
+  // 2026-11-04 the layout choice on multifamily land: the neighborhood (27
+  // townhomes, the townhome engine) places more homes than the apartment
+  // plan (24), so it takes the sheet by itself; the four RM parcels above
+  // keep their apartments and offer the neighborhood one tap away.
+  { ogc_fid: 660125, address: '5525 MT VIEW RD', zoning: 'RM15' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -226,6 +231,36 @@ function judge(exp, ev) {
     if (exp.requireSfV1.offersOneHouse && !ev._domSfV1OneHouse) errs.push('by right: 0 new lots, but the one-house offer (sfv1-draw-house) did not render');
   }
   judgeCompetition(exp.requireSfV1Competition, ev, 'competition');
+  // 2026-11-04 the layout choice on multifamily land (the owner: a traditional
+  // multifamily design by default where it makes more sense — more homes —
+  // with an option to switch to a neighborhood layout).
+  const judgeLayout = (want, gotEv) => {
+    if (!want) return;
+    const l = gotEv?.layout;
+    if (!l) { errs.push('layout: the layout choice never showed (evidence.layout absent)'); return; }
+    if (!gotEv._domLayout) errs.push('layout: the layout panel did not render');
+    if (l.competitionState !== 'done') { errs.push(`layout: the neighborhood plans are '${l.competitionState}', expected 'done'`); return; }
+    if (want.defaultKind && l.defaultKind !== want.defaultKind) errs.push(`layout: default '${l.defaultKind}', expected '${want.defaultKind}' (${l.sentence})`);
+    if (want.shown && l.shown !== want.shown) errs.push(`layout: the sheet shows '${l.shown}', expected '${want.shown}'`);
+    if (typeof want.auto === 'boolean' && !!l.auto !== want.auto) errs.push(`layout: the neighborhood went on the sheet by itself = ${!!l.auto}, expected ${want.auto}`);
+    if (typeof want.multifamilyHomes === 'number' && l.multifamilyHomes !== want.multifamilyHomes) errs.push(`layout: multifamily ${l.multifamilyHomes} homes, expected ${want.multifamilyHomes}`);
+    if (typeof want.neighborhoodHomes === 'number' && l.neighborhoodHomes !== want.neighborhoodHomes) errs.push(`layout: neighborhood ${l.neighborhoodHomes} homes, expected ${want.neighborhoodHomes}`);
+    if (want.neighborhoodRequested && l.neighborhoodRequested !== want.neighborhoodRequested) errs.push(`layout: the neighborhood's best from '${l.neighborhoodRequested}', expected '${want.neighborhoodRequested}'`);
+    if (typeof want.densityCap === 'number' && l.densityCap !== want.densityCap) errs.push(`layout: density allows ${l.densityCap}, expected ${want.densityCap}`);
+    if (typeof want.homesDrawn === 'number' && gotEv.thV3?.homesDrawn !== want.homesDrawn) errs.push(`layout: ${gotEv.thV3?.homesDrawn ?? 'no'} townhomes drawn on the sheet, expected ${want.homesDrawn}`);
+    if (want.switchAndBack) {
+      const sw = gotEv._layoutSwitch;
+      const other = l.shown === 'multifamily' ? 'neighborhood' : 'multifamily';
+      if (!sw) errs.push(`layout: the switch to the ${other} layout was not offered`);
+      else {
+        if (sw.shown !== other) errs.push(`layout: after the switch the sheet shows '${sw.shown}', expected '${other}'`);
+        if (other === 'neighborhood' && typeof want.switchHomesDrawn === 'number' && sw.homesDrawn !== want.switchHomesDrawn) errs.push(`layout: the neighborhood on the sheet draws ${sw.homesDrawn} homes, expected ${want.switchHomesDrawn}`);
+        if (sw._domPlannerError) errs.push('layout: the canvas error boundary rendered after the switch');
+        if (sw.backShown !== l.shown) errs.push(`layout: switching back left the sheet on '${sw.backShown}', expected '${l.shown}'`);
+      }
+    }
+  };
+  judgeLayout(exp.requireLayout, ev);
   if (exp.requireSfV1Override) {
     const o = ev._override;
     if (!o) errs.push('override: the fill-scenario control was never pressed (button missing on the panel?)');
@@ -368,6 +403,7 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
         _domSfV1OneHouse: !!document.querySelector('[data-testid="sfv1-draw-house"]'),
         _domCompetition: !!document.querySelector('[data-testid="sfv1-competition"]'),
         _domOverLimit: Array.from(document.querySelectorAll('[data-over-limit="true"]')).map(e => e.getAttribute('data-testid')),
+        _domLayout: !!document.querySelector('[data-testid="layout-choice"]'),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;
@@ -387,6 +423,32 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
         });
       } else {
         evidence._viewStructured = null;
+      }
+    }
+    // 2026-11-04 the layout choice: switch to the other layout, read the sheet,
+    // and come back to the default.
+    if (evidence && expectations[String(p.ogc_fid)]?.requireLayout?.switchAndBack && evidence.layout) {
+      const first = evidence.layout.shown;
+      const other = first === 'multifamily' ? 'neighborhood' : 'multifamily';
+      const btn = page.getByTestId(`layout-option-${other}`);
+      if (await btn.isVisible().catch(() => false) && await btn.isEnabled().catch(() => false)) {
+        await btn.click();
+        await page.waitForTimeout(6000);
+        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_layout_${other}.png` });
+        const after = await page.evaluate(() => {
+          const ev = window.__planEvidence ?? null;
+          return {
+            shown: ev?.layout?.shown ?? null,
+            homesDrawn: ev?.thV3?.homesDrawn ?? ev?.sfV1?.lots ?? null,
+            _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? ''),
+          };
+        });
+        await page.getByTestId(`layout-option-${first}`).click();
+        await page.waitForTimeout(8000);
+        after.backShown = await page.evaluate(() => window.__planEvidence?.layout?.shown ?? null);
+        evidence._layoutSwitch = after;
+      } else {
+        evidence._layoutSwitch = null;
       }
     }
     // 2026-11-03 by-right subdivision: the override the parcel asks for (the

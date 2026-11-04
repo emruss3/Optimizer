@@ -57,7 +57,9 @@ export function isSfPlanElement(el: Pick<Element, 'id'>): boolean {
   // lots, courts) — one generated plan replaces another, whatever the family.
   // 'sfv1-' = the by-right subdivision (fn_sf_v1_plan, 2026-10-27): lots,
   // pads, streets, open space — the same replace-on-regenerate class.
-  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-') || el.id.startsWith('sfseed-') || el.id.startsWith('subdiv-') || el.id.startsWith('sfv1-');
+  // 'thv3-' = the townhome engine's neighborhood (th_v3, 2026-11-04): homes,
+  // alleys, greens, guest parking — the neighborhood layout on multifamily land.
+  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-') || el.id.startsWith('sfseed-') || el.id.startsWith('subdiv-') || el.id.startsWith('sfv1-') || el.id.startsWith('thv3-');
 }
 
 /** Parse a geom that may arrive as an object or a JSON string; 4326 → 3857. */
