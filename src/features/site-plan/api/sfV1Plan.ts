@@ -927,8 +927,22 @@ export interface SfV1CandidatesResponse {
   best?: SfV1Response | null;
   structured?: SfV1Response | null;
   ms?: number | null;
+  /** 2026-11-04 third audit: read these before calling any plan "best" */
+  best_buildable?: boolean | null;
+  /** verbatim: "buildable as drawn" | "the best plan fails a code test: not buildable as drawn" | … */
+  verdict?: string | null;
+  /** the best plan's CODE fails only (quality flags excluded) */
+  best_code_fails?: string[] | null;
+  /** attached homes (townhomes) where the district permits them, capped by density */
+  homes_allowed_by_density?: number | null;
+  attached_permitted?: boolean | null;
   [k: string]: unknown;
 }
+
+/** Quality flags: shown, not ranked on, not "fails" in the code sense (the engine's own split). */
+export const SFV1_QUALITY_FLAGS = new Set(['open.unassigned', 'cost.street_ft_per_lot', 'yield.vs_arithmetic']);
+export const codeFails = (fails: string[]): string[] => fails.filter(f => !SFV1_QUALITY_FLAGS.has(f));
+export const qualityFlags = (fails: string[]): string[] => fails.filter(f => SFV1_QUALITY_FLAGS.has(f));
 
 export interface SfV1CompetitionRow {
   requested: string;
@@ -951,6 +965,10 @@ export interface SfV1CompetitionRow {
   isBest: boolean;
   isStructured: boolean;
   isTopScore: boolean;
+  /** 'attached' for the townhome candidate (drawn by its own engine) */
+  product: string | null;
+  /** the townhome engine's call: the candidate's plan carries metrics only */
+  fullPlanCall: string | null;
 }
 
 export interface SfV1Competition {
@@ -968,6 +986,12 @@ export interface SfV1Competition {
   allZero: boolean;
   /** one sentence on the price of the structure */
   sentence: string;
+  /** the engine's verdict on its best plan, verbatim, and whether it is buildable (code fails only) */
+  verdict: string | null;
+  bestBuildable: boolean | null;
+  bestCodeFails: string[];
+  homesAllowedByDensity: number | null;
+  attachedPermitted: boolean | null;
 }
 
 const lotsWord = (n: number) => `${n} lot${n === 1 ? '' : 's'}`;
@@ -1001,8 +1025,13 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
       isBest: bestRequested != null && requested === bestRequested,
       isStructured: requested === 'neighborhood',
       isTopScore: bestByScore != null && requested === bestByScore,
+      product: str((c as Record<string, unknown>)?.product),
+      fullPlanCall: null,
     };
   });
+  // the townhome candidate's plan holds metrics only; its drawing is a call to its own engine
+  const bestPlan = resp.best && typeof resp.best === 'object' ? (resp.best as Record<string, unknown>) : null;
+  for (const r of rows) if (r.isBest && bestPlan && typeof bestPlan.full_plan_call === 'string') r.fullPlanCall = bestPlan.full_plan_call;
   const done = rows.filter(r => r.status === 'done');
   const allZero = rows.length > 0 && done.every(r => r.lots === 0);
   const best = rows.find(r => r.isBest) ?? null;
@@ -1013,10 +1042,10 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
   else if (rows.length === 0) sentence = 'The engine returned no candidates.';
   else if (allZero) sentence = 'No pattern fits a lot here: the grid, the neighborhood and the loop grammar all draw 0.';
   else if (!structured || structured.status !== 'done') sentence = `No structured plan: ${structured?.error ?? 'the neighborhood grammar did not run'}.`;
-  else if (best && best === structured) sentence = `The structured plan is also the best plan: ${lotsWord(structured.lots)}, ${testsWord(structured.fails.length)} failed.`;
+  else if (best && best === structured) sentence = `The structured plan is also the best plan: ${lotsWord(structured.lots)}, ${testsWord(codeFails(structured.fails).length)} of the code failed.`;
   else if (best && structured.lots === 0 && best.lots > 0) sentence = `Only the ${best.label} draws lots here (${best.lots}); the neighborhood grammar draws none, so there is no structured plan to weigh against it.`;
   else if (best && forgone != null && forgone > 0) sentence = `The structured plan gives up ${lotsWord(forgone)} (${best.lots} → ${structured.lots}): the price of the structure. The owner decides.`;
-  else if (best && forgone != null && forgone < 0) sentence = `The structured plan draws ${lotsWord(-forgone)} more (${structured.lots} against ${best.lots}) but fails ${testsWord(structured.fails.length)} to the best plan's ${best.fails.length}: the engine ranks the fewest failed tests first, then lots.`;
+  else if (best && forgone != null && forgone < 0) sentence = `The structured plan draws ${lotsWord(-forgone)} more (${structured.lots} against ${best.lots}) but fails ${testsWord(codeFails(structured.fails).length)} of the code to the best plan's ${codeFails(best.fails).length}: the engine ranks the fewest code fails first, then lots.`;
   else if (best) sentence = `The structured plan costs no lots (${best.lots} each).`;
   else sentence = 'No best plan among the candidates.';
   // 0 Sullivan Hollow Rd (36% mean slope): every pattern's streets exceed the
@@ -1028,11 +1057,32 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
     // 0 Neelys Bend Rd: one pattern draws lots at all, and its streets fail the grade
     sentence = `The only pattern that draws lots here fails the street grade, so it is not buildable as drawn; the engine does not lay out by slope yet. ${sentence}`;
   }
+  const bestRow = rows.find(r => r.isBest) ?? null;
   return {
     status, reason: str(resp.reason) ?? str(resp.error), rows,
     bestRequested, bestLots: num(resp.best_lots), structuredLots: num(resp.structured_lots), forgone,
     bestByScore, arithmetic: num(resp.arithmetic), ms: num(resp.ms), allZero, sentence,
+    verdict: str(resp.verdict),
+    bestBuildable: typeof resp.best_buildable === 'boolean' ? resp.best_buildable : null,
+    bestCodeFails: Array.isArray(resp.best_code_fails) ? strings(resp.best_code_fails) : bestRow ? codeFails(bestRow.fails) : [],
+    homesAllowedByDensity: num(resp.homes_allowed_by_density),
+    attachedPermitted: typeof resp.attached_permitted === 'boolean' ? resp.attached_permitted : null,
   };
+}
+
+/** May the competition's best go on the sheet in place of a default that drew nothing?
+ *  Only a plan the engine calls buildable (no code fails) with a real subdivision
+ *  (two lots or more) that the client can draw (not the townhome engine's metrics). */
+export function autoBestEligible(resp: SfV1CandidatesResponse | null | undefined): string | null {
+  if (!resp || !resp.best || typeof resp.best_requested !== 'string' || resp.best_requested === 'loop') return null;
+  const best = resp.best as Record<string, unknown>;
+  if (typeof best.full_plan_call === 'string' || best.product === 'attached') return null;
+  const lots = typeof best.lots === 'number' ? best.lots : 0;
+  if (lots < 2) return null;
+  const buildable = typeof resp.best_buildable === 'boolean'
+    ? resp.best_buildable
+    : codeFails(strings(best.fails)).length === 0;
+  return buildable ? resp.best_requested : null;
 }
 
 /** A server error in the words a user can act on (the anon role's 20-s timeout above all). */
@@ -1074,4 +1124,73 @@ export function fetchSfV1Candidates(ogcFid: number, opt: SfV1Options = {}): Prom
 /** Tests and a new parcel session start clean. */
 export function clearSfV1CandidatesCache(): void {
   candidatesCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Parcels with holes (2026-11-04, 0 Longwood Pl): a cooperative's land wraps
+// 31 house lots of other owners — one polygon, five holes, 4.41 ac owned
+// inside an 8.30-ac outer ring. The generator plans on the outer ring, so all
+// nine of its lots and 23,568 SF of its street lie on those houses' lots
+// while every test passes. The client knows the holes; it says so.
+// ---------------------------------------------------------------------------
+
+export interface HoleOverlap {
+  holes: number;
+  holesAcres: number;
+  lotsOnHoles: number;
+  lots: number;
+  overlapSf: number;
+}
+
+const ringAreaM2 = (ring: number[][]): number => {
+  let a = 0;
+  for (let i = 0; i < ring.length - 1; i++) a += ring[i]![0]! * ring[i + 1]![1]! - ring[i + 1]![0]! * ring[i]![1]!;
+  return Math.abs(a) / 2;
+};
+const cos2 = (ring: number[][]): number => {
+  const n = Math.max(1, ring.length - 1);
+  let y = 0;
+  for (let i = 0; i < n; i++) y += ring[i]![1]!;
+  const lat = Math.atan(Math.exp(y / n / 6378137)) * 2 - Math.PI / 2;
+  return Math.cos(lat) ** 2;
+};
+const M2_PER_SF = 0.09290304;
+
+/** The holes of a parcel in the canvas frame (EPSG:3857), each as a polygon. */
+export function parcelHoles3857(parcel3857: { type: string; coordinates: unknown } | null | undefined): Polygon[] {
+  if (!parcel3857) return [];
+  const polys = parcel3857.type === 'Polygon'
+    ? [parcel3857.coordinates as number[][][]]
+    : parcel3857.type === 'MultiPolygon' ? (parcel3857.coordinates as number[][][][]) : [];
+  return polys.flatMap(p => p.slice(1).filter(r => Array.isArray(r) && r.length >= 4).map(r => ({ type: 'Polygon', coordinates: [r] }) as Polygon));
+}
+
+/** How much of the drawn lots lies in the parcel's holes (land that is not this parcel). Null when the parcel has none. */
+export function lotsOnParcelHoles(
+  lots: Polygon[],
+  holes: Polygon[],
+  intersect: (a: Polygon, b: Polygon) => Polygon[],
+): HoleOverlap | null {
+  if (holes.length === 0) return null;
+  let lotsOnHoles = 0;
+  let overlapM2 = 0;
+  for (const lot of lots) {
+    let mine = 0;
+    for (const h of holes) {
+      for (const piece of intersect(lot, h)) {
+        const ring = piece.coordinates?.[0] as number[][] | undefined;
+        if (ring && ring.length >= 4) mine += ringAreaM2(ring) * cos2(ring);
+      }
+    }
+    if (mine > 10) lotsOnHoles += 1; // more than ~100 SF: not a sliver of a shared line
+    overlapM2 += mine;
+  }
+  const holesM2 = holes.reduce((a, h) => a + ringAreaM2(h.coordinates[0] as number[][]) * cos2(h.coordinates[0] as number[][]), 0);
+  return {
+    holes: holes.length,
+    holesAcres: Math.round((holesM2 / M2_PER_SF / 43560) * 100) / 100,
+    lotsOnHoles,
+    lots: lots.length,
+    overlapSf: Math.round(overlapM2 / M2_PER_SF),
+  };
 }

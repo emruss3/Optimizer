@@ -97,8 +97,10 @@
       "overLimitMarked": [
         "street.grade_max"
       ],
-      "viewStructured": true
-    }
+      "viewStructured": true,
+      "verdict": "buildable as drawn"
+    },
+    "_competition_2026_11_04b": "third audit: the engine returns a verdict on its best plan (best_buildable, best_code_fails); on Bowfield the loop's 35 lots fail no code test: 'buildable as drawn'. The panel shows the verdict verbatim. Quality flags (open.unassigned, cost.street_ft_per_lot, yield.vs_arithmetic) are shown apart from code fails."
   },
   "680719": {
     "mode": "server-plan",

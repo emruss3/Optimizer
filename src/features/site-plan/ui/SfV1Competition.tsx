@@ -9,6 +9,7 @@
  */
 import { useState } from 'react';
 import type { SfV1Competition, SfV1CompetitionRow } from '../api/sfV1Plan';
+import { codeFails, qualityFlags } from '../api/sfV1Plan';
 
 export interface SfV1CompetitionState {
   /** 'idle' = not run yet: under the fill scenario each of the three runs is the heavy one, so it waits to be asked */
@@ -91,6 +92,19 @@ export function SfV1CompetitionBlock({
 
       {competition.state === 'done' && data && (
         <>
+          {data.verdict && !data.allZero && (
+            // the engine's verdict on its best plan, verbatim (third audit, 2026-11-04)
+            <p data-testid="sfv1-competition-verdict" data-buildable={data.bestBuildable == null ? 'unknown' : String(data.bestBuildable)}
+              className={'mt-1 rounded px-1.5 py-1 text-[11px] font-medium leading-snug ' + (data.bestBuildable ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800')}>
+              Engine verdict: {data.verdict}
+              {data.bestCodeFails.length > 0 ? ` (${data.bestCodeFails.join(', ')})` : ''}
+            </p>
+          )}
+          {data.homesAllowedByDensity != null && (
+            <p data-testid="sfv1-competition-density" className="mt-0.5 text-[10px] text-slate-600">
+              The district's density allows {data.homesAllowedByDensity.toLocaleString()} homes on this parcel{data.attachedPermitted ? '; attached homes are permitted' : ''}.
+            </p>
+          )}
           {data.allZero || data.rows.length === 0 ? null : (
             // One row per pattern, two lines: the left rail is ~300 px wide and
             // seven columns collided there (4701 Bowfield Dr, 2026-11-04).
@@ -103,7 +117,9 @@ export function SfV1CompetitionBlock({
                     <div className="flex flex-wrap items-baseline gap-x-1">
                       <span className={onSheet ? 'font-semibold text-slate-900' : 'font-medium text-slate-800'}>{row.label}</span>
                       <Badges row={row} />
-                      <span className="ml-auto font-semibold text-slate-900">{row.lots} lot{row.lots === 1 ? '' : 's'}</span>
+                      <span className="ml-auto font-semibold text-slate-900">
+                        {row.product === 'attached' ? `${row.lots} home${row.lots === 1 ? '' : 's'}` : `${row.lots} lot${row.lots === 1 ? '' : 's'}`}
+                      </span>
                     </div>
                     {row.fellBack && <div className="text-[9.5px] italic text-amber-700">fell back from the {row.requested} grammar</div>}
                     {row.error && <div className="text-[9.5px] text-red-700">{row.error}</div>}
@@ -116,18 +132,28 @@ export function SfV1CompetitionBlock({
                           row.score != null ? `score ${fmtNum(row.score)}` : null,
                         ].filter(Boolean).join(' · ')}
                         {' · '}
-                        <span className={row.fails.length > 0 ? 'text-red-700' : 'text-emerald-700'} title={row.fails.join(', ')}>
-                          {row.fails.length === 0 ? 'no failed tests' : `fails ${row.fails.join(', ')}`}
-                        </span>
+                        {codeFails(row.fails).length === 0 ? (
+                          <span className="text-emerald-700">no code fails</span>
+                        ) : (
+                          <span className="text-red-700" title="code tests: dead end, access, block, grade, flood, pond, driveways">fails {codeFails(row.fails).join(', ')}</span>
+                        )}
+                        {qualityFlags(row.fails).length > 0 && (
+                          <span className="text-amber-700" title="quality flags: shown, not ranked on"> · flags {qualityFlags(row.fails).join(', ')}</span>
+                        )}
                       </div>
                     )}
                     <div className="mt-0.5">
                       {onSheet ? (
                         <span data-testid={`sfv1-cand-onsheet-${row.requested}`} className="text-[9.5px] font-medium text-sky-800">on the sheet</span>
-                      ) : row.status === 'done' && row.lots > 0 && onView ? (
+                      ) : row.product === 'attached' ? (
+                        // the townhome candidate's plan carries metrics only; its drawing is its own engine's
+                        <span data-testid={`sfv1-cand-engine-${row.requested}`} className="text-[9.5px] text-slate-500">
+                          drawn by the townhome engine{row.fullPlanCall ? ` (${row.fullPlanCall})` : ''}, not on this sheet
+                        </span>
+                      ) : row.status === 'done' && (row.lots > 0 || row.requested === 'loop') && onView ? (
                         <button type="button" data-testid={`sfv1-cand-view-${row.requested}`} disabled={busy} onClick={() => onView(row.requested)}
                           className="text-[9.5px] font-semibold text-indigo-800 underline hover:text-indigo-950 disabled:opacity-60">
-                          View this plan
+                          {row.lots > 0 ? 'View this plan' : 'Show the default answer'}
                         </button>
                       ) : null}
                     </div>

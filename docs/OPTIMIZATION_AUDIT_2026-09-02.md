@@ -1564,3 +1564,27 @@ landlocked. The fill scenario is labelled by right. First calls of 20.6 s
 (Brittany Park Dr) and 21.3 s (River Landing Way's fill scenario) exceed the
 anon timeout. Use codes contradict the zoning: "vacant commercial" on R10,
 "zoned multi family" on RS20 for a $3 M parcel owned by a housing partnership.
+
+## 25. A third ten (2026-11-04)
+
+Eric: "Run 10 more and provide feedback again." Same draw as §24. Write-up
+per parcel and pictures: `qa/audits/2026-11-04c/`.
+
+The finding that matters most: the engine plans on a parcel's outer ring and
+ignores its holes. On 0 Longwood Pl (a housing cooperative's land round 31
+house lots) all 9 lots lie on those lots, and every test passes. On 1716 Red
+Jacket Dr, 51 of 89 lots lie on 278 built condos. 35% of vacant R / RS
+parcels have holes. The app now flags lots on holes in red and subtracts holes
+from the mapped acreage. Also flagged: 12 "frontage lots" on 7963 Charlotte
+Pike, a parcel no street touches (they front a neighbour's line).
+
+The default grammar drew nothing on six of ten parcels, and the competition
+drew lots on five of them. With the third audit's `verdict` and
+`best_buildable`, the app now puts the best on the sheet only when it is
+buildable with two lots or more (3905 Lunn Dr). Otherwise the engine's
+verdict leads the competition in red. Each row separates code fails from
+quality flags, and density and the townhome candidate's row show where
+attached homes are permitted. RM routing is not switched: on 2622 W Heiman
+the competition's best is 32 townhomes and the apartment plan places 89
+units, and the competition has no apartment candidate. That is left for the
+owner to decide.

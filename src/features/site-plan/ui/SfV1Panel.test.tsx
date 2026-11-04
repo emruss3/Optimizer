@@ -263,3 +263,26 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
     expect((screen.getByTestId('sfv1-override-reset') as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+describe('SfV1Panel — third batch (2026-11-04)', () => {
+  it('says when the sheet shows the competition\'s best because the default drew nothing, and offers the way back', () => {
+    const onView = vi.fn();
+    render(<SfV1Panel summary={{ ...SUMMARY, lots: 19 }} override={{}} onOverride={() => undefined} autoBest="grid" onViewCandidate={onView} />);
+    expect(screen.getByTestId('sfv1-auto-best').textContent).toContain('the grid grammar. It is still by right');
+    fireEvent.click(screen.getByTestId('sfv1-auto-best-back'));
+    expect(onView).toHaveBeenLastCalledWith('loop');
+  });
+
+  it('flags lots on the parcel\'s holes and frontage lots on a parcel with no street', () => {
+    const { rerender } = render(
+      <SfV1Panel summary={SUMMARY} override={{}} onOverride={() => undefined}
+        holeOverlap={{ holes: 5, holesAcres: 3.88, lotsOnHoles: 9, lots: 9, overlapSf: 140072 }} />
+    );
+    expect(screen.getByTestId('sfv1-holes').textContent).toContain('9 of 9 lots lie partly on land that is not this parcel (140,072 SF)');
+    rerender(<SfV1Panel summary={{ ...SUMMARY, lots: 12, pattern: 'frontage lots, no new street' }} override={{}} onOverride={() => undefined} frontageLandlocked />);
+    expect(screen.getByTestId('sfv1-frontage-landlocked').textContent).toContain('the lots front a property line');
+    // a street plan on a landlocked parcel is not flagged as frontage lots
+    rerender(<SfV1Panel summary={SUMMARY} override={{}} onOverride={() => undefined} frontageLandlocked />);
+    expect(screen.queryByTestId('sfv1-frontage-landlocked')).toBeNull();
+  });
+});

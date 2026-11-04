@@ -202,6 +202,8 @@ function judge(exp, ev) {
     if (typeof want.structuredLots === 'number' && c.structuredLots !== want.structuredLots) errs.push(`${label}: structured plan ${c.structuredLots} lots, expected ${want.structuredLots}`);
     if (typeof want.forgone === 'number' && c.forgone !== want.forgone) errs.push(`${label}: ${c.forgone} lots forgone for structure, expected ${want.forgone}`);
     if (typeof want.rows === 'number' && (c.rows ?? []).length !== want.rows) errs.push(`${label}: ${(c.rows ?? []).length} candidates listed, expected ${want.rows}`);
+    // 2026-11-04 third audit: the engine's verdict on its best plan, shown verbatim
+    if (want.verdict && c.verdict !== want.verdict) errs.push(`${label}: verdict '${c.verdict ?? 'none'}', expected '${want.verdict}'`);
     if (!gotEv._domCompetition) errs.push(`${label}: the competition block did not render`);
     for (const id of want.overLimitMarked ?? []) {
       if (!(gotEv._domOverLimit ?? []).includes(`sfv1-test-${id}`)) errs.push(`${label}: '${id}' passes over its limit but the panel shows a plain tick`);
