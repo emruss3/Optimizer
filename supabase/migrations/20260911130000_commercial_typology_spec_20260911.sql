@@ -1,0 +1,52 @@
+-- Commercial typology sheet for as-of-right CS / mixed-nonres compile (HBU retail/commercial).
+-- Parking basis is GSF (per_1000_gsf), not per_unit. Capacity mounts should use typology=commercial.
+INSERT INTO public.typology_spec (
+  typology, display_name, vertical_capable,
+  default_front_setback_ft, default_side_setback_ft, default_rear_setback_ft,
+  default_max_coverage_pct, surface_parking_ratio, parking_basis,
+  stall_w_ft, stall_d_ft, drive_aisle_ft,
+  floor_to_floor_ft, max_floorplate_depth_ft, structured_parking_threshold_far, podium_levels,
+  notes, avg_unit_gsf, net_efficiency, floor_height_ft, stall_land_sf,
+  fire_lane_width_ft, fire_hose_reach_ft, aerial_access_min_height_ft, min_building_separation_ft,
+  corridor_clear_ft, core_width_ft, core_length_ft, core_max_spacing_ft, min_court_width_ft
+) VALUES (
+  'commercial', 'Commercial', true,
+  20, 0, 20,
+  80, 4.0, 'per_1000_gsf',
+  9, 18, 24,
+  14, 120, 1.5, 0,
+  'As-of-right commercial / CS mixed-nonres sheet. Parking per 1000 GSF. Capacity mounts should use typology=commercial (not MF).',
+  NULL, 0.85, 14, 350,
+  26, 150, 30, 0,
+  NULL, NULL, NULL, NULL, NULL
+)
+ON CONFLICT (typology) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  vertical_capable = EXCLUDED.vertical_capable,
+  default_front_setback_ft = EXCLUDED.default_front_setback_ft,
+  default_side_setback_ft = EXCLUDED.default_side_setback_ft,
+  default_rear_setback_ft = EXCLUDED.default_rear_setback_ft,
+  default_max_coverage_pct = EXCLUDED.default_max_coverage_pct,
+  surface_parking_ratio = EXCLUDED.surface_parking_ratio,
+  parking_basis = EXCLUDED.parking_basis,
+  stall_w_ft = EXCLUDED.stall_w_ft,
+  stall_d_ft = EXCLUDED.stall_d_ft,
+  drive_aisle_ft = EXCLUDED.drive_aisle_ft,
+  floor_to_floor_ft = EXCLUDED.floor_to_floor_ft,
+  max_floorplate_depth_ft = EXCLUDED.max_floorplate_depth_ft,
+  structured_parking_threshold_far = EXCLUDED.structured_parking_threshold_far,
+  podium_levels = EXCLUDED.podium_levels,
+  notes = EXCLUDED.notes,
+  avg_unit_gsf = EXCLUDED.avg_unit_gsf,
+  net_efficiency = EXCLUDED.net_efficiency,
+  floor_height_ft = EXCLUDED.floor_height_ft,
+  stall_land_sf = EXCLUDED.stall_land_sf,
+  fire_lane_width_ft = EXCLUDED.fire_lane_width_ft,
+  fire_hose_reach_ft = EXCLUDED.fire_hose_reach_ft,
+  aerial_access_min_height_ft = EXCLUDED.aerial_access_min_height_ft,
+  min_building_separation_ft = EXCLUDED.min_building_separation_ft,
+  corridor_clear_ft = EXCLUDED.corridor_clear_ft,
+  core_width_ft = EXCLUDED.core_width_ft,
+  core_length_ft = EXCLUDED.core_length_ft,
+  core_max_spacing_ft = EXCLUDED.core_max_spacing_ft,
+  min_court_width_ft = EXCLUDED.min_court_width_ft;
