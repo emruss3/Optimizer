@@ -1846,7 +1846,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const comp = summarizeCandidates(r.data);
       setSfV1Competition({ state: 'done', data: comp, error: null });
       const mf = mfLayoutHomesRef.current;
-      const choice = chooseLayout({ multifamilyHomes: mf?.homes ?? null, multifamilyProduct: mf?.product ?? 'apartments', competition: comp });
+      const choice = chooseLayout({ multifamilyHomes: mf?.homes ?? null, multifamilyProduct: mf?.product ?? 'apartments', multifamilyFailed: mf?.failed ?? true, competition: comp });
       const neighborhoodOnSheet = elementsRef.current.some(e => isSfPlanElement(e));
       if (choice.defaultKind === 'neighborhood' && choice.neighborhood && !layoutUserChoseRef.current && !neighborhoodOnSheet) {
         setLayoutAuto(true);
@@ -2646,6 +2646,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? chooseLayout({
           multifamilyHomes: mfLayoutHomes?.homes ?? null,
           multifamilyProduct: mfLayoutHomes?.product ?? 'apartments',
+          multifamilyFailed: mfLayoutHomes?.failed ?? true,
           competition: sfV1Competition?.state === 'done' ? sfV1Competition.data : null,
         })
       : null),

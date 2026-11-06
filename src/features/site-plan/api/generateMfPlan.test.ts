@@ -494,6 +494,41 @@ describe('seed_v2 payload family (order-6)', () => {
     expect(flags).toContain('parking_limited');
   });
 
+  it('reads the max-GSF generator\'s legacy metric names (0 Smith Springs Rd, mf_max_gsf_v1)', () => {
+    // native 2274 structures like the seed, figures under gfa_sqft / units_est / stalls_required
+    const { metrics } = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      generator_version: 'mf_max_gsf_v1',
+      metrics: { gfa_sqft: 35065, units_est: 42, stalls: 113, stalls_required: 73 } as never,
+      parking: undefined,
+    } as never);
+    expect(metrics).not.toBeNull();
+    expect(metrics?.totalBuiltSF).toBe(35065);
+    expect(metrics?.totalUnits).toBe(42);
+    expect(metrics?.stallsProvided).toBe(113);
+    expect(metrics?.stallsRequired).toBe(73);
+  });
+
+  it('labels the structures with the plan\'s own count when there is no mix (shared by GSF)', () => {
+    const one = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      buildings: [SEED_RESP.buildings![0]!],
+      metrics: { gfa_sqft: 35065, units_est: 42 } as never,
+    } as never);
+    expect(one.elements.find(e => e.type === 'building')!.name).toContain('42 units');
+    const three = seedFamilyPlanToElements({
+      ...SEED_RESP,
+      buildings: [
+        { structure_id: 1, geom_2274: rect2274(1727000, 670000, 200, 100), footprint_sqft: 20000, gsf: 30000, stories: 3 },
+        { structure_id: 2, geom_2274: rect2274(1727300, 670000, 200, 100), footprint_sqft: 20000, gsf: 30000, stories: 3 },
+        { structure_id: 3, geom_2274: rect2274(1727600, 670000, 200, 100), footprint_sqft: 15000, gsf: 23196, stories: 3 },
+      ],
+      metrics: { gfa_sqft: 83196, units_est: 60 } as never,
+    } as never);
+    const labels = three.elements.filter(e => e.type === 'building' && e.properties?.use !== 'amenity').map(e => Number(/(\d+) units/.exec(e.name ?? '')?.[1]));
+    expect(labels.reduce((a, b) => a + b, 0)).toBe(60);
+  });
+
   it('apportions the server mix across structures by GSF share (largest remainder)', () => {
     const { elements } = seedFamilyPlanToElements({
       ...SEED_RESP,

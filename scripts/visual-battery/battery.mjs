@@ -51,6 +51,10 @@ const PARCELS = [
   // plan (24), so it takes the sheet by itself; the four RM parcels above
   // keep their apartments and offer the neighborhood one tap away.
   { ogc_fid: 660125, address: '5525 MT VIEW RD', zoning: 'RM15' },
+  // 2026-11-06: the max-GSF generator (mf_max_gsf_v1) draws native
+  // structures under legacy metric names; its 42 apartments must count, and
+  // stay the default over the neighborhood's 26 lots.
+  { ogc_fid: 670533, address: '0 SMITH SPRINGS RD', zoning: 'RM6' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —

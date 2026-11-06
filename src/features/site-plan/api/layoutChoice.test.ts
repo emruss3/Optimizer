@@ -74,6 +74,14 @@ describe('chooseLayout (the owner, 2026-11-04: multifamily where it makes more s
     expect(c.sentence).toBe('The multifamily plan did not draw; the neighborhood places 32 townhomes (mews), so it is the default.');
   });
 
+  it('a multifamily plan that drew without a reported count is never weighed as zero (0 Smith Springs Rd)', () => {
+    const c = chooseLayout({ multifamilyHomes: null, multifamilyFailed: false, competition: HEIMAN });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.sentence).toBe('The multifamily plan on the sheet does not report its unit count, so it stays the default; the neighborhood\'s best places 32 townhomes (mews).');
+    // one that failed to draw is weighed as none
+    expect(chooseLayout({ multifamilyHomes: null, multifamilyFailed: true, competition: HEIMAN }).defaultKind).toBe('neighborhood');
+  });
+
   it('house lots count one home each; townhome rows of the multifamily engine say so', () => {
     const lots = comp({
       best_requested: 'loop', best_lots: 12, best_buildable: true,
