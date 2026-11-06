@@ -469,6 +469,21 @@ export function seedFamilyPlanToElements(
     return total > 0 ? gsfs.map(g => g / total) : structures.map(() => 1 / Math.max(1, structures.length));
   })();
   const mixes = m.mix?.length ? apportionMix(m.mix, gsfShares) : null;
+  // The plan's own unit count (the seed's `units`, the max-GSF generator's
+  // `units_est`): with no mix to share, it is shared across the structures by
+  // GSF (largest remainder), so the sheet's labels add up to the headline
+  // (0 Smith Springs Rd: "37 units" on the bar under "42 apartments").
+  const planUnits = num(m.units) ?? num((m as unknown as { units_est?: unknown }).units_est);
+  const sharedUnits = !mixes && planUnits != null && structures.length > 0
+    ? (() => {
+        const raw = gsfShares.map(s => s * planUnits);
+        const out = raw.map(Math.floor);
+        let left = Math.round(planUnits) - out.reduce((a, b) => a + b, 0);
+        const order = raw.map((r, i) => [r - Math.floor(r), i] as const).sort((a, b) => b[0] - a[0]);
+        for (let k = 0; left > 0 && k < order.length; k++, left--) { const at = order[k]![1]; out[at] = (out[at] ?? 0) + 1; }
+        return out;
+      })()
+    : null;
 
   structures.forEach((b, i) => {
     let poly: Polygon;
@@ -490,7 +505,9 @@ export function seedFamilyPlanToElements(
     // can sum one short of the engine's count (server-side rounding) — the
     // sheet must not show 69 under a headline that says 70.
     const mixUnits = mixes ? mixes[i].reduce((s, e) => s + e.count, 0) : null;
-    const unitsHere = structures.length === 1 ? (num(m.units) ?? mixUnits ?? unitsEst) : (mixUnits ?? unitsEst);
+    const unitsHere = structures.length === 1
+      ? (planUnits ?? mixUnits ?? unitsEst)
+      : (mixUnits ?? (sharedUnits ? Math.max(1, sharedUnits[i] ?? unitsEst) : unitsEst));
     // A wrap bar is named by its place in the ring (2026-10-07): the frontage
     // bar, the rear bar, the side bars — the sheet reads as the Caroline's does.
     const isWrapBar = b.kind === 'wrap_bar' && typeof b.name === 'string' && b.name.length > 0;
@@ -705,10 +722,16 @@ export function seedFamilyPlanToElements(
     } as Element);
   });
 
-  const gsf = num(m.gsf);
-  const units = num(m.units);
+  // The max-GSF generator (mf_max_gsf_v1, the one that answers where density
+  // binds) draws native EPSG:2274 structures like the seed but reports its
+  // figures under the legacy names (gfa_sqft, units_est, stalls_required).
+  // Read both: 0 Smith Springs Rd (RM6, 2026-11-06) drew 42 apartments that
+  // the sheet counted as none, so the layout choice called the plan undrawn.
+  const legacy = m as unknown as { gfa_sqft?: unknown; units_est?: unknown; stalls_required?: unknown };
+  const gsf = num(m.gsf) ?? num(legacy.gfa_sqft);
+  const units = num(m.units) ?? num(legacy.units_est);
   const stalls = num(m.stalls) ?? num(resp.parking?.stalls);
-  const stallsRequired = num(resp.parking?.stalls_required_at_placed) ?? num(resp.parking?.stalls_required);
+  const stallsRequired = num(resp.parking?.stalls_required_at_placed) ?? num(resp.parking?.stalls_required) ?? num(legacy.stalls_required);
   const metrics: SiteMetrics | null = gsf
     ? ({
         totalBuiltSF: gsf,

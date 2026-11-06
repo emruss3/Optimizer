@@ -223,5 +223,20 @@
       "homesDrawn": 27,
       "switchAndBack": true
     }
+  },
+  "670533": {
+    "mode": "server-plan",
+    "_basis": "0 Smith Springs Rd (RM6, 7.05 ac) - 2026-11-06: the max-GSF generator (mf_max_gsf_v1) draws 42 apartments (the density cap) as native EPSG:2274 structures but reports gfa_sqft / units_est; the seed mapper read only gsf / units, so the sheet carried no metrics and the layout choice treated the plan as undrawn (26 grid lots took the sheet). Apartments 42 against the neighborhood's 26 grid lots: multifamily is the default; the switch draws the 26 lots and comes back.",
+    "requireLayout": {
+      "defaultKind": "multifamily",
+      "shown": "multifamily",
+      "auto": false,
+      "multifamilyHomes": 42,
+      "neighborhoodHomes": 26,
+      "neighborhoodRequested": "grid",
+      "densityCap": 42,
+      "switchAndBack": true,
+      "switchHomesDrawn": 26
+    }
   }
 }

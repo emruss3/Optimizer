@@ -1647,3 +1647,30 @@ neighborhood option even where townhomes might fit. A cold 3-acre RM9
 competition (0 Cedarstone Way) took about 30 s, over the app's 20-s limit; the
 panel says the neighborhood plans are unavailable and the multifamily plan
 stands.
+
+## 27. Twenty lots, ranked by how likely a civil engineer or developer lands on the same layout (2026-11-06)
+
+Eric: "Run 20 more lots, give detailed feedback on each one, rank them based
+on the likelihood that a civil engineer or developer would land on that
+layout." 16 vacant R / RS lots by the usual draw and 4 vacant RM lots.
+Write-up, ranking and pictures: `qa/audits/2026-11-06/`. The USGS elevation
+service was failing (502 / 504) for most of the run; every lot that needs
+terrain was retried until it had it and was re-run with it.
+
+The app is good at saying no: ten of twenty answers are "no new lots", "one
+house" or "skipped", and nine of those ten are what a civil engineer would
+say. Of the ten drawn layouts, one (6247 Mt View Rd, 15 lots on a T street)
+is what a civil would plausibly land on as drawn. Three have about the right
+yield on a heavier street than a pro would build. The other six fail on
+terrain (Dry Fork 63% streets, Westcap 28.8%, Hart Ln 25.4%), on the estate
+grammar (Union Hill: 700 ft of public cul-de-sac through a wetland buffer
+for 3 lots), on access (two landlocked RM lots), or on product fit (RM6
+apartments at 2.7 stalls per unit).
+
+Fixed in the client: the max-GSF generator's plans (`mf_max_gsf_v1`,
+native structures with legacy metric names) carried no metrics through the
+seed mapper. The KPI strip lost their units, GSF and stalls, and the layout
+choice read them as undrawn, which put 26 lots over 42 apartments on 0 Smith
+Springs Rd. The mapper reads both naming schemes; a drawn plan without a
+count is never treated as failed; building labels share the plan's count
+by GSF; an empty sheet's legend keys no dwellings.

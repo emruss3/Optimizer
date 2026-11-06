@@ -1408,10 +1408,14 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // apartment mix (1200 W H Davis, 2026-11-04: "Studio · 550 SF" beside 12 house lots).
     const dwellings = elements.filter(e => e.type === 'building' && (e.properties?.use ?? 'residential') !== 'amenity');
     const allHouses = dwellings.length > 0 && dwellings.every(e => e.properties?.house === true || e.properties?.singleFamilyHouse === true);
+    // An empty sheet (0 new lots, a skipped parcel) keys no dwellings at all
+    // (6211 Brownlee Dr, 2026-11-06: "Studio · 550 SF" over existing conditions).
     const unitRows: Array<[string, string]> = thEl
       ? [[`Townhome${thW ? ` · ${Math.round(thW)} ft wide` : ''}`, UNIT_COLORS['townhome']]]
       : allHouses
       ? [['House (one per lot)', '#3B82F6']]
+      : dwellings.length === 0
+      ? []
       : [
           ['Studio · 550 SF', UNIT_COLORS['studio']],
           ['1 Bed · 700 SF', UNIT_COLORS['1br']],

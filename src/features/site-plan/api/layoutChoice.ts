@@ -85,10 +85,15 @@ export function neighborhoodOption(comp: SfV1Competition | null | undefined): La
 export function chooseLayout(input: {
   multifamilyHomes: number | null;
   multifamilyProduct?: 'apartments' | 'townhomes';
+  /** the multifamily plan failed to draw (as opposed to drawing without a reported count) */
+  multifamilyFailed?: boolean;
   competition: SfV1Competition | null | undefined;
 }): LayoutChoice {
   const product = input.multifamilyProduct ?? 'apartments';
   const mf = input.multifamilyHomes != null && input.multifamilyHomes > 0 ? Math.round(input.multifamilyHomes) : null;
+  // A plan on the sheet whose count is not reported is not a plan that failed:
+  // it is never weighed as zero homes (0 Smith Springs Rd, 2026-11-06).
+  const mfUncounted = mf == null && input.multifamilyFailed === false;
   const comp = input.competition ?? null;
   const nb = neighborhoodOption(comp);
   const densityCap = comp?.homesAllowedByDensity ?? null;
@@ -104,6 +109,13 @@ export function chooseLayout(input: {
     return { ...base, defaultKind: 'multifamily', sentence: `${why.charAt(0).toUpperCase()}${why.slice(1)}, so the sheet stays multifamily.` };
   }
   const nbWords = neighborhoodWords(nb);
+  if (mfUncounted) {
+    return {
+      ...base,
+      defaultKind: 'multifamily',
+      sentence: `The multifamily plan on the sheet does not report its unit count, so it stays the default; the neighborhood's best places ${nbWords}.`,
+    };
+  }
   const wins = mf == null || nb.homes > mf;
   if (wins && nb.buildable && nb.drawable) {
     return {
