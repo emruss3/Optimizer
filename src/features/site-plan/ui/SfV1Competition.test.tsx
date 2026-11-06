@@ -45,6 +45,27 @@ describe('SfV1CompetitionBlock (best and structured, side by side)', () => {
     render(<SfV1CompetitionBlock competition={{ state: 'done', data: none, error: null }} shownRequested="loop" />);
     expect(screen.queryByTestId('sfv1-competition-table')).toBeNull();
     expect(screen.getByTestId('sfv1-competition-sentence').textContent).toContain('all draw 0');
+    expect(screen.queryByTestId('sfv1-competition-why')).toBeNull();
+  });
+
+  it('engine g13: the engine\'s why under the sentence; a drive row that found no lot reads as a reason, not an error', () => {
+    const none = summarizeCandidates({
+      status: 'done', best_lots: 0, why: 'no lot of 80000 sf fits on the frontage or beside a new street: 17.8 ac buildable | 4.1 ac steeper than 25% held out as hillside',
+      candidates: [cand('grid', null, 0, [], 0), cand('loop', null, 0, [], 0)],
+    });
+    const { rerender } = render(<SfV1CompetitionBlock competition={{ state: 'done', data: none, error: null }} shownRequested="loop" />);
+    expect([...screen.getByTestId('sfv1-competition-why').querySelectorAll('li')].map(li => li.textContent)).toEqual([
+      'no lot of 80000 sf fits on the frontage or beside a new street: 17.8 ac buildable',
+      '4.1 ac steeper than 25% held out as hillside',
+    ]);
+    const some = summarizeCandidates({
+      status: 'done', best_requested: 'loop', best_lots: 3,
+      candidates: [cand('loop', 'loop', 3, [], 4), { requested: 'drive', pattern: null, status: 'failed', lots: 0, error: 'no lots on a private drive' } as never],
+    });
+    rerender(<SfV1CompetitionBlock competition={{ state: 'done', data: some, error: null }} shownRequested="loop" onView={() => undefined} />);
+    expect(screen.getByTestId('sfv1-cand-drive').textContent).toContain('shared private drive: nothing drawn');
+    expect(screen.getByTestId('sfv1-cand-nothing-drive').textContent).toBe('no lots on a private drive');
+    expect(screen.queryByTestId('sfv1-cand-view-drive')).toBeNull();
   });
 });
 

@@ -45,6 +45,12 @@ describe('buildSheetAnnotations — what the layout sheet writes on the plan', (
     expect(ann[0].x).toBeLessThan(-9_600_000);
   });
 
+  it('engine g13: a shared private drive is labelled an access easement, not a public right-of-way', () => {
+    const drive = { ...street, name: 'Shared private drive', properties: { ...street.properties, widthFt: undefined, privateDrive: true, easementFt: 24, laneFt: 16 } } as Element;
+    const label = buildSheetAnnotations([drive], null).find(a => a.kind === 'label');
+    expect(label?.text).toBe("SHARED PRIVATE DRIVE · 24' ACCESS EASEMENT");
+  });
+
   it('writes stations but no grades without topography, and nothing for a stub of a street', () => {
     const ann = buildSheetAnnotations([street], null);
     expect(ann.filter(a => a.kind === 'spot')).toHaveLength(0);
@@ -83,6 +89,12 @@ describe('buildSheetTitleBlock — what the sheet says about itself', () => {
     });
     expect(mtView.title).toBe('CONCEPT LAYOUT PLAN');
     expect(mtView.subtitle).toBe('RM15 · 2.14 ac · 27 townhomes · mews · by right');
+    // engine g13: a shared private drive's band is an access easement
+    const eatons = buildSheetTitleBlock({
+      address: '6404 Eatons Creek Rd', zoning: 'R40', acres: 9.04, hasPlan: false, topo: null, date,
+      subdivision: { lots: 5, network: 'shared private drive', networkLabel: 'shared private drive · by right', pctRow: 5.2, pctHazard: 4.3, hazardCoverage: 'ingested', crossingFt: null },
+    });
+    expect(eatons.subtitle).toBe('R40 · 9.04 ac · 5 lots · shared private drive · by right · 5.2% easement');
   });
 
   it('names a subdivision a concept layout plan and states every basis', () => {

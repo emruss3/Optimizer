@@ -64,7 +64,8 @@ vi.mock('./api/generateSfPlan', async importOriginal => ({
   generateSfSitePlan: () => genSfMock(),
 }));
 const sfV1PlanMock = vi.fn(async (): Promise<Record<string, unknown> | null> => null);
-const sfV1CandMock = vi.fn(async (): Promise<{ data: Record<string, unknown> | null; error: string | null }> => ({ data: null, error: 'not in this test' }));
+const sfV1CandMock = vi.fn(async (_fid?: number, _opt?: Record<string, unknown>): Promise<{ data: Record<string, unknown> | null; error: string | null }> => ({ data: null, error: 'not in this test' }));
+const sfV1SiteMock = vi.fn(async (_fid?: number, _flood?: string | null): Promise<Record<string, unknown> | null> => null);
 // The plan-pattern layer is a network call; with a local stand-in running it
 // answers for the real parcel 669046 (RM40), whose zoning would outrank the
 // test parcel's. No pattern here: the parcel's own zoning decides the route.
@@ -75,8 +76,8 @@ vi.mock('./api/planPattern', async importOriginal => ({
 vi.mock('./api/sfV1Plan', async importOriginal => ({
   ...(await importOriginal<typeof import('./api/sfV1Plan')>()),
   fetchSfV1Plan: (fid: number, opt: Record<string, unknown>) => (sfV1PlanMock as unknown as (f: number, o: Record<string, unknown>) => Promise<unknown>)(fid, opt),
-  fetchSfV1Site: async () => null,
-  fetchSfV1Candidates: () => sfV1CandMock(),
+  fetchSfV1Site: (fid: number, flood: string | null) => sfV1SiteMock(fid, flood),
+  fetchSfV1Candidates: (fid: number, opt: Record<string, unknown>) => sfV1CandMock(fid, opt),
 }));
 const thV3Mock = vi.fn(async (): Promise<{ data: Record<string, unknown> | null; error: string | null }> => ({ data: null, error: 'not in this test' }));
 vi.mock('./api/thV3Plan', async importOriginal => ({
@@ -297,6 +298,7 @@ beforeEach(() => {
   listCandidatesMock.mockResolvedValue([]);
   sfV1PlanMock.mockResolvedValue(null);
   sfV1CandMock.mockResolvedValue({ data: null, error: 'not in this test' });
+  sfV1SiteMock.mockResolvedValue(null);
   thV3Mock.mockResolvedValue({ data: null, error: 'not in this test' });
   compileMock.mockImplementation(() => new Promise(() => undefined)); // pending unless a test says otherwise
 });
@@ -416,11 +418,18 @@ describe('SiteWorkspace: a physical block on a by-right parcel goes to the by-ri
     };
     compileMock.mockImplementation(async () => physicalBlock);
     sfV1PlanMock.mockResolvedValue({ status: 'skipped', reason: 'floodplain leaves no buildable piece', ogc_fid: 669046 });
+    sfV1SiteMock.mockResolvedValue({
+      nobuildWkt: null, heldAcres: 2.9, siteAcres: 0, floodHold: 'sfha', reason: 'floodplain leaves no buildable piece',
+      holdWkt: 'POLYGON((1727000 670000,1727300 670000,1727300 670300,1727000 670300,1727000 670000))',
+    });
 
     render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS40' } as never} />);
 
     await waitFor(() => expect(sfV1PlanMock).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByTestId('sfv1-skipped').textContent).toContain('floodplain leaves no buildable piece'));
+    // engine g13: the site layers are asked for even when the plan skips — the hold is the reason
+    await waitFor(() => expect(sfV1SiteMock).toHaveBeenCalledWith(669046, null));
+    await waitFor(() => expect(screen.getByTestId('sfv1-held').textContent).toContain('The flood hold takes 2.9 ac out, the whole site'));
     expect(screen.getByTestId('sfv1-override-floodway')).toBeTruthy();
     // not reported as a use that is not permitted
     expect(screen.queryByText(/not permitted as-of-right — generation is blocked/)).toBeNull();
@@ -474,6 +483,64 @@ describe('SiteWorkspace: the competition\'s best goes on the sheet when the defa
     expect(screen.queryByTestId('sfv1-auto-best')).toBeNull();
     expect(screen.getByTestId('sfv1-lots').textContent).toBe('0 lots');
   });
+
+  it('engine g13 — 0 Union Hill Rd: the same 3 lots on 384 ft of street against the loop\'s 699 ft take the sheet, with the way back', async () => {
+    setup({
+      status: 'done', best_requested: 'neighborhood', best_lots: 3, structured_lots: 3, lots_forgone_for_structure: 0,
+      best_buildable: true, verdict: 'buildable as drawn', best_code_fails: [],
+      candidates: [
+        { requested: 'grid', pattern: 'grid', status: 'done', lots: 3, street_ft: 320, fails: ['open.unassigned'] },
+        { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 3, street_ft: 384, fails: [] },
+        { requested: 'loop', pattern: 'loop', status: 'done', lots: 3, street_ft: 699, fails: ['cost.street_ft_per_lot'] },
+        { requested: 'drive', pattern: null, status: 'failed', lots: 0, error: 'no lots on a private drive' },
+      ],
+      best: { status: 'done', lots: 3, pattern: 'neighborhood', basis: 'by_right', metrics: { street_ft: 384 }, fails: [] },
+    });
+    sfV1PlanMock.mockResolvedValue({ status: 'done', lots: 3, pattern: 'loop', basis: 'by_right', metrics: { street_ft: 699 }, fails: ['cost.street_ft_per_lot'], ogc_fid: 669046 });
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS40' } as never} />);
+    await waitFor(() => expect(screen.getByTestId('sfv1-auto-best').getAttribute('data-why')).toBe('same_lots'));
+    expect(screen.getByTestId('sfv1-auto-best').textContent).toContain('on 384 ft of new street against 699 ft');
+    expect(screen.getByTestId('sfv1-pattern').textContent).toContain('neighborhood');
+    expect(screen.getByTestId('sfv1-cand-nothing-drive').textContent).toBe('no lots on a private drive');
+    fireEvent.click(screen.getByTestId('sfv1-auto-best-back'));
+    await waitFor(() => expect(screen.queryByTestId('sfv1-auto-best')).toBeNull());
+    expect(screen.getByTestId('sfv1-pattern').textContent).toContain('loop');
+  });
+
+  it('engine g13: the default stays when it draws strictly more lots than a buildable best', async () => {
+    setup({
+      status: 'done', best_requested: 'grid', best_lots: 4, best_buildable: true, verdict: 'buildable as drawn', best_code_fails: [],
+      candidates: [
+        { requested: 'grid', pattern: 'grid', status: 'done', lots: 4, fails: [] },
+        { requested: 'loop', pattern: 'loop', status: 'done', lots: 6, fails: ['street.grade_max'] },
+      ],
+      best: { status: 'done', lots: 4, pattern: 'grid', basis: 'by_right', fails: [] },
+    });
+    sfV1PlanMock.mockResolvedValue({ status: 'done', lots: 6, pattern: 'loop', basis: 'by_right', fails: ['street.grade_max'], ogc_fid: 669046 });
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS15' } as never} />);
+    await waitFor(() => expect(screen.getByTestId('sfv1-competition').getAttribute('data-status')).toBe('done'));
+    expect(screen.queryByTestId('sfv1-auto-best')).toBeNull();
+    expect(screen.getByTestId('sfv1-lots').textContent).toBe('6 lots');
+  });
+
+  it('engine g13: "View this plan" on a drive row sends the drive section the competition used', async () => {
+    setup({
+      status: 'done', best_requested: 'loop', best_lots: 4, best_buildable: true, verdict: 'buildable as drawn', best_code_fails: [],
+      candidates: [
+        { requested: 'loop', pattern: 'loop', status: 'done', lots: 4, fails: [] },
+        { requested: 'drive', pattern: 'shared private drive', status: 'done', lots: 4, street_ft: 600, fails: [] },
+      ],
+      best: { status: 'done', lots: 4, pattern: 'loop', basis: 'by_right', fails: [] },
+    });
+    sfV1PlanMock.mockResolvedValue({ status: 'done', lots: 4, pattern: 'loop', basis: 'by_right', fails: [], ogc_fid: 669046 });
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS40' } as never} />);
+    await waitFor(() => expect(screen.getByTestId('sfv1-cand-view-drive')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('sfv1-cand-view-drive'));
+    await waitFor(() => expect(sfV1PlanMock).toHaveBeenCalledTimes(2));
+    expect((sfV1PlanMock.mock.calls[1] as unknown[])[1]).toMatchObject({ pattern: 'drive', params: { row_ft: 24, pave_ft: 16, dead_end_max_ft: 750 } });
+    // the drive's section is the competition's setting, not the user's override
+    await waitFor(() => expect(screen.getByTestId('sfv1-basis').textContent).toBe('By right'));
+  });
 });
 
 describe('SiteWorkspace: the layout choice on multifamily land (the owner, 2026-11-04)', () => {
@@ -508,6 +575,8 @@ describe('SiteWorkspace: the layout choice on multifamily land (the owner, 2026-
     thV3Mock.mockResolvedValue(thPlan(3));
     render(<SiteWorkspace parcel={PARCEL} />);
     await waitFor(() => expect(screen.getByTestId('layout-choice').getAttribute('data-default')).toBe('multifamily'));
+    // engine g13: the townhome search gets ~8 s inside the competition
+    expect(sfV1CandMock).toHaveBeenCalledWith(669046, { th_budget_ms: 8000 });
     expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('multifamily');
     expect(screen.getByTestId('layout-option-multifamily').textContent).toContain('40 homes');
     expect(screen.getByTestId('layout-option-neighborhood').textContent).toContain('32 homes');

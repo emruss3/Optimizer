@@ -6,8 +6,8 @@
  * answer the user asks for here, and the result is labelled as one.
  */
 import { useState } from 'react';
-import type { HoleOverlap, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, isOverride, passesOverLimit, steepGroundNote } from '../api/sfV1Plan';
+import type { HoleOverlap, SfV1AutoBest, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
+import { FILL_BANDS, autoBestSentence, isOverride, passesOverLimit, privateDriveSentence, steepGroundNote } from '../api/sfV1Plan';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
 
 function testLabel(id: string): string {
@@ -49,6 +49,8 @@ export function testDetails(t: SfV1Test): string {
   for (const [k, v] of Object.entries(t)) {
     if (TEST_META.has(k) || v == null) continue;
     const key = k.replace(/_/g, ' ');
+    // the drive section switches a test off with a 1e9 limit (block.length on a shared private drive)
+    if (k === 'limit' && typeof v === 'number' && v >= 1e8) { parts.push('no limit here'); continue; }
     if (typeof v === 'object' && !Array.isArray(v)) {
       const inner = Object.entries(v as Record<string, unknown>)
         .filter(([, x]) => x != null)
@@ -129,8 +131,8 @@ export function SfV1Panel({
   terrain?: { meanSlopePct: number | null; maxSlopePct: number | null; fallFt: number | null } | null;
   /** the site the generator worked on: what the flood hold took out, and the mapped parcel */
   site?: { heldAcres: number | null; siteAcres: number | null; parcelAcres?: number | null } | null;
-  /** the default grammar drew no lots, so the competition's best is on the sheet (the grammar named) */
-  autoBest?: string | null;
+  /** the competition's best is on the sheet in place of the default answer, and why */
+  autoBest?: SfV1AutoBest | null;
   /** drawn lots lying in the parcel's holes — other owners' lots inside it */
   holeOverlap?: HoleOverlap | null;
   /** the frontage layer finds no street on the parcel */
@@ -157,6 +159,10 @@ export function SfV1Panel({
   // (930 Morton Mill Rd: 28.5% mean slope, "no lot of 20000 sf fits"): the
   // DEM's figures, so the lot module is not blamed alone.
   const steepFromDem = !steep && noNewLots && summary.status !== 'skipped' && terrain?.meanSlopePct != null && terrain.meanSlopePct > 15;
+  // Engine g13: land steeper than 25% is held out as hillside before the
+  // layout (0 Dry Fork Rd: 25 of 31 ac), so "does not lay out by terrain" is
+  // no longer the whole truth; streets are still not laid out by grade.
+  const hillsideHeld = summary.notes.some(n => /held out as hillside/i.test(n));
   // Nothing held for flood and no BFE: the fill scenario cannot change the answer.
   const heldAcres = summary.heldAcres ?? site?.heldAcres ?? null;
   const noFloodLand = heldAcres === 0 && ew?.bfe_ft == null && !summary.hasFlood;
@@ -208,23 +214,39 @@ export function SfV1Panel({
       </div>
 
       {summary.status === 'skipped' ? (
-        <p data-testid="sfv1-skipped" className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 leading-snug text-amber-800">
-          Skipped — {summary.reason ?? 'no reason given'}
-        </p>
+        <>
+          <p data-testid="sfv1-skipped" className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 leading-snug text-amber-800">
+            Skipped — {summary.reason ?? 'no reason given'}
+          </p>
+          {site && site.heldAcres != null && site.heldAcres > 0 && (
+            // engine g13: the hold comes back with the skip (0 Hickory Bend Dr: 5.24 ac, all of it)
+            <p data-testid="sfv1-held" className="mt-1 leading-snug text-slate-600">
+              The flood hold takes {site.heldAcres} ac out
+              {site.siteAcres === 0 ? ', the whole site' : site.siteAcres != null ? `; ${site.siteAcres} ac are left` : ''} (hatched blue on the sheet).
+            </p>
+          )}
+        </>
       ) : (
         <>
           <p data-testid="sfv1-summary" className="mt-1 leading-snug text-slate-600">{summary.basisLine}</p>
           {autoBest && (
             // 1019 Hitt Ln: "0 lots by right" while the grid drew 19 — the
             // sheet now leads with the plan, and says it is the competition's.
-            <p data-testid="sfv1-auto-best" className="mt-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 leading-snug text-indigo-900">
-              The default (loop) grammar draws no lots here, so the sheet shows the competition's best plan, the {autoBest} grammar. It is still by right.{' '}
+            // Engine g13: also at equal lots (a better plan) and at more lots (buildable).
+            <p data-testid="sfv1-auto-best" data-why={autoBest.why} className="mt-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 leading-snug text-indigo-900">
+              {autoBestSentence(autoBest)}{' '}
               {onViewCandidate && (
                 <button type="button" data-testid="sfv1-auto-best-back" disabled={busy} onClick={() => onViewCandidate('loop')}
                   className="font-semibold underline disabled:opacity-60">
-                  Show the default answer (0 lots)
+                  Show the default answer ({autoBest.defaultLots} lot{autoBest.defaultLots === 1 ? '' : 's'})
                 </button>
               )}
+            </p>
+          )}
+          {summary.privateDrive && summary.lots > 0 && (
+            // engine g13, the estate grammar's first form: no public street
+            <p data-testid="sfv1-private-drive" className="mt-1 leading-snug text-slate-600">
+              {privateDriveSentence(summary.privateDrive)}
             </p>
           )}
           {holeOverlap && holeOverlap.lotsOnHoles > 0 && (
@@ -250,7 +272,10 @@ export function SfV1Panel({
             <p data-testid="sfv1-steep" className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 leading-snug text-amber-900">
               ⚠ The ground averages {Math.round(terrain.meanSlopePct ?? 0)}% slope
               {terrain.maxSlopePct != null ? ` (max ${Math.round(terrain.maxSlopePct)}%)` : ''}
-              {terrain.fallFt != null ? ` with ${Math.round(terrain.fallFt)} ft of fall` : ''} (USGS 3DEP). The engine measures terrain but does not lay out by it yet, so the lot module may not be what stops this plan.
+              {terrain.fallFt != null ? ` with ${Math.round(terrain.fallFt)} ft of fall` : ''} (USGS 3DEP).{' '}
+              {hillsideHeld
+                ? 'The engine holds the land steeper than 25% out as hillside and finds no lot on the rest; it does not yet lay streets out by grade.'
+                : 'The engine measures terrain but does not lay out by it yet, so the lot module may not be what stops this plan.'}
             </p>
           )}
           {noNewLots && summary.status !== 'skipped' && site?.parcelAcres != null && summary.minLotSf != null && site.parcelAcres * 43560 < summary.minLotSf && (
@@ -296,13 +321,13 @@ export function SfV1Panel({
             <dt className="text-slate-500">Land</dt>
             <dd>
               {[
-                summary.rowPct != null ? `${summary.rowPct}% ROW` : null,
+                summary.rowPct != null ? `${summary.rowPct}% ${summary.privateDrive ? 'easement' : 'ROW'}` : null,
                 summary.lotPct != null ? `${summary.lotPct}% lots` : null,
                 summary.openPct != null ? `${summary.openPct}% open` : null,
                 summary.imperviousPct != null ? `${summary.imperviousPct}% impervious` : null,
               ].filter(Boolean).join(' · ') || '—'}
             </dd>
-            <dt className="text-slate-500">Street</dt>
+            <dt className="text-slate-500">{summary.privateDrive ? 'Private drive' : 'Street'}</dt>
             <dd>
               {summary.streetFt != null ? `${Math.round(summary.streetFt).toLocaleString()} ft` : '—'}
               {summary.deadEnds != null ? ` · ${summary.deadEnds} dead end${summary.deadEnds === 1 ? '' : 's'}` : ''}

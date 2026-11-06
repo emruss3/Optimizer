@@ -99,6 +99,10 @@ describe('chooseLayout (the owner, 2026-11-04: multifamily where it makes more s
     const skipped = summarizeCandidates({ status: 'skipped', reason: 'landlocked: no edge touches a mapped street' } as SfV1CandidatesResponse);
     expect(chooseLayout({ multifamilyHomes: 15, competition: skipped }).sentence).toBe('No neighborhood plan: landlocked: no edge touches a mapped street, so the sheet stays multifamily.');
     expect(chooseLayout({ multifamilyHomes: 15, competition: null }).defaultKind).toBe('multifamily');
+    // engine g13: the competition's own reason rides along
+    const why = comp({ best_requested: 'grid', best_lots: 0, why: 'no lot of 6000 sf fits on the frontage or beside a new street: 0.4 ac buildable | grid: 1 local street', candidates: [row('grid', null, 0)] as never });
+    expect(chooseLayout({ multifamilyHomes: 15, competition: why }).sentence).toBe(
+      'No neighborhood pattern places a home here (no lot of 6000 sf fits on the frontage or beside a new street: 0.4 ac buildable), so the sheet stays multifamily.');
   });
 
   it('homesPhrase', () => {

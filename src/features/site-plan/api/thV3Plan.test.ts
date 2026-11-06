@@ -86,6 +86,17 @@ describe('thV3ToElements (the townhome engine on the sheet, 2026-11-04)', () => 
     expect(summary.requiredFails).toEqual(['alley.street_to_street']);
     expect(summary.overDensityBy).toBe(1);
     expect(summary.basisLine).toContain('fails alley.street_to_street');
+    expect(summary.homesBeforeDensityCap).toBeNull();
+    expect(summary.trimNote).toBeNull();
+  });
+
+  it('engine g13: a drawing trimmed to the density cap says how many were drawn first', () => {
+    // 0 Smith Springs Rd (670533, RM6): 62 drawn, 42 kept
+    const note = '62 homes drawn; trimmed to the district density cap of 42 (the 20 furthest from the street removed)';
+    const { summary } = thV3ToElements({ ...PLAN, rules: { max_homes_by_density: 2 }, metrics: { ...PLAN.metrics, homes_before_density_cap: 62 }, notes: [note] });
+    expect(summary.overDensityBy).toBeNull();
+    expect(summary.homesBeforeDensityCap).toBe(62);
+    expect(summary.trimNote).toBe(note);
   });
 
   it('a search still running, a skip and an error draw nothing and say so', () => {

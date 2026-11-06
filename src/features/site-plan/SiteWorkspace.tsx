@@ -36,7 +36,8 @@ import {
   fetchSfV1Plan, fetchSfV1Site, fetchPadFill, fetchBfeContour, earthworkHasFlood,
   sfV1ToElements, sfV1Route, isOverride, withoutPattern,
   fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
-  parcelHoles3857, lotsOnParcelHoles, autoBestEligible, type HoleOverlap,
+  parcelHoles3857, lotsOnParcelHoles, chooseAutoBest, candidateOpt, RM_COMPETITION_TH_BUDGET_MS,
+  type HoleOverlap, type SfV1AutoBest,
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse,
 } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
@@ -239,8 +240,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [physicalBlockReason, setPhysicalBlockReason] = useState<string | null>(null);
   // Drawn lots lying in the parcel's holes (other owners' lots inside it: 0 Longwood Pl).
   const [sfV1HoleOverlap, setSfV1HoleOverlap] = useState<HoleOverlap | null>(null);
-  // The competition's best put on the sheet because the default answer drew no lots.
-  const [sfV1AutoBest, setSfV1AutoBest] = useState<string | null>(null);
+  // The competition's best on the sheet in place of the default answer, and why
+  // (the default drew no lots, the same lots on a worse plan, or fewer lots).
+  const [sfV1AutoBest, setSfV1AutoBest] = useState<SfV1AutoBest | null>(null);
   const sfV1ShownRef = useRef<string>('loop');
   const renderSfV1Ref = useRef<((resp: SfV1Response, opt: SfV1Options, shown: string) => Promise<void>) | null>(null);
   const elementsRef = useRef<Element[]>([]);
@@ -1433,10 +1435,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     sfV1ShownRef.current = shown;
     if (resp.status === 'skipped' || resp.error) {
       setSfV1HoleOverlap(null);
-      const { summary: skipped } = sfV1ToElements(resp, { overrideRequested: isOverride(opt) });
       setBfeContour(null);
-      setSfV1Site(null);
-      settleEmpty(skipped, skipped.reason ? [skipped.reason] : []);
+      // Engine g13: the site layers come back even when the plan skips, so the
+      // flood hold that is the reason goes on the sheet (0 Hickory Bend Dr:
+      // all 5.24 ac in the SFHA; the sheet used to be blank beside "skipped").
+      const site = resp.status === 'skipped' ? await fetchSfV1Site(contextOgcFid, opt.flood ?? null) : null;
+      setSfV1Site(site);
+      const { elements: context, summary: skipped } = sfV1ToElements(resp, {
+        holdWkt: site?.holdWkt ?? null,
+        nobuildWkt: site?.nobuildWkt ?? null,
+        overrideRequested: isOverride(opt),
+      });
+      settleEmpty(skipped, skipped.reason ? [skipped.reason] : [], context.filter(e => e.type === 'greenspace'));
       return;
     }
     // The earthwork view. The ground-at-BFE line is context wherever the parcel
@@ -1538,13 +1548,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // Third audit: only a plan the engine calls buildable (best_buildable,
       // no code fails) goes on the sheet unasked; a best that fails a code
       // test stays in the competition with the engine's verdict beside it.
-      const bestReq = autoBestEligible(r.data);
-      const def = sfV1DefaultRespRef.current;
+      // Engine g13 (0 Union Hill Rd: the loop's 3 lots on 699 ft of street,
+      // the neighborhood's 3 on 384 ft): the best also takes the sheet when
+      // it draws at least the default's lots and is buildable, or the same
+      // lots; the default stays only when it draws strictly more.
+      const auto = chooseAutoBest(r.data, sfV1DefaultRespRef.current);
       const seedDrawn = elementsRef.current.some(e => e.id.startsWith('sfseed-'));
-      if (bestReq && r.data.best && def && def.status === 'done' && (def.lots ?? 0) === 0
-        && sfV1ShownRef.current === 'loop' && !seedDrawn && renderSfV1Ref.current) {
-        setSfV1AutoBest(bestReq);
-        void renderSfV1Ref.current(r.data.best, opt, bestReq);
+      if (auto && r.data.best && sfV1ShownRef.current === 'loop' && !seedDrawn && renderSfV1Ref.current) {
+        setSfV1AutoBest(auto);
+        void renderSfV1Ref.current(r.data.best, opt, auto.requested);
       }
     });
   }, []);
@@ -1723,7 +1735,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     else if (raw?.structured && requested === 'neighborhood') resp = raw.structured;
     setIsGeneratingLots(true);
     try {
-      if (!resp) resp = await fetchSfV1Plan(contextOgcFid, requested === 'loop' ? opt : { ...opt, pattern: requested });
+      // the competition's own option set for the grammar (the drive carries its section)
+      if (!resp) resp = await fetchSfV1Plan(contextOgcFid, candidateOpt(requested, opt));
       if (!resp) {
         setViolations(v => [...v, {
           code: 'sfv1-candidate',
@@ -1836,7 +1849,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     layoutCompetitionRanRef.current = true;
     sfV1CandidatesRef.current = null;
     setSfV1Competition({ state: 'loading', data: null, error: null });
-    void fetchSfV1Candidates(fid, {}).then(r => {
+    // Engine g13: the townhome search gets ~8 s inside the competition (its own
+    // default is 15 s), so the whole competition stays under the anon role's 20 s cold.
+    void fetchSfV1Candidates(fid, { th_budget_ms: RM_COMPETITION_TH_BUDGET_MS }).then(r => {
       if (seq !== competitionSeqRef.current) return;
       if (r.error || !r.data) {
         setSfV1Competition({ state: 'error', data: null, error: competitionErrorText(r.error ?? 'the engine returned nothing') });

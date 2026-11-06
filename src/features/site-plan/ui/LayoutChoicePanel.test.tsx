@@ -70,6 +70,29 @@ describe('LayoutChoicePanel (multifamily by default where it places more homes; 
     expect(onView).toHaveBeenLastCalledWith('loop');
     fireEvent.click(screen.getByTestId('layout-auto-back'));
     expect(onChoose).toHaveBeenLastCalledWith('multifamily');
+    expect(screen.queryByTestId('layout-thv3-trimmed')).toBeNull();
+  });
+
+  it('0 Swiss Ave: when the apartment plan did not draw, the auto note says so — not "more homes"', () => {
+    render(
+      <LayoutChoicePanel choice={chooseLayout({ multifamilyHomes: null, multifamilyFailed: true, competition: COMP })} competition={DONE}
+        shown="neighborhood" shownRequested="townhome" auto onChoose={() => undefined} onViewCandidate={() => undefined} />,
+    );
+    expect(screen.getByTestId('layout-auto').textContent).toContain('because the multifamily plan did not draw');
+  });
+
+  it('engine g13: a townhome drawing trimmed to the density cap says so', () => {
+    const note = '62 homes drawn; trimmed to the district density cap of 42 (the 20 furthest from the street removed)';
+    const { summary } = thV3ToElements({
+      generator_version: 'th_v3', pattern: 'mews', rules: { max_homes_by_density: 42 },
+      buildings: [], metrics: { homes: 42, homes_before_density_cap: 62, alleys: 2, street_ft: 600 }, tests: [], fails: [], notes: [note],
+    });
+    render(
+      <LayoutChoicePanel choice={chooseLayout({ multifamilyHomes: 24, competition: COMP })} competition={DONE}
+        shown="neighborhood" shownRequested="townhome" auto={false} onChoose={() => undefined} onViewCandidate={() => undefined} thV3={summary} />,
+    );
+    expect(screen.getByTestId('layout-thv3-trimmed').textContent).toBe(note);
+    expect(screen.queryByTestId('layout-thv3-density')).toBeNull();
   });
 
   it('a neighborhood the sheet cannot draw, or one that fails a code test, is marked — and the first cannot be picked', () => {

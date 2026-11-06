@@ -197,10 +197,52 @@ export interface SfV1Options {
   module_by_right?: boolean;
   /** EPSG:2274 polygon held out of the site (commercial, anything else) */
   reserve_wkt?: string;
+  /** the competition's budget for the townhome engine's search (ms; the engine's default is 15 s) — not an override */
+  th_budget_ms?: number;
 }
 
 /** Option keys that choose among by-right answers rather than override the district. */
-const BY_RIGHT_OPTION_KEYS = new Set(['pattern', 'module_by_right']);
+const BY_RIGHT_OPTION_KEYS = new Set(['pattern', 'module_by_right', 'th_budget_ms']);
+
+/** The townhome search's share of the competition on multifamily land (engine g13: "~8 s to stay under 20 s cold"). */
+export const RM_COMPETITION_TH_BUDGET_MS = 8000;
+
+/**
+ * The shared private drive (engine g13, the estate grammar's first form): the
+ * competition calls fn_sf_v1_plan with pattern 'drive' AND this drive section
+ * as params — a 24-ft easement, a 16-ft lane, no turnaround bulb, no block
+ * test, at most 750 ft. Called with pattern 'drive' alone the plan falls back
+ * to frontage lots, so "View this plan" on a drive row sends the same section
+ * (the values are fn_sf_v1_params()' private_drive_* on 2026-11-06).
+ */
+export const SFV1_DRIVE_PARAMS: Readonly<Record<string, number>> = Object.freeze({
+  row_ft: 24,
+  pave_ft: 16,
+  turnaround_from_ft: 1e9,
+  block_len_max_ft: 1e9,
+  dead_end_max_ft: 750,
+  second_connection_homes: 1e9,
+  street_ft_per_lot_max_factor: 4,
+});
+
+export const DRIVE_PATTERN = 'shared private drive';
+export const isDrivePattern = (pattern: string | null | undefined): boolean => (pattern ?? '').trim().toLowerCase() === DRIVE_PATTERN;
+
+/** The option set the competition used for one grammar's plan: the user's
+ *  options, the pattern, and for the drive its section (never an override). */
+export function candidateOpt(requested: string, opt: SfV1Options): SfV1Options {
+  const base = withoutPattern(opt);
+  if (requested === 'loop') return base;
+  if (requested === 'drive') return { ...base, pattern: 'drive', params: { ...(base.params ?? {}), ...SFV1_DRIVE_PARAMS } };
+  return { ...base, pattern: requested };
+}
+
+/** A grammar by name, as the competition's rows say it. */
+export function grammarName(requested: string): string {
+  if (requested === 'drive') return DRIVE_PATTERN;
+  if (requested === 'townhome') return 'townhomes';
+  return `${requested} grammar`;
+}
 
 export const SFV1_ID_PREFIX = 'sfv1-';
 
@@ -359,6 +401,8 @@ export interface SfV1Summary {
   /** fill-depth colouring applied to the pads (per-pad fill from the DEM) */
   fillView: boolean;
   streetGrade: { maxPct: number | null; limitPct: number | null; ftOverLimit: number | null } | null;
+  /** the shared private drive (pattern 'shared private drive'): its easement and lane, measured off the drawing, and the lot cap */
+  privateDrive: { easementFt: number | null; laneFt: number | null; lengthFt: number | null; maxLots: number | null } | null;
   ms: number | null;
   generatorVersion: string | null;
   basisLine: string;
@@ -376,6 +420,23 @@ function to3857(p: Polygon): Polygon | null {
 }
 function polys3857(wkt: string | null | undefined): Polygon[] {
   return wktPolygons(wkt).map(to3857).filter((p): p is Polygon => p != null);
+}
+/** Area of an EPSG:2274 (US ft) WKT in square feet: outer rings less their holes. */
+function areaSf2274(wkt: string | null | undefined): number {
+  const ring = (r: Position[]) => {
+    let a = 0;
+    for (let i = 0; i < r.length - 1; i++) a += r[i]![0]! * r[i + 1]![1]! - r[i + 1]![0]! * r[i]![1]!;
+    return Math.abs(a) / 2;
+  };
+  return wktPolygons(wkt).reduce((sum, p) => sum + p.coordinates.reduce((s, r, k) => s + (k === 0 ? ring(r) : -ring(r)), 0), 0);
+}
+/** Length of an EPSG:2274 WKT line in feet. */
+function lengthFt2274(wkt: string | null | undefined): number {
+  return wktLines(wkt).reduce((sum, l) => {
+    let L = 0;
+    for (let i = 1; i < l.coordinates.length; i++) L += Math.hypot(l.coordinates[i]![0]! - l.coordinates[i - 1]![0]!, l.coordinates[i]![1]! - l.coordinates[i - 1]![1]!);
+    return sum + L;
+  }, 0);
 }
 /** A path drawn as a thin band: each segment of the EPSG:2274 line becomes a
  *  quad ~8 ft wide in the canvas frame, unioned into one piece per line. */
@@ -486,15 +547,28 @@ export function sfV1ToElements(
   const hasFlood = earthworkHasFlood(earthwork);
   const perPadFill = opts.padFillFt ?? padFillByLot(earthwork);
   const basis: SfV1Basis = opts.overrideRequested || resp.basis === 'override' ? 'override' : 'by_right';
+  // The shared private drive (engine g13): the band is an access easement and
+  // the pavement a private lane, not a public street — measured off the
+  // drawing (area over centreline length), so the label follows the engine.
+  const drivePlan = isDrivePattern(str(resp.pattern));
+  const driveLenFt = drivePlan ? lengthFt2274(resp.street_lines_wkt) : 0;
+  const privateDrive = drivePlan
+    ? {
+        easementFt: driveLenFt > 0 ? Math.round(areaSf2274(resp.row_wkt) / driveLenFt) || null : null,
+        laneFt: driveLenFt > 0 ? Math.round(areaSf2274(resp.pave_wkt) / driveLenFt) || null : null,
+        lengthFt: driveLenFt > 0 ? Math.round(driveLenFt) : num(m.street_ft),
+        maxLots: num(tests.find(t => t.id === 'access.private_drive_max_lots')?.limit),
+      }
+    : null;
 
   // Right-of-way: the band, drawn like a lot line so the pavement reads on top of it.
   polys3857(resp.row_wkt).forEach((poly, i) => {
     elements.push({
       id: `${SFV1_ID_PREFIX}row-${i + 1}`,
       type: 'other',
-      name: 'Right-of-way',
+      name: drivePlan ? 'Access easement' : 'Right-of-way',
       geometry: poly,
-      properties: props({ kind: 'row', styleOverride: true, color: '#E2E8F0', opacity: 0.6, strokeColor: '#CBD5E1' }),
+      properties: props({ kind: drivePlan ? 'easement' : 'row', styleOverride: true, color: '#E2E8F0', opacity: 0.6, strokeColor: '#CBD5E1' }),
       metadata: meta,
     });
   });
@@ -511,11 +585,15 @@ export function sfV1ToElements(
     elements.push({
       id: `${SFV1_ID_PREFIX}street-${i + 1}`,
       type: 'circulation',
-      name: pattern === 'frontage lots, no new street' ? 'Existing street frontage' : 'Street',
+      name: pattern === 'frontage lots, no new street' ? 'Existing street frontage' : drivePlan ? 'Shared private drive' : 'Street',
       geometry: piece as unknown as Polygon,
       properties: props({
         kind: 'through',
         pattern: pattern ?? undefined,
+        // the sheet labels it an access easement, not a public right-of-way
+        privateDrive: drivePlan || undefined,
+        easementFt: privateDrive?.easementFt ?? undefined,
+        laneFt: privateDrive?.laneFt ?? undefined,
         // EPSG:2274 centrelines travel with the street for stationing and the profile
         centerline2274: centerlines[i],
         extraCenterlines2274: i === 0 && centerlines.length > pavePieces.length ? centerlines.slice(pavePieces.length) : undefined,
@@ -762,6 +840,7 @@ export function sfV1ToElements(
     hasFlood,
     fillView,
     streetGrade: sg ? { maxPct: num(sg.max_pct), limitPct: num(sg.limit_pct), ftOverLimit: num(sg.ft_over_limit) } : null,
+    privateDrive,
     ms: num(resp.ms),
     generatorVersion: str(resp.generator_version) ?? 'sf_v1',
     basisLine: '',
@@ -777,11 +856,22 @@ export function sfV1SummaryLine(s: SfV1Summary): string {
   if (s.lots === 0) return `0 lots ${basis}${s.reason ? ` — ${s.reason}` : ''} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
   const module = s.lotWFt != null && s.lotDFt != null ? ` @ ${s.lotWFt} × ${s.lotDFt} ft` : '';
   const dens = s.densityDuAc != null ? ` · ${s.densityDuAc} du/ac gross` : '';
-  const land = s.rowPct != null && s.lotPct != null ? ` · ${s.rowPct}% ROW / ${s.lotPct}% lots${s.openPct != null ? ` / ${s.openPct}% open` : ''}` : '';
+  const land = s.rowPct != null && s.lotPct != null ? ` · ${s.rowPct}% ${isDrivePattern(s.pattern) ? 'easement' : 'ROW'} / ${s.lotPct}% lots${s.openPct != null ? ` / ${s.openPct}% open` : ''}` : '';
   const flood = s.floodHold ? ` · flood hold: ${s.floodHold}` : '';
   const passed = s.tests.filter(t => t.pass === true).length;
   const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : passed > 0 ? ` · ${passed} tests pass` : '';
   return `${s.lots} lot${s.lots === 1 ? '' : 's'}${module} ${basis}${patternPhrase(s.pattern)}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
+}
+
+/** "The lots share a private drive (857 ft long, a 16-ft lane in a 24-ft access easement) off the existing street: …" */
+export function privateDriveSentence(pd: NonNullable<SfV1Summary['privateDrive']>): string {
+  const len = pd.lengthFt != null ? `${pd.lengthFt.toLocaleString()} ft long` : null;
+  const band = pd.laneFt != null && pd.easementFt != null
+    ? `a ${pd.laneFt}-ft lane in a ${pd.easementFt}-ft access easement`
+    : pd.laneFt != null ? `a ${pd.laneFt}-ft lane` : pd.easementFt != null ? `a ${pd.easementFt}-ft access easement` : null;
+  const inner = [len, band].filter(Boolean).join(', ');
+  return `The lots share a private drive${inner ? ` (${inner})` : ''} off the existing street: no new public street to build or dedicate.`
+    + (pd.maxLots != null ? ` A shared drive may serve at most ${pd.maxLots} lots here.` : '');
 }
 
 /** The drawn pattern as a phrase after "N lots by right": "on a loop", "on two loops", "as frontage lots (no new street)". */
@@ -789,6 +879,7 @@ export function patternPhrase(pattern: string | null | undefined): string {
   const p = (pattern ?? '').trim();
   if (!p) return '';
   if (/^frontage lots/i.test(p)) return ' as frontage lots (no new street)';
+  if (isDrivePattern(p)) return ' on a shared private drive (no new public street)';
   if (/^2 loops$/i.test(p)) return ' on two loops';
   if (/^grid$/i.test(p)) return ' on a street grid';
   if (/^neighbou?rhood$/i.test(p)) return ' as a neighborhood plan';
@@ -823,6 +914,8 @@ export interface SfV1Site {
   heldAcres: number | null;
   siteAcres: number | null;
   floodHold: string | null;
+  /** engine g13: on a skipped parcel the site still returns its hold, and why it skipped */
+  reason?: string | null;
 }
 export async function fetchSfV1Site(ogcFid: number, flood: string | null | undefined): Promise<SfV1Site | null> {
   try {
@@ -836,6 +929,7 @@ export async function fetchSfV1Site(ogcFid: number, flood: string | null | undef
       heldAcres: num(d.held_acres),
       siteAcres: num(d.site_acres),
       floodHold: str(d.flood_hold),
+      reason: str(d.reason),
     };
   } catch {
     return null;
@@ -936,6 +1030,8 @@ export interface SfV1CandidatesResponse {
   /** attached homes (townhomes) where the district permits them, capped by density */
   homes_allowed_by_density?: number | null;
   attached_permitted?: boolean | null;
+  /** engine g13: why no pattern drew a lot, " | "-separated ("no lot of 40000 sf … fits … | 25.0 ac steeper than 25% held out as hillside …") */
+  why?: string | null;
   [k: string]: unknown;
 }
 
@@ -953,6 +1049,8 @@ export interface SfV1CompetitionRow {
   fellBack: boolean;
   status: string;
   error: string | null;
+  /** a grammar that ran and found no lot ("no lot of 40000 sf … fits …"): a reason, not an error */
+  nothingDrawn: string | null;
   lots: number;
   streetFt: number | null;
   lotsPer100Ft: number | null;
@@ -994,9 +1092,19 @@ export interface SfV1Competition {
   bestCodeFails: string[];
   homesAllowedByDensity: number | null;
   attachedPermitted: boolean | null;
+  /** engine g13: why no pattern drew a lot, one reason per line */
+  why: string[];
 }
 
 const lotsWord = (n: number) => `${n} lot${n === 1 ? '' : 's'}`;
+
+/** "the grid, the neighborhood, the loop grammar and the shared private drive" */
+function grammarList(requested: string[]): string {
+  const names = requested.map(r =>
+    r === 'grid' ? 'the grid' : r === 'neighborhood' ? 'the neighborhood' : r === 'loop' ? 'the loop grammar' : `the ${grammarName(r)}`);
+  if (names.length <= 1) return names[0] ?? 'every grammar';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
 const homesWord = (n: number) => `${n} home${n === 1 ? '' : 's'}`;
 const testsWord = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
 
@@ -1011,8 +1119,14 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
     const pattern = str(c?.pattern);
     const lots = num(c?.lots) ?? 0;
     const cstatus = str(c?.status) ?? 'done';
-    const fellBack = pattern != null && (requested === 'grid' || requested === 'neighborhood') && pattern !== requested;
-    const label = pattern ?? (cstatus === 'done' ? `${requested} grammar: nothing drawn` : `${requested} grammar: ${cstatus}`);
+    const fellBack = pattern != null && (
+      ((requested === 'grid' || requested === 'neighborhood') && pattern !== requested)
+      || (requested === 'drive' && !isDrivePattern(pattern)));
+    // a grammar that ran and found no lot is not an error (the drive row on
+    // 0 Dry Fork Rd: "failed — no lot of 40000 sf … fits")
+    const err = str(c?.error);
+    const nothingDrawn = lots === 0 && err != null && /^no lots?\b/i.test(err) ? err : null;
+    const label = pattern ?? (cstatus === 'done' || nothingDrawn ? `${grammarName(requested)}: nothing drawn` : `${grammarName(requested)}: ${cstatus}`);
     const score = c?.score && typeof c.score === 'object' ? c.score : null;
     const criteria = score
       ? Object.entries(score)
@@ -1020,7 +1134,7 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
           .map(([k, v]) => ({ name: k.replace(/_/g, ' '), score: num((v as Record<string, unknown>).score) }))
       : [];
     return {
-      requested, pattern, label, fellBack, status: cstatus, error: str(c?.error), lots,
+      requested, pattern, label, fellBack, status: cstatus, error: nothingDrawn ? null : err, nothingDrawn, lots,
       streetFt: num(c?.street_ft), lotsPer100Ft: num(c?.lots_per_100ft), openPct: num(c?.open_pct), connections: num(c?.connections),
       fails: strings(c?.fails), notes: strings(c?.notes),
       score: num(score?.total) ?? num(resp.scores?.[requested]),
@@ -1044,7 +1158,7 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
   let sentence: string;
   if (status !== 'done') sentence = `No competition: ${str(resp.reason) ?? str(resp.error) ?? status}.`;
   else if (rows.length === 0) sentence = 'The engine returned no candidates.';
-  else if (allZero) sentence = 'No pattern fits a lot here: the grid, the neighborhood and the loop grammar all draw 0.';
+  else if (allZero) sentence = `No pattern fits a lot here: ${grammarList(rows.filter(r => r.product !== 'attached').map(r => r.requested))} all draw 0.`;
   else if (!structured || structured.status !== 'done') sentence = `No structured plan: ${structured?.error ?? 'the neighborhood grammar did not run'}.`;
   else if (best && best === structured) sentence = `The structured plan is also the best plan: ${lotsWord(structured.lots)}, ${testsWord(codeFails(structured.fails).length)} of the code failed.`;
   // the townhome candidate counts homes, not lots (multifamily land, 2026-11-04)
@@ -1059,10 +1173,10 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
   // grade limit, and the ranking is between plans the ground does not allow.
   const drawnRows = done.filter(r => r.lots > 0);
   if (drawnRows.length > 1 && drawnRows.every(r => r.fails.includes('street.grade_max'))) {
-    sentence = `Every pattern's streets fail the grade limit here, so none is buildable as drawn; the engine does not lay out by slope yet. ${sentence}`;
+    sentence = `Every pattern's streets fail the grade limit here, so none is buildable as drawn; the engine does not lay streets out by grade yet. ${sentence}`;
   } else if (drawnRows.length === 1 && drawnRows[0]!.fails.includes('street.grade_max')) {
     // 0 Neelys Bend Rd: one pattern draws lots at all, and its streets fail the grade
-    sentence = `The only pattern that draws lots here fails the street grade, so it is not buildable as drawn; the engine does not lay out by slope yet. ${sentence}`;
+    sentence = `The only pattern that draws lots here fails the street grade, so it is not buildable as drawn; the engine does not lay streets out by grade yet. ${sentence}`;
   }
   const bestRow = rows.find(r => r.isBest) ?? null;
   return {
@@ -1074,22 +1188,96 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
     bestCodeFails: Array.isArray(resp.best_code_fails) ? strings(resp.best_code_fails) : bestRow ? codeFails(bestRow.fails) : [],
     homesAllowedByDensity: num(resp.homes_allowed_by_density),
     attachedPermitted: typeof resp.attached_permitted === 'boolean' ? resp.attached_permitted : null,
+    why: whyLines(resp.why),
   };
 }
 
-/** May the competition's best go on the sheet in place of a default that drew nothing?
- *  Only a plan the engine calls buildable (no code fails) with a real subdivision
- *  (two lots or more) that the client can draw (not the townhome engine's metrics). */
-export function autoBestEligible(resp: SfV1CandidatesResponse | null | undefined): string | null {
+/** The engine's `why` (" | "-separated) as lines, without the grammar's own settings ("grid: 2 local streets 920 ft apart …"). */
+export function whyLines(why: unknown): string[] {
+  const s = str(why);
+  if (!s) return [];
+  const setting = /^(grid|neighbou?rhood|loop|drive):\s/i;
+  return s.split(' | ')
+    // the grammar's settings also ride on the end of a reason ("…against the limit); grid: 2 local streets 920 ft apart")
+    .map(x => x.replace(/;\s*(grid|neighbou?rhood|loop|drive):\s.*$/i, '').trim())
+    .filter(x => x.length > 0 && !setting.test(x));
+}
+
+/** Why the competition's best plan is on the sheet in place of the default (loop) answer. */
+export interface SfV1AutoBest {
+  /** the grammar on the sheet */
+  requested: string;
+  /** default_empty: the default drew no lots · same_lots: the same lots, a better plan · more_lots: more lots, and buildable */
+  why: 'default_empty' | 'same_lots' | 'more_lots';
+  defaultLots: number;
+  bestLots: number;
+  defaultStreetFt: number | null;
+  bestStreetFt: number | null;
+  /** every failed test, code and quality alike (the engine's tie-break counts flags) */
+  defaultFails: number;
+  bestFails: number;
+}
+
+/**
+ * Does the competition's best plan take the sheet from the default (loop)
+ * answer? The engine's rule (g13, 2026-11-06): sheet the best when it is
+ * buildable and draws at least the default's lots, or when it draws the same
+ * lots (the engine ranks equal lots by fewer flags, then less street: 0 Union
+ * Hill Rd, 3 lots on 384 ft of street against the loop's 699 ft); keep the
+ * default whenever it draws strictly more. Never a one-lot "best" (the lot of
+ * record, not a subdivision) and never a plan the client cannot draw (the
+ * townhome engine's candidate carries metrics only).
+ */
+export function chooseAutoBest(
+  resp: SfV1CandidatesResponse | null | undefined,
+  def: SfV1Response | null | undefined,
+): SfV1AutoBest | null {
   if (!resp || !resp.best || typeof resp.best_requested !== 'string' || resp.best_requested === 'loop') return null;
   const best = resp.best as Record<string, unknown>;
   if (typeof best.full_plan_call === 'string' || best.product === 'attached') return null;
-  const lots = typeof best.lots === 'number' ? best.lots : 0;
-  if (lots < 2) return null;
+  if (!def || (def.status != null && def.status !== 'done') || def.error) return null;
+  const bestLots = num(best.lots) ?? 0;
+  const defaultLots = num(def.lots) ?? 0;
+  if (bestLots < 2 || defaultLots > bestLots) return null;
   const buildable = typeof resp.best_buildable === 'boolean'
     ? resp.best_buildable
     : codeFails(strings(best.fails)).length === 0;
-  return buildable ? resp.best_requested : null;
+  const same = bestLots === defaultLots;
+  if (!buildable && !same) return null;
+  const failsOf = (p: Record<string, unknown>) => {
+    const f = strings(p.fails);
+    if (f.length > 0) return f.length;
+    return normalizeTests(p.tests).filter(t => t.pass === false).length;
+  };
+  const metricsOf = (p: Record<string, unknown>) => (p.metrics && typeof p.metrics === 'object' ? (p.metrics as Record<string, unknown>) : {});
+  return {
+    requested: resp.best_requested,
+    why: defaultLots === 0 ? 'default_empty' : same ? 'same_lots' : 'more_lots',
+    defaultLots,
+    bestLots,
+    defaultStreetFt: num(metricsOf(def as Record<string, unknown>).street_ft),
+    bestStreetFt: num(metricsOf(best).street_ft),
+    defaultFails: failsOf(def as Record<string, unknown>),
+    bestFails: failsOf(best),
+  };
+}
+
+/** The panel's sentence for a best plan on the sheet in place of the default. */
+export function autoBestSentence(a: SfV1AutoBest): string {
+  const name = a.requested === 'drive' ? 'shared private drive' : `${a.requested} grammar`;
+  if (a.why === 'default_empty') {
+    return `The default (loop) grammar draws no lots here, so the sheet shows the competition's best plan, the ${name}. It is still by right.`;
+  }
+  if (a.why === 'same_lots') {
+    const parts: string[] = [];
+    if (a.bestStreetFt != null && a.defaultStreetFt != null && a.bestStreetFt < a.defaultStreetFt) {
+      parts.push(`on ${Math.round(a.bestStreetFt).toLocaleString()} ft of new ${a.requested === 'drive' ? 'private drive' : 'street'} against ${Math.round(a.defaultStreetFt).toLocaleString()} ft`);
+    }
+    if (a.bestFails < a.defaultFails) parts.push(`failing ${a.bestFails === 0 ? 'no test' : testsWord(a.bestFails)} to its ${a.defaultFails}`);
+    const how = parts.length > 0 ? ` ${parts.join(', ')}` : '';
+    return `The ${name} draws the same ${lotsWord(a.bestLots)} as the default (loop) grammar${how}, so the sheet shows it. It is still by right.`;
+  }
+  return `The ${name} draws ${lotsWord(a.bestLots)} to the default (loop) grammar's ${a.defaultLots} and fails no code test, so the sheet shows it. It is still by right.`;
 }
 
 /** A server error in the words a user can act on (the anon role's 20-s timeout above all). */
