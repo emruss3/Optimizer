@@ -1399,7 +1399,7 @@ The connector came back. The five items above, closed:
    with the generator.
 2. **Access.** As `anon`, `fn_sf_v1_plan` fails inside `fn_th_v3_site` with
    "permission denied for function fn_site_inputs" (the th_v3 helpers are
-   postgres / service_role only). Migration `20261103100000_sf_v1_app_access`
+   postgres / service_role only). Migration `20261103184636_sf_v1_app_access`
    adds four SECURITY DEFINER wrappers the app calls instead:
    `fn_sf_v1_plan_app(ogc_fid, opt)`, `fn_sf_v1_site_app(ogc_fid, flood)`
    (the no-build / hold / site layers only), `fn_sf_v1_pad_fill(ogc_fid,
@@ -1518,7 +1518,7 @@ handoff's lot counts are stale (Bowfield is 35 lots by right today, Martingale's
 fill scenario 147).
 
 In the client: the competition runs after the plan is on the sheet, through
-`fn_sf_v1_candidates_app` (migration 20261104100000), cached per parcel. It
+`fn_sf_v1_candidates_app` (migration 20261104000741), cached per parcel. It
 shows each pattern by what it drew, best and structured, the price of the
 structure in a sentence, and "View this plan". Pattern and `module_by_right`
 are not overrides. The flood hold, trail, green strip and reserve are drawn. The
@@ -1615,7 +1615,7 @@ drawn from the list under it.
 The townhome candidate carries metrics only; its drawing is its
 `full_plan_call`, `fn_generate_th_site_plan_v3(ogc_fid, 'aor')`, now reached
 through `fn_generate_th_site_plan_v3_app` (SECURITY DEFINER, as of right only,
-budget clamped to 15 s, migration 20261104120000). The client draws its homes
+budget clamped to 15 s, migration 20261104224850). The client draws its homes
 as attached party-wall dwellings (20 × 40-ft footprints; no unit mix, no floor
 area, since the engine plans neither; the 3D view assumes three stories), the
 alleys, courtyards, guest pockets, stormwater and held-out land. A v2 townhome

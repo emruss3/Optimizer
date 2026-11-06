@@ -12,7 +12,7 @@
 --
 -- Like fn_sf_v1_plan it calls helpers the anon role is not granted
 -- (fn_site_inputs, the fn_th_v3_* family), so the app reaches it through this
--- SECURITY DEFINER wrapper, as it does the plan (20261103100000): owned by
+-- SECURITY DEFINER wrapper, as it does the plan (20261103184636): owned by
 -- postgres, search_path pinned, nothing else widened.
 --
 -- Timing: three plan runs, 3–5 s on 10–25 ac with the DEM cached; a heavy

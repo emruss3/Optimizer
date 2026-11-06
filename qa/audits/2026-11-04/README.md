@@ -307,7 +307,7 @@ twice the anon timeout; once the DEM was cached, 0.4 s; the competition 1.8 s.
 
 The handoff items:
 - **The pattern competition** (`fn_sf_v1_candidates`, through a new SECURITY
-  DEFINER wrapper, `fn_sf_v1_candidates_app`, migration 20261104100000). It runs
+  DEFINER wrapper, `fn_sf_v1_candidates_app`, migration 20261104000741). It runs
   after the by-right plan is on the sheet, never in front of it, cached per
   parcel and option set. The panel lists each pattern by what it **drew** (a
   grammar that fell back says so), with lots, street, lots per 100 ft, open
