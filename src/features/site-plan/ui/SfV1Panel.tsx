@@ -111,7 +111,8 @@ export function SfV1Panel({
 }: {
   summary: SfV1Summary;
   override: SfV1Options;
-  onOverride: (opt: SfV1Options) => void;
+  /** absent on multifamily land (the layout choice): the overrides re-run the by-right lot fit, which routes there to the townhome engine */
+  onOverride?: ((opt: SfV1Options) => void) | undefined;
   busy?: boolean;
   /** 0 new lots (or skipped): the parcel is itself a lot — draw the one house it carries (the single-family seed) */
   onDrawHouse?: () => void;
@@ -174,7 +175,7 @@ export function SfV1Panel({
     if (lotW && Number.isFinite(w) && w > 0) next.lot_w_ft = w; else delete next.lot_w_ft;
     if (lotD && Number.isFinite(d) && d > 0) next.lot_d_ft = d; else delete next.lot_d_ft;
     if (minSf && Number.isFinite(s) && s > 0) next.min_lot_sf = s; else delete next.min_lot_sf;
-    onOverride(next);
+    onOverride?.(next);
   };
 
   return (
@@ -518,7 +519,7 @@ export function SfV1Panel({
 
       {/* A skipped parcel (landlocked) is not fixed by a lot module or a fill
           scenario: no controls that cannot help, only the way back. */}
-      {summary.status === 'skipped' ? ((overridden || floodSkip) ? (
+      {!onOverride ? null : summary.status === 'skipped' ? ((overridden || floodSkip) ? (
         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2">
           {floodSkip && !fillScenario && (
             <button
@@ -527,7 +528,7 @@ export function SfV1Panel({
               aria-pressed={false}
               disabled={busy}
               title="Fill scenario: hold out only the regulatory floodway and fill the rest of the floodplain to the pad target"
-              onClick={() => onOverride({ ...override, flood: 'floodway' })}
+              onClick={() => onOverride?.({ ...override, flood: 'floodway' })}
               className="rounded-md border border-amber-500 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60"
             >
               Try the fill scenario (floodway only) — an override
@@ -538,7 +539,7 @@ export function SfV1Panel({
               type="button"
               data-testid="sfv1-override-reset"
               disabled={busy}
-              onClick={() => { setLotW(''); setLotD(''); setMinSf(''); onOverride({}); }}
+              onClick={() => { setLotW(''); setLotD(''); setMinSf(''); onOverride?.({}); }}
               className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               By right
@@ -592,7 +593,7 @@ export function SfV1Panel({
             onClick={() => {
               const next: SfV1Options = { ...override };
               if (fillScenario) delete next.flood; else next.flood = 'floodway';
-              onOverride(next);
+              onOverride?.(next);
             }}
             className={
               'rounded-md border px-2 py-1 text-[11px] font-medium disabled:opacity-60 ' +
@@ -606,7 +607,7 @@ export function SfV1Panel({
             type="button"
             data-testid="sfv1-override-reset"
             disabled={busy || !overridden}
-            onClick={() => { setLotW(''); setLotD(''); setMinSf(''); onOverride({}); }}
+            onClick={() => { setLotW(''); setLotD(''); setMinSf(''); onOverride?.({}); }}
             className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
             By right

@@ -13,7 +13,17 @@
     "requireTopo": true,
     "_topo": "2026-09-04 civil sheet: the DEM layer must load on a massing parcel too (873 samples, 45 contours, 417.5-440.1 ft); no street to profile here.",
     "requireAccess": true,
-    "_access": "2026-09-09 aisle-first: 126/126 stalls in 3 rows — an L from the curb to the ring, two aisles up the strip with rows back to back between them (a 60-ft module), cut square at 627 ft from the entry; capture 96.5 unchanged."
+    "_access": "2026-09-09 aisle-first: 126/126 stalls in 3 rows — an L from the curb to the ring, two aisles up the strip with rows back to back between them (a 60-ft module), cut square at 627 ft from the entry; capture 96.5 unchanged.",
+    "requireLayout": {
+      "_basis": "2026-11-04 apartments 73 homes against 16 townhomes (th_v3, density allows 110): apartments stay.",
+      "defaultKind": "multifamily",
+      "shown": "multifamily",
+      "auto": false,
+      "multifamilyHomes": 73,
+      "neighborhoodHomes": 16,
+      "neighborhoodRequested": "townhome",
+      "densityCap": 110
+    }
   },
   "488278": {
     "mode": "server-plan",
@@ -26,7 +36,17 @@
     },
     "requirePlanPattern": "bar_on_frontage_rear_field",
     "requireAccess": true,
-    "_access": "2026-09-04: lane on the right, 100% capture kept, 66 stalls in 3 bays each reached (three drive pieces: the lane and two connectors). 2026-09-09 aisle-first: 52/52 stalls (the placed need, not the 61 of the max buildout) in 4 rows off one connected network — an L from the curb to the ring, a row beside the flank, a double-loaded aisle across the rear."
+    "_access": "2026-09-04: lane on the right, 100% capture kept, 66 stalls in 3 bays each reached (three drive pieces: the lane and two connectors). 2026-09-09 aisle-first: 52/52 stalls (the placed need, not the 61 of the max buildout) in 4 rows off one connected network — an L from the curb to the ring, a row beside the flank, a double-loaded aisle across the rear.",
+    "requireLayout": {
+      "_basis": "2026-11-04 apartments 30 homes against 24 townhomes on a mews (th_v3, density allows 35): apartments stay.",
+      "defaultKind": "multifamily",
+      "shown": "multifamily",
+      "auto": false,
+      "multifamilyHomes": 30,
+      "neighborhoodHomes": 24,
+      "neighborhoodRequested": "townhome",
+      "densityCap": 35
+    }
   },
   "667574": {
     "mode": "server-plan",
@@ -39,7 +59,19 @@
     },
     "requirePlanPattern": "court_scheme_perpendicular_bars",
     "requireAccess": true,
-    "_access": "2026-09-04: lane on the left (fit 0.93), 158285 GSF / 100.1% (the placer recovered the lost bar length in depth), 171 stalls in 4 side rows, all reached from one connected network (requireAccess). 2026-09-09 aisle-first: 154/154 stalls in 9 rows — the entry drive straight in from the curb, a ring on three sides, a rear cross-aisle with three double-loaded aisles off it, every row square to the building."
+    "_access": "2026-09-04: lane on the left (fit 0.93), 158285 GSF / 100.1% (the placer recovered the lost bar length in depth), 171 stalls in 4 side rows, all reached from one connected network (requireAccess). 2026-09-09 aisle-first: 154/154 stalls in 9 rows — the entry drive straight in from the curb, a ring on three sides, a rear cross-aisle with three double-loaded aisles off it, every row square to the building.",
+    "requireLayout": {
+      "_basis": "2026-11-04 the layout choice (the owner: multifamily by default where it makes more sense, with an option to switch to a neighborhood layout). Apartments 89 homes against the neighborhood's best, 32 townhomes on a mews (th_v3, density allows 129): apartments stay; the switch draws the 32 townhomes and comes back.",
+      "defaultKind": "multifamily",
+      "shown": "multifamily",
+      "auto": false,
+      "multifamilyHomes": 89,
+      "neighborhoodHomes": 32,
+      "neighborhoodRequested": "townhome",
+      "densityCap": 129,
+      "switchAndBack": true,
+      "switchHomesDrawn": 32
+    }
   },
   "669046": {
     "mode": "server-plan",
@@ -52,7 +84,19 @@
     },
     "requireAccess": true,
     "_access": "2026-09-09 aisle-first: the entry drive runs straight down the flag pole to a 24-ft loop round the bar, then two double-loaded aisles south of it (four rows, cut square at 667 ft from the easement), 99 stalls in 6 rows, one connected network.",
-    "requirePlanPattern": "landlocked_axis_bar"
+    "requirePlanPattern": "landlocked_axis_bar",
+    "requireLayout": {
+      "_basis": "2026-11-04 apartments 57 homes against the neighborhood's best, 12 frontage house lots (the loop grammar; the townhome engine's 19 fail alley.street_to_street and home.front_addresses_public_space, density allows 94): apartments stay; the switch draws the 12 lots and comes back.",
+      "defaultKind": "multifamily",
+      "shown": "multifamily",
+      "auto": false,
+      "multifamilyHomes": 57,
+      "neighborhoodHomes": 12,
+      "neighborhoodRequested": "loop",
+      "densityCap": 94,
+      "switchAndBack": true,
+      "switchHomesDrawn": 12
+    }
   },
   "469303": {
     "mode": "server-plan",
@@ -164,5 +208,20 @@
       "buildings": true
     },
     "_neighbors": "2026-09-09 (Eric: 'missing the context of the neighboring lots'): fn_planner_neighbors measured from the centroid, which on this 2,381-ft strip sits 546 ft from the nearest neighbouring centroid — the layer came back empty. Measured from the parcel boundary it carries 90 parcels and 76 buildings within 500 ft; the render must show them."
+  },
+  "660125": {
+    "mode": "server-plan",
+    "_basis": "5525 Mt View Rd (RM15, 2.14 ac) - 2026-11-04 the layout choice: the apartment plan (seed_v2) places 24 units; the neighborhood's best, the townhome engine's mews, places 27 townhomes with every required test passing (density allows 32). More homes, buildable, drawable: the neighborhood takes the sheet by itself, and the panel offers the apartments back.",
+    "requireLayout": {
+      "defaultKind": "neighborhood",
+      "shown": "neighborhood",
+      "auto": true,
+      "multifamilyHomes": 24,
+      "neighborhoodHomes": 27,
+      "neighborhoodRequested": "townhome",
+      "densityCap": 32,
+      "homesDrawn": 27,
+      "switchAndBack": true
+    }
   }
 }

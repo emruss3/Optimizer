@@ -48,7 +48,11 @@ const KpiStrip: React.FC<{
   /** A by-right subdivision is on the sheet: its numbers are lots and du/ac and
    *  its verdict is its own tests — not stalls, not "0 issues" over a plan that
    *  admits a failed test (three audit rounds, 2026-11-03/04). */
-  subdivision?: { lots: number; densityDuAc: number | null; fails: string[]; status: string } | null;
+  subdivision?: {
+    lots: number; densityDuAc: number | null; fails: string[]; status: string;
+    /** what the count is ('Lots' by default; 'Townhomes' for the townhome engine's plan) */
+    label?: string; densityLabel?: string;
+  } | null;
 }> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null }) => {
   if (!metrics) {
     return (
@@ -65,8 +69,8 @@ const KpiStrip: React.FC<{
       : { tone: 'bg-green-50 text-green-700', text: 'All tests pass', ok: true };
     return (
       <div data-testid="kpi-subdivision" className="flex items-center gap-5 overflow-x-auto">
-        <Stat label="Lots" value={`${subdivision.lots}`} />
-        {subdivision.densityDuAc != null && subdivision.lots > 0 && <Stat label="du / ac" value={`${subdivision.densityDuAc}`} />}
+        <Stat label={subdivision.label ?? 'Lots'} value={`${subdivision.lots}`} />
+        {subdivision.densityDuAc != null && subdivision.lots > 0 && <Stat label={subdivision.densityLabel ?? 'du / ac'} value={`${subdivision.densityDuAc}`} />}
         {(metrics.openSpacePct ?? 0) > 0 && <Stat label="Open" value={`${metrics.openSpacePct.toFixed(0)}%`} />}
         <div
           data-testid="kpi-subdivision-verdict"

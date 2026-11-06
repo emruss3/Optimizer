@@ -67,4 +67,11 @@ describe('KpiStrip — a by-right subdivision on the sheet', () => {
     rerender(<KpiStrip metrics={sub} investment={null} subdivision={{ lots: 0, densityDuAc: null, fails: [], status: 'done' }} />);
     expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('No new lots by right');
   });
+
+  it('the townhome engine\'s plan counts townhomes and homes per acre (multifamily land, 2026-11-04)', () => {
+    const th = { ...base, totalUnits: 27, openSpacePct: 41, zoningCompliant: true } as SiteMetrics;
+    render(<KpiStrip metrics={th} investment={null} subdivision={{ lots: 27, densityDuAc: 12.7, fails: [], status: 'done', label: 'Townhomes', densityLabel: 'homes / ac' }} />);
+    expect(screen.getByTestId('kpi-subdivision').textContent).toContain('Townhomes27');
+    expect(screen.getByTestId('kpi-subdivision').textContent).toContain('homes / ac12.7');
+  });
 });

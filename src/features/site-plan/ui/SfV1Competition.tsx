@@ -40,7 +40,7 @@ function Badges({ row }: { row: SfV1CompetitionRow }) {
 }
 
 export function SfV1CompetitionBlock({
-  competition, shownRequested, onView, onRetry, busy,
+  competition, shownRequested, onView, onRetry, busy, title,
 }: {
   competition: SfV1CompetitionState;
   /** the grammar whose plan is on the sheet ('loop' = the default by-right answer) */
@@ -48,6 +48,8 @@ export function SfV1CompetitionBlock({
   onView?: (requested: string) => void;
   onRetry?: () => void;
   busy?: boolean;
+  /** the heading (the layout choice on multifamily land names the block for what it holds) */
+  title?: string;
 }) {
   const [showScores, setShowScores] = useState(false);
   const data = competition.data;
@@ -60,7 +62,7 @@ export function SfV1CompetitionBlock({
       className="mt-2 rounded-md border border-indigo-200 bg-indigo-50/40 p-2"
     >
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-indigo-900">Patterns · best and structured</h4>
+        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-indigo-900">{title ?? 'Patterns · best and structured'}</h4>
         {data?.ms != null && <span className="text-[10px] text-indigo-900/60">{(data.ms / 1000).toFixed(1)} s</span>}
       </div>
 
@@ -145,6 +147,12 @@ export function SfV1CompetitionBlock({
                     <div className="mt-0.5">
                       {onSheet ? (
                         <span data-testid={`sfv1-cand-onsheet-${row.requested}`} className="text-[9.5px] font-medium text-sky-800">on the sheet</span>
+                      ) : row.product === 'attached' && row.engine === 'v3' && row.status === 'done' && row.lots > 0 && onView ? (
+                        // the v3 townhome engine's plan is drawn here (fn_generate_th_site_plan_v3_app)
+                        <button type="button" data-testid={`sfv1-cand-view-${row.requested}`} disabled={busy} onClick={() => onView(row.requested)}
+                          className="text-[9.5px] font-semibold text-indigo-800 underline hover:text-indigo-950 disabled:opacity-60">
+                          View this plan
+                        </button>
                       ) : row.product === 'attached' ? (
                         // the townhome candidate's plan carries metrics only; its drawing is its own engine's
                         <span data-testid={`sfv1-cand-engine-${row.requested}`} className="text-[9.5px] text-slate-500">

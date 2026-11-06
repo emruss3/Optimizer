@@ -78,6 +78,11 @@ vi.mock('./api/sfV1Plan', async importOriginal => ({
   fetchSfV1Site: async () => null,
   fetchSfV1Candidates: () => sfV1CandMock(),
 }));
+const thV3Mock = vi.fn(async (): Promise<{ data: Record<string, unknown> | null; error: string | null }> => ({ data: null, error: 'not in this test' }));
+vi.mock('./api/thV3Plan', async importOriginal => ({
+  ...(await importOriginal<typeof import('./api/thV3Plan')>()),
+  fetchThV3Plan: () => thV3Mock(),
+}));
 vi.mock('./api/plannerFeedback', () => ({
   recordPlannerFeedback: vi.fn(async () => undefined),
 }));
@@ -292,6 +297,7 @@ beforeEach(() => {
   listCandidatesMock.mockResolvedValue([]);
   sfV1PlanMock.mockResolvedValue(null);
   sfV1CandMock.mockResolvedValue({ data: null, error: 'not in this test' });
+  thV3Mock.mockResolvedValue({ data: null, error: 'not in this test' });
   compileMock.mockImplementation(() => new Promise(() => undefined)); // pending unless a test says otherwise
 });
 
@@ -467,6 +473,77 @@ describe('SiteWorkspace: the competition\'s best goes on the sheet when the defa
     await waitFor(() => expect(screen.getByTestId('sfv1-competition-verdict').textContent).toContain('not buildable as drawn'));
     expect(screen.queryByTestId('sfv1-auto-best')).toBeNull();
     expect(screen.getByTestId('sfv1-lots').textContent).toBe('0 lots');
+  });
+});
+
+describe('SiteWorkspace: the layout choice on multifamily land (the owner, 2026-11-04)', () => {
+  // the competition on RM40 land: house-lot patterns and the townhome engine's candidate
+  const cand = (thHomes: number) => ({
+    status: 'done', best_requested: 'townhome', best_lots: thHomes, best_buildable: true, verdict: 'buildable as drawn', best_code_fails: [],
+    homes_allowed_by_density: 129, attached_permitted: true, structured_lots: 10, lots_forgone_for_structure: thHomes - 10,
+    candidates: [
+      { requested: 'grid', pattern: 'grid', status: 'done', lots: 10, fails: ['cost.street_ft_per_lot'] },
+      { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 10, fails: ['cost.street_ft_per_lot'] },
+      { requested: 'loop', pattern: 'frontage lots, no new street', status: 'done', lots: 6, fails: [] },
+      { requested: 'townhome', pattern: 'townhomes (mews)', status: 'done', lots: thHomes, fails: [], product: 'attached', engine: 'v3' },
+    ],
+    best: { status: 'done', lots: thHomes, product: 'attached', engine: 'v3', full_plan_call: "fn_generate_th_site_plan_v3(ogc_fid, 'aor')" },
+  });
+  // the townhome engine's drawing: one footprint per home
+  const thPlan = (homes: number) => ({
+    data: {
+      generator_version: 'th_v3', pattern: 'mews',
+      buildings: Array.from({ length: homes }, (_, i) => ({ geom: square4326(-86.81 + i * 0.0002, 36.14, 0.0001), kind: 'courtyard', w_ft: 20, d_ft: 40 })),
+      metrics: { homes, alleys: 1, street_ft: 0, unit_w_ft: 20, unit_d_ft: 40 }, tests: [], fails: [],
+    },
+    error: null,
+  });
+
+  beforeEach(() => {
+    compileMock.mockImplementation(async (_fid, use) => ctxResp(use, `ctx-${use}`));
+  });
+
+  it('2622 W Heiman: apartments place more homes, so they stay; the neighborhood is one tap away, and back', async () => {
+    sfV1CandMock.mockResolvedValue({ data: cand(32), error: null });
+    thV3Mock.mockResolvedValue(thPlan(3));
+    render(<SiteWorkspace parcel={PARCEL} />);
+    await waitFor(() => expect(screen.getByTestId('layout-choice').getAttribute('data-default')).toBe('multifamily'));
+    expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('multifamily');
+    expect(screen.getByTestId('layout-option-multifamily').textContent).toContain('40 homes');
+    expect(screen.getByTestId('layout-option-neighborhood').textContent).toContain('32 homes');
+    expect(screen.getByTestId('layout-sentence').textContent).toContain('40 apartments against the neighborhood\'s best of 32 townhomes');
+    expect(thV3Mock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('layout-option-neighborhood'));
+    await waitFor(() => expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('neighborhood'));
+    expect(screen.getByTestId('layout-thv3').textContent).toContain('3 townhomes on a mews');
+    expect(screen.queryByTestId('layout-auto')).toBeNull();
+    const before = genV2Mock.mock.calls.length;
+    fireEvent.click(screen.getByTestId('layout-option-multifamily'));
+    await waitFor(() => expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('multifamily'));
+    expect(genV2Mock.mock.calls.length).toBe(before + 1);
+    // the same plan again, not a new saved scheme
+    expect(genV2Mock.mock.calls.at(-1)?.[2]).toMatchObject({ persist: false });
+  });
+
+  it('5525 Mt View Rd: the neighborhood places more homes, so it takes the sheet by itself, with the way back', async () => {
+    sfV1CandMock.mockResolvedValue({ data: cand(44), error: null });
+    thV3Mock.mockResolvedValue(thPlan(44));
+    render(<SiteWorkspace parcel={PARCEL} />);
+    await waitFor(() => expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('neighborhood'));
+    expect(screen.getByTestId('layout-choice').getAttribute('data-default')).toBe('neighborhood');
+    expect(screen.getByTestId('layout-auto').textContent).toContain('places more homes');
+    expect(screen.getByTestId('layout-sentence').textContent).toContain('44 townhomes (mews) against 40 apartments');
+    fireEvent.click(screen.getByTestId('layout-auto-back'));
+    await waitFor(() => expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('multifamily'));
+    expect(screen.queryByTestId('layout-auto')).toBeNull();
+  });
+
+  it('a neighborhood that fails a code test never takes the sheet, however many homes', async () => {
+    sfV1CandMock.mockResolvedValue({ data: { ...cand(60), best_buildable: false, best_code_fails: ['alley.street_to_street'], verdict: 'the best plan fails a code test: not buildable as drawn' }, error: null });
+    render(<SiteWorkspace parcel={PARCEL} />);
+    await waitFor(() => expect(screen.getByTestId('layout-sentence').textContent).toContain('fails a code test'));
+    expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('multifamily');
+    expect(thV3Mock).not.toHaveBeenCalled();
   });
 });
 
