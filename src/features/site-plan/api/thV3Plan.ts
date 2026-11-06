@@ -7,7 +7,7 @@
  * homes, and that candidate carries metrics only: its drawing is the call
  * named in `plan.full_plan_call`, fn_generate_th_site_plan_v3(ogc_fid, 'aor').
  * The app reaches it through fn_generate_th_site_plan_v3_app (SECURITY
- * DEFINER, as of right only, migration 20261104120000).
+ * DEFINER, as of right only, migration 20261104224850).
  *
  * The engine answers with the homes (20 × 40-ft footprints, one polygon per
  * home, attached in rows), the streets and alleys, the right-of-way, the

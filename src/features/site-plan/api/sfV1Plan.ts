@@ -13,7 +13,7 @@
  * `planning_principle`; nothing is parcel-specific.
  *
  * The app reaches it through `fn_sf_v1_plan_app` / `fn_sf_v1_site_app`
- * (SECURITY DEFINER wrappers, migration 20261103100000): the generator's own
+ * (SECURITY DEFINER wrappers, migration 20261103184636): the generator's own
  * helpers are not granted to the anon role.
  *
  * Routing (the owner's standing instruction): by right by default from the

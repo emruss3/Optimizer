@@ -12,7 +12,7 @@
 -- (the competition has usually just run it, so the drawing returns in ~1 s)
 -- and reads helpers the anon role is not granted, so the app reaches it
 -- through this SECURITY DEFINER wrapper, as it does the plan and the
--- competition (20261103100000, 20261104100000): owned by postgres,
+-- competition (20261103184636, 20261104000741): owned by postgres,
 -- search_path pinned, as of right only ('aor'), and the search budget kept
 -- inside the anon role's 20-s statement timeout. A search that has not
 -- finished inside its budget answers with its status and "call again to
