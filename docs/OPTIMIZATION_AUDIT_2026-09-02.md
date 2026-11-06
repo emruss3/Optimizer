@@ -1674,3 +1674,65 @@ choice read them as undrawn, which put 26 lots over 42 apartments on 0 Smith
 Springs Rd. The mapper reads both naming schemes; a drawn plan without a
 count is never treated as failed; building labels share the plan's count
 by GSF; an empty sheet's legend keys no dwellings.
+
+## 28. The engine's g13 reply, and the eleven re-run (2026-11-06)
+
+The engine answered §27's handoff with g13: land steeper than 25% held out as
+hillside, a shared private drive competing on estate districts,
+`access.landlocked` as a code fail, the townhome drawing trimmed to the
+density cap, the hold returned on a flood skip, terrain failures cached and
+reported as unknown, a `why` on the competition, and a suggested rule for the
+app's auto-best. Write-up, re-rank and pictures: `qa/audits/2026-11-06b/`.
+
+The app side:
+
+- Auto-best follows the engine's rule. The competition's best takes the
+  sheet when it is buildable with at least the default's lots, or when it
+  draws the same lots; the default stays whenever it draws strictly more.
+  It is never a one-lot best and never the townhome candidate. The panel
+  names the case (`default_empty`, `same_lots`, `more_lots`) and offers the
+  way back. Example: 0 Union Hill Rd now sheets the neighborhood's 3 lots on
+  384 ft of street, not the loop's 3 on 699 ft.
+- The shared private drive is drawn as an access easement and a private
+  lane. This covers the sheet label, the title block, and the panel's Land
+  and Private drive rows; widths are measured off the drawing. "View this
+  plan" on a drive row sends the competition's drive section, because
+  `pattern: 'drive'` alone falls back to frontage lots.
+- A competition row that ran and drew nothing reads as a reason. A test
+  switched off with a 1e9 limit reads "no limit here".
+- `why` is shown under the competition, one reason per line.
+- A flood skip fetches the site layers and draws its hold.
+- The townhome facts show the trim note.
+- The RM competition passes `th_budget_ms: 8000`.
+- The terrain caveat no longer says the engine ignores terrain where it held
+  hillside out.
+- On multifamily land, the auto note says when the neighborhood took the
+  sheet because the apartment plan did not draw.
+
+The battery gained three parcels:
+
+- 0 Union Hill Rd: equal lots.
+- 6404 Eatons Creek Rd: the shared drive.
+- 0 Hickory Bend Dr: a flood skip with its hold.
+
+The six RM fixtures were re-harvested with the 8-s townhome budget and now key
+on it. 1200 W H Davis Dr lost its 12 frontage lots to the frontage rule; its
+neighborhood is now 6 lots that fail `access.landlocked`.
+
+The re-rank: of the eleven plus Eatons Creek, the top three are now plausible
+as drawn or as answered:
+
+- Mt View, 15 lots: 70%.
+- Dry Fork, a clear zero instead of 16 lots at 63% grade: 5% → 70%.
+- Eatons Creek, 5 estate lots on a shared drive: 60%.
+
+Still open on the engine side:
+
+- **Streets laid out by grade.** Hart Ln and Westcap still fail it.
+- **The estate grammar where the drive draws nothing.** This covers Union
+  Hill, Campbell, and Neelys Bend under fill.
+- **The multifamily generator.** Swiss Ave's overlap, Smith Springs' product
+  fit, and Hickory Hollow's refusal.
+- **A no-lot reason that counts held land as buildable.**
+- **`fn_mf_money`'s sales $/SF.** It reads $1,069–$6,704 on most parcels,
+  which gives a 1,882.7% margin on 0 Old Lebanon Dirt Rd.

@@ -106,7 +106,9 @@ export function chooseLayout(input: {
       : comp.status !== 'done'
         ? `no neighborhood plan: ${comp.reason ?? comp.status}`
         : 'no neighborhood pattern places a home here';
-    return { ...base, defaultKind: 'multifamily', sentence: `${why.charAt(0).toUpperCase()}${why.slice(1)}, so the sheet stays multifamily.` };
+    // engine g13: the competition says why no pattern drew (its first reason)
+    const engineWhy = comp?.status === 'done' && comp.why.length > 0 ? ` (${comp.why[0]})` : '';
+    return { ...base, defaultKind: 'multifamily', sentence: `${why.charAt(0).toUpperCase()}${why.slice(1)}${engineWhy}, so the sheet stays multifamily.` };
   }
   const nbWords = neighborhoodWords(nb);
   if (mfUncounted) {

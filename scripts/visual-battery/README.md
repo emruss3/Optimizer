@@ -54,6 +54,22 @@ use, and `:floodway` for `p_flood`). 2400 W Heiman (R6) still carries no
 and its expectation stands. Evidence: `__planEvidence.sfV1` (status, lots,
 pattern, basis, flood hold, fails, tests, hasFlood, fillView, bfeContour).
 
+**Engine g13 (2026-11-06).** Three parcels gate the new contract.
+
+- **0 Union Hill Rd** (680001): the competition's best (the neighborhood,
+  3 lots on 384 ft of street) takes the sheet from the default's 3 lots on
+  699 ft. It is asserted as `requireSfV1.autoBest: {requested, why:
+  'same_lots'}` against the panel's `data-why`.
+- **6404 Eatons Creek Rd** (661661): the shared private drive, 5 lots,
+  `more_lots`. `privateDriveNote` asserts the panel's sentence.
+- **0 Hickory Bend Dr** (672526): a flood skip draws its hold. It is asserted
+  as `heldLayer` plus `heldNote`.
+
+`whyIncludes` checks the engine's `why` lines under the competition.
+
+The RM competition passes `th_budget_ms: 8000`, so its fixtures key on it:
+`rpc:fn_sf_v1_candidates_app:<fid>::{"th_budget_ms":8000}`.
+
 Nightly, **live mode** runs the same battery against the real backend
 (fixtures can't see a solver regression) plus one random cohort parcel
 (advisory) — enabled by the `BATTERY_SUPABASE_URL` /

@@ -45,6 +45,13 @@ function ThV3Facts({ s }: { s: ThV3Summary }) {
           The engine drew {s.homes} homes; the district's density allows {s.densityCap}. {s.overDensityBy} would have to come out.
         </p>
       )}
+      {s.overDensityBy == null && (s.homesBeforeDensityCap != null || s.trimNote) && (
+        // engine g13: the drawing is trimmed to the cap (0 Smith Springs Rd: 62 drawn, 42 kept)
+        <p data-testid="layout-thv3-trimmed" className="mt-1 text-[10.5px] text-slate-600">
+          {s.trimNote
+            ?? `${s.homesBeforeDensityCap} homes drawn; trimmed to the district density cap of ${s.densityCap ?? s.homes}.`}
+        </p>
+      )}
       <p className="mt-1 text-[10px] text-slate-500">The engine plans footprints; the 3D view assumes three stories.</p>
     </div>
   );
@@ -135,7 +142,8 @@ export function LayoutChoicePanel({
       )}
       {auto && shown === 'neighborhood' && (
         <p data-testid="layout-auto" className="mt-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 leading-snug text-indigo-900">
-          The neighborhood went on the sheet by itself because it places more homes.{' '}
+          {/* 0 Swiss Ave: the apartment plan failed the overlap check — not outnumbered */}
+          The neighborhood went on the sheet by itself because {mf == null ? 'the multifamily plan did not draw' : 'it places more homes'}.{' '}
           <button type="button" data-testid="layout-auto-back" disabled={busy} onClick={() => onChoose('multifamily')} className="font-semibold underline disabled:opacity-60">
             Show the multifamily plan
           </button>
