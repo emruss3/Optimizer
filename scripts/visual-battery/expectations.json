@@ -86,16 +86,16 @@
     "_access": "2026-09-09 aisle-first: the entry drive runs straight down the flag pole to a 24-ft loop round the bar, then two double-loaded aisles south of it (four rows, cut square at 667 ft from the easement), 99 stalls in 6 rows, one connected network.",
     "requirePlanPattern": "landlocked_axis_bar",
     "requireLayout": {
-      "_basis": "2026-11-04 apartments 57 homes against the neighborhood's best, 12 frontage house lots (the loop grammar; the townhome engine's 19 fail alley.street_to_street and home.front_addresses_public_space, density allows 94): apartments stay; the switch draws the 12 lots and comes back.",
+      "_basis": "2026-11-06 engine g13: frontage lots must front a mapped street edge and a landlocked plan fails access.landlocked, so the loop grammar's 12 frontage lots are gone (0) and the neighborhood's best is 6 lots that fail access.landlocked (the townhome engine's 19 fail alley.street_to_street and home.front_addresses_public_space; density allows 94). Apartments 57 stay the default; the switch draws the 6 lots and comes back. Was: 12 frontage lots from the loop grammar (2026-11-04).",
       "defaultKind": "multifamily",
       "shown": "multifamily",
       "auto": false,
       "multifamilyHomes": 57,
-      "neighborhoodHomes": 12,
-      "neighborhoodRequested": "loop",
+      "neighborhoodHomes": 6,
+      "neighborhoodRequested": "neighborhood",
       "densityCap": 94,
       "switchAndBack": true,
-      "switchHomesDrawn": 12
+      "switchHomesDrawn": 6
     }
   },
   "469303": {
@@ -237,6 +237,71 @@
       "densityCap": 42,
       "switchAndBack": true,
       "switchHomesDrawn": 26
+    },
+    "_g13": "2026-11-06 engine g13: the competition passes th_budget_ms 8000 and the townhome search now finishes inside it (4.8 s for the whole competition): 42 townhomes (v3, drawn trimmed from 62 to the density cap) that fail alley.street_to_street, so the grid's 26 lots stay the neighborhood's best. The fixture keys on the budget: rpc:fn_sf_v1_candidates_app:670533::{\"th_budget_ms\":8000}."
+  },
+  "680001": {
+    "mode": "server-plan",
+    "_basis": "0 Union Hill Rd (RS40, 7.6 ac) - 2026-11-06 engine g13: the default (loop) grammar draws 3 lots on a 699-ft single street that fails cost.street_ft_per_lot; the competition's best, the neighborhood grammar, draws the same 3 lots on 384 ft with no fails. By the engine's rule (the best takes the sheet when it is buildable with at least the default's lots, or at equal lots; the default stays only with strictly more) the neighborhood plan is on the sheet, by right, with the reason (same_lots) and the way back. The shared private drive draws nothing here ('no lot of 40000 sf fits'), shown as a reason, not an error.",
+    "requireBriefEnvelope": true,
+    "requireTopo": true,
+    "requireSfV1": {
+      "status": "done",
+      "minLots": 3,
+      "maxLots": 3,
+      "pattern": "neighborhood",
+      "basis": "by_right",
+      "competitionState": "done",
+      "autoBest": {
+        "requested": "neighborhood",
+        "why": "same_lots"
+      }
+    },
+    "requireSfV1Competition": {
+      "state": "done",
+      "bestRequested": "neighborhood",
+      "minBestLots": 3,
+      "rows": 4,
+      "verdict": "buildable as drawn"
+    }
+  },
+  "661661": {
+    "mode": "server-plan",
+    "_basis": "6404 Eatons Creek Rd (R40, 9.0 ac) - 2026-11-06 engine g13, the estate grammar's first form: the competition's best is a shared private drive (a 24-ft access easement, a 16-ft lane, 857 ft), 5 lots, buildable; the default (loop) grammar draws 3 frontage lots that fail open.unassigned. More lots and buildable, so the drive is on the sheet (more_lots), labelled a shared private drive in an access easement, not a public street; the panel says how long it is and the lot cap (6).",
+    "requireBriefEnvelope": true,
+    "requireTopo": true,
+    "requireSfV1": {
+      "status": "done",
+      "minLots": 5,
+      "pattern": "shared private drive",
+      "basis": "by_right",
+      "competitionState": "done",
+      "autoBest": {
+        "requested": "drive",
+        "why": "more_lots"
+      },
+      "privateDriveNote": true
+    },
+    "requireSfV1Competition": {
+      "state": "done",
+      "bestRequested": "drive",
+      "minBestLots": 5,
+      "rows": 4,
+      "verdict": "buildable as drawn"
+    }
+  },
+  "672526": {
+    "mode": "server-plan",
+    "_basis": "0 Hickory Bend Dr (RS10, 5.3 ac, flat, FEMA Zone A without a BFE) - by right the generator skips: 'floodplain leaves no buildable piece'. 2026-11-06 engine g13: fn_sf_v1_site_app returns the hold even when the plan skips, so the sheet hatches the 5.24 ac (the whole site) and the panel says so; the one house and the fill scenario stay on offer. The sheet used to be blank beside 'skipped'.",
+    "requireBriefEnvelope": true,
+    "requireTopo": true,
+    "requireSfV1": {
+      "status": "skipped",
+      "basis": "by_right",
+      "heldLayer": true,
+      "heldNote": "The flood hold takes 5.24 ac out, the whole site",
+      "offersOneHouse": true,
+      "autoBest": null
     }
   }
 }

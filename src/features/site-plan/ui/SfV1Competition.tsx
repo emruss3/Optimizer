@@ -123,8 +123,9 @@ export function SfV1CompetitionBlock({
                         {row.product === 'attached' ? `${row.lots} home${row.lots === 1 ? '' : 's'}` : `${row.lots} lot${row.lots === 1 ? '' : 's'}`}
                       </span>
                     </div>
-                    {row.fellBack && <div className="text-[9.5px] italic text-amber-700">fell back from the {row.requested} grammar</div>}
+                    {row.fellBack && <div className="text-[9.5px] italic text-amber-700">fell back from the {row.requested === 'drive' ? 'shared private drive' : `${row.requested} grammar`}</div>}
                     {row.error && <div className="text-[9.5px] text-red-700">{row.error}</div>}
+                    {row.nothingDrawn && <div data-testid={`sfv1-cand-nothing-${row.requested}`} className="text-[9.5px] text-slate-500">{row.nothingDrawn}</div>}
                     {row.status === 'done' && (
                       <div className="text-[10px] text-slate-600">
                         {[
@@ -171,6 +172,12 @@ export function SfV1CompetitionBlock({
             </ul>
           )}
           <p data-testid="sfv1-competition-sentence" className="mt-1 text-[11px] leading-snug text-indigo-950">{data.sentence}</p>
+          {data.why.length > 0 && (
+            // engine g13: why no pattern drew a lot, in the engine's words
+            <ul data-testid="sfv1-competition-why" className="mt-0.5 list-disc space-y-0.5 pl-4 text-[10.5px] leading-snug text-slate-700">
+              {data.why.map(w => <li key={w}>{w}</li>)}
+            </ul>
+          )}
           {data.arithmetic != null && !data.allZero && (
             <p className="text-[10px] text-slate-500">A 62% net-to-gross estimate would say {data.arithmetic} lots.</p>
           )}

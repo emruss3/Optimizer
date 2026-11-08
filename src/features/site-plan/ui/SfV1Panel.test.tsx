@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { SfV1Panel } from './SfV1Panel';
+import { SfV1Panel, testDetails } from './SfV1Panel';
 import type { SfV1Summary } from '../api/sfV1Plan';
 
 const SUMMARY: SfV1Summary = {
@@ -45,6 +45,7 @@ const SUMMARY: SfV1Summary = {
     pad_fill_ft_by_lot: [0.5, 2.1],
   },
   fillView: true,
+  privateDrive: null,
   generatorVersion: 'sf_v1',
   basisLine: '24 lots @ 60 × 130 ft by right on a loop · 3.1 du/ac gross',
 };
@@ -126,6 +127,11 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
     expect(screen.getByTestId('sfv1-steep').textContent).toContain('averages 29% slope (max 92%) with 82 ft of fall');
     expect(screen.getByTestId('sfv1-steep').textContent).toContain('may not be what stops this plan');
     expect(screen.getByTestId('sfv1-held').textContent).toContain('takes 2.71 ac out before the layout; 1.77 ac are left');
+    // engine g13 (0 Dry Fork Rd): the steepest land is held out as hillside — the caveat says so
+    const hillside = { ...zero, notes: ['25.0 ac steeper than 25% held out as hillside (no lots or pads on it; a street may still cross it and is graded against the limit)'] };
+    rerender(<SfV1Panel summary={hillside} override={{}} onOverride={() => undefined} terrain={{ meanSlopePct: 37, maxSlopePct: 77, fallFt: 287 }} />);
+    expect(screen.getByTestId('sfv1-steep').textContent).toContain('holds the land steeper than 25% out as hillside and finds no lot on the rest');
+    expect(screen.getByTestId('sfv1-steep').textContent).not.toContain('does not lay out by it yet');
     // flat ground: no caveat
     rerender(<SfV1Panel summary={zero} override={{}} onOverride={() => undefined} terrain={{ meanSlopePct: 3.8, maxSlopePct: 15.8, fallFt: 10 }} />);
     expect(screen.queryByTestId('sfv1-steep')).toBeNull();
@@ -267,10 +273,41 @@ describe('SfV1Panel (the by-right subdivision and its own grade)', () => {
 describe('SfV1Panel — third batch (2026-11-04)', () => {
   it('says when the sheet shows the competition\'s best because the default drew nothing, and offers the way back', () => {
     const onView = vi.fn();
-    render(<SfV1Panel summary={{ ...SUMMARY, lots: 19 }} override={{}} onOverride={() => undefined} autoBest="grid" onViewCandidate={onView} />);
+    const auto = { requested: 'grid', why: 'default_empty' as const, defaultLots: 0, bestLots: 19, defaultStreetFt: null, bestStreetFt: 2100, defaultFails: 0, bestFails: 0 };
+    render(<SfV1Panel summary={{ ...SUMMARY, lots: 19 }} override={{}} onOverride={() => undefined} autoBest={auto} onViewCandidate={onView} />);
     expect(screen.getByTestId('sfv1-auto-best').textContent).toContain('the grid grammar. It is still by right');
+    expect(screen.getByTestId('sfv1-auto-best-back').textContent).toBe('Show the default answer (0 lots)');
     fireEvent.click(screen.getByTestId('sfv1-auto-best-back'));
     expect(onView).toHaveBeenLastCalledWith('loop');
+  });
+
+  it('engine g13: the same lots on less street, and the way back to the default\'s lots', () => {
+    const auto = { requested: 'neighborhood', why: 'same_lots' as const, defaultLots: 3, bestLots: 3, defaultStreetFt: 699, bestStreetFt: 384, defaultFails: 1, bestFails: 0 };
+    render(<SfV1Panel summary={{ ...SUMMARY, lots: 3 }} override={{}} onOverride={() => undefined} autoBest={auto} onViewCandidate={() => undefined} />);
+    const note = screen.getByTestId('sfv1-auto-best');
+    expect(note.getAttribute('data-why')).toBe('same_lots');
+    expect(note.textContent).toContain('draws the same 3 lots as the default (loop) grammar on 384 ft of new street against 699 ft');
+    expect(screen.getByTestId('sfv1-auto-best-back').textContent).toBe('Show the default answer (3 lots)');
+  });
+
+  it('engine g13: a shared private drive is said in words, and a flood skip shows its hold', () => {
+    const { rerender } = render(
+      <SfV1Panel summary={{ ...SUMMARY, lots: 5, pattern: 'shared private drive', privateDrive: { easementFt: 24, laneFt: 16, lengthFt: 857, maxLots: 6 } }} override={{}} onOverride={() => undefined} />
+    );
+    expect(screen.getByTestId('sfv1-private-drive').textContent).toBe(
+      'The lots share a private drive (857 ft long, a 16-ft lane in a 24-ft access easement) off the existing street: no new public street to build or dedicate. A shared drive may serve at most 6 lots here.');
+    // the band is an easement, the length a drive's, and a test the drive section switches off says so
+    expect(screen.getByTestId('sfv1-panel').textContent).toContain('17.4% easement');
+    expect(screen.getByTestId('sfv1-panel').textContent).toContain('Private drive');
+    expect(testDetails({ id: 'block.length', pass: true, limit: 1e9, value: 857 })).toBe('no limit here · value 857');
+    // 0 Hickory Bend Dr (672526): skipped for floodplain, all 5.24 ac held
+    rerender(
+      <SfV1Panel
+        summary={{ ...SUMMARY, status: 'skipped', reason: 'floodplain leaves no buildable piece', lots: 0, tests: [], fails: [], notes: [], earthwork: null, fillView: false }}
+        override={{}} onOverride={() => undefined} site={{ heldAcres: 5.24, siteAcres: 0, parcelAcres: 5.24 }}
+      />
+    );
+    expect(screen.getByTestId('sfv1-held').textContent).toBe('The flood hold takes 5.24 ac out, the whole site (hatched blue on the sheet).');
   });
 
   it('flags lots on the parcel\'s holes and frontage lots on a parcel with no street', () => {

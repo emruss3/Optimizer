@@ -106,7 +106,10 @@ export function buildSheetAnnotations(elements: Element[], grid: TopoGrid | null
       const mid = alongLine(cl, midS);
       if (mid) {
         const [x, y] = point2274To3857(mid.p);
-        const width = typeof p.widthFt === 'number' ? `${Math.round(p.widthFt)}' PUBLIC R.O.W.` : 'PUBLIC R.O.W.';
+        // a shared private drive sits in an access easement, not a public right-of-way (engine g13)
+        const width = p.privateDrive === true
+          ? (typeof p.easementFt === 'number' ? `${Math.round(p.easementFt)}' ACCESS EASEMENT` : 'ACCESS EASEMENT')
+          : typeof p.widthFt === 'number' ? `${Math.round(p.widthFt)}' PUBLIC R.O.W.` : 'PUBLIC R.O.W.';
         out.push({ kind: 'label', x, y, text: `${String(el.name ?? 'STREET').toUpperCase()} · ${width}`, angle: canvasAngle(mid.p, mid.dir), minZoom: 0.3 });
       }
     } else if (el.type === 'circulation' && p.kind === 'cul_de_sac') {
@@ -200,7 +203,8 @@ export function buildSheetTitleBlock(input: SheetTitleBlockInput): SheetTitleBlo
   if (subdivision) {
     sub.push(`${subdivision.lots} ${subdivision.unit === 'townhome' ? 'townhome' : 'lot'}${subdivision.lots === 1 ? '' : 's'}`);
     sub.push(subdivision.networkLabel ? subdivision.networkLabel : `${subdivision.network} network`);
-    if (typeof subdivision.pctRow === 'number') sub.push(`${subdivision.pctRow}% R.O.W.`);
+    // a shared private drive sits in an access easement, not a public right-of-way (engine g13)
+    if (typeof subdivision.pctRow === 'number') sub.push(`${subdivision.pctRow}% ${/^shared private drive$/i.test(subdivision.network ?? '') ? 'easement' : 'R.O.W.'}`);
   }
   // Terse: the block sits on the canvas, so each note is one short line; the
   // long form lives in the Profile tab and the audit.

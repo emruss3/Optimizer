@@ -368,15 +368,103 @@ describe('lots on a parcel\'s holes (0 Longwood Pl, 2026-11-04)', () => {
   });
 });
 
-describe('autoBestEligible (third audit)', () => {
-  it('only a buildable best with two lots or more that the client can draw', async () => {
-    const { autoBestEligible } = await import('./sfV1Plan');
-    expect(autoBestEligible({ best_requested: 'neighborhood', best_buildable: true, best: { lots: 2, fails: [] } })).toBe('neighborhood');
-    expect(autoBestEligible({ best_requested: 'grid', best_buildable: false, best: { lots: 19, fails: ['street.grade_max'] } })).toBeNull();
-    expect(autoBestEligible({ best_requested: 'grid', best_buildable: true, best: { lots: 1, fails: [] } })).toBeNull();
-    expect(autoBestEligible({ best_requested: 'townhome', best_buildable: true, best: { lots: 32, product: 'attached', full_plan_call: 'fn_generate_th_site_plan_v3' } as never })).toBeNull();
-    expect(autoBestEligible({ best_requested: 'loop', best_buildable: true, best: { lots: 35, fails: [] } })).toBeNull();
+describe('chooseAutoBest (third audit; engine g13)', () => {
+  const ZERO: SfV1Response = { status: 'done', lots: 0, fails: [] };
+  it('a default that draws nothing: only a buildable best with two lots or more that the client can draw', async () => {
+    const { chooseAutoBest } = await import('./sfV1Plan');
+    expect(chooseAutoBest({ best_requested: 'neighborhood', best_buildable: true, best: { lots: 2, fails: [] } }, ZERO)?.why).toBe('default_empty');
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: false, best: { lots: 19, fails: ['street.grade_max'] } }, ZERO)).toBeNull();
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: true, best: { lots: 1, fails: [] } }, ZERO)).toBeNull();
+    expect(chooseAutoBest({ best_requested: 'townhome', best_buildable: true, best: { lots: 32, product: 'attached', full_plan_call: 'fn_generate_th_site_plan_v3' } as never }, ZERO)).toBeNull();
+    expect(chooseAutoBest({ best_requested: 'loop', best_buildable: true, best: { lots: 35, fails: [] } }, ZERO)).toBeNull();
     // no verdict fields (an older engine): code fails decide
-    expect(autoBestEligible({ best_requested: 'grid', best: { lots: 5, fails: ['open.unassigned'] } })).toBe('grid');
+    expect(chooseAutoBest({ best_requested: 'grid', best: { lots: 5, fails: ['open.unassigned'] } }, ZERO)?.requested).toBe('grid');
+    // no default answer on hand, or the default skipped: nothing to replace
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: true, best: { lots: 5, fails: [] } }, null)).toBeNull();
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: true, best: { lots: 5, fails: [] } }, { status: 'skipped', reason: 'landlocked' })).toBeNull();
+  });
+
+  it('0 Union Hill Rd: the same 3 lots on 384 ft of street against the loop\'s 699 ft take the sheet', async () => {
+    const { chooseAutoBest, autoBestSentence } = await import('./sfV1Plan');
+    const loop: SfV1Response = { status: 'done', lots: 3, metrics: { street_ft: 699 }, fails: ['cost.street_ft_per_lot'] };
+    const a = chooseAutoBest({ best_requested: 'neighborhood', best_buildable: true, best: { lots: 3, metrics: { street_ft: 384 }, fails: [] } }, loop)!;
+    expect(a).toMatchObject({ requested: 'neighborhood', why: 'same_lots', defaultLots: 3, bestLots: 3, defaultStreetFt: 699, bestStreetFt: 384, defaultFails: 1, bestFails: 0 });
+    expect(autoBestSentence(a)).toBe('The neighborhood grammar draws the same 3 lots as the default (loop) grammar on 384 ft of new street against 699 ft, failing no test to its 1, so the sheet shows it. It is still by right.');
+    // equal lots go on the sheet even when the best is not buildable: the engine ranked it no worse
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: false, best: { lots: 3, fails: ['street.grade_max'] } }, { ...loop, fails: ['street.grade_max', 'street.dead_end_max'] })?.why).toBe('same_lots');
+  });
+
+  it('more lots go on the sheet only when buildable; the default stays whenever it draws strictly more', async () => {
+    const { chooseAutoBest, autoBestSentence } = await import('./sfV1Plan');
+    const def: SfV1Response = { status: 'done', lots: 4, metrics: { street_ft: 900 }, fails: [] };
+    const more = chooseAutoBest({ best_requested: 'drive', best_buildable: true, best: { lots: 5, pattern: 'shared private drive', metrics: { street_ft: 857 }, fails: [] } }, def)!;
+    expect(more.why).toBe('more_lots');
+    expect(autoBestSentence(more)).toBe("The shared private drive draws 5 lots to the default (loop) grammar's 4 and fails no code test, so the sheet shows it. It is still by right.");
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: false, best: { lots: 9, fails: ['street.grade_max'] } }, def)).toBeNull();
+    // the engine ranks code fails first, so a buildable best can draw fewer lots than a failing default: the default stays
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: true, best: { lots: 3, fails: [] } }, { ...def, fails: ['street.grade_max'] })).toBeNull();
+  });
+});
+
+describe('the shared private drive (engine g13)', () => {
+  it('draws the drive in an access easement, not a public right-of-way, measured off the drawing', async () => {
+    const { sfV1ToElements, candidateOpt, SFV1_DRIVE_PARAMS, patternPhrase, isOverride: isOv } = await import('./sfV1Plan');
+    // an 857-ft drive: a 24-ft easement and a 16-ft lane along one centreline
+    const drive: SfV1Response = {
+      ...PLAN,
+      pattern: 'shared private drive',
+      lots: 2,
+      bulbs_wkt: null,
+      street_lines_wkt: `MULTILINESTRING((${X} ${Y + 200},${X + 857} ${Y + 200}))`,
+      row_wkt: `POLYGON${rect(X, Y + 188, 857, 24)}`,
+      pave_wkt: `POLYGON${rect(X, Y + 192, 857, 16)}`,
+      tests: { 'access.private_drive_max_lots': { pass: true, limit: 6, value: 2, rule: 'a shared private drive serves a few lots' } },
+      fails: [],
+    };
+    const { elements, summary } = sfV1ToElements(drive);
+    expect(elements.find(e => e.id === 'sfv1-row-1')!.name).toBe('Access easement');
+    const street = elements.find(e => e.id === 'sfv1-street-1')!;
+    expect(street.name).toBe('Shared private drive');
+    expect(street.properties).toMatchObject({ privateDrive: true, easementFt: 24, laneFt: 16 });
+    expect(summary.privateDrive).toEqual({ easementFt: 24, laneFt: 16, lengthFt: 857, maxLots: 6 });
+    expect(summary.basisLine).toContain('2 lots @ 65 × 125 ft by right on a shared private drive (no new public street)');
+    expect(summary.basisLine).toContain('% easement /');
+    expect(patternPhrase('shared private drive')).toBe(' on a shared private drive (no new public street)');
+    // a street plan has no private drive
+    expect(sfV1ToElements(PLAN).summary.privateDrive).toBeNull();
+    // "View this plan" on a drive row sends the drive section the competition used; the user's own options carry
+    expect(candidateOpt('drive', { lot_w_ft: 140, pattern: 'grid' })).toEqual({ lot_w_ft: 140, pattern: 'drive', params: { ...SFV1_DRIVE_PARAMS } });
+    expect(candidateOpt('grid', { flood: 'floodway' })).toEqual({ flood: 'floodway', pattern: 'grid' });
+    expect(candidateOpt('loop', { pattern: 'grid' })).toEqual({});
+    // the townhome budget is a competition setting, not an override
+    expect(isOv({ th_budget_ms: 8000 })).toBe(false);
+  });
+
+  it('reads a drive row that found no lot as a reason, and the engine\'s why as lines', async () => {
+    const { summarizeCandidates, whyLines } = await import('./sfV1Plan');
+    const zero = (requested: string) => ({ requested, pattern: null, status: 'done', lots: 0, fails: null });
+    // 0 Dry Fork Rd (679540, RS40, 37% mean slope), the live answer of 2026-11-06
+    const why = 'no lot of 40000 sf (140 x 290 ft) fits on the frontage or beside a new street: 31.19 ac buildable | 25.0 ac steeper than 25% held out as hillside (no lots or pads on it; a street may still cross it and is graded against the limit); grid: 2 local streets 920 ft apart, connectors every 700 ft';
+    const dry = summarizeCandidates({
+      status: 'done', best_requested: 'grid', best_lots: 0, verdict: 'no pattern draws a lot here', best_buildable: false, why,
+      candidates: [zero('grid'), zero('neighborhood'), zero('loop'),
+        { requested: 'drive', pattern: null, status: 'failed', lots: 0, error: 'no lot of 40000 sf (140 x 290 ft) fits on the frontage or beside a new street: 31.19 ac buildable' }] as never,
+    })!;
+    expect(dry.allZero).toBe(true);
+    expect(dry.sentence).toBe('No pattern fits a lot here: the grid, the neighborhood, the loop grammar and the shared private drive all draw 0.');
+    const driveRow = dry.rows.find(r => r.requested === 'drive')!;
+    expect(driveRow.error).toBeNull();
+    expect(driveRow.nothingDrawn).toContain('no lot of 40000 sf');
+    expect(driveRow.label).toBe('shared private drive: nothing drawn');
+    // the grammar's own settings are not a reason
+    expect(dry.why).toEqual([
+      'no lot of 40000 sf (140 x 290 ft) fits on the frontage or beside a new street: 31.19 ac buildable',
+      '25.0 ac steeper than 25% held out as hillside (no lots or pads on it; a street may still cross it and is graded against the limit)',
+    ]);
+    expect(whyLines(null)).toEqual([]);
+    // a real failure stays an error
+    const failed = summarizeCandidates({ status: 'done', candidates: [{ requested: 'drive', status: 'failed', lots: 0, error: 'statement timeout' }] as never })!;
+    expect(failed.rows[0]!.error).toBe('statement timeout');
+    expect(failed.rows[0]!.nothingDrawn).toBeNull();
   });
 });

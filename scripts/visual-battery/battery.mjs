@@ -55,6 +55,15 @@ const PARCELS = [
   // structures under legacy metric names; its 42 apartments must count, and
   // stay the default over the neighborhood's 26 lots.
   { ogc_fid: 670533, address: '0 SMITH SPRINGS RD', zoning: 'RM6' },
+  // 2026-11-06 engine g13: the competition's best takes the sheet at equal
+  // lots (0 Union Hill Rd: the neighborhood's 3 lots on 384 ft of street
+  // against the loop's 699 ft), the shared private drive takes it with more
+  // lots (6404 Eatons Creek Rd: 5 estate lots on a private drive, no public
+  // street), and a flood skip draws its hold (0 Hickory Bend Dr: 5.24 ac,
+  // all in the SFHA — the sheet was blank beside "skipped").
+  { ogc_fid: 680001, address: '0 UNION HILL RD', zoning: 'RS40' },
+  { ogc_fid: 661661, address: '6404 EATONS CREEK RD', zoning: 'R40' },
+  { ogc_fid: 672526, address: '0 HICKORY BEND DR', zoning: 'RS10' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -197,6 +206,25 @@ function judge(exp, ev) {
     // 2026-11-04: the flood hold drawn (the land taken out before the layout), and the competition state
     if (typeof want.heldLayer === 'boolean' && !!got.heldLayer !== want.heldLayer) errs.push(`${label}: flood-hold layer on the sheet = ${!!got.heldLayer}, expected ${want.heldLayer}`);
     if (want.competitionState && got.competition?.state !== want.competitionState) errs.push(`${label}: pattern competition '${got.competition?.state ?? 'absent'}', expected '${want.competitionState}'`);
+    // 2026-11-06 engine g13: the competition's best on the sheet in place of the
+    // default — at equal lots (a better plan) and at more lots (buildable) — and why
+    if (want.autoBest !== undefined) {
+      const a = got.autoBest ?? null;
+      if (want.autoBest === null) {
+        if (a) errs.push(`${label}: the competition's '${a.requested}' plan took the sheet (${a.why}); the default answer should stand`);
+      } else if (!a) {
+        errs.push(`${label}: the competition's best did not take the sheet (expected '${want.autoBest.requested}', ${want.autoBest.why})`);
+      } else {
+        if (a.requested !== want.autoBest.requested) errs.push(`${label}: the '${a.requested}' plan took the sheet, expected '${want.autoBest.requested}'`);
+        if (a.why !== want.autoBest.why) errs.push(`${label}: the best took the sheet because '${a.why}', expected '${want.autoBest.why}'`);
+        if (ev._domAutoBestWhy !== want.autoBest.why) errs.push(`${label}: the panel's auto-best note says '${ev._domAutoBestWhy ?? 'nothing'}'`);
+      }
+    }
+    if (want.privateDriveNote && !(ev._domPrivateDrive ?? '').includes('share a private drive')) errs.push(`${label}: the shared private drive is not said on the panel`);
+    if (want.heldNote && !(ev._domHeld ?? '').includes(want.heldNote)) errs.push(`${label}: the flood hold line says '${ev._domHeld ?? 'nothing'}', expected it to include '${want.heldNote}'`);
+    for (const w of want.whyIncludes ?? []) {
+      if (!(ev._domWhy ?? []).some(line => line.includes(w))) errs.push(`${label}: the engine's why does not say '${w}' (lines: ${JSON.stringify(ev._domWhy ?? [])})`);
+    }
   };
   // 2026-11-04 the pattern competition (fn_sf_v1_candidates): best and structured
   // side by side, the price of the structure stated; the structured plan can be
@@ -408,6 +436,11 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
         _domCompetition: !!document.querySelector('[data-testid="sfv1-competition"]'),
         _domOverLimit: Array.from(document.querySelectorAll('[data-over-limit="true"]')).map(e => e.getAttribute('data-testid')),
         _domLayout: !!document.querySelector('[data-testid="layout-choice"]'),
+        // 2026-11-06 engine g13: the auto-best note (and why), the shared drive, the hold on a skip, the engine's why
+        _domAutoBestWhy: document.querySelector('[data-testid="sfv1-auto-best"]')?.getAttribute('data-why') ?? null,
+        _domPrivateDrive: document.querySelector('[data-testid="sfv1-private-drive"]')?.textContent ?? null,
+        _domHeld: document.querySelector('[data-testid="sfv1-held"]')?.textContent ?? null,
+        _domWhy: Array.from(document.querySelectorAll('[data-testid="sfv1-competition-why"] li')).map(e => e.textContent),
       };
     });
     if (evidence) evidence._houseRendered = houseRendered;

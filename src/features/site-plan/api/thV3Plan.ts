@@ -103,6 +103,9 @@ export interface ThV3Summary {
   densityCap: number | null;
   /** homes drawn over the density cap: the competition caps the candidate's count, not the engine's drawing */
   overDensityBy: number | null;
+  /** engine g13: the drawing is trimmed to the density cap — how many it drew first (metrics.homes_before_density_cap), and its note */
+  homesBeforeDensityCap: number | null;
+  trimNote: string | null;
   tests: ThV3Test[];
   /** required tests that fail: code fails */
   requiredFails: string[];
@@ -331,6 +334,8 @@ export function thV3ToElements(resp: ThV3Response): { elements: Element[]; summa
   const contextFlags = tests.filter(t => t.kind === 'context' && t.ok === false).map(t => t.id);
   const homes = status === 'done' ? num(m.homes) ?? elements.filter(e => e.type === 'building').length : 0;
   const densityCap = num(rules.max_homes_by_density);
+  const notes = strings(resp.notes);
+  const before = num(m.homes_before_density_cap);
   const summary: ThV3Summary = {
     status,
     reason: str(resp.reason) ?? str(resp.error) ?? (status === 'searching' ? 'the townhome search has not finished inside its budget' : null),
@@ -353,10 +358,12 @@ export function thV3ToElements(resp: ThV3Response): { elements: Element[]; summa
     heldOutAcres,
     densityCap,
     overDensityBy: densityCap != null && homes > densityCap ? homes - densityCap : null,
+    homesBeforeDensityCap: before != null && before > homes ? before : null,
+    trimNote: notes.find(n => /density cap/i.test(n) && /trim/i.test(n)) ?? null,
     tests,
     requiredFails,
     contextFlags,
-    notes: strings(resp.notes),
+    notes,
     generatorVersion: str(resp.generator_version) ?? 'th_v3',
     basisLine: '',
   };
