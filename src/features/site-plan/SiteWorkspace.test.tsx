@@ -523,7 +523,7 @@ describe('SiteWorkspace: the competition\'s best goes on the sheet when the defa
     expect(screen.getByTestId('sfv1-lots').textContent).toBe('6 lots');
   });
 
-  it('engine g13: "View this plan" on a drive row sends the drive section the competition used', async () => {
+  it('engine g14: "View this plan" on a drive row asks for the drive by name (self-contained), no params copy', async () => {
     setup({
       status: 'done', best_requested: 'loop', best_lots: 4, best_buildable: true, verdict: 'buildable as drawn', best_code_fails: [],
       candidates: [
@@ -537,8 +537,8 @@ describe('SiteWorkspace: the competition\'s best goes on the sheet when the defa
     await waitFor(() => expect(screen.getByTestId('sfv1-cand-view-drive')).toBeTruthy());
     fireEvent.click(screen.getByTestId('sfv1-cand-view-drive'));
     await waitFor(() => expect(sfV1PlanMock).toHaveBeenCalledTimes(2));
-    expect((sfV1PlanMock.mock.calls[1] as unknown[])[1]).toMatchObject({ pattern: 'drive', params: { row_ft: 24, pave_ft: 16, dead_end_max_ft: 750 } });
-    // the drive's section is the competition's setting, not the user's override
+    expect((sfV1PlanMock.mock.calls[1] as unknown[])[1]).toEqual({ pattern: 'drive' });
+    // a pattern choice is not an override
     await waitFor(() => expect(screen.getByTestId('sfv1-basis').textContent).toBe('By right'));
   });
 });

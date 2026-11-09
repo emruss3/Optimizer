@@ -290,6 +290,13 @@ export function SfV1Panel({
               The flood hold takes {site.heldAcres} ac out{site.siteAcres != null ? ` before the layout; ${site.siteAcres} ac are left to plan` : ''} (hatched blue on the sheet).
             </p>
           )}
+          {summary.hillsideAcres != null && summary.hillsideAcres > 0 && (
+            // engine g14: the land steeper than 25% is held out as geometry (0 Dry Fork Rd: 25 of 31 ac)
+            <p data-testid="sfv1-hillside" className="mt-1 leading-snug text-slate-600">
+              The hillside hold takes {summary.hillsideAcres} ac out (steeper than 25%, hatched tan on the sheet)
+              {summary.buildableAfterHoldsAc != null ? `; ${summary.buildableAfterHoldsAc} ac are left after every hold` : ''}.
+            </p>
+          )}
           {moduleIgnored && (
             <p data-testid="sfv1-module-ignored" className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 leading-snug text-amber-800">
               You asked for {askedW} × {askedD} ft lots; the generator used {summary.lotWFt} × {summary.lotDFt} ft.

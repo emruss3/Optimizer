@@ -2835,6 +2835,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             densityDuAc: sfV1Summary.densityDuAc,
             ms: sfV1Summary.ms,
             heldLayer: displayElements.some(e => e.id.startsWith('sfv1-hold-')),
+            // engine g14: the hillside hold as geometry, and what is left after every hold
+            hillsideLayer: displayElements.some(e => e.id.startsWith('sfv1-hillside-')),
+            hillsideAcres: sfV1Summary.hillsideAcres,
+            buildableAfterHoldsAc: sfV1Summary.buildableAfterHoldsAc,
             autoBest: sfV1AutoBest,
             lotsOnHoles: sfV1HoleOverlap?.lotsOnHoles ?? null,
             shown: sfV1Shown,

@@ -1427,6 +1427,17 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // has no vocabulary for ROW, alley, courtyard"). Colors match the
     // subdivision mapper's style overrides.
     const isSubdivision = elements.some(e => e.id.startsWith('subdiv-'));
+    // Land the by-right generator holds out before the layout (2026-11-09):
+    // the flood hold, the hillside hold (hatched tan when drawn from the
+    // plan's hillside_wkt, teal when the plan names it among its natural
+    // pieces), the wetlands, the deep-fill hold — keyed only when on the sheet.
+    const propsOf = (e: { properties?: unknown }) => (e.properties ?? {}) as Record<string, unknown>;
+    const heldRows: Array<[string, string]> = [];
+    if (elements.some(e => e.id.startsWith('sfv1-hold-'))) heldRows.push(['Flood hazard area · held out', '#DBEAFE']);
+    if (elements.some(e => e.id.startsWith('sfv1-hillside-'))) heldRows.push(['Hillside · held out (over 25% slope)', '#FDE68A']);
+    else if (elements.some(e => /hillside/i.test(String(propsOf(e).openKind ?? '')))) heldRows.push(['Hillside · held out (over 25% slope)', '#99F6E4']);
+    if (elements.some(e => e.id.startsWith('sfv1-nobuild-') || (propsOf(e).hazardKind === 'wetland' && !/hillside/i.test(String(propsOf(e).openKind ?? ''))))) heldRows.push(['Wetland / natural land · held out', '#99F6E4']);
+    if (elements.some(e => e.id.startsWith('sfv1-deep-fill-hold-'))) heldRows.push(['Deep-fill hold (fill over the cap)', '#FECACA']);
     const entries: Array<[string, string]> = isSubdivision
       ? [
           ['Street (public ROW)', '#A9B4C0'],
@@ -1447,6 +1458,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
           ['Parking', '#E2E8F0'],
           ['Drive / aisle', '#9AA8B8'],
           ['Open space', '#BBF7D0'],
+          ...heldRows,
           ['Amenity / pool', '#F59E0B'],
           // Setback edge key — colors must match renderEdgeSetbacks exactly
           ['Front setback', '#2563EB'],

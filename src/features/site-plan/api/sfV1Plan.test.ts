@@ -408,7 +408,7 @@ describe('chooseAutoBest (third audit; engine g13)', () => {
 
 describe('the shared private drive (engine g13)', () => {
   it('draws the drive in an access easement, not a public right-of-way, measured off the drawing', async () => {
-    const { sfV1ToElements, candidateOpt, SFV1_DRIVE_PARAMS, patternPhrase, isOverride: isOv } = await import('./sfV1Plan');
+    const { sfV1ToElements, candidateOpt, patternPhrase, isOverride: isOv } = await import('./sfV1Plan');
     // an 857-ft drive: a 24-ft easement and a 16-ft lane along one centreline
     const drive: SfV1Response = {
       ...PLAN,
@@ -432,8 +432,8 @@ describe('the shared private drive (engine g13)', () => {
     expect(patternPhrase('shared private drive')).toBe(' on a shared private drive (no new public street)');
     // a street plan has no private drive
     expect(sfV1ToElements(PLAN).summary.privateDrive).toBeNull();
-    // "View this plan" on a drive row sends the drive section the competition used; the user's own options carry
-    expect(candidateOpt('drive', { lot_w_ft: 140, pattern: 'grid' })).toEqual({ lot_w_ft: 140, pattern: 'drive', params: { ...SFV1_DRIVE_PARAMS } });
+    // "View this plan" on a drive row asks for the drive by name (self-contained since engine g14); the user's own options carry
+    expect(candidateOpt('drive', { lot_w_ft: 140, pattern: 'grid' })).toEqual({ lot_w_ft: 140, pattern: 'drive' });
     expect(candidateOpt('grid', { flood: 'floodway' })).toEqual({ flood: 'floodway', pattern: 'grid' });
     expect(candidateOpt('loop', { pattern: 'grid' })).toEqual({});
     // the townhome budget is a competition setting, not an override
@@ -466,5 +466,32 @@ describe('the shared private drive (engine g13)', () => {
     const failed = summarizeCandidates({ status: 'done', candidates: [{ requested: 'drive', status: 'failed', lots: 0, error: 'statement timeout' }] as never })!;
     expect(failed.rows[0]!.error).toBe('statement timeout');
     expect(failed.rows[0]!.nothingDrawn).toBeNull();
+  });
+});
+
+describe('the hillside hold (engine g14)', () => {
+  it('draws hillside_wkt like the flood hold on a 0-lot answer, counts it as held land, and not twice on a drawn plan', async () => {
+    const { sfV1ToElements, codeFails, qualityFlags } = await import('./sfV1Plan');
+    const hill = `POLYGON${rect(X + 400, Y, 300, 300)}`;
+    // 0 Dry Fork Rd: 25 of 31 ac held as hillside, no lot on the rest
+    const zero: SfV1Response = {
+      status: 'done', lots: 0, basis: 'by_right', site_acres: 31.19, hillside_wkt: hill, hillside_ac: 25.03, buildable_after_holds_ac: 5.64,
+      reason: 'no lot of 40000 sf (140 x 290 ft) fits on the frontage or beside a new street: 5.64 ac buildable after the holds (site 31.19 ac, of which 25.0 ac held as hillside)',
+    };
+    const { elements, summary } = sfV1ToElements(zero);
+    const hs = elements.find(e => e.id === 'sfv1-hillside-1')!;
+    expect(hs.type).toBe('greenspace');
+    expect(hs.name).toBe('Hillside · held out (over 25% slope)');
+    expect(summary.hillsideAcres).toBe(25.03);
+    expect(summary.buildableAfterHoldsAc).toBe(5.64);
+    expect(summary.heldPct).toBe(80.3); // 25.03 / 31.19
+    // a drawn plan already carries the hillside among its natural pieces: the same land is not drawn twice
+    const drawn: SfV1Response = { ...PLAN, hillside_wkt: hill, hillside_ac: 0.3, open_pieces: [...(PLAN.open_pieces ?? []), { kind: 'natural: hillside held out (over 25% slope)', acres: 0.3 }], open_wkt: `MULTIPOLYGON(${rect(X, Y + 300, 100, 60)},${rect(X + 120, Y + 300, 60, 60)},${rect(X + 200, Y + 300, 60, 60)},${rect(X + 400, Y, 300, 300)})` };
+    const d = sfV1ToElements(drawn);
+    expect(d.elements.some(e => e.id.startsWith('sfv1-hillside-'))).toBe(false);
+    expect(d.summary.hillsideAcres).toBe(0.3);
+    // the new length test on a private drive is a quality flag, as the engine files it
+    expect(codeFails(['access.private_drive_length', 'street.grade_max'])).toEqual(['street.grade_max']);
+    expect(qualityFlags(['access.private_drive_length'])).toEqual(['access.private_drive_length']);
   });
 });
