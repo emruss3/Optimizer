@@ -262,7 +262,9 @@ export function seedToElements(seed: SeedPlan): { elements: Element[]; basis: st
   const stallsLine = seed.parking_seed
     ? ` · parking seed ${seed.parking_seed.stalls_achieved_est ?? '?'}/${seed.parking_seed.stalls_target ?? '?'} stalls`
     : '';
-  const basis = `Seed plan (Stage 1+2): ${seed.composition?.replace(/_/g, ' ') ?? 'placed composition'} · ` +
+  // "Seed" meant nothing on the toolbar (Eric, 2026-11-09): this is the
+  // engine's quick first-pass massing, the plan the full solve starts from.
+  const basis = `Quick massing (the engine's first pass, not the solved plan): ${seed.composition?.replace(/_/g, ' ') ?? 'placed composition'} · ` +
     `${stories} st ${seed.construction_type?.type ?? ''}`.trim() + stallsLine;
 
   return { elements, basis, inFamily };

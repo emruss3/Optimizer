@@ -1873,3 +1873,30 @@ table's requirement split from the engine's figure; the badge leading with a
 shortfall; a run number discarding stale massing responses; the KPI strip's
 empty state saying why. Evidence `mfTabulation`; battery 0 Whites Creek Pike.
 P0.2 and P0.3 follow in their own PRs.
+
+## 34. The Site Planner scope, P0.2: a status that says what it checked (2026-11-09)
+
+The second scope item. A house sketched on a landlocked lot (1289 Currey Rd)
+read "Code compliant"; a by-right plan read "All tests pass" without saying
+which tests (4727 Post Rd); Ivey Point Rd's skip text called a 2,069-ft open
+edge a street; 0 Whites Creek Pike listed 49 generator flags as one list.
+
+Shipped: `SiteMetrics.conditional`, set by the house sketch after a
+landlocked or flood skip and read by the badge ("Conditional · assumes an
+access easement across a neighbour (no mapped street contact)"), the one-line
+basis summary and the evidence hook; the engine's "neighbours by edge
+length" clause parsed into typed edges and written under the skip ("Edges by
+class: … · no mapped street contact"), with the house note saying the open
+edge is not a street; the subdivision chip counting its checks ("All 12
+checks pass", "1 of 3 checks fail") with the covered list and the
+not-evaluated list in its tooltip and a diligence line under the panel's
+tests; a legacy generator's plan reading "Legacy generator · provisional";
+the Flags tab splitting actionable flags from derivation receipts. Also the
+toolbar's "Seed" toggle renamed "Quick massing" at Eric's request, its basis
+line with it, and shown only when the plan on the sheet is a multifamily
+massing (his screenshot: a 25-unit apartment massing under "3 lots · All
+tests pass" on an RS10 lot); the table tabulates the massing's own mix. Fourteen new tests (KpiStrip, SfV1Panel, FlagsPanel, sfV1Plan);
+`qa/audits/2026-11-09c/README.md` has the before/after table and shots.
+
+Noted, not fixed: the house sketch's table requirement (2, typology default)
+against the strip's 0 / 0; the 437 SF house the engine places on Currey Rd.

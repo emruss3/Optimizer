@@ -34,3 +34,29 @@ describe('FlagsPanel — regime comparison receipts', () => {
     expect(screen.getByText(/No active flags/)).toBeTruthy();
   });
 });
+
+describe('FlagsPanel — attention first, derivation notes behind a count (the scope\'s P0.2, 2026-11-09)', () => {
+  it('shows the actionable flags as rows and folds the receipts (0 Whites Creek Pike carried 49)', () => {
+    render(
+      <FlagsPanel
+        violations={[]}
+        lineageFlags={['parking_below_ratio', 'precedent_set_from_district', 'parking_summary_disagrees', 'prior_consumed_v2']}
+      />
+    );
+    const rows = screen.getAllByTestId('flag-attention');
+    expect(rows.map(r => r.textContent)).toEqual([
+      expect.stringContaining('parking_below_ratio'),
+      expect.stringContaining('parking_summary_disagrees'),
+    ]);
+    const notes = screen.getByTestId('flag-notes');
+    expect(notes.querySelector('summary')?.textContent).toBe('2 generator notes (derivation receipts, no action needed)');
+    expect(notes.textContent).toContain('precedent_set_from_district');
+    expect(notes.textContent).toContain('prior_consumed_v2');
+  });
+
+  it('only notes: no attention rows, the fold still counts them', () => {
+    render(<FlagsPanel violations={[]} lineageFlags={['precedent_set_from_district']} />);
+    expect(screen.queryAllByTestId('flag-attention')).toHaveLength(0);
+    expect(screen.getByTestId('flag-notes').querySelector('summary')?.textContent).toBe('1 generator note (derivation receipts, no action needed)');
+  });
+});

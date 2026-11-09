@@ -104,3 +104,44 @@ describe('KpiStrip — the empty strip says why (1360 Brick Church Pike, 2026-11
     expect(screen.getByTestId('kpi-empty').textContent).toBe('Generating plan…');
   });
 });
+
+describe('KpiStrip — the verdict names its scope (the scope\'s P0.2, 2026-11-09)', () => {
+  it('"All N checks pass" counts the checks and the title lists them and what was not evaluated (4727 Post Rd)', () => {
+    const sub = { ...base, totalUnits: 11, openSpacePct: 12, zoningCompliant: true } as SiteMetrics;
+    render(
+      <KpiStrip
+        metrics={sub}
+        investment={null}
+        subdivision={{ lots: 11, densityDuAc: 1.1, fails: [], status: 'done', tests: ['street.dead_end_max', 'access.second_connection', 'flood.freeboard'] }}
+      />
+    );
+    const verdict = screen.getByTestId('kpi-subdivision-verdict');
+    expect(verdict.textContent).toBe('All 3 checks pass');
+    expect(verdict.getAttribute('title')).toContain('Checks covered: street.dead_end_max, access.second_connection, flood.freeboard');
+    expect(verdict.getAttribute('title')).toContain('Not evaluated: survey and legal access');
+  });
+
+  it('a failing check reads "1 of 3 checks fail"', () => {
+    const sub = { ...base, zoningCompliant: false } as SiteMetrics;
+    render(
+      <KpiStrip
+        metrics={sub}
+        investment={null}
+        subdivision={{ lots: 11, densityDuAc: 1.1, fails: ['access.second_connection'], status: 'done', tests: ['street.dead_end_max', 'access.second_connection', 'flood.freeboard'] }}
+      />
+    );
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('1 of 3 checks fail');
+  });
+
+  it('a legacy generator\'s plan is provisional, never "all pass"', () => {
+    render(<KpiStrip metrics={base} investment={null} subdivision={{ lots: 6, densityDuAc: 2, fails: [], status: 'done', legacy: true }} />);
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('Legacy generator · provisional');
+  });
+
+  it('a conditional sketch reads Conditional with its precondition, not "Code compliant" (1289 Currey Rd)', () => {
+    const house = { ...base, conditional: 'assumes an access easement across a neighbour (no mapped street contact)' } as SiteMetrics;
+    render(<KpiStrip metrics={house} investment={null} />);
+    expect(screen.getByTestId('kpi-conditional').textContent).toContain('Conditional · assumes an access easement across a neighbour');
+    expect(screen.queryByText(/Code compliant/)).toBeNull();
+  });
+});

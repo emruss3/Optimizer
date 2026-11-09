@@ -1981,7 +1981,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setSfSeedError(null);
       planModeRef.current = 'sf';
       const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
-      setPlanOutput([...base, ...mapped.elements], mapped.metrics ?? metrics);
+      // The house after a landlocked or flood skip stands on an assumption the
+      // sheet has not verified: Conditional on the badge, the basis line and
+      // the handoff (1289 Currey Rd, 2026-11-09: "Code compliant" on a house
+      // that assumes an easement across a neighbour).
+      const skipReason = sfV1Summary?.status === 'skipped' ? (sfV1Summary.reason ?? '') : '';
+      const conditional = /landlocked/i.test(skipReason)
+        ? 'assumes an access easement across a neighbour (no mapped street contact)'
+        : /flood/i.test(skipReason)
+          ? 'stands in the flood hazard area: fill to the base flood elevation and a floodplain permit'
+          : null;
+      const houseMetrics = mapped.metrics
+        ? ({ ...mapped.metrics, conditional } as NonNullable<typeof metrics>)
+        : metrics
+          ? ({ ...metrics, conditional } as NonNullable<typeof metrics>)
+          : metrics;
+      setPlanOutput([...base, ...mapped.elements], houseMetrics);
       setViolations([]);
       setPlanLineage({
         solvedBy: 'server',
@@ -1996,12 +2011,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       });
       setPlanStale(false);
       setServerPlanError(null);
-      setPlanBasis(mapped.basis ?? 'Single-family seed — house + driveway');
+      setPlanBasis(`${mapped.basis ?? 'Single-family seed — house + driveway'}${conditional ? ` · conditional: ${conditional}` : ''}`);
       void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'parameter_changed', null, { action: 'sf_seed_drawn' });
     } finally {
       setIsGenerating(false);
     }
-  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan]);
+  }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan, sfV1Summary]);
 
   const handleAddBuilding = useCallback(async () => {
     if (!envelopeMeters) {
@@ -2651,7 +2666,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Seed view: display swap only — the solver plan and its handlers are
   // untouched underneath; toggling back restores them exactly.
   const seedRender = useMemo(() => (seedPlan ? seedToElements(seedPlan) : null), [seedPlan]);
-  const seedViewOn = showSeed && !!seedRender && seedRender.elements.length > 0;
+  // The quick massing is the multifamily solve's first pass. It is only an
+  // alternative view of the plan on the sheet when that plan IS a multifamily
+  // massing: on 2915 Hillhurst Dr (RS10, three by-right lots, 2026-11-09) the
+  // toggle swapped a 25-unit apartment building under a "3 lots · All tests
+  // pass" header, and the table read 133% / 500% against the lots' count.
+  const quickMassingAvailable = !!seedRender && seedRender.elements.length > 0 && elements.some(e => isMfPlanElement(e));
+  const seedViewOn = showSeed && quickMassingAvailable;
+  useEffect(() => {
+    if (!quickMassingAvailable) setShowSeed(false);
+  }, [quickMassingAvailable]);
   const displayElements = seedViewOn && seedRender ? seedRender.elements : elements;
   const displayBasis = seedViewOn && seedRender
     ? seedRender.basis + (seedRender.inFamily ? ` · in-family: ${seedRender.inFamily}` : '')
@@ -2788,13 +2812,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const basisSummary = useMemo(() => {
     const parts: string[] = [];
     if (displayBasis) parts.push(displayBasis.split(' · ').slice(0, 2).join(' · '));
+    // the precondition a sketch rests on is part of the one-line answer, not a receipt (1289 Currey Rd, 2026-11-09)
+    if (metrics?.conditional && !seedViewOn) parts.push(`conditional: ${metrics.conditional}`);
     parts.push(contextStateLabel(contextState));
     if (maxBuildout && !draftMode && maxBuildout.max_gsf > 0) {
       parts.push(`${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF upper bound`);
       if (metrics?.totalBuiltSF) parts.push(`${Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 100)}% capture`);
     }
     return parts;
-  }, [displayBasis, contextState, maxBuildout, draftMode, metrics]);
+  }, [displayBasis, contextState, maxBuildout, draftMode, metrics, seedViewOn]);
   const basisTone: BasisTone =
     contextState === 'applied' || contextState === 'standards-direct' ? 'ok'
     : contextState === 'blocked' ? 'bad'
@@ -2923,7 +2949,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         nonResidentialOnly && typeof plannerCtx?.context.entitlement_capacity?.max_gfa_sqft === 'number'
           ? (plannerCtx.context.entitlement_capacity.max_gfa_sqft as number)
           : null,
-      seedAvailable: !!seedPlan,
+      seedAvailable: quickMassingAvailable,
       seedShown: seedViewOn,
       seedComposition: seedPlan?.composition ?? null,
       neighborsLoaded: neighbors
@@ -2948,6 +2974,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       profileStreets: streetProfiles.length,
       sheetTitle: sheetTitle.title,
       mfAccess,
+      // 2026-11-09 (the scope's P0.2): the precondition the sketched plan rests on, if any.
+      conditional: metrics?.conditional ?? null,
       // 2026-11-09 (the scope's P0.1): the figures every surface must agree on —
       // the engine's unit count, the drawn buildings' mix summed, the stalls the
       // bays hold against the engine's summary, and the requirement.
@@ -2971,7 +2999,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -3073,7 +3101,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             thV3OnSheet && thV3Summary
               ? { lots: thV3Summary.homes, densityDuAc: thV3Summary.homesPerAcre, fails: thV3Summary.requiredFails, status: 'done', label: 'Townhomes', densityLabel: 'homes / ac' }
               : sfV1Summary && !displayElements.some(e => e.id.startsWith('sfseed-'))
-              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status }
+              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status, tests: sfV1Summary.tests.map(t => t.id) }
               : null
           }
           utilizationPct={
@@ -3114,14 +3142,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
-          {seedPlan && (
+          {quickMassingAvailable && (
             <button
               data-testid="seed-toggle"
               onClick={() => setShowSeed(v => !v)}
-              title="Stage 1+2 seed: the engine's placed composition (zones, spine, bays, single-L)"
+              title="Quick massing: the engine's fast first-pass composition (zones, access spine, parking bays, one connected bar) that the full solve starts from. Not the solved plan."
               className={`px-3 py-1.5 border-l border-gray-200 ${showSeed ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
             >
-              Seed
+              Quick massing
             </button>
           )}
           {topo && (
@@ -3168,7 +3196,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         >
           {displayBasis && (
             <div className="text-xs text-gray-600">
-              <span className="font-medium text-gray-700">{seedViewOn ? 'Seed basis:' : 'Plan basis:'}</span> {displayBasis}
+              <span className="font-medium text-gray-700">{seedViewOn ? 'Quick massing basis:' : 'Plan basis:'}</span> {displayBasis}
             </div>
           )}
           <ContextLineage
@@ -3490,7 +3518,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             {dockTab === 'tabulation' && (
               <TabulationPanel
                 elements={displayElements}
-                metrics={metrics}
+                // the quick massing tabulates its own mix; the solved plan's metrics are not its totals
+                metrics={seedViewOn ? null : metrics}
                 plannerCtx={plannerCtx}
                 acres={parcel.deeded_acres}
               />

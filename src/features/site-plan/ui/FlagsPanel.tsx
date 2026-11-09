@@ -32,6 +32,17 @@ const PROOF_LABELS: Record<string, string> = {
   entitlement_unit_cap: 'Entitlement unit cap',
 };
 
+/** The flags a developer acts on: a cap that bound the plan, a shortfall, a
+ *  hazard, a disagreement in the engine's own numbers, an exceeded pin. */
+const ATTENTION_FLAGS = new Set([
+  'parking_below_ratio', 'parking_limited', 'floors_clamped_by_far', 'density_clamped_units',
+  'coverage_cap_reached', 'unit_cap_reached_min_lot_or_density', 'parking_caps_units_below_program_min',
+  'unit_gsf_out_of_band_pinned', 'parking_summary_disagrees', 'flood_constrained',
+]);
+export function isActionableFlag(flag: string): boolean {
+  return ATTENTION_FLAGS.has(flag) || /_exceeded_pinned$/.test(flag) || /^(flood|hazard|landlocked|access)_/.test(flag);
+}
+
 const REGIME_LABELS: Record<string, string> = {
   chosen: 'Regime chosen',
   surface_gsf: 'Surface regime GSF',
@@ -51,6 +62,8 @@ const FlagsPanel: React.FC<{
   /** Dispatcher's regime-comparison receipts (both complete solves). */
   regimeComparison?: Record<string, unknown> | null;
 }> = ({ violations, lineageFlags, rejected, proof, regimeComparison }) => {
+  const attention = lineageFlags.filter(isActionableFlag);
+  const notes = lineageFlags.filter(f => !isActionableFlag(f));
   const empty =
     violations.length === 0 && lineageFlags.length === 0 && !rejected && !proof && !regimeComparison;
   if (empty) {
@@ -71,12 +84,31 @@ const FlagsPanel: React.FC<{
           {v.message}
         </div>
       ))}
-      {lineageFlags.map(flag => (
-        <div key={`f-${flag}`} className="border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 text-xs text-slate-700">
-          <span className="font-mono font-semibold uppercase tracking-wide mr-2 text-slate-500">{flag}</span>
+      {attention.map(flag => (
+        <div key={`f-${flag}`} data-testid="flag-attention" className="border border-amber-200 bg-amber-50 rounded px-2.5 py-1.5 text-xs text-amber-900">
+          <span className="font-mono font-semibold uppercase tracking-wide mr-2 text-amber-700">{flag}</span>
           {describeContextFlag(flag)}
         </div>
       ))}
+      {notes.length > 0 && (
+        // The generator's derivation notes (how the precedent set was picked,
+        // which prior was consumed, …) are receipts, not actions: they wait
+        // behind a count so the actionable rows above are the list (the
+        // scope's P0.2; 0 Whites Creek Pike carried 49 of them).
+        <details data-testid="flag-notes" className="border border-slate-200 bg-slate-50 rounded px-2.5 py-1.5 text-xs text-slate-700">
+          <summary className="cursor-pointer select-none font-medium text-slate-600">
+            {notes.length} generator note{notes.length === 1 ? '' : 's'} (derivation receipts, no action needed)
+          </summary>
+          <div className="mt-1.5 space-y-1">
+            {notes.map(flag => (
+              <div key={`n-${flag}`}>
+                <span className="font-mono font-semibold uppercase tracking-wide mr-2 text-slate-500">{flag}</span>
+                {describeContextFlag(flag)}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
       {rejected && rejected.count > 0 && (
         <div className="border border-red-200 bg-red-50 rounded px-2.5 py-1.5 text-xs text-red-800">
           <span className="font-semibold mr-1">
