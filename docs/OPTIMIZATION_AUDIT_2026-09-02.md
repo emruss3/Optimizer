@@ -1926,3 +1926,18 @@ Creek 292 / 85 against 92 must not read "Code compliant"), the house
 sketch's 0 / 0 stalls against a table requirement of 2, per-task states for
 compile / terrain / lot fit / massing, APN search on the unformatted column,
 Post Rd's access strips distinguished from lot labels.
+
+## 36. The cohort retest, P0.1b: parking the evidence cannot settle (2026-11-09)
+
+The retest's highest priority. `SiteMetrics.parkingStatus` now says what
+the parking figures can bear: `verified` when the drawn bays and the
+engine's summary agree, `needs_verification` when they disagree (0 Whites
+Creek Pike: 292 drawn, 85 reported, 92 required — the badge reads "Parking
+needs verification · 292 drawn / 85 reported · 92 required", never "Code
+compliant"; the table and the evidence hook carry both values), and
+`not_evaluated` for the house sketch, whose requirement the seed never
+computes (the strip reads "0 / not evaluated" and the table "—" instead of
+"0 / 0" under a typology default of 2). APN search also matches the
+unformatted parcel number. Fixtures for conflicting, agreeing, zero-provided
+and no-requirement cases; verified on the local build. The engine ask is
+unchanged: the multifamily summary total must agree with its bays.

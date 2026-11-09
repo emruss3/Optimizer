@@ -834,3 +834,51 @@ describe('one selected plan across the header, the tabulation and the canvas (0 
     expect(off.flags).toContain('parking_summary_disagrees');
   });
 });
+
+describe('parking status: what the sheet can stand on (the cohort retest, 2026-11-09)', () => {
+  it('bays and summary that disagree need verification, with both values kept', () => {
+    const { metrics } = seedFamilyPlanToElements(WHITES_CREEK);
+    expect(metrics?.parkingStatus).toBe('needs_verification');
+    expect(metrics?.parkingStatusReason).toContain('292 stalls');
+    expect(metrics?.parkingStatusReason).toContain('summary says 85');
+    expect(metrics?.stallsDrawn).toBe(292);
+    expect(metrics?.stallsReported).toBe(85);
+  });
+
+  it('bays that agree with the summary are verified; a plan with only a summary is verified', () => {
+    const agreeing = { ...WHITES_CREEK, parking: { ...(WHITES_CREEK.parking as object), bays: [40, 45].map((stalls, i) => ({ geom_2274: rect2274(1727400 + i * 130, 670000, 120, 60), stalls })), stalls: 85 } } as SeedFamilyResponse;
+    expect(seedFamilyPlanToElements(agreeing).metrics?.parkingStatus).toBe('verified');
+    expect(seedFamilyPlanToElements(SEED_RESP).metrics?.parkingStatus).toBe('verified');
+  });
+
+  it('zero stalls provided with a known requirement is a verified shortfall, not an unknown', () => {
+    const none = { ...WHITES_CREEK, parking: { bays: [], stalls: 0 }, metrics: { ...(WHITES_CREEK.metrics as object), stalls: 0 } } as SeedFamilyResponse;
+    const { metrics } = seedFamilyPlanToElements(none);
+    expect(metrics?.stallsProvided).toBe(0);
+    expect(metrics?.stallsRequired).toBe(92);
+    expect(metrics?.parkingStatus).toBe('verified');
+  });
+
+  it('no requirement from the engine stays undefined (the table says typology defaults)', () => {
+    const noReq = { ...WHITES_CREEK, metrics: { ...(WHITES_CREEK.metrics as object), stalls_required: undefined } } as SeedFamilyResponse;
+    expect(seedFamilyPlanToElements(noReq).metrics?.stallsRequired).toBeUndefined();
+  });
+
+  it('the house sketch\'s requirement is not evaluated: unknown, not 0 (1289 Currey Rd)', () => {
+    const house = {
+      ...WHITES_CREEK,
+      buildings: [{ structure_id: 1, geom_2274: rect2274(1727000, 670000, 40, 30), footprint_sqft: 437, floors: 1, is_single_polygon: true }] as never,
+      parking: undefined,
+      metrics: { gfa_sqft: 437, units: 1 } as never,
+    } as SeedFamilyResponse;
+    const { metrics } = seedFamilyPlanToElements(house, { idPrefix: 'sfseed', house: true });
+    expect(metrics?.parkingStatus).toBe('not_evaluated');
+    expect(metrics?.stallsRequired).toBeUndefined();
+    expect(metrics?.parkingStatusReason).toContain('not evaluated');
+  });
+
+  it('the legacy mapper carries the same status', () => {
+    expect(mfPlanToElements(RESP).metrics?.parkingStatus).toBe('verified');
+    expect(mfPlanToElements({ ...RESP, metrics: { ...RESP.metrics, stalls: 60 } }).metrics?.parkingStatus).toBe('needs_verification');
+  });
+});

@@ -171,6 +171,37 @@ Post Rd (the palette searches `address` and `parcelnumb` with `ilike`; a
 formatted APN with spaces or dashes will not match the unformatted column —
 the next PR should search `parcelnumb_no_formatting` as well).
 
+## Retest P0.1b, the fourth PR: a parking count the evidence cannot settle passes nothing
+
+The cohort retest's highest priority: production promoted 292 bay stalls
+over the engine's 85 against a 92-stall requirement and still said "Code
+compliant" (0 Whites Creek Pike). Which count is accepted decides pass or
+fail, so neither may pass until the engine reconciles them.
+
+| Case | Before | After |
+|---|---|---|
+| 0 Whites Creek Pike (RM9), bays 292 vs summary 85, 92 required | "Code compliant"; strip 292 / 92 | badge **Parking needs verification · 292 drawn / 85 reported · 92 required** (amber, never green); strip "292 drawn · 85 reported / 92"; table "Stalls 292 / 92 (engine summary 85 · needs verification)" and receipts "provided count needs verification"; `metrics.parkingStatus = needs_verification` with the reason, in the evidence hook |
+| 1289 Currey Rd house sketch | strip "0 / 0", table "Pkg req 2" (typology default), "Code compliant" | strip "0 / not evaluated"; table "—" in the requirement column, receipts "Parking requirement: not evaluated for this sketch"; badge stays **Conditional** (landlocked); without the easement it would read "Compliant on evaluated checks · parking not evaluated" |
+| 2937 Brick Church Pike (72 drawn, 74 reported, 51 required), 5515 Mt View Rd (46 drawn, 56 reported, 52 required) | "Code compliant" / shortfall | both read needs verification (unit-tested through the same mapper rule) |
+| APN search "116 02 0 020.00" (4727 Post Rd) | no match: the formatted number never equals the stored one | the digits also search `parcelnumb_no_formatting` |
+
+Where it lives: `SiteMetrics.parkingStatus` / `parkingStatusReason`
+(`verified`, `needs_verification`, `not_evaluated`), set by
+`parkingStatusOf` in both multifamily mappers and to `not_evaluated` by the
+house sketch (`seedFamilyPlanToElements(…, {house: true})`, whose
+`stallsRequired` is now undefined, not 0); `KpiStrip` badge
+`kpi-parking-verify` and the stalls stat; `TabulationPanel` `tab-pkg-total`
+and the stalls line; `CommandPalette` filters. Fixtures in
+`generateMfPlan.test.ts`: conflicting bays and summary, agreeing bays, zero
+provided with a known requirement, no requirement, the house. Shots:
+`680339_whites_creek_pike_parking_needs_verification.png`,
+`616415_currey_rd_parking_not_evaluated.png`.
+
+The engine ask stands: `fn_generate_mf_site_plan_v2`'s `metrics.stalls`
+(85) disagrees with its own bays (292) and its own `parking_ratio_provided`
+(5.58 × 53 = 296). Until it reconciles them the sheet cannot say the plan
+parks, and the handoff carries `needs_verification`, not a number.
+
 ## Left for the next releases
 
 - **P0.2** — the explainable status: per-check rows with value, threshold,

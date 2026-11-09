@@ -145,3 +145,30 @@ describe('KpiStrip — the verdict names its scope (the scope\'s P0.2, 2026-11-0
     expect(screen.queryByText(/Code compliant/)).toBeNull();
   });
 });
+
+describe('KpiStrip — parking the evidence cannot settle (the cohort retest, 2026-11-09)', () => {
+  it('two counts that disagree read "Parking needs verification", never Code compliant (0 Whites Creek Pike)', () => {
+    render(
+      <KpiStrip
+        metrics={{ ...base, stallsProvided: 292, stallsRequired: 92, stallsDrawn: 292, stallsReported: 85, parkingStatus: 'needs_verification', parkingStatusReason: 'the drawn bays hold 292 stalls; the engine\'s summary says 85' } as SiteMetrics}
+        investment={null}
+      />
+    );
+    expect(screen.getByTestId('kpi-parking-verify').textContent).toBe('Parking needs verification · 292 drawn / 85 reported · 92 required');
+    expect(screen.queryByText(/Code compliant/)).toBeNull();
+    expect(screen.getByText('292 drawn · 85 reported / 92')).toBeTruthy();
+  });
+
+  it('a requirement that was not evaluated reads as unknown, and the badge scopes its claim (1289 Currey Rd)', () => {
+    render(<KpiStrip metrics={{ ...base, totalUnits: 1, stallsProvided: 0, stallsRequired: undefined, parkingStatus: 'not_evaluated' } as SiteMetrics} investment={null} />);
+    expect(screen.getByText('0 / not evaluated')).toBeTruthy();
+    expect(screen.getByText('Compliant on evaluated checks · parking not evaluated')).toBeTruthy();
+    expect(screen.queryByText('0 / 0')).toBeNull();
+  });
+
+  it('a conditional sketch stays Conditional even when parking is unverified', () => {
+    render(<KpiStrip metrics={{ ...base, conditional: 'assumes an access easement', parkingStatus: 'needs_verification', stallsDrawn: 4, stallsReported: 2 } as SiteMetrics} investment={null} />);
+    expect(screen.getByTestId('kpi-conditional')).toBeTruthy();
+    expect(screen.queryByTestId('kpi-parking-verify')).toBeNull();
+  });
+});

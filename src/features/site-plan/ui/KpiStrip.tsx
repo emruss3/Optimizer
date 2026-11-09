@@ -116,6 +116,8 @@ const KpiStrip: React.FC<{
   const stallsProvided = metrics.stallsProvided ?? 0;
   const stallsRequired = metrics.stallsRequired ?? 0;
   const parkingShort = stallsRequired > 0 && stallsProvided < stallsRequired;
+  const parkingUnverified = metrics.parkingStatus === 'needs_verification';
+  const parkingNotEvaluated = metrics.parkingStatus === 'not_evaluated';
   // Metrics arrive from more than one engine (client solver, server
   // generator) — tolerate missing fields instead of crashing the planner.
   const violations = metrics.violations ?? [];
@@ -148,11 +150,28 @@ const KpiStrip: React.FC<{
       {(metrics.siteCoveragePct ?? 0) > 0 && (
         <Stat label="Coverage" value={`${metrics.siteCoveragePct.toFixed(0)}%`} />
       )}
-      <Stat
-        label="Stalls"
-        value={`${stallsProvided} / ${stallsRequired}`}
-        alert={parkingShort}
-      />
+      <span
+        title={
+          parkingUnverified
+            ? `Parking needs verification: ${metrics.parkingStatusReason ?? 'the drawn bays and the engine\'s summary disagree'}.`
+            : parkingNotEvaluated
+              ? `Parking requirement not evaluated: ${metrics.parkingStatusReason ?? 'no requirement was computed for this sketch'}.`
+              : undefined
+        }
+        className="flex items-center"
+      >
+        <Stat
+          label="Stalls"
+          value={
+            parkingUnverified
+              ? `${metrics.stallsDrawn ?? stallsProvided} drawn · ${metrics.stallsReported ?? '?'} reported / ${stallsRequired}`
+              : parkingNotEvaluated
+                ? `${stallsProvided} / not evaluated`
+                : `${stallsProvided} / ${stallsRequired}`
+          }
+          alert={parkingShort || parkingUnverified}
+        />
+      </span>
       {typeof pctPlaced === 'number' && (
         <span
           title={`Adequacy vs ambition: ${stallsProvided} stalls cover ${pctPlaced}% of the PLACED program's need (${metrics.stallsRequired ?? '?'} stalls)${
@@ -196,7 +215,19 @@ const KpiStrip: React.FC<{
       {/* Compliance and optimization are SEPARATE verdicts: a code-compliant
           plan at 78% of the theoretical envelope is not "done" — the capture
           chip says so instead of letting the green chip imply optimality. */}
-      {metrics.conditional ? (
+      {parkingUnverified && !metrics.conditional ? (
+        // Two parking counts the evidence cannot choose between: neither a pass
+        // nor a shortfall (0 Whites Creek Pike: 292 drawn, 85 reported, 92
+        // required read "Code compliant" in production, 2026-11-09).
+        <div
+          data-testid="kpi-parking-verify"
+          title={`Parking needs verification: ${metrics.parkingStatusReason ?? ''}`}
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          Parking needs verification · {metrics.stallsDrawn ?? stallsProvided} drawn / {metrics.stallsReported ?? '?'} reported · {stallsRequired} required
+        </div>
+      ) : metrics.conditional ? (
         // A sketch that depends on an assumed easement or a flood scenario is
         // Conditional, whatever its arithmetic says (1289 Currey Rd, 2026-11-09:
         // "Code compliant" on a house that assumes an easement across a neighbour).
@@ -229,7 +260,9 @@ const KpiStrip: React.FC<{
             ? `Parking shortfall · ${stallsProvided} of ${stallsRequired} stalls${clampReasons.filter(r => r !== 'parking short').length > 0 ? ` · ${clampReasons.filter(r => r !== 'parking short')[0]}` : ''}`
             : constrained
               ? `Code compliant · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
-              : 'Code compliant'}
+              : parkingNotEvaluated
+                ? 'Compliant on evaluated checks · parking not evaluated'
+                : 'Code compliant'}
       </div>
       )}
       {utilizationPct != null && utilizationPct < 85 && (
