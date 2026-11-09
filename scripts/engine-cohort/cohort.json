@@ -1,0 +1,1312 @@
+[
+ {
+  "fid": 677010,
+  "address": "0 TEMPLE RD",
+  "zoning": "RS40",
+  "acres": 2.78,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "floodplain, and landlocked"
+ },
+ {
+  "fid": 676960,
+  "address": "0 COUCHVILLE PIKE",
+  "zoning": "RS80",
+  "acres": 1.43,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "smaller than one RS80 lot"
+ },
+ {
+  "fid": 672524,
+  "address": "0 NASHBORO BLVD",
+  "zoning": "R10",
+  "acres": 3.46,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    7,
+    10
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "8 frontage lots off the boulevard, no new street"
+ },
+ {
+  "fid": 679226,
+  "address": "0 HESSEY RD",
+  "zoning": "RS10",
+  "acres": 5.8,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    10,
+    16
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "12 lots on two cul-de-sacs; the grade is the question"
+ },
+ {
+  "fid": 674961,
+  "address": "0 HOMELAND DR",
+  "zoning": "RS40",
+  "acres": 9.02,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    4,
+    7
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "5 estate lots; a street that holds grade"
+ },
+ {
+  "fid": 661661,
+  "address": "6404 EATONS CREEK RD",
+  "zoning": "R40",
+  "acres": 9.02,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    4,
+    7
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 60,
+  "why": "5 estate lots on a shared private drive (g13)"
+ },
+ {
+  "fid": 676430,
+  "address": "0 RIVER LANDING WAY",
+  "zoning": "R15",
+  "acres": 15.39,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "the floodplain; a flood study first"
+ },
+ {
+  "fid": 679830,
+  "address": "0 NEELYS BEND RD",
+  "zoning": "RS40",
+  "acres": 18.91,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    10
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "estate lots on a drive; the engine drew 0 and then 2 lots on 3,555 ft"
+ },
+ {
+  "fid": 675128,
+  "address": "0 NEWSOM STATION RD",
+  "zoning": "R80",
+  "acres": 27.25,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    5,
+    10
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "7 pie lots at the end of one street, buildable"
+ },
+ {
+  "fid": 678964,
+  "address": "0 BRITTANY PARK DR",
+  "zoning": "RS20",
+  "acres": 29.0,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    28,
+    45
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "a 36-lot loop that holds grade"
+ },
+ {
+  "fid": 667565,
+  "address": "6438 OLD CLARKSVILLE PIKE",
+  "zoning": "RS40",
+  "acres": 1.4,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "one lot, the parcel"
+ },
+ {
+  "fid": 680860,
+  "address": "3905 LUNN DR",
+  "zoning": "RS15",
+  "acres": 2.11,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    2,
+    4
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "2-3 lots; the engine drew 0 and the neighborhood grammar 2, buildable"
+ },
+ {
+  "fid": 681024,
+  "address": "0 LONGWOOD PL",
+  "zoning": "R20",
+  "acres": 4.41,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    7,
+    10
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "9 lots, all pass (a co-op owner: not a site, kept for the engine)"
+ },
+ {
+  "fid": 679273,
+  "address": "0 OLD HICKORY BLVD",
+  "zoning": "R15",
+  "acres": 5.51,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    9
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "the grid drew 8 failing grade; a cul-de-sac that holds grade for 4-8"
+ },
+ {
+  "fid": 680408,
+  "address": "0 RIDGEWOOD RD",
+  "zoning": "RS80",
+  "acres": 6.33,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    1,
+    3
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": true
+  },
+  "judged": null,
+  "why": "one or two estate lots on a drive, or the parcel as one"
+ },
+ {
+  "fid": 681029,
+  "address": "0 ABBOTT MARTIN RD",
+  "zoning": "R20",
+  "acres": 10.76,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "a co-op common area; nothing"
+ },
+ {
+  "fid": 667802,
+  "address": "7963 CHARLOTTE PIKE",
+  "zoning": "R40",
+  "acres": 16.95,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    10,
+    16
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "12 frontage lots, no street"
+ },
+ {
+  "fid": 659655,
+  "address": "1019 HITT LN",
+  "zoning": "R20",
+  "acres": 21.61,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    12,
+    25
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "the grid drew 19 failing dead end, block and grade; a loop that passes"
+ },
+ {
+  "fid": 681357,
+  "address": "1716 RED JACKET DR",
+  "zoning": "R10",
+  "acres": 38.68,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    70,
+    110
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": null,
+  "why": "89 lots on two loops; the grade"
+ },
+ {
+  "fid": 380818,
+  "address": "3345 PUGH RD",
+  "zoning": "RS80",
+  "acres": 28.14,
+  "batch": 1,
+  "audit": "qa/audits/2026-11-04c",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    10
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": true
+  },
+  "judged": null,
+  "why": "estate lots on a drive, or nothing on 28 ac of RS80 hillside"
+ },
+ {
+  "fid": 424990,
+  "address": "6211 BROWNLEE DR",
+  "zoning": "RS40",
+  "acres": 1.2,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 90,
+  "why": "53,600 SF cannot make two 40,000-SF lots"
+ },
+ {
+  "fid": 667183,
+  "address": "3730 HOMELAND DR",
+  "zoning": "RS40",
+  "acres": 1.6,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 85,
+  "why": "a 28% slope strip: one house"
+ },
+ {
+  "fid": 661271,
+  "address": "5014 BUENA VISTA PIKE",
+  "zoning": "RS15",
+  "acres": 1.1,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 85,
+  "why": "in the floodway"
+ },
+ {
+  "fid": 680721,
+  "address": "0 LARKIN SPRINGS RD",
+  "zoning": "RS10",
+  "acres": 23.0,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 80,
+  "why": "conservation land in the floodplain"
+ },
+ {
+  "fid": 666092,
+  "address": "6247 MT VIEW RD",
+  "zoning": "RS10",
+  "acres": 6.9,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    12,
+    18
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 70,
+  "why": "15 lots on a T street, all pass"
+ },
+ {
+  "fid": 680528,
+  "address": "0 GULCH ST",
+  "zoning": "RS7.5",
+  "acres": 2.4,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 70,
+  "why": "entirely in the SFHA"
+ },
+ {
+  "fid": 692658,
+  "address": "415 EAGLE RDG",
+  "zoning": "R15",
+  "acres": 2.9,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 65,
+  "why": "one house on a 21% hillside"
+ },
+ {
+  "fid": 672526,
+  "address": "0 HICKORY BEND DR",
+  "zoning": "RS10",
+  "acres": 5.3,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 60,
+  "why": "Zone A, no BFE: a flood study first"
+ },
+ {
+  "fid": 679911,
+  "address": "0 SWISS AVE",
+  "zoning": "RM15",
+  "acres": 4.1,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    30,
+    60
+   ],
+   "product": "any",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 55,
+  "why": "36 townhomes or the 60-unit apartment plan: either is a product here"
+ },
+ {
+  "fid": 679617,
+  "address": "0 STEWARTS FERRY PIKE",
+  "zoning": "RS15",
+  "acres": 3.3,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    4,
+    6
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 50,
+  "why": "4-5 lots; a drive likelier than a public street"
+ },
+ {
+  "fid": 395417,
+  "address": "1430 NEELYS BEND RD",
+  "zoning": "RS80",
+  "acres": 8.4,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 50,
+  "why": "7.2 ac in the flood hold; by right nothing"
+ },
+ {
+  "fid": 677645,
+  "address": "0 POPLAR CREEK RD",
+  "zoning": "RS15",
+  "acres": 2.5,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    5
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 40,
+  "why": "4 lots; a private drive, not a through street"
+ },
+ {
+  "fid": 680596,
+  "address": "0 HART LN",
+  "zoning": "R10",
+  "acres": 35.0,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    55,
+    80
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 45,
+  "why": "60-75 lots on streets that follow the contours"
+ },
+ {
+  "fid": 679195,
+  "address": "0 OLD LEBANON DIRT RD",
+  "zoning": "RM9",
+  "acres": 4.9,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 35,
+  "why": "landlocked; access decides"
+ },
+ {
+  "fid": 680202,
+  "address": "0 CAMPBELL RD",
+  "zoning": "RS80",
+  "acres": 17.8,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    2,
+    4
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 40,
+  "why": "2-4 estate lots on a shared drive"
+ },
+ {
+  "fid": 670533,
+  "address": "0 SMITH SPRINGS RD",
+  "zoning": "RM6",
+  "acres": 7.0,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    30,
+    42
+   ],
+   "product": "attached",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 20,
+  "why": "townhomes or small lots at the density cap, not one bar with 113 stalls"
+ },
+ {
+  "fid": 679820,
+  "address": "0 WESTCAP RD",
+  "zoning": "R15",
+  "acres": 10.6,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    8,
+    14
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 25,
+  "why": "a hillside civil follows the contours and keeps 8-12"
+ },
+ {
+  "fid": 680001,
+  "address": "0 UNION HILL RD",
+  "zoning": "RS40",
+  "acres": 7.6,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    5
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 35,
+  "why": "3 lots on a short street or a drive, no bulb through the wetland"
+ },
+ {
+  "fid": 678148,
+  "address": "0 HICKORY HOLLOW PKWY",
+  "zoning": "RM20",
+  "acres": 1.7,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 5,
+  "why": "a 54-ft-wide landlocked strip"
+ },
+ {
+  "fid": 679540,
+  "address": "0 DRY FORK RD",
+  "zoning": "RS40",
+  "acres": 31.0,
+  "batch": 2,
+  "audit": "qa/audits/2026-11-06",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 70,
+  "why": "mountain land, 37% slope: 0 with the reason (g13)"
+ },
+ {
+  "fid": 661591,
+  "address": "4819 FAIRMEADE CT",
+  "zoning": "RS40",
+  "acres": 1.25,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 90,
+  "why": "one house; 0.48 ac over 25%"
+ },
+ {
+  "fid": 677281,
+  "address": "0 PENN MEADE WAY",
+  "zoning": "RS10",
+  "acres": 6.6,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 90,
+  "why": "floodplain and landlocked; a remnant"
+ },
+ {
+  "fid": 679618,
+  "address": "0 HILLWOOD BLVD",
+  "zoning": "RS40",
+  "acres": 2.85,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    2,
+    3
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 85,
+  "why": "2-3 estate lots off the boulevard"
+ },
+ {
+  "fid": 659921,
+  "address": "54 PARK CRESCENT CIR",
+  "zoning": "R15",
+  "acres": 1.52,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 85,
+  "why": "1.23 of 1.52 ac over 25%"
+ },
+ {
+  "fid": 686430,
+  "address": "4255 BRICK CHURCH PIKE",
+  "zoning": "R20",
+  "acres": 4.09,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 80,
+  "why": "flood hold plus hillside leave 0.65 ac"
+ },
+ {
+  "fid": 667638,
+  "address": "1014 ANTIOCH PIKE",
+  "zoning": "R8",
+  "acres": 2.8,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    7,
+    9
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 75,
+  "why": "a cul-de-sac stem with pie lots round the bulb"
+ },
+ {
+  "fid": 665951,
+  "address": "1422 CAMPBELL RD",
+  "zoning": "R20",
+  "acres": 17.3,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 80,
+  "why": "landlocked, 30% slope"
+ },
+ {
+  "fid": 680785,
+  "address": "0 ROBINSON RD",
+  "zoning": "R10",
+  "acres": 31.0,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 70,
+  "why": "all 31 ac in the SFHA"
+ },
+ {
+  "fid": 680391,
+  "address": "0 HILLS LN",
+  "zoning": "R10",
+  "acres": 6.62,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    14,
+    18
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 70,
+  "why": "17 lots on one street"
+ },
+ {
+  "fid": 673175,
+  "address": "0 OLD HICKORY BLVD",
+  "zoning": "R40",
+  "acres": 3.21,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 55,
+  "why": "landlocked; one house by easement"
+ },
+ {
+  "fid": 673710,
+  "address": "0 HICKORY HOLLOW PKWY",
+  "zoning": "RM20",
+  "acres": 1.95,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    20,
+    30
+   ],
+   "product": "attached",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 60,
+  "why": "two rows along a mews on a 90-ft strip"
+ },
+ {
+  "fid": 679683,
+  "address": "0 OLD HYDES FERRY PIKE",
+  "zoning": "RS20",
+  "acres": 1.37,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    1,
+    2
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 75,
+  "why": "two 20,000-SF lots if the frontage allows"
+ },
+ {
+  "fid": 673844,
+  "address": "0 OLD HICKORY BLVD",
+  "zoning": "RS20",
+  "acres": 5.27,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    2,
+    5
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 60,
+  "why": "2-4 lots after the flood hold and the hillside"
+ },
+ {
+  "fid": 661303,
+  "address": "4525 CATO RD",
+  "zoning": "RS15",
+  "acres": 2.14,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    2,
+    3
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 65,
+  "why": "two or three lots on 1.7 buildable ac"
+ },
+ {
+  "fid": 670783,
+  "address": "0 NASHBORO BLVD",
+  "zoning": "RM6",
+  "acres": 1.66,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    8,
+    9
+   ],
+   "product": "attached",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 30,
+  "why": "9 townhomes, not 9 apartments with 101 stalls"
+ },
+ {
+  "fid": 676829,
+  "address": "0 WALKER LN",
+  "zoning": "RS20",
+  "acres": 5.5,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    5,
+    7
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 25,
+  "why": "a 500-ft cul-de-sac for 5-7"
+ },
+ {
+  "fid": 692464,
+  "address": "7695 OLD CHARLOTTE PIKE",
+  "zoning": "R80",
+  "acres": 45.9,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    6,
+    10
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 35,
+  "why": "a drive along the bench for 6-10 estate lots"
+ },
+ {
+  "fid": 676422,
+  "address": "0 CEDARSTONE WAY",
+  "zoning": "RM9",
+  "acres": 3.37,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    20,
+    30
+   ],
+   "product": "attached",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 20,
+  "why": "townhomes at the density cap; the owner builds them"
+ },
+ {
+  "fid": 673974,
+  "address": "0 HICKS RD",
+  "zoning": "RM4",
+  "acres": 4.07,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 20,
+  "why": "landlocked and 28% slope"
+ },
+ {
+  "fid": 670893,
+  "address": "0 BLEVINS RD",
+  "zoning": "RS20",
+  "acres": 31.8,
+  "batch": 3,
+  "audit": "qa/audits/2026-11-09",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 80,
+  "why": "landlocked mountain land: 0, said plainly"
+ },
+ {
+  "fid": 677706,
+  "address": "0 NEWSOM STATION RD",
+  "zoning": "R40",
+  "acres": 19.67,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 95,
+  "why": "19.2 ac in the floodplain"
+ },
+ {
+  "fid": 677593,
+  "address": "0 DRAKES BRANCH RD",
+  "zoning": "RS40",
+  "acres": 12.22,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 85,
+  "why": "landlocked, 6.0 ac over 25%"
+ },
+ {
+  "fid": 661326,
+  "address": "70 HILLENGLADE DR",
+  "zoning": "RS20",
+  "acres": 5.77,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 80,
+  "why": "landlocked (a private lane), 4.6 ac over 25%"
+ },
+ {
+  "fid": 666615,
+  "address": "810 DUE WEST AVE N",
+  "zoning": "RS20",
+  "acres": 1.48,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 75,
+  "why": "68 ft of frontage: one lot, the parcel"
+ },
+ {
+  "fid": 673567,
+  "address": "0 CLOVERNOOK DR",
+  "zoning": "RS10",
+  "acres": 1.17,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    4
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 55,
+  "why": "three frontage lots, or two and a flag; not a 34,000-SF remainder"
+ },
+ {
+  "fid": 673509,
+  "address": "0 CAROTHERS RD",
+  "zoning": "RM9",
+  "acres": 4.73,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    36,
+    42
+   ],
+   "product": "attached",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 50,
+  "why": "36-42 townhomes; the apartments lose 61% on cost"
+ },
+ {
+  "fid": 659670,
+  "address": "8282 CHARLOTTE PIKE",
+  "zoning": "R40",
+  "acres": 11.87,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    5,
+    6
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 35,
+  "why": "a lane up the strip to the 4-ac bench; not two front lots and a 10-ac remainder"
+ },
+ {
+  "fid": 660683,
+  "address": "605 HARPETH LN",
+  "zoning": "RS40",
+  "acres": 5.18,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    1,
+    2
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 25,
+  "why": "the parcel as one lot with a driveway, or two on a shared drive; no 744-ft public street"
+ },
+ {
+  "fid": 668277,
+  "address": "8192 CHARLOTTE PIKE",
+  "zoning": "R40",
+  "acres": 31.63,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    6
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": true
+  },
+  "judged": 15,
+  "why": "3-6 estate lots on a lane along the creek, or 0 with the reason; not 2 lots on 1,414 ft at 24%"
+ },
+ {
+  "fid": 675099,
+  "address": "0 TODD PREIS DR",
+  "zoning": "RM9",
+  "acres": 10.45,
+  "batch": 4,
+  "audit": "qa/audits/2026-11-09b",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 5,
+  "why": "9.9 ac in the SFHA, 3.1 floodway: nothing, on either side"
+ }
+]

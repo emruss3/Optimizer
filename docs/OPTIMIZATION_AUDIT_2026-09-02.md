@@ -1819,3 +1819,36 @@ layers fetched for the hold). The townhome row's count is said when it drew
 more than the best but fails (0 Carothers Rd: 42 homes, `alley.street_to_street`).
 Battery: 0 Todd Preis Dr (675099) gates the badge, the sentence and the
 hold on the sheet.
+
+## 32. The engine cohort: one number, one ask (2026-11-09, late)
+
+Eric: "If we aren't getting better each time we do this, we need to
+re-focus." Across batches the engine's refusals improved (hillside,
+landlocked, floodplain zeros right every time in the last two rounds) while
+drawn plans did not, and each random batch sent the engine ten asks, so the
+same three families came back under new addresses. The re-focus:
+`scripts/engine-cohort` — every parcel from batches 1–4 (70: 60 R/RS, 10 RM)
+with what a civil would draw on it (`cohort.json`), a scorer that reduces
+one engine run to two counts and names the parcels whose answer changed
+(`score.mjs`), a live runner for the owner or CI (`run.mjs`) and the SQL
+path for the audit harness (`harvest-sql.mjs`).
+
+Baseline, g15 (`runs/2026-11-09_g15.json`): **plans where a civil would draw
+one, 18 of 40 (45%); refusals where nothing belongs, 25 of 30 (83%).** Of the
+22 plan misses, 14 are one behavior — the land behind the first tier becomes
+a remainder lot, a failing public street for one or two lots, or nothing
+(Clovernook Dr, 8282 and 8192 Charlotte Pike, Harpeth Ln, Neelys Bend Rd,
+Pugh Rd, Old Charlotte Pike, 7963 Charlotte Pike, Hitt Ln, Campbell Rd,
+Walker Ln, Hessey Rd, Newsom Station Rd R80, Old Hickory Blvd R15); 4 are
+hillside streets over 10%; 4 are apartments where the product is attached.
+Of the 5 refusal misses, 3 are the multifamily run drawing on landlocked
+land and 2 are by-right plans on land that was a zero before (Dry Fork Rd:
+0 in g13, 4 lots in g15; Old Hickory Blvd R40). Two regressions since the
+batches that found them: 7963 Charlotte Pike (12 frontage lots on
+2026-11-04, nothing now) and Dry Fork Rd.
+
+The handoff to the engine is now one precondition (the multifamily run
+honors the flood hold and the landlocked call, as sf_v1 does) and one ask
+(lot the land behind the first tier: a second flag tier, the drive grammar,
+or the first tier alone with no street), measured on the same 70 parcels.
+No new random batch until the plan number moves.
