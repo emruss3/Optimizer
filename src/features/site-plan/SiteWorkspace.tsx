@@ -3035,6 +3035,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             stallsRequired: metrics.stallsRequired ?? null,
             stallsDrawn: metrics.stallsDrawn ?? null,
             stallsReported: metrics.stallsReported ?? null,
+            parkingStatus: metrics.parkingStatus ?? null,
             bayStalls: displayElements
               .filter(e => e.type === 'parking' && isMfPlanElement(e))
               .reduce((s, p) => s + (typeof p.properties?.parkingSpaces === 'number' ? (p.properties.parkingSpaces as number) : 0), 0),

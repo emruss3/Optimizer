@@ -213,10 +213,16 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       if (supabase) {
         // PostgREST's filter grammar reads commas and parentheses as syntax
         const term = searchQuery.replace(/[,()]/g, ' ').trim();
+        // An APN typed with its spaces or dashes ("116 02 0 020.00") never
+        // matched the stored number; the unformatted column takes the digits
+        // (the cohort retest: exact APN search empty for 4727 Post Rd).
+        const digits = term.replace(/[^0-9a-z]/gi, '');
+        const filters = [`address.ilike.%${term}%`, `parcelnumb.ilike.%${term}%`];
+        if (digits.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${digits}%`);
         const { data: parcels, error } = await supabase
           .from('parcels')
           .select('ogc_fid, parcelnumb, address, zoning, landval')
-          .or(`address.ilike.%${term}%,parcelnumb.ilike.%${term}%`)
+          .or(filters.join(','))
           .limit(10);
         if (stale()) return;
         if (error) throw new Error(error.message ?? String(error));

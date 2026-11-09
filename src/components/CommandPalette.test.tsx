@@ -17,11 +17,12 @@ import CommandPalette from './CommandPalette';
 class RO { observe() { /* noop */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }
 (globalThis as unknown as { ResizeObserver: typeof RO }).ResizeObserver = RO;
 
+const orFilters: string[] = [];
 /** a PostgREST-shaped query builder that resolves to the given rows */
 function table(result: { data: unknown; error: unknown }, delayMs = 0) {
   const chain = {
     select: () => chain,
-    or: () => chain,
+    or: (f: string) => { orFilters.push(f); return chain; },
     limit: () => new Promise(res => setTimeout(() => res(result), delayMs)),
   };
   return chain;
@@ -107,5 +108,17 @@ describe('CommandPalette — a search hit opens the parcel the way a map click d
     await act(async () => { await new Promise(r => setTimeout(r, 900)); }); // the old answer arrives late
     expect(screen.queryByText('OLD QUERY HIT')).toBeNull();
     expect(screen.getByText('NEW QUERY HIT')).toBeTruthy();
+  });
+});
+
+describe('CommandPalette — an APN typed with its formatting matches the unformatted column (the cohort retest, 2026-11-09)', () => {
+  it('searches parcelnumb_no_formatting with the digits of the query', async () => {
+    orFilters.length = 0;
+    fromMock.mockImplementation(() => table({ data: [{ ...ROW, parcelnumb: '116 02 0 020.00' }], error: null }));
+    render(<CommandPalette isOpen onClose={() => undefined} />);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '116 02 0 020.00' } });
+    await screen.findByText('0 WHITES CREEK PIKE', {}, { timeout: 3000 });
+    expect(orFilters.at(-1)).toContain('parcelnumb_no_formatting.ilike.%11602002000%');
+    expect(orFilters.at(-1)).toContain('parcelnumb.ilike.%116 02 0 020.00%');
   });
 });

@@ -252,6 +252,7 @@ export function mfPlanToElements(resp: MfPlanResponse): {
         stallsRequired: mNum(m.stalls_required),
         stallsDrawn,
         stallsReported,
+        ...parkingStatusOf(stallsDrawn, stallsReported),
         // Server plans are constructed inside the setback envelope; parking
         // shortfall is surfaced via stalls (red) + plan-basis flag, not as a
         // zoning violation. Consumers (KpiStrip) need these present.
@@ -463,6 +464,20 @@ function apportionMix(
  * elements + planner metrics. Geometry: EPSG:2274 feet → 4326 → 3857 (the
  * canvas frame); every displayed AREA is the engine's own number.
  */
+/** The parking status the sheet stands on (SiteMetrics.parkingStatus). */
+export function parkingStatusOf(
+  stallsDrawn: number | null | undefined,
+  stallsReported: number | null | undefined,
+): { parkingStatus: 'verified' | 'needs_verification'; parkingStatusReason?: string } {
+  if (stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported) {
+    return {
+      parkingStatus: 'needs_verification',
+      parkingStatusReason: `the drawn bays hold ${stallsDrawn} stalls; the engine's summary says ${stallsReported}. Which count is accepted decides whether the plan clears its requirement, so it passes nothing until the engine reconciles them`,
+    };
+  }
+  return { parkingStatus: 'verified' };
+}
+
 export function seedFamilyPlanToElements(
   resp: SeedFamilyResponse,
   opts: { idPrefix?: string; house?: boolean } = {}
@@ -774,9 +789,15 @@ export function seedFamilyPlanToElements(
         parkingRatio: units && stalls != null ? stalls / units : 0,
         totalUnits: units ?? undefined,
         stallsProvided: stalls ?? undefined,
-        stallsRequired: stallsRequired ?? undefined,
+        // The house sketch draws no parking and the seed computes no
+        // requirement for one house: unknown, not zero (1289 Currey Rd read
+        // "0 / 0" in the strip under a table that said 2, 2026-11-09).
+        stallsRequired: opts.house ? undefined : (stallsRequired ?? undefined),
         stallsDrawn: stallsDrawn ?? undefined,
         stallsReported: stallsReported ?? undefined,
+        ...(opts.house
+          ? { parkingStatus: 'not_evaluated' as const, parkingStatusReason: 'the house sketch draws no parking and the district\'s requirement for one house was not evaluated' }
+          : parkingStatusOf(stallsDrawn, stallsReported)),
         violations: [],
         warnings: [],
         zoningCompliant: true,

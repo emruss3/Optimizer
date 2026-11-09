@@ -137,6 +137,16 @@ export interface SiteMetrics {
   stallsDrawn?: number;
   stallsReported?: number;
   /**
+   * Whether the parking figures can be stood on (the cohort retest, 2026-11-09):
+   * `verified` when the drawn bays and the engine's summary agree (or only one
+   * exists); `needs_verification` when they disagree (0 Whites Creek Pike:
+   * 292 drawn, 85 reported, 92 required — the choice decides pass or fail, so
+   * neither passes); `not_evaluated` when no requirement was computed (the
+   * house sketch draws no parking). Never "Code compliant" over the last two.
+   */
+  parkingStatus?: 'verified' | 'needs_verification' | 'not_evaluated';
+  parkingStatusReason?: string;
+  /**
    * The plan depends on an unverified precondition (the scope's P0.2): a
    * house sketched on a landlocked parcel assumes an access easement; one in
    * the flood hazard area assumes fill to the BFE and a floodplain permit.

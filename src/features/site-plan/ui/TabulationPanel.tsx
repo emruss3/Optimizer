@@ -139,9 +139,11 @@ const TabulationPanel: React.FC<{
 
   // Receipts: the compiled context's provenance, always visible.
   const receipts = useMemo(() => {
-    const parkingBasis = typeof metrics?.stallsRequired === 'number' && metrics.stallsRequired > 0
-      ? `Parking required: ${metrics.stallsRequired} from the engine, split by units`
-      : 'Parking ratios: typology defaults';
+    const parkingBasis = metrics?.parkingStatus === 'not_evaluated'
+      ? 'Parking requirement: not evaluated for this sketch'
+      : typeof metrics?.stallsRequired === 'number' && metrics.stallsRequired > 0
+        ? `Parking required: ${metrics.stallsRequired} from the engine, split by units${metrics.parkingStatus === 'needs_verification' ? ' · provided count needs verification' : ''}`
+        : 'Parking ratios: typology defaults';
     if (!plannerCtx) return `Context not compiled — plan uses standard defaults · ${parkingBasis}`;
     const c = plannerCtx.context;
     const n = (c.precedent as { n_comps?: number } | undefined)?.n_comps;
@@ -159,11 +161,14 @@ const TabulationPanel: React.FC<{
       parkingBasis,
     ].filter(Boolean);
     return parts.join(' · ');
-  }, [plannerCtx, metrics?.stallsRequired]);
+  }, [plannerCtx, metrics?.stallsRequired, metrics?.parkingStatus]);
 
   if (rows.length === 0) return null;
 
   const num = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d });
+  // an unknown requirement is shown as unknown, never as a typology guess (1289 Currey Rd)
+  const notEvaluated = metrics?.parkingStatus === 'not_evaluated';
+  const unverified = metrics?.parkingStatus === 'needs_verification';
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-3 py-2">
@@ -184,7 +189,7 @@ const TabulationPanel: React.FC<{
               <td className="text-right">{num(r.units)}</td>
               <td className="text-right">{num(r.pct)}%</td>
               <td className="text-right">{num(r.avgSqft)}</td>
-              <td className="text-right">{num(r.pkgReq)}</td>
+              <td className="text-right">{notEvaluated ? '—' : num(r.pkgReq)}</td>
             </tr>
           ))}
           <tr className="font-semibold text-gray-900 border-t border-gray-200">
@@ -192,7 +197,7 @@ const TabulationPanel: React.FC<{
             <td className="text-right">{num(totals.units)}</td>
             <td className="text-right">100%</td>
             <td className="text-right">{num(totals.avgSqft)}</td>
-            <td className="text-right">{num(totals.pkg)}</td>
+            <td className="text-right" data-testid="tab-pkg-total">{notEvaluated ? '—' : num(totals.pkg)}</td>
           </tr>
         </tbody>
       </table>
@@ -212,9 +217,9 @@ const TabulationPanel: React.FC<{
               : undefined
           }
         >
-          Stalls <b>{metrics?.stallsProvided ?? 0} / {metrics?.stallsRequired ?? 0}</b>
+          Stalls <b>{metrics?.stallsProvided ?? 0} / {notEvaluated ? 'not evaluated' : (metrics?.stallsRequired ?? 0)}</b>
           {typeof metrics?.stallsDrawn === 'number' && typeof metrics?.stallsReported === 'number' && metrics.stallsDrawn !== metrics.stallsReported && (
-            <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">(engine summary {metrics.stallsReported})</span>
+            <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">(engine summary {metrics.stallsReported}{unverified ? ' · needs verification' : ''})</span>
           )}
         </span>
         {metrics?.totalUnits ? (

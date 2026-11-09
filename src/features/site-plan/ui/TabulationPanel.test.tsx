@@ -55,3 +55,27 @@ describe('TabulationPanel reads the same plan as the header (0 Whites Creek Pike
     expect(screen.queryByTestId('tab-stalls-reported')).toBeNull();
   });
 });
+
+describe('TabulationPanel — the requirement column is honest about what it knows (the cohort retest, 2026-11-09)', () => {
+  const house = {
+    id: 'sfseed-bldg-1', type: 'building', name: 'House · 437 sf', geometry: sq(0), metadata: meta,
+    properties: { use: 'residential', singleFamilyHouse: true, floors: 1, unitMix: [{ type: 'townhome', count: 1, avgSqft: 437, rentPerMonth: 0, parkingRatio: 2 }] },
+  } as unknown as Element;
+
+  it('the house sketch shows "—" for a requirement that was not evaluated, not the typology default of 2 (1289 Currey Rd)', () => {
+    render(<TabulationPanel elements={[house]} metrics={{ totalUnits: 1, stallsProvided: 0, parkingStatus: 'not_evaluated' } as SiteMetrics} plannerCtx={null} />);
+    expect(screen.getByTestId('tab-pkg-total').textContent).toBe('—');
+    expect(screen.getByText(/Parking requirement: not evaluated for this sketch/)).toBeTruthy();
+    expect(screen.getByText(/Stalls/).textContent).toContain('0 / not evaluated');
+  });
+
+  it('a disagreement between bays and summary is labelled needs verification beside the engine summary', () => {
+    const bar = {
+      id: 'mfgen-bldg-1', type: 'building', name: 'b', geometry: sq(0), metadata: meta,
+      properties: { use: 'residential', floors: 3, unitMix: [{ type: '1br', count: 53, avgSqft: 900, rentPerMonth: 0, parkingRatio: 1.5 }] },
+    } as unknown as Element;
+    render(<TabulationPanel elements={[bar]} metrics={{ totalUnits: 53, stallsProvided: 292, stallsRequired: 92, stallsDrawn: 292, stallsReported: 85, parkingStatus: 'needs_verification' } as SiteMetrics} plannerCtx={null} />);
+    expect(screen.getByTestId('tab-stalls-reported').textContent).toBe('(engine summary 85 · needs verification)');
+    expect(screen.getByText(/provided count needs verification/)).toBeTruthy();
+  });
+});
