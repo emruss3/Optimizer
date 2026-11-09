@@ -226,6 +226,7 @@ hillside layer and its line.
 - `680391_hills_ln_grid_17.png`: the competition's grid on the sheet at more lots.
 - `667638_antioch_pike_8_lots.png`: the batch's best layout.
 - `692464_old_charlotte_pike_hillside_hold.png`, `659921_park_crescent_hillside_zero.png`: the hillside hold hatched.
+- `686430_brick_church_pike_holds_legend.png`: the flood hold, the hillside hold and the wetland buffer on one 0-lot sheet, keyed in the legend.
 - `673844_old_hickory_blvd_grid_2.png`: a public cul-de-sac for two lots.
 - `676829_walker_ln_through_street.png`, `670893_blevins_rd_loop_on_a_mountain.png`: the streets a civil would not draw.
 - `670783_nashboro_blvd_101_stalls.png`, `676422_cedarstone_way_apartments.png`: the multifamily parking problem.
