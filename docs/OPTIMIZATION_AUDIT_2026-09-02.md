@@ -1900,3 +1900,29 @@ tests pass" on an RS10 lot); the table tabulates the massing's own mix. Fourteen
 
 Noted, not fixed: the house sketch's table requirement (2, typology default)
 against the strip's 0 / 0; the 437 SF house the engine places on Currey Rd.
+
+## 35. The Site Planner scope, P0.3: selection, routing and terminal states (2026-11-09)
+
+The third scope item, with the cohort retest (production `22712ca`) as the
+check. A search hit now opens the parcel through the map click's own
+validated path, with the row fetched first and the map framed on it; the
+palette's loading, no-match, failed-search and could-not-open states are
+four states, and a late answer for an older query is dropped. A permitted
+use no engine draws (commercial, industrial) stops before the compiler: the
+capacity card from the parcel row, a note naming the unsupported use and
+the way to a plan, the strip's blocked state, no solver dispatched (1360
+Brick Church Pike: the live compile for 'commercial' had hung past the
+statement timeout). The legacy lot generator's answer reads lots,
+provisional, never apartments or "compliant". The 3D renderer's failure is
+re-thrown into the planner's boundary, which offers Back to 2D and a scoped
+retry; the 2D and 3D boundaries are keyed apart so the way back lands on the
+intact plan. Verified on the local build with a forced 503 on the by-right
+generator and a forced WebGL failure; `qa/audits/2026-11-09c/README.md`
+"P0.3". Tests: palette (4), boundary (2), headline (1), workspace (1).
+
+The cohort retest's remaining asks go to the next PR: parking "needs
+verification" when the drawn bays and the engine's summary disagree (Whites
+Creek 292 / 85 against 92 must not read "Code compliant"), the house
+sketch's 0 / 0 stalls against a table requirement of 2, per-task states for
+compile / terrain / lot fit / massing, APN search on the unformatted column,
+Post Rd's access strips distinguished from lot labels.

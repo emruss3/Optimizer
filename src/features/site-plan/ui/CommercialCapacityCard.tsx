@@ -10,6 +10,10 @@ export interface CommercialCapacityCardProps {
   zoning?: string | null;
   /** As-of-right uses the resolver reported (e.g. ['commercial','industrial']). */
   uses: string[];
+  /** Residential uses the district also permits (e.g. ['multi_family']); the
+   *  card then says so instead of "no residential use is" (1360 Brick Church
+   *  Pike, CL: multi-family is permitted with conditions, 2026-11-09). */
+  residentialPermitted?: string[];
   lotSqft?: number | null;
   maxFar?: number | null;
   maxHeightFt?: number | null;
@@ -23,8 +27,9 @@ export interface CommercialCapacityCardProps {
 const fmt = (n: number) => Math.round(n).toLocaleString();
 
 export const CommercialCapacityCard: React.FC<CommercialCapacityCardProps> = ({
-  zoning, uses, lotSqft, maxFar, maxHeightFt, maxImperviousPct, frontSetbackFt, rearSetbackFt, allowableGsf,
+  zoning, uses, lotSqft, maxFar, maxHeightFt, maxImperviousPct, frontSetbackFt, rearSetbackFt, allowableGsf, residentialPermitted = [],
 }) => {
+  const residentialWords = residentialPermitted.map(u => u.replace(/_/g, '-').replace('multi-family', 'multi-family').replace('two-family', 'two-family').replace('single-family', 'single-family'));
   const derived = maxFar != null && lotSqft != null && maxFar > 0 && lotSqft > 0 ? maxFar * lotSqft : null;
   const allowable = allowableGsf ?? derived;
   const useWords = uses
@@ -36,7 +41,8 @@ export const CommercialCapacityCard: React.FC<CommercialCapacityCardProps> = ({
       className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
     >
       <div className="font-semibold">
-        Commercial lot{zoning ? ` · ${zoning}` : ''} — {useWords.length ? useWords.join(' and ') : 'non-residential use'} permitted as-of-right; no residential use is.
+        Commercial lot{zoning ? ` · ${zoning}` : ''} — {useWords.length ? useWords.join(' and ') : 'non-residential use'} permitted as-of-right;{' '}
+        {residentialWords.length ? `${residentialWords.join(' and ')} also permitted (with conditions).` : 'no residential use is.'}
       </div>
       <div className="mt-1 text-xs text-amber-800">
         {allowable != null ? (
@@ -56,8 +62,10 @@ export const CommercialCapacityCard: React.FC<CommercialCapacityCardProps> = ({
       </div>
       <div className="mt-1 text-xs text-amber-800">
         Retail massing is not modeled yet — the allowable area above is the ceiling an architect builds to
-        (single-tenant full plate or a stacked two-tenant scheme). No house or apartment plan is offered
-        because none is permitted here as-of-right.
+        (single-tenant full plate or a stacked two-tenant scheme).{' '}
+        {residentialWords.length
+          ? `A ${residentialWords.join(' or ')} plan can be drawn by picking that use.`
+          : 'No house or apartment plan is offered because none is permitted here as-of-right.'}
       </div>
     </div>
   );

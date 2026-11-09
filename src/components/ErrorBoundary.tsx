@@ -110,25 +110,65 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-// Specific error boundary for site planner
-export function SitePlannerErrorBoundary({ children }: { children: ReactNode }) {
+/**
+ * The site planner's boundary. A failure inside it is scoped: "Retry"
+ * remounts only the subtree that failed (the key), the rest of the sheet is
+ * untouched. The 3D view passes `onBackTo2D` so a renderer crash offers the
+ * way back to the plan, the schedule and the edits, which are all still there
+ * (the scope's P0.3, 2026-11-09: the old fallback offered only a page refresh).
+ */
+export function SitePlannerErrorBoundary({
+  children,
+  title = 'Site Planner Error',
+  description = 'The site planner encountered an error.',
+  retryLabel = 'Retry',
+  onBackTo2D,
+}: {
+  children: ReactNode;
+  title?: string;
+  description?: string;
+  retryLabel?: string;
+  /** offered when the failed subtree is the 3D view: the 2D plan is intact */
+  onBackTo2D?: () => void;
+}) {
+  const [attempt, setAttempt] = React.useState(0);
   return (
     <ErrorBoundary
+      key={attempt}
       fallback={
-        <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-          <div className="text-center">
+        <div data-testid="planner-error" className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+          <div className="text-center px-4">
             <AlertTriangle className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">Site Planner Error</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              The site planner encountered an error. Please try refreshing the page.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-3 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200"
-            >
-              <RefreshCw className="w-4 h-4 mr-1" />
-              Refresh
-            </button>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">{title}</h3>
+            <p className="mt-1 text-sm text-gray-500">{description}</p>
+            <div className="mt-3 flex items-center justify-center gap-2">
+              {onBackTo2D && (
+                <button
+                  type="button"
+                  data-testid="planner-error-back-2d"
+                  onClick={onBackTo2D}
+                  className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  Back to 2D plan
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="planner-error-retry"
+                onClick={() => setAttempt(a => a + 1)}
+                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200"
+              >
+                <RefreshCw className="w-4 h-4 mr-1" />
+                {retryLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Refresh page
+              </button>
+            </div>
           </div>
         </div>
       }

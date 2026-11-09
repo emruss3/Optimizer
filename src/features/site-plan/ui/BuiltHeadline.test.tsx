@@ -86,3 +86,14 @@ describe('<BuiltHeadline>', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('builtSummary — the legacy lot generator\'s pads are lots, not apartments (the scope\'s P0.3, 2026-11-09)', () => {
+  it('returns null for gen-bldg- pads so the strip\'s provisional lot count is the summary', () => {
+    const pads = [1, 2, 3].map(i => ({
+      id: `gen-bldg-${i}`, type: 'building', name: `Building ${i}`, geometry: square,
+      properties: { areaSqFt: 1400, floors: 1, use: 'residential' },
+      metadata: { createdAt: '', updatedAt: '', source: 'ai-generated' },
+    })) as unknown as Element[];
+    expect(builtSummary({ totalUnits: 3 } as unknown as SiteMetrics, pads)).toBeNull();
+  });
+});

@@ -264,6 +264,30 @@ const MapView = React.memo(function MapView({
     });
   }, []);
 
+  // A parcel opened from the search palette (or any `openParcelDrawer`
+  // event) is centred and framed like one the user clicked (the scope's
+  // P0.3, 2026-11-09): the drawer and the map agree on which parcel this is.
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const map = mapRef.current;
+      const geom = (event as CustomEvent).detail?.geometry as { type?: string; coordinates?: unknown } | undefined;
+      if (!map || !geom || !Array.isArray(geom.coordinates)) return;
+      const rings: number[][][] = geom.type === 'MultiPolygon'
+        ? (geom.coordinates as number[][][][]).flat()
+        : (geom.coordinates as number[][][]);
+      const pts = rings.flat().filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      if (pts.length === 0) return;
+      const lons = pts.map(p => p[0]); const lats = pts.map(p => p[1]);
+      try {
+        map.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: 120, maxZoom: 18, duration: 600 });
+      } catch (e) {
+        console.warn('centre on parcel failed', e);
+      }
+    };
+    document.addEventListener('openParcelDrawer', onOpen);
+    return () => document.removeEventListener('openParcelDrawer', onOpen);
+  }, []);
+
   // Apply project highlights on mount and when selection changes
   useEffect(() => {
     // Initial application when map is ready

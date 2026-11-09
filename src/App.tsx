@@ -3,7 +3,7 @@
 
 import React from 'react';
 import { useState } from 'react';
-import { Parcel } from './lib/supabase';  
+import { Parcel, supabase } from './lib/supabase';
 import Header from './components/Header';
 import LandingPage from './components/LandingPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -98,17 +98,6 @@ function App() {
     return () => window.removeEventListener('resize', checkBreakpoint);
   }, [setIsMobile]);
 
-  // Listen for parcel drawer open events from tests
-  React.useEffect(() => {
-    const handleOpenParcelDrawer = (event: CustomEvent) => {
-      setSelectedParcel(event.detail);
-      setIsDrawerOpen(true);
-    };
-    
-    document.addEventListener('openParcelDrawer', handleOpenParcelDrawer as EventListener);
-    return () => document.removeEventListener('openParcelDrawer', handleOpenParcelDrawer as EventListener);
-  }, []);
-
   const handleParcelClick = (parcel: Parcel) => {
     // Validate parcel data before setting
     if (!parcel || !parcel.ogc_fid || !parcel.geometry) {
@@ -127,6 +116,43 @@ function App() {
     setSelectedParcel(parcel);
     setIsDrawerOpen(true);
   };
+
+  // The palette's search hit and the test harness open a parcel through this
+  // event. It takes the SAME validated path as a map click (the scope's P0.3,
+  // 2026-11-09): no geometry or id, no drawer. The map centres on it too.
+  const handleParcelClickRef = React.useRef(handleParcelClick);
+  handleParcelClickRef.current = handleParcelClick;
+  React.useEffect(() => {
+    const handleOpenParcelDrawer = async (event: CustomEvent) => {
+      const detail = event.detail as Partial<Parcel> | null;
+      if (!detail || detail.ogc_fid == null) return;
+      if (detail.geometry) {
+        handleParcelClickRef.current(detail as Parcel);
+        return;
+      }
+      // An id without geometry (the test harness, a deep link): fetch the
+      // row the map click would have, so the same validation applies. If the
+      // fetch fails the drawer still opens on the id, as it always has; the
+      // workspace loads the parcel itself.
+      try {
+        if (!supabase) throw new Error('no client');
+        const { data, error } = await supabase.rpc('get_parcel_by_id', { p_ogc_fid: Number(detail.ogc_fid) });
+        if (error) throw error;
+        const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+        if (row?.geometry) {
+          handleParcelClickRef.current({ ...row, ...detail, geometry: row.geometry, ogc_fid: String(row.ogc_fid ?? detail.ogc_fid) } as unknown as Parcel);
+          return;
+        }
+      } catch (e) {
+        console.warn('openParcelDrawer: could not fetch the parcel row, opening on the id', e);
+      }
+      setSelectedParcel(detail as Parcel);
+      setIsDrawerOpen(true);
+    };
+    const listener = (event: Event) => { void handleOpenParcelDrawer(event as CustomEvent); };
+    document.addEventListener('openParcelDrawer', listener);
+    return () => document.removeEventListener('openParcelDrawer', listener);
+  }, []);
 
   const handleCloseDrawer = () => {
     setIsDrawerOpen(false);
