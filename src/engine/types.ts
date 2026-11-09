@@ -128,6 +128,14 @@ export interface SiteMetrics {
   openSpacePct: number;
   stallsProvided?: number;
   stallsRequired?: number;
+  /**
+   * The stalls the drawn parking bays hold (the sum of the bays' own counts)
+   * and the stall total the engine reported in its summary. They should agree;
+   * when they do not (0 Whites Creek Pike, 2026-11-09: bays of 32+85+10+108+8+49
+   * under a summary of 85) the sheet counts the drawn bays and says so.
+   */
+  stallsDrawn?: number;
+  stallsReported?: number;
   parkingAngleDeg?: number;
   totalUnits?: number;
   unitMixSummary?: string;

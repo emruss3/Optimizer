@@ -316,14 +316,16 @@ describe('KpiStrip with server-generated metrics (crash regression)', () => {
     const { metrics } = mfPlanToElements(RESP);
     const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
     // 52/113 is parking-short: the chip must say so, not claim "Compliant"
-    // next to a red stalls stat (honesty over green).
-    expect(getByText(/Code compliant · constrained: parking short/)).toBeTruthy();
+    // next to a red stalls stat (honesty over green). The shortfall leads.
+    expect(getByText(/Parking shortfall · 52 of 113 stalls/)).toBeTruthy();
     expect(getByText('52 / 113')).toBeTruthy();
   });
 
   it('fully-parked compliant plans keep the green Compliant chip', () => {
+    // the drawn pieces are what count, so they hold the 120 too
     const { metrics } = mfPlanToElements({
       ...RESP,
+      parking: [{ stalls: 80, geom: square(-86.811, 36.141) }, { stalls: 40, geom: square(-86.8105, 36.141) }],
       metrics: { ...RESP.metrics, stalls: 120, stalls_required: 113 },
     });
     const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
@@ -341,6 +343,7 @@ describe('KpiStrip clamp-flag badge (work order item 2)', () => {
   it('FAR/density clamps turn the badge amber Constrained even when parked', () => {
     const { metrics } = mfPlanToElements({
       ...RESP,
+      parking: [{ stalls: 80, geom: square(-86.811, 36.141) }, { stalls: 40, geom: square(-86.8105, 36.141) }],
       metrics: { ...RESP.metrics, stalls: 120, stalls_required: 113 },
     });
     const { getByText, queryByText } = render(
@@ -762,5 +765,72 @@ describe('the wrap payload (wrap_v1) rides the seed family', () => {
 
   it('names the pattern in deal language', () => {
     expect(patternLabel('wrap_garage_courtyard')).toBe('Texas wrap: units wrapping a garage, courtyard on the deck');
+  });
+});
+
+// 0 Whites Creek Pike (RM9, 5.9 ac), live 2026-11-09, the scope's first
+// reproduction: the max-GSF generator drew two bars of 20,190 and 7,134 sf
+// (3 floors) under a 53-unit plan, six bays holding 32+85+10+108+8+49 stalls
+// under a summary of 85, and 92 required. The header read "35 one-beds" (the
+// GFA estimate: 64 + 23 units), the tabulation "1 Bed 1" (reconciled to 53),
+// the canvas "108 stalls" on one bay under a header of 85.
+const WHITES_CREEK: SeedFamilyResponse = {
+  parcel_ogc_fid: 680339,
+  typology: 'multifamily',
+  seed: 1,
+  generator_version: 'mf_max_gsf_v1',
+  plan_basis: 'Max GSF 82150 · achieved 80471 (98.0%) · 2 bars × 3 floors · 53 units @ 1518 GSF/unit · 296/92 stalls · clamp: none · binding: density(units) · access connected',
+  buildings: [
+    { structure_id: 1, geom_2274: rect2274(1727000, 670000, 300, 67), footprint_sqft: 20190, floors: 3, is_single_polygon: true },
+    { structure_id: 2, geom_2274: rect2274(1727000, 670200, 106, 67), footprint_sqft: 7134, floors: 3, is_single_polygon: true },
+  ] as never,
+  parking: {
+    bays: [32, 85, 10, 108, 8, 49].map((stalls, i) => ({ geom_2274: rect2274(1727400 + i * 130, 670000, 120, 60), stalls })),
+    stalls: 85,
+  } as never,
+  metrics: { gfa_sqft: 80471, units_est: 53, stalls: 85, stalls_required: 92, parking_ratio_provided: 5.58, floors: 3, bars: 2 } as never,
+  flags: ['parking_ratio_hard_pass'],
+};
+
+describe('one selected plan across the header, the tabulation and the canvas (0 Whites Creek Pike, 2026-11-09)', () => {
+  it('each bar\'s mix is generated from the units it carries, so the mixes sum to the engine\'s count', () => {
+    const { elements, metrics } = seedFamilyPlanToElements(WHITES_CREEK);
+    const bars = elements.filter(e => e.type === 'building');
+    expect(bars.map(b => b.name)).toEqual(['Bldg 1 · 3 stories · 39 units', 'Bldg 2 · 3 stories · 14 units']);
+    const mixUnits = bars.reduce((s, b) => s + (b.properties?.unitMix as Array<{ count: number }>).reduce((t, r) => t + r.count, 0), 0);
+    expect(mixUnits).toBe(53);
+    expect(metrics?.totalUnits).toBe(53);
+    // no bar's mix is the GFA estimate any more (64 and 23 would sum to 87)
+    expect((bars[0].properties?.unitMix as Array<{ count: number }>).reduce((t, r) => t + r.count, 0)).toBe(39);
+  });
+
+  it('counts the stalls the drawn bays hold, keeps the engine\'s summary as reported, and flags the disagreement', () => {
+    const { elements, metrics, flags } = seedFamilyPlanToElements(WHITES_CREEK);
+    const bays = elements.filter(e => e.type === 'parking');
+    expect(bays.map(b => b.properties?.parkingSpaces)).toEqual([32, 85, 10, 108, 8, 49]);
+    expect(metrics?.stallsDrawn).toBe(292);
+    expect(metrics?.stallsReported).toBe(85);
+    expect(metrics?.stallsProvided).toBe(292);
+    expect(metrics?.stallsRequired).toBe(92);
+    expect(flags).toContain('parking_summary_disagrees');
+  });
+
+  it('bays without their own counts still share the engine\'s total by area, with nothing to flag', () => {
+    const { metrics, flags } = seedFamilyPlanToElements(SEED_RESP);
+    expect(metrics?.stallsProvided).toBe(168);
+    expect(metrics?.stallsDrawn).toBeUndefined();
+    expect(metrics?.stallsReported).toBe(168);
+    expect(flags).not.toContain('parking_summary_disagrees');
+  });
+
+  it('the legacy mapper counts its parking pieces the same way', () => {
+    const { metrics, flags } = mfPlanToElements(RESP);
+    expect(metrics?.stallsDrawn).toBe(52);
+    expect(metrics?.stallsProvided).toBe(52);
+    expect(flags).not.toContain('parking_summary_disagrees');
+    const off = mfPlanToElements({ ...RESP, metrics: { ...RESP.metrics, stalls: 60 } });
+    expect(off.metrics?.stallsProvided).toBe(52);
+    expect(off.metrics?.stallsReported).toBe(60);
+    expect(off.flags).toContain('parking_summary_disagrees');
   });
 });

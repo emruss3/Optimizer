@@ -232,6 +232,14 @@ export function mfPlanToElements(resp: MfPlanResponse): {
 
   const m = resp.metrics ?? {};
   const gfa = mNum(m.gfa_sqft);
+  // Provided = what the drawn bays hold when each carries a count (the labels
+  // on the sheet); the engine's summary rides along as reported.
+  const parkingList = Array.isArray(resp.parking) ? resp.parking : [];
+  const stallsDrawn = parkingList.length > 0 && parkingList.every(p => typeof p?.stalls === 'number' && (p.stalls as number) >= 0)
+    ? parkingList.reduce((s, p) => s + Math.round(p.stalls as number), 0)
+    : undefined;
+  const stallsReported = mNum(m.stalls);
+  const summaryDisagrees = stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported;
   const metrics: SiteMetrics | null = gfa
     ? ({
         totalBuiltSF: gfa,
@@ -240,8 +248,10 @@ export function mfPlanToElements(resp: MfPlanResponse): {
         parkingRatio: mNum(m.parking_ratio_provided) ?? 0,
         openSpacePct: mNum(m.open_space_pct) ?? 0,
         totalUnits: mNum(m.units_est),
-        stallsProvided: mNum(m.stalls),
+        stallsProvided: stallsDrawn ?? stallsReported,
         stallsRequired: mNum(m.stalls_required),
+        stallsDrawn,
+        stallsReported,
         // Server plans are constructed inside the setback envelope; parking
         // shortfall is surfaced via stalls (red) + plan-basis flag, not as a
         // zoning violation. Consumers (KpiStrip) need these present.
@@ -266,11 +276,14 @@ export function mfPlanToElements(resp: MfPlanResponse): {
     elements,
     metrics,
     basis: resp.plan_basis ?? null,
-    flags: Array.isArray(resp.flags)
-      ? // Deduped: best-effort pinned solves append their marker once per
+    flags: [
+      ...new Set([
+        // Deduped: best-effort pinned solves append their marker once per
         // softened gate — counts ("+n") must reflect DISTINCT reasons.
-        [...new Set((resp.flags as unknown[]).filter((f): f is string => typeof f === 'string'))]
-      : [],
+        ...(Array.isArray(resp.flags) ? (resp.flags as unknown[]).filter((f): f is string => typeof f === 'string') : []),
+        ...(summaryDisagrees ? ['parking_summary_disagrees'] : []),
+      ]),
+    ],
   };
 }
 
@@ -529,9 +542,14 @@ export function seedFamilyPlanToElements(
         // 1-unit/no-parking seeds found in the 2026-07-28 sweep) — it travels
         // verbatim. The GFA-derived estimate exists only for payloads with NO
         // mix at all: fabricating 18 units beside metrics.units=1 was a lie.
+        // The per-building mix is generated from the units THIS building
+        // carries (its share of the engine's count), never from the GFA
+        // estimate: 0 Whites Creek Pike (2026-11-09) estimated 64 + 23 units on
+        // two bars under a 53-unit plan, so the headline read "35 one-beds"
+        // while the tabulation, reconciled to 53, read "1 Bed 1".
         unitMix: opts.house
           ? [{ type: 'townhome' as const, count: 1, avgSqft: gsf ?? footprint ?? 0, rentPerMonth: 0, parkingRatio: 2.0 }]
-          : (mixes ? mixes[i] : generateUnitMixForCount(unitsEst)),
+          : (mixes ? mixes[i] : generateUnitMixForCount(unitsHere)),
         use: 'residential',
         color: '#3B82F6',
         // a detached house for the tabulation; not `house` (that also drops the canvas caption)
@@ -548,6 +566,12 @@ export function seedFamilyPlanToElements(
   const bays = resp.parking?.bays?.filter(b => b?.geom_2274) ?? [];
   const totalBayArea = bays.reduce((a, b) => a + (num(b.area_sqft) ?? 0), 0);
   const stallsTotal = num(resp.parking?.stalls) ?? num(m.stalls) ?? 0;
+  // What the drawn bays hold, when every bay carries its own count. This is
+  // what the sheet labels, so it is what the header and the tabulation count;
+  // the engine's summary total is kept beside it as `stallsReported`.
+  const stallsDrawn = bays.length > 0 && bays.every(b => typeof b.stalls === 'number' && b.stalls >= 0)
+    ? bays.reduce((a, b) => a + Math.round(b.stalls as number), 0)
+    : null;
   bays.forEach((b, i) => {
     let poly: Polygon;
     try {
@@ -730,7 +754,11 @@ export function seedFamilyPlanToElements(
   const legacy = m as unknown as { gfa_sqft?: unknown; units_est?: unknown; stalls_required?: unknown };
   const gsf = num(m.gsf) ?? num(legacy.gfa_sqft);
   const units = num(m.units) ?? num(legacy.units_est);
-  const stalls = num(m.stalls) ?? num(resp.parking?.stalls);
+  // Provided = the drawn bays' stalls when they carry counts (what the canvas
+  // labels), else the engine's summary. The summary rides along as reported.
+  const stallsReported = num(m.stalls) ?? num(resp.parking?.stalls);
+  const stalls = stallsDrawn ?? stallsReported;
+  const summaryDisagrees = stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported;
   const stallsRequired = num(resp.parking?.stalls_required_at_placed) ?? num(resp.parking?.stalls_required) ?? num(legacy.stalls_required);
   const metrics: SiteMetrics | null = gsf
     ? ({
@@ -747,6 +775,8 @@ export function seedFamilyPlanToElements(
         totalUnits: units ?? undefined,
         stallsProvided: stalls ?? undefined,
         stallsRequired: stallsRequired ?? undefined,
+        stallsDrawn: stallsDrawn ?? undefined,
+        stallsReported: stallsReported ?? undefined,
         violations: [],
         warnings: [],
         zoningCompliant: true,
@@ -763,6 +793,7 @@ export function seedFamilyPlanToElements(
     ...new Set([
       ...(Array.isArray(resp.flags) ? (resp.flags as unknown[]).filter((f): f is string => typeof f === 'string') : []),
       ...(m.parking_limited === true ? ['parking_limited'] : []),
+      ...(summaryDisagrees ? ['parking_summary_disagrees'] : []),
     ]),
   ];
 

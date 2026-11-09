@@ -53,10 +53,25 @@ const KpiStrip: React.FC<{
     /** what the count is ('Lots' by default; 'Townhomes' for the townhome engine's plan) */
     label?: string; densityLabel?: string;
   } | null;
-}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null }) => {
+  /**
+   * Why there are no metrics: a solve in flight, a solve that failed, a
+   * blocked one, or simply no plan. "Generating plan…" used to be the only
+   * empty state, so a failed solve left the header generating forever (1360
+   * Brick Church Pike, 2026-11-09: "Server plan failed" under "Generating plan…").
+   */
+  empty?: { state: 'generating' | 'failed' | 'blocked' | 'none'; reason?: string | null };
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty }) => {
   if (!metrics) {
+    const state = empty?.state ?? 'generating';
+    const text = state === 'generating'
+      ? 'Generating plan…'
+      : state === 'failed'
+        ? `No plan: the solve failed${empty?.reason ? ` — ${empty.reason}` : ''}`
+        : state === 'blocked'
+          ? `No plan: generation is blocked${empty?.reason ? ` — ${empty.reason}` : ''}`
+          : 'No plan on the sheet';
     return (
-      <div className="text-sm text-gray-500">Generating plan…</div>
+      <div data-testid="kpi-empty" data-state={state} className={`text-sm ${state === 'generating' ? 'text-gray-500' : state === 'none' ? 'text-gray-500' : 'text-red-700'}`}>{text}</div>
     );
   }
 
@@ -178,11 +193,16 @@ const KpiStrip: React.FC<{
         }`}
       >
         {compliant && !constrained ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+        {/* A parking shortfall leads the badge: "Code compliant · constrained:
+            coverage-capped +1" hid 85 of 92 stalls behind the "+1" on 0 Whites
+            Creek Pike (2026-11-09). */}
         {!compliant
           ? `${violations.length} issue${violations.length === 1 ? '' : 's'}`
-          : constrained
-            ? `Code compliant · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
-            : 'Code compliant'}
+          : parkingShort
+            ? `Parking shortfall · ${stallsProvided} of ${stallsRequired} stalls${clampReasons.filter(r => r !== 'parking short').length > 0 ? ` · ${clampReasons.filter(r => r !== 'parking short')[0]}` : ''}`
+            : constrained
+              ? `Code compliant · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
+              : 'Code compliant'}
       </div>
       {utilizationPct != null && utilizationPct < 85 && (
         <div

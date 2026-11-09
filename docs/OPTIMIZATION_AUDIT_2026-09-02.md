@@ -1852,3 +1852,24 @@ honors the flood hold and the landlocked call, as sf_v1 does) and one ask
 (lot the land behind the first tier: a second flag tier, the drive grammar,
 or the first tier alone with no street), measured on the same 70 parcels.
 No new random batch until the plan number moves.
+
+## 33. The Site Planner scope: P0 baseline and P0.1, one plan across every surface (2026-11-09)
+
+The scope document names four regression parcels and ten follow-ups and
+asks for reproduction before root cause. Reproduced on the current build
+with live engine answers through the fixture harness (`qa/audits/2026-11-09c`):
+0 Whites Creek Pike exactly as described (header mix 87 on a 53-unit plan,
+table "1 Bed 1", bays labelled 292 stalls under a header of 85, the
+shortfall hidden behind "+1"), 2937 Brick Church Pike (74 / 51 over bays of
+72), a worse case on 5118 Mt View Rd (table total 215 under a KPI of 168), a
+hidden shortfall on 5515 Mt View Rd (56 shown, 46 drawn, 52 required), the
+commercial lots opening on multi-family and dispatching the massing solver
+with the header stuck on "Generating plan…" after the failure, and Ivey Point
+Rd's contradictory skip text.
+
+P0.1 shipped: each bar's mix from the units it carries; stalls provided from
+the drawn bays with the engine's summary kept as reported and flagged; the
+table's requirement split from the engine's figure; the badge leading with a
+shortfall; a run number discarding stale massing responses; the KPI strip's
+empty state saying why. Evidence `mfTabulation`; battery 0 Whites Creek Pike.
+P0.2 and P0.3 follow in their own PRs.

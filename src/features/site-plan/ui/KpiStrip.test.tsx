@@ -75,3 +75,32 @@ describe('KpiStrip — a by-right subdivision on the sheet', () => {
     expect(screen.getByTestId('kpi-subdivision').textContent).toContain('homes / ac12.7');
   });
 });
+
+describe('KpiStrip — a parking shortfall leads the badge (0 Whites Creek Pike, 2026-11-09)', () => {
+  it('says the shortfall instead of "Code compliant · constrained … +1"', () => {
+    render(
+      <KpiStrip
+        metrics={{ ...base, stallsProvided: 85, stallsRequired: 92 } as SiteMetrics}
+        investment={null}
+        utilizationPct={98}
+        planFlags={['coverage_cap_reached']}
+      />
+    );
+    expect(screen.getByText('Parking shortfall · 85 of 92 stalls · coverage-capped')).toBeTruthy();
+    expect(screen.queryByText(/^Code compliant/)).toBeNull();
+  });
+});
+
+describe('KpiStrip — the empty strip says why (1360 Brick Church Pike, 2026-11-09)', () => {
+  it('a failed solve is not "Generating plan…"', () => {
+    const { rerender } = render(<KpiStrip metrics={null} investment={null} empty={{ state: 'failed', reason: 'The massing service did not respond (transport failure).' }} />);
+    expect(screen.getByTestId('kpi-empty').textContent).toBe('No plan: the solve failed — The massing service did not respond (transport failure).');
+    expect(screen.getByTestId('kpi-empty').getAttribute('data-state')).toBe('failed');
+    rerender(<KpiStrip metrics={null} investment={null} empty={{ state: 'blocked', reason: 'the selected use is not permitted as-of-right' }} />);
+    expect(screen.getByTestId('kpi-empty').textContent).toContain('generation is blocked');
+    rerender(<KpiStrip metrics={null} investment={null} empty={{ state: 'generating' }} />);
+    expect(screen.getByTestId('kpi-empty').textContent).toBe('Generating plan…');
+    rerender(<KpiStrip metrics={null} investment={null} />);
+    expect(screen.getByTestId('kpi-empty').textContent).toBe('Generating plan…');
+  });
+});
