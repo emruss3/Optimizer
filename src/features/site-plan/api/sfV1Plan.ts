@@ -1426,3 +1426,48 @@ export function lotsOnParcelHoles(
     overlapSf: Math.round(overlapM2 / M2_PER_SF),
   };
 }
+
+/**
+ * The engine's landlocked skip reason names the parcel's edges by class with
+ * their lengths ("neighbours by edge length: open_edge 2069 ft, residential
+ * 945 ft"), then calls the longest of them "the longest touch on a street"
+ * (0 Ivey Point Rd, 2026-11-09). The typed classification is the part the
+ * sheet can stand on: an open edge is not a street.
+ */
+export interface SfV1EdgeClass {
+  kind: string;
+  /** what the class means on the ground */
+  label: string;
+  ft: number;
+}
+
+const EDGE_LABELS: Record<string, string> = {
+  open_edge: 'open edge (no street, no parcel)',
+  street: 'mapped street contact',
+  residential: 'residential neighbour',
+  vacant: 'vacant neighbour',
+  commercial: 'commercial neighbour',
+  other: 'other neighbour',
+};
+
+export function parseEdgeClasses(reason: string | null | undefined): SfV1EdgeClass[] {
+  if (!reason) return [];
+  const m = /neighbours? by edge length:\s*([^)]*)\)?/i.exec(reason);
+  if (!m) return [];
+  const out: SfV1EdgeClass[] = [];
+  for (const part of m[1].split(',')) {
+    const mm = /([a-z_]+)\s+([\d.]+)\s*ft/i.exec(part.trim());
+    if (!mm) continue;
+    const kind = mm[1].toLowerCase();
+    out.push({ kind, label: EDGE_LABELS[kind] ?? `${kind.replace(/_/g, ' ')} neighbour`, ft: Math.round(Number(mm[2])) });
+  }
+  return out;
+}
+
+/** "2,069 ft open edge (no street, no parcel) · 945 ft residential neighbour · no mapped street contact" */
+export function edgeClassSentence(edges: SfV1EdgeClass[]): string | null {
+  if (edges.length === 0) return null;
+  const parts = edges.map(e => `${e.ft.toLocaleString()} ft ${e.label}`);
+  if (!edges.some(e => e.kind === 'street')) parts.push('no mapped street contact');
+  return parts.join(' · ');
+}

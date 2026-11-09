@@ -7,7 +7,10 @@
  */
 import { useState } from 'react';
 import type { HoleOverlap, SfV1AutoBest, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, autoBestSentence, isOverride, passesOverLimit, privateDriveSentence, steepGroundNote } from '../api/sfV1Plan';
+import { FILL_BANDS, autoBestSentence, edgeClassSentence, isOverride, parseEdgeClasses, passesOverLimit, privateDriveSentence, steepGroundNote } from '../api/sfV1Plan';
+
+/** What the by-right generator does not evaluate, named beside its passing checks (the scope's P0.2). */
+export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
 
 function testLabel(id: string): string {
@@ -147,6 +150,9 @@ export function SfV1Panel({
   const fillByComponent = ew && ew.fill_cy && typeof ew.fill_cy === 'object' ? Object.entries(ew.fill_cy) : null;
   const noNewLots = summary.status === 'skipped' || summary.lots === 0;
   const landlocked = summary.status === 'skipped' && /landlocked/i.test(summary.reason ?? '');
+  const edges = parseEdgeClasses(summary.reason);
+  const edgeSentence = edgeClassSentence(edges);
+  const openEdge = edges.find(e => e.kind === 'open_edge');
   // "floodplain leaves no buildable piece" (0 Temple Rd, 0 River Landing Way):
   // the one skip a control can answer — the fill scenario holds out only the
   // regulatory floodway (River Landing Way: 10 lots, with the fill it costs).
@@ -218,6 +224,12 @@ export function SfV1Panel({
           <p data-testid="sfv1-skipped" className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 leading-snug text-amber-800">
             Skipped — {summary.reason ?? 'no reason given'}
           </p>
+          {edgeSentence && (
+            // the typed edges, so an open edge is never read as street frontage (0 Ivey Point Rd)
+            <p data-testid="sfv1-edges" className="mt-1 leading-snug text-slate-700">
+              Edges by class: {edgeSentence}.
+            </p>
+          )}
           {site && site.heldAcres != null && site.heldAcres > 0 && (
             // engine g13: the hold comes back with the skip (0 Hickory Bend Dr: 5.24 ac, all of it)
             <p data-testid="sfv1-held" className="mt-1 leading-snug text-slate-600">
@@ -384,6 +396,12 @@ export function SfV1Panel({
           <ul data-testid="sfv1-tests" className="mt-1 space-y-0.5">
             {summary.tests.map(t => <TestRow key={t.id} t={t} />)}
           </ul>
+          {summary.lots > 0 && (
+            // "All tests pass" names its scope: these checks, and not the civil work still ahead (4727 Post Rd)
+            <p data-testid="sfv1-diligence" className="mt-1 text-[10.5px] leading-snug text-slate-500">
+              {summary.tests.length} check{summary.tests.length === 1 ? '' : 's'} from the district's standards. Not evaluated here: {CIVIL_DILIGENCE}.
+            </p>
+          )}
         </div>
       )}
       {summary.fails.length > 0 && (
@@ -435,7 +453,9 @@ export function SfV1Panel({
           )}
           {landlocked && !houseError && (
             <div data-testid="sfv1-house-access" className="mt-1 text-sky-900/80">
-              No street touches this parcel: a house here assumes an access easement across a neighbour, which is not by right.
+              {openEdge
+                ? `No mapped street contact (the ${openEdge.ft.toLocaleString()}-ft open edge is not a street): a house here assumes an access easement across a neighbour, which is not by right. The sketch is conditional on that easement.`
+                : 'No street touches this parcel: a house here assumes an access easement across a neighbour, which is not by right. The sketch is conditional on that easement.'}
             </div>
           )}
           {floodSkip && !houseError && (

@@ -136,6 +136,13 @@ export interface SiteMetrics {
    */
   stallsDrawn?: number;
   stallsReported?: number;
+  /**
+   * The plan depends on an unverified precondition (the scope's P0.2): a
+   * house sketched on a landlocked parcel assumes an access easement; one in
+   * the flood hazard area assumes fill to the BFE and a floodplain permit.
+   * The badge reads Conditional, never "Code compliant", while this is set.
+   */
+  conditional?: string | null;
   parkingAngleDeg?: number;
   totalUnits?: number;
   unitMixSummary?: string;

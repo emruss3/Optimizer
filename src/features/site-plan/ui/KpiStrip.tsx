@@ -52,6 +52,10 @@ const KpiStrip: React.FC<{
     lots: number; densityDuAc: number | null; fails: string[]; status: string;
     /** what the count is ('Lots' by default; 'Townhomes' for the townhome engine's plan) */
     label?: string; densityLabel?: string;
+    /** the ids of the checks the verdict covers, so "all pass" names its scope (4727 Post Rd, 2026-11-09) */
+    tests?: string[];
+    /** a plan from a legacy generator: provisional, its inputs unverified */
+    legacy?: boolean;
   } | null;
   /**
    * Why there are no metrics: a solve in flight, a solve that failed, a
@@ -77,11 +81,21 @@ const KpiStrip: React.FC<{
 
   if (subdivision) {
     const n = subdivision.fails.length;
+    const checks = subdivision.tests ?? [];
     const chip =
-      subdivision.status === 'skipped' ? { tone: 'bg-amber-50 text-amber-700', text: 'Skipped by the generator', ok: false }
+      subdivision.legacy ? { tone: 'bg-amber-50 text-amber-700', text: 'Legacy generator · provisional', ok: false }
+      : subdivision.status === 'skipped' ? { tone: 'bg-amber-50 text-amber-700', text: 'Skipped by the generator', ok: false }
       : subdivision.lots === 0 ? { tone: 'bg-slate-100 text-slate-700', text: 'No new lots by right', ok: false }
-      : n > 0 ? { tone: 'bg-red-50 text-red-700', text: `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
-      : { tone: 'bg-green-50 text-green-700', text: 'All tests pass', ok: true };
+      : n > 0 ? { tone: 'bg-red-50 text-red-700', text: checks.length > 0 ? `${n} of ${checks.length} check${checks.length === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
+      // "All tests pass" named no scope (4727 Post Rd): the count and the list travel with it
+      : { tone: 'bg-green-50 text-green-700', text: checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass', ok: true };
+    const title = n > 0
+      ? `Fails: ${subdivision.fails.join(', ')}`
+      : subdivision.legacy
+        ? 'Drawn by the legacy generator while the by-right generator was unreachable: no code tests ran on this plan.'
+        : checks.length > 0
+          ? `Checks covered: ${checks.join(', ')}. Not evaluated: survey and legal access, utility capacity, stormwater detention sizing, geotechnical, street and driveway permits.`
+          : undefined;
     return (
       <div data-testid="kpi-subdivision" className="flex items-center gap-5 overflow-x-auto">
         <Stat label={subdivision.label ?? 'Lots'} value={`${subdivision.lots}`} />
@@ -89,7 +103,7 @@ const KpiStrip: React.FC<{
         {(metrics.openSpacePct ?? 0) > 0 && <Stat label="Open" value={`${metrics.openSpacePct.toFixed(0)}%`} />}
         <div
           data-testid="kpi-subdivision-verdict"
-          title={n > 0 ? `Fails: ${subdivision.fails.join(', ')}` : undefined}
+          title={title}
           className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${chip.tone}`}
         >
           {chip.ok ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
@@ -182,6 +196,19 @@ const KpiStrip: React.FC<{
       {/* Compliance and optimization are SEPARATE verdicts: a code-compliant
           plan at 78% of the theoretical envelope is not "done" — the capture
           chip says so instead of letting the green chip imply optimality. */}
+      {metrics.conditional ? (
+        // A sketch that depends on an assumed easement or a flood scenario is
+        // Conditional, whatever its arithmetic says (1289 Currey Rd, 2026-11-09:
+        // "Code compliant" on a house that assumes an easement across a neighbour).
+        <div
+          data-testid="kpi-conditional"
+          title={`Conditional: ${metrics.conditional}. Zoning eligibility is separate from site feasibility.`}
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          Conditional · {metrics.conditional}
+        </div>
+      ) : (
       <div
         title={constrained ? `Constrained: ${clampReasons.join(', ')}` : undefined}
         className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
@@ -204,6 +231,7 @@ const KpiStrip: React.FC<{
               ? `Code compliant · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
               : 'Code compliant'}
       </div>
+      )}
       {utilizationPct != null && utilizationPct < 85 && (
         <div
           title="The constructive solver has not reproduced the theoretical envelope — additional optimization search is warranted."

@@ -3,7 +3,7 @@ import { validatePlanElements } from '../../../engine/validatePlan';
 import { isSfPlanElement } from './generateSfPlan';
 import {
   sfV1Route, normalizeTests, fillBand, fillColor, padFillByLot, earthworkHasFlood, openStyle,
-  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element,
+  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence,
   type SfV1Response,
 } from './sfV1Plan';
 
@@ -504,5 +504,19 @@ describe('the hillside hold (engine g14)', () => {
     // the new length test on a private drive is a quality flag, as the engine files it
     expect(codeFails(['access.private_drive_length', 'street.grade_max'])).toEqual(['street.grade_max']);
     expect(qualityFlags(['access.private_drive_length'])).toEqual(['access.private_drive_length']);
+  });
+});
+
+describe('typed frontage edges (0 Ivey Point Rd, 2026-11-09)', () => {
+  it('reads the engine\'s edge classes out of the skip reason and never calls an open edge a street', () => {
+    const reason = 'landlocked: the longest touch on a street is 2069 ft (a street run needs 40 ft, a terminus gap 30 ft); no vacant neighbour to connect through (neighbours by edge length: open_edge 2069 ft, residential 945 ft)';
+    const edges = parseEdgeClasses(reason);
+    expect(edges).toEqual([
+      { kind: 'open_edge', label: 'open edge (no street, no parcel)', ft: 2069 },
+      { kind: 'residential', label: 'residential neighbour', ft: 945 },
+    ]);
+    expect(edgeClassSentence(edges)).toBe('2,069 ft open edge (no street, no parcel) · 945 ft residential neighbour · no mapped street contact');
+    expect(parseEdgeClasses('floodplain leaves no buildable piece')).toEqual([]);
+    expect(edgeClassSentence([])).toBeNull();
   });
 });

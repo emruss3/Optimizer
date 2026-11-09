@@ -333,3 +333,28 @@ describe('SfV1Panel — third batch (2026-11-04)', () => {
     expect(screen.queryByTestId('sfv1-hillside')).toBeNull();
   });
 });
+
+describe('SfV1Panel — explainable status (the scope\'s P0.2, 2026-11-09)', () => {
+  it('a landlocked skip lists the edges by class, and the house note says the open edge is not a street (0 Ivey Point Rd)', () => {
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, status: 'skipped', reason: 'landlocked: the longest touch on a street is 2069 ft (a street run needs 40 ft); no vacant neighbour to connect through (neighbours by edge length: open_edge 2069 ft, residential 945 ft)', lots: 0, tests: [], fails: [], notes: [], earthwork: null, fillView: false }}
+        override={{}}
+        onOverride={() => undefined}
+        onDrawHouse={() => undefined}
+      />
+    );
+    expect(screen.getByTestId('sfv1-edges').textContent).toBe('Edges by class: 2,069 ft open edge (no street, no parcel) · 945 ft residential neighbour · no mapped street contact.');
+    const access = screen.getByTestId('sfv1-house-access').textContent ?? '';
+    expect(access).toContain('the 2,069-ft open edge is not a street');
+    expect(access).toContain('conditional on that easement');
+  });
+
+  it('a plan with lots names what its checks cover and what they do not (4727 Post Rd)', () => {
+    render(<SfV1Panel summary={SUMMARY} override={{}} onOverride={() => undefined} />);
+    const d = screen.getByTestId('sfv1-diligence').textContent ?? '';
+    expect(d).toContain('4 checks from the district\'s standards');
+    expect(d).toContain('Not evaluated here: survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits');
+    expect(screen.queryByTestId('sfv1-edges')).toBeNull();
+  });
+});

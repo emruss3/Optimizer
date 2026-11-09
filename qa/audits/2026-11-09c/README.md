@@ -93,6 +93,52 @@ engine's 85 beside it), `668869_mt_view_rd_after.png` (table total 168),
 `660871_mt_view_rd_after_shortfall.png`, `478622_brick_church_pike_cl_after.png`
 ("No plan: the solve failed — …").
 
+## P0.2, shipped in the second PR: the status explains itself
+
+The scope's second finding: a green "Code compliant" or "All tests pass"
+over a plan that had not earned it. Reproduced on four of the named lots
+and fixed on the same answers.
+
+| Lot | Before | After |
+|---|---|---|
+| 1289 Currey Rd (RS10, landlocked) | house drawn, badge "Code compliant" | badge **Conditional · assumes an access easement across a neighbour (no mapped street contact)**; the basis line carries the same clause; the panel says the sketch is conditional on that easement |
+| 0 Ivey Point Rd (RS80) | skip text "the longest touch on a street is 2069 ft" beside "no street edge" | the panel adds **Edges by class: 2,069 ft open edge (no street, no parcel) · 945 ft residential neighbour · no mapped street contact**, and the house note says the open edge is not a street |
+| 4727 Post Rd (RS40) | "All tests pass" | **All 12 checks pass**, the tooltip listing the twelve and "Not evaluated: survey and legal access, utility capacity, stormwater detention sizing, geotechnical, street and driveway permits"; the panel repeats the diligence line under the tests |
+| 0 Whites Creek Pike (RM9) | 49 generator flags in one list | actionable flags as rows (parking below ratio, the parking-summary disagreement); the derivation receipts behind "N generator notes (derivation receipts, no action needed)" |
+
+Where it lives: `SiteMetrics.conditional` (set by the house sketch after a
+landlocked or flood skip, read by the KPI badge, the one-line basis summary
+and the evidence hook); `parseEdgeClasses` / `edgeClassSentence` in
+`sfV1Plan.ts` (the engine's "neighbours by edge length" clause, typed);
+`KpiStrip` subdivision `tests` and `legacy` (the chip counts its checks; a
+legacy generator's plan reads "Legacy generator · provisional"); `FlagsPanel`
+`isActionableFlag`. Shots: `616415_currey_rd_conditional_house.png`,
+`680396_ivey_point_rd_edges_by_class.png`, `420007_post_rd_all_12_checks.png`.
+
+Also in this PR, from Eric's note on the toolbar: the **Seed** toggle is now
+**Quick massing** ("the engine's fast first-pass composition … that the full
+solve starts from. Not the solved plan"), and its basis line reads "Quick
+massing (the engine's first pass, not the solved plan): …" instead of "Seed
+plan (Stage 1+2)". `toolbar_quick_massing.png`. The battery's
+`seed-toggle` test id is unchanged.
+
+Eric's screenshot (2915 Hillhurst Dr, RS10) showed the deeper problem: on a
+lot whose plan is three by-right lots, the toggle swapped in a 25-unit
+apartment massing under "LOTS 3 · All tests pass", and the table read
+Studio 133% / 2 Bed 500% against the lots' count. The quick massing is the
+multifamily solve's first pass; it is an alternative view only when the plan
+on the sheet is a multifamily massing. The toggle now appears only then (no
+toggle on 4727 Post Rd; present on 0 Whites Creek Pike), and while it is
+shown the table tabulates the massing's own mix (Whites Creek: 86 units,
+100%, where the solved plan is 53). The KPI strip keeps the solved plan's
+figures in that view; the basis line names the view.
+
+Seen while verifying, not fixed here: the house sketch's table shows "Pkg
+req 2" (typology default) while the strip shows stalls 0 / 0, the same
+header-versus-table split P0.1 closed for multifamily; and the house the
+engine places on 1289 Currey Rd is 437 SF, which is a shed, not a house
+(engine: the single-family seed's envelope on a 56-ft-wide lot).
+
 ## Left for the next releases
 
 - **P0.2** — the explainable status: per-check rows with value, threshold,
