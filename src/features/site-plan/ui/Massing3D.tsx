@@ -85,6 +85,12 @@ const Massing3D: React.FC<{
   const [sunKey, setSunKey] = useState('jun21');
   const [sunHour, setSunHour] = useState(12);
   const [shadows, setShadows] = useState(true);
+  // A renderer failure deck reports asynchronously (device lost, WebGL
+  // unavailable) is re-thrown on the next render so the planner's boundary
+  // catches it and offers Retry 3D / Back to 2D (the scope's P0.3). Left in
+  // deck's own handler it only reached the console, over a blank canvas.
+  const [fatal, setFatal] = useState<Error | null>(null);
+  if (fatal) throw fatal;
   const deckRef = useRef<{ deck?: { canvas?: HTMLCanvasElement } } | null>(null);
 
   const baseViewState = useMemo(
@@ -238,6 +244,7 @@ const Massing3D: React.FC<{
             return;
           }
           console.error('[Massing3D]', err);
+          setFatal(err instanceof Error ? err : new Error(String(err)));
         }}
         getTooltip={({ object }) =>
           object ? { text: (object as MassingPolygon).label } : null

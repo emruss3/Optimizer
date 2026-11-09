@@ -29,6 +29,13 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   const [loading, setLoading] = useState(false);
   const [recentItems, setRecentItems] = useState<CommandItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The scope's P0.3 (2026-11-09): a search has three terminal states, not
+  // one. Loading, no match and a failed request each read differently; a
+  // result that arrives after the query changed is dropped (the sequence).
+  const searchSeqRef = useRef(0);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   // Load recent/popular items on mount
   useEffect(() => {
@@ -44,7 +51,11 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
 
   // Search with debouncing
   useEffect(() => {
+    setOpenError(null);
     if (query.length < 2) {
+      searchSeqRef.current += 1; // a result for an older query must not land
+      setSearchError(null);
+      setLoading(false);
       setItems(getDefaultItems());
       return;
     }
@@ -131,42 +142,98 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   ];
 
+  /**
+   * Open a search hit the way a map click does: the full parcel row from
+   * `get_parcel_by_id` (geometry included), then the same `openParcelDrawer`
+   * path App.tsx validates and the map centres on. The palette closes only
+   * once the drawer has what it needs; a failed fetch stays on screen.
+   */
+  const openParcel = async (ogcFid: number, address: string) => {
+    if (!supabase) {
+      setOpenError(`Could not open ${address}: the database client is not configured.`);
+      return;
+    }
+    setOpening(address);
+    setOpenError(null);
+    try {
+      const { data, error } = await supabase.rpc('get_parcel_by_id', { p_ogc_fid: ogcFid });
+      if (error) throw new Error(error.message ?? String(error));
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null | undefined;
+      const geometry = row?.geometry as { coordinates?: unknown[] } | undefined;
+      if (!row || !geometry || !Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+        throw new Error('the parcel record has no geometry');
+      }
+      const id = row.ogc_fid ?? row.id ?? ogcFid;
+      const parcel = {
+        ogc_fid: String(id),
+        parcelnumb: row.parcelnumb ?? null,
+        address: row.address ?? address,
+        zoning: row.zoning ?? null,
+        sqft: row.sqft ?? null,
+        geometry: row.geometry,
+        primary_owner: row.primary_owner ?? row.owner ?? null,
+        owner: row.owner ?? row.primary_owner ?? null,
+        usedesc: row.usedesc ?? null,
+        yearbuilt: row.yearbuilt ?? null,
+        deeded_acres: row.deeded_acres ?? null,
+        parval: row.parval ?? null,
+        landval: row.landval ?? null,
+        improvval: row.improvval ?? null,
+        // the ordinance caps the Site Planner reads for a use the compiler cannot type
+        max_far: row.max_far ?? null,
+        min_front_setback_ft: row.min_front_setback_ft ?? null,
+        min_side_setback_ft: row.min_side_setback_ft ?? null,
+        min_rear_setback_ft: row.min_rear_setback_ft ?? null,
+        max_impervious_coverage_pct: row.max_impervious_coverage_pct ?? null,
+        max_density_du_per_acre: row.max_density_du_per_acre ?? null,
+        zoning_description: row.zoning_description ?? null,
+        lat: row.lat ?? null,
+        lon: row.lon ?? null,
+      };
+      document.dispatchEvent(new CustomEvent('openParcelDrawer', { detail: parcel }));
+      onClose();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setOpenError(`Could not open ${address}: ${msg}`);
+    } finally {
+      setOpening(null);
+    }
+  };
+
   const searchItems = async (searchQuery: string) => {
+    const seq = ++searchSeqRef.current;
+    const stale = () => seq !== searchSeqRef.current;
     setLoading(true);
-    
+    setSearchError(null);
+
     try {
       const results: CommandItem[] = [];
       
       // Search parcels using pg_trgm similarity
       if (supabase) {
-        const { data: parcels } = await supabase
+        // PostgREST's filter grammar reads commas and parentheses as syntax
+        const term = searchQuery.replace(/[,()]/g, ' ').trim();
+        const { data: parcels, error } = await supabase
           .from('parcels')
           .select('ogc_fid, parcelnumb, address, zoning, landval')
-          .or(`address.ilike.%${searchQuery}%,parcelnumb.ilike.%${searchQuery}%`)
+          .or(`address.ilike.%${term}%,parcelnumb.ilike.%${term}%`)
           .limit(10);
+        if (stale()) return;
+        if (error) throw new Error(error.message ?? String(error));
 
         if (parcels) {
           parcels.forEach(parcel => {
+            const address = parcel.address || 'Unknown Address';
             results.push({
               id: `parcel-${parcel.ogc_fid}`,
-              title: parcel.address || 'Unknown Address',
+              title: address,
               subtitle: `${parcel.parcelnumb} • ${parcel.zoning}`,
               category: 'parcel',
               icon: <MapPin className="w-4 h-4" />,
-              action: () => {
-                // Navigate to parcel and select it
-                onClose();
-                // TODO: Implement parcel selection
-              }
+              action: () => { void openParcel(Number(parcel.ogc_fid), address); },
             });
           });
         }
-
-        // Search projects
-        const { data: projects } = await supabase
-          .from('project_parcels')
-          .select('project_id')
-          .limit(5);
 
         // Mock project search results
         if (searchQuery.toLowerCase().includes('demo')) {
@@ -192,12 +259,16 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       
       results.push(...actionItems);
 
+      if (stale()) return;
       setItems(results);
     } catch (error) {
+      if (stale()) return;
       console.error('Search error:', error);
-      setItems(getDefaultItems());
+      // a failed request is not "no results": say so, and keep the commands
+      setSearchError(error instanceof Error ? error.message : String(error));
+      setItems(getDefaultItems().filter(item => item.category === 'action'));
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   };
 
@@ -316,13 +387,29 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                       </div>
                     ))}
 
-                    {/* Empty State */}
-                    {items.length === 0 && query.length > 0 && !loading && (
-                      <div className="px-4 py-8 text-center text-gray-500">
+                    {/* The three terminal states of a search, each its own */}
+                    {loading && query.length >= 2 && (
+                      <div data-testid="palette-loading" className="px-4 py-3 text-xs text-gray-500">Searching parcels for "{query}"…</div>
+                    )}
+                    {searchError && !loading && (
+                      <div data-testid="palette-search-error" className="mx-4 mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                        Parcel search failed: {searchError}. The commands below still work; try the search again.
+                      </div>
+                    )}
+                    {openError && (
+                      <div data-testid="palette-open-error" className="mx-4 mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                        {openError}
+                      </div>
+                    )}
+                    {opening && (
+                      <div data-testid="palette-opening" className="px-4 py-2 text-xs text-gray-500">Opening {opening}…</div>
+                    )}
+                    {!items.some(i => i.category === 'parcel') && query.length >= 2 && !loading && !searchError && (
+                      <div data-testid="palette-no-match" className="px-4 py-8 text-center text-gray-500">
                         <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No results found for "{query}"</p>
+                        <p className="text-sm">No parcel matches "{query}"</p>
                         <p className="text-xs mt-1">
-                          Try searching for addresses, parcel numbers, or project names
+                          Try an address or a parcel number, or click the parcel on the map
                         </p>
                       </div>
                     )}

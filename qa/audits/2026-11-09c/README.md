@@ -139,6 +139,38 @@ header-versus-table split P0.1 closed for multifamily; and the house the
 engine places on 1289 Currey Rd is 437 SF, which is a shed, not a house
 (engine: the single-family seed's envelope on a 56-ft-wide lot).
 
+## P0.3, shipped in the third PR: selection, routing and terminal states
+
+The scope's third P0 item, and the matching rows of the cohort retest
+(production build `22712ca`). Each case was reproduced on the local build
+against the parcels' live answers, then fixed and re-driven.
+
+| Case | Before | After |
+|---|---|---|
+| Search → parcel (palette) | the parcel result's action was a TODO: nothing opened; "No results" never showed because the command items always matched | a hit fetches the full row (`get_parcel_by_id`) and opens the drawer through the **same validated path as a map click** (`openParcelDrawer` → `handleParcelClick`); the map frames the parcel; **loading**, **no parcel matches**, **search failed** and **could not open** are four states; a late answer for an older query is dropped |
+| 1360 Brick Church Pike (CL), use = commercial | the compiler was asked for a `commercial` context (it timed out live) and the header spun | no compile, no solver: the **capacity card** from the parcel row (FAR 0.6 × 121,968 SF = 73,181 SF) says multi-family is also permitted with conditions; the note names the unsupported use and the way to a plan; the strip reads "No plan: generation is blocked — no massing engine draws commercial geometry …"; the previous use's failure card is cleared; the context panel says the compiler has no typology for it |
+| 4727 Post Rd, by-right generator forced down (503) | the legacy lot generator drew pads the header read as "0 apartments in three buildings"; "Code compliant" | strip **Lots 3 · 0.57 du/ac · Legacy generator · provisional**; basis "Legacy lot generator · 3 lots · provisional: drawn while the by-right generator was unreachable, no code tests ran"; no apartment sentence |
+| 0 Whites Creek Pike, 3D renderer forced to fail | deck's error reached the console over a blank canvas; the fallback offered only a page refresh; after "back to 2D" React kept the failed boundary and the 2D sheet showed the same fallback | the renderer's failure is re-thrown into the planner boundary: **The 3D view failed · The 2D plan, its schedule, your selection and edits are intact · Back to 2D plan / Retry 3D / Refresh page**; the 2D and 3D boundaries have their own keys, so Back to 2D lands on the intact plan (headline "53 apartments …" unchanged) |
+
+Where it lives: `CommandPalette.tsx` (`openParcel`, the search sequence,
+the four states), `App.tsx` (the event takes the click's validation and
+fetches the row when it carries only an id), `MapView.tsx` (fit to the
+opened parcel); `SiteWorkspace.tsx` (`unsupportedUse`, the legacy lots'
+metrics and strip entry, the keyed boundaries), `CommercialCapacityCard`
+`residentialPermitted`, `ContextPanel` `unsupportedUse`; `ErrorBoundary.tsx`
+(`SitePlannerErrorBoundary` with a remount key, `onBackTo2D`); `Massing3D`
+re-throws deck's `onError`; `BuiltHeadline` returns null for the legacy
+pads. Shots: `478622_brick_church_pike_commercial_use.png`,
+`420007_post_rd_legacy_fallback_forced.png`,
+`680339_whites_creek_pike_3d_failed_forced.png`.
+
+Not done here, from the same item: parcel outlines loading separately from
+the basemap (the map's tile layer; not reproducible in the sandbox, which
+cannot reach the tile host), and the APN search the retest found empty for
+Post Rd (the palette searches `address` and `parcelnumb` with `ilike`; a
+formatted APN with spaces or dashes will not match the unformatted column —
+the next PR should search `parcelnumb_no_formatting` as well).
+
 ## Left for the next releases
 
 - **P0.2** — the explainable status: per-check rows with value, threshold,

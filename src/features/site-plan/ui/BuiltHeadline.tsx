@@ -78,6 +78,10 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   // The townhome engine's plan (th_v3) plans footprints, not floor area or
   // a unit mix: the layout panel and the KPI strip carry its homes.
   if (buildings.every(b => b.properties?.townhomeEngine === 'th_v3')) return null;
+  // The legacy lot generator's pads (gen-bldg-N, one per lot, no mix): lots,
+  // not apartments. The strip carries them as a provisional lot count; the
+  // apartment sentence read "0 apartments in six buildings" over them.
+  if (buildings.every(b => b.id.startsWith('gen-bldg-'))) return null;
 
   const storiesOf = (b: Element) =>
     Math.max(1, Math.floor(((b.properties?.floors as number) || (b.properties?.stories as number) || 1)));

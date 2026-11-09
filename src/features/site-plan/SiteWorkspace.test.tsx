@@ -764,3 +764,29 @@ describe('SiteWorkspace: saved candidates keep their stored context', () => {
       669046, 'ctx-mf', expect.objectContaining({ seed: 7, parentId: 'cand-older', persist: true })));
   });
 });
+
+describe('SiteWorkspace: a permitted use no engine draws stops before the compiler (the scope\'s P0.3, 2026-11-09)', () => {
+  it('1360 Brick Church Pike (CL): picking commercial shows the capacity card and the unsupported-use note; nothing compiles or solves for it', async () => {
+    permittedUsesMock.mockResolvedValue(['multi_family', 'commercial', 'industrial']);
+    const dMf = deferred<PlannerContextResponse | null>();
+    compileMock.mockImplementation(() => dMf.promise);
+    render(<SiteWorkspace parcel={{ ...PARCEL, zoning: 'CL', max_far: 0.6, max_impervious_coverage_pct: 90, min_rear_setback_ft: 20 } as never} />);
+    await waitFor(() => expect(compileMock).toHaveBeenCalledWith(669046, 'multi_family'));
+    compileMock.mockClear();
+
+    fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'commercial' } });
+
+    const note = await screen.findByTestId('unsupported-use-note');
+    expect(note.textContent).toContain('Commercial is permitted here, but no massing engine draws commercial geometry yet');
+    expect(note.textContent).toContain('multi-family is permitted here, with conditions');
+    expect(screen.getByTestId('unsupported-use').textContent).toMatch(/60,000|FAR/);
+    expect(compileMock).not.toHaveBeenCalledWith(669046, 'commercial');
+    expect(genV2Mock).not.toHaveBeenCalled();
+    expect(genSfMock).not.toHaveBeenCalled();
+
+    // back to a residential use: the compile runs again, the note is gone
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'multi_family' } });
+    await waitFor(() => expect(compileMock).toHaveBeenCalledWith(669046, 'multi_family'));
+    expect(screen.queryByTestId('unsupported-use-note')).toBeNull();
+  });
+});
