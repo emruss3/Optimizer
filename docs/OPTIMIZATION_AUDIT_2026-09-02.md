@@ -1941,3 +1941,15 @@ computes (the strip reads "0 / not evaluated" and the table "—" instead of
 unformatted parcel number. Fixtures for conflicting, agreeing, zero-provided
 and no-requirement cases; verified on the local build. The engine ask is
 unchanged: the multifamily summary total must agree with its bays.
+
+## 37. The engine handoff of 2026-11-09 in the app: house plans, SP ordinances, terrain retry
+
+The sf_v1 plan's `houses` array is on the sheet: each lot reads its
+catalogue plan ("4 bed · 3,184 sf"), each pad carries the plan's footprint,
+and the by-right panel says how many lots carry a plan (4727 Post Rd: 5 of
+5). An SP parcel's `sp_ordinance_not_loaded` status is a terminal state that
+names the bill and the case (4225 Stammer Pl: BL2012-306, 2005SP-099-001)
+with no compile and no solver, in place of "zoning context unavailable".
+Terrain gets one automatic re-fetch 95 s after a miss, matching the engine's
+90-s block after a real USGS failure. Tests on the mapper, the status
+parser, the panel and the workspace.

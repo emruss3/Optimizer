@@ -400,6 +400,28 @@ export function normalizeFlags(json: unknown): string[] {
 }
 
 /** Tolerant reader for the permitted-uses payload → list of use strings. */
+/**
+ * The resolver's status when it cannot answer from the district alone
+ * (2026-11-09): an SP parcel's uses are set by its own ordinance, and until
+ * that bill is loaded every as-of-right flag is null, not false. The sheet
+ * says which ordinance, never "zoning context unavailable".
+ */
+export interface PermittedUsesStatus {
+  status: string;
+  district: string | null;
+  ordinance: string | null;
+  caseNo: string | null;
+  reason: string | null;
+}
+export function permittedUsesStatus(json: unknown): PermittedUsesStatus | null {
+  if (json == null || typeof json !== 'object' || Array.isArray(json)) return null;
+  const o = json as Record<string, unknown>;
+  const status = typeof o.status === 'string' ? o.status : null;
+  if (!status || status === 'ok') return null;
+  const str = (k: string) => (typeof o[k] === 'string' && (o[k] as string).trim() ? (o[k] as string) : null);
+  return { status, district: str('district'), ordinance: str('ordinance'), caseNo: str('case_no') ?? str('caseNo'), reason: str('reason') };
+}
+
 export function normalizePermittedUses(json: unknown): string[] {
   if (json == null) return [];
   const o = (typeof json === 'object' ? json : {}) as Record<string, unknown>;

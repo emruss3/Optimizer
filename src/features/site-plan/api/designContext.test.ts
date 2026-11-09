@@ -8,6 +8,7 @@ import {
   toContextTypology,
   pickDefaultUse,
   defaultUseFromZoningBase,
+  permittedUsesStatus,
 } from './designContext';
 
 describe('normalizeDesignContext', () => {
@@ -112,6 +113,23 @@ describe('contextToZoningPatch', () => {
       max_far: -1,
     })!;
     expect(contextToZoningPatch(ctx)).toEqual({});
+  });
+});
+
+describe('permittedUsesStatus (an SP parcel names its ordinance, 2026-11-09)', () => {
+  it('reads status, ordinance, case and reason; a normal answer has no status', () => {
+    const sp = {
+      status: 'sp_ordinance_not_loaded', district: 'SP', ordinance: 'BL2012-306', case_no: '2005SP-099-001',
+      reason: 'Specific Plan: uses and standards are set by BL2012-306 (2005SP-099-001), not the base code; that ordinance is not loaded, so no as-of-right use can be resolved from the district alone',
+      as_of_right: { commercial: null, multi_family: null, single_family: null },
+    };
+    expect(permittedUsesStatus(sp)).toEqual({
+      status: 'sp_ordinance_not_loaded', district: 'SP', ordinance: 'BL2012-306', caseNo: '2005SP-099-001', reason: sp.reason,
+    });
+    // the null flags are not "false": no use resolves, and the list is empty
+    expect(normalizePermittedUses(sp)).toEqual([]);
+    expect(permittedUsesStatus({ as_of_right: { multi_family: true } })).toBeNull();
+    expect(permittedUsesStatus(['single_family'])).toBeNull();
   });
 });
 

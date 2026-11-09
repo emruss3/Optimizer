@@ -202,6 +202,19 @@ The engine ask stands: `fn_generate_mf_site_plan_v2`'s `metrics.stalls`
 (5.58 × 53 = 296). Until it reconciles them the sheet cannot say the plan
 parks, and the handoff carries `needs_verification`, not a number.
 
+## Engine handoff of 2026-11-09, the fifth PR: house plans, SP ordinances, terrain retry
+
+Three engine changes the app did not read yet.
+
+| Item | Engine | App |
+|---|---|---|
+| House plans | every sf_v1 plan carries `houses` (one per lot: plan, beds, baths, footprint, floors, garage, source) and `houses_placed`; `pads_wkt` is the real footprint where a plan fit | each lot reads **4 bed · 3,184 sf** under its number; each pad is "House N · 4 bed · 3,184 sf" with the plan's footprint as its area; the panel says **5 of 5 lots carry a catalogue plan** (4727 Post Rd, live: plans of 4, 4, 4, 6 and 6 bedrooms) |
+| SP parcels | `fn_resolve_permitted_uses` returns `status: sp_ordinance_not_loaded` with `ordinance`, `case_no`, `reason`; the as-of-right flags are null | a card names the bill and the case (4225 Stammer Pl: **BL2012-306 (2005SP-099-001), which is not loaded**); nothing compiles, no solver runs, the strip's blocked reason and the context panel say why; never "zoning context unavailable" |
+| Terrain | `fn_parcel_topo_fetch` retries USGS three times; a real failure blocks a re-fetch for 90 s | one automatic re-fetch 95 s after a miss; the "Contours: not available" note stands only if that fails too |
+
+Shot: `420007_post_rd_house_plans.png`. The Post Rd fixture in the local
+store was refreshed from the live engine (it now carries the houses).
+
 ## Left for the next releases
 
 - **P0.2** — the explainable status: per-check rows with value, threshold,

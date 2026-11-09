@@ -790,3 +790,22 @@ describe('SiteWorkspace: a permitted use no engine draws stops before the compil
     expect(screen.queryByTestId('unsupported-use-note')).toBeNull();
   });
 });
+
+describe('SiteWorkspace: an SP parcel whose ordinance is not loaded is a terminal state with the bill number (2026-11-09)', () => {
+  it('4225 Stammer Pl (SP): the card names BL2012-306, nothing compiles, no solver runs', async () => {
+    permittedUsesMock.mockResolvedValue({
+      status: 'sp_ordinance_not_loaded', district: 'SP', ordinance: 'BL2012-306', case_no: '2005SP-099-001',
+      reason: 'Specific Plan: uses and standards are set by BL2012-306 (2005SP-099-001), not the base code; that ordinance is not loaded, so no as-of-right use can be resolved from the district alone',
+      as_of_right: { commercial: null, industrial: null, two_family: null, multi_family: null, single_family: null },
+    } as never);
+    render(<SiteWorkspace parcel={{ ...PARCEL, zoning: 'SP' } as never} />);
+    const card = await screen.findByTestId('sp-ordinance');
+    expect(card.textContent).toContain('BL2012-306 (2005SP-099-001), which is not loaded');
+    expect(card.textContent).toContain('no as-of-right use can be resolved from the district alone');
+    await new Promise(r => setTimeout(r, 50));
+    expect(compileMock).not.toHaveBeenCalled();
+    expect(genV2Mock).not.toHaveBeenCalled();
+    expect(genSfMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('context-no-context-reason').textContent).toContain('BL2012-306');
+  });
+});

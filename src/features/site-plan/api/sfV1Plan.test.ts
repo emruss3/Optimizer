@@ -3,7 +3,7 @@ import { validatePlanElements } from '../../../engine/validatePlan';
 import { isSfPlanElement } from './generateSfPlan';
 import {
   sfV1Route, normalizeTests, fillBand, fillColor, padFillByLot, earthworkHasFlood, openStyle,
-  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence,
+  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence, houseLabel,
   type SfV1Response,
 } from './sfV1Plan';
 
@@ -518,5 +518,30 @@ describe('typed frontage edges (0 Ivey Point Rd, 2026-11-09)', () => {
     expect(edgeClassSentence(edges)).toBe('2,069 ft open edge (no street, no parcel) · 945 ft residential neighbour · no mapped street contact');
     expect(parseEdgeClasses('floodplain leaves no buildable piece')).toEqual([]);
     expect(edgeClassSentence([])).toBeNull();
+  });
+});
+
+describe('the engine\'s house plans on the lots (2026-11-09)', () => {
+  it('labels each lot and pad with its catalogue plan, counts the placed ones, and leaves generic pads plain', () => {
+    const house = (beds: number, sf: number) => ({ plan: '12500', floorplan_id: 'fp-1', footprint_sf: sf, w_ft: 62.8, d_ft: 66.7, beds, baths: 3, floors: 1, garage: true, turned: false, source: 'public.floorplans (CubiCasa5k)' });
+    const lots = sfV1ToElements(PLAN).elements.filter(e => e.id.startsWith('sfv1-lot-')).length;
+    const houses = Array.from({ length: lots }, (_, i) => (i === 0 ? null : house(i % 2 ? 4 : 3, 2068 + i)));
+    const { elements, summary } = sfV1ToElements({ ...PLAN, houses, houses_placed: lots - 1 });
+    const lot1 = elements.find(e => e.id === 'sfv1-lot-1')!;
+    const lot2 = elements.find(e => e.id === 'sfv1-lot-2')!;
+    expect(lot1.properties?.houseLabel).toBeUndefined();
+    expect(lot2.properties?.houseLabel).toBe('4 bed · 2,069 sf');
+    expect(lot2.properties?.houseBeds).toBe(4);
+    const pad1 = elements.find(e => e.id === 'sfv1-pad-1')!;
+    const pad2 = elements.find(e => e.id === 'sfv1-pad-2')!;
+    expect(pad1.name).toBe('House 1');
+    expect(pad2.name).toBe('House 2 · 4 bed · 2,069 sf');
+    expect(pad2.properties?.floorplanId).toBe('fp-1');
+    expect(pad2.properties?.areaSqFt).toBe(2069);
+    expect(summary.housesPlaced).toBe(lots - 1);
+    // without the key the summary says nothing rather than zero
+    expect(sfV1ToElements(PLAN).summary.housesPlaced).toBeNull();
+    expect(houseLabel(null)).toBeNull();
+    expect(houseLabel({ beds: 3 })).toBe('3 bed');
   });
 });

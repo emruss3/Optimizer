@@ -200,6 +200,8 @@ interface ContextPanelProps {
   loading: boolean;
   /** a permitted use the compiler cannot type and no engine draws (commercial, industrial) */
   unsupportedUse?: string | null;
+  /** why there is no compiled context when that is a terminal state, not a load (an SP ordinance not loaded) */
+  noContextReason?: string | null;
   /** As-of-right uses for the selector (workspace-fetched, once per parcel) */
   uses: string[];
   use: string;
@@ -218,6 +220,7 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
   contextSummary,
   loading,
   unsupportedUse = null,
+  noContextReason = null,
   uses,
   use,
   onUseChange,
@@ -254,14 +257,17 @@ const ContextPanel: React.FC<ContextPanelProps> = ({
         </div>
       )}
 
-      {!loading && !context && unsupportedUse && (
+      {!loading && !context && noContextReason && (
+        <p data-testid="context-no-context-reason" className="text-xs text-amber-800">{noContextReason}</p>
+      )}
+      {!loading && !context && !noContextReason && unsupportedUse && (
         // the compiler has no typology for this use and no engine draws it:
         // a terminal state, not a snapshot that is still loading (P0.3)
         <p data-testid="context-unsupported-use" className="text-xs text-amber-800">
           No compiled context for {unsupportedUse.replace(/_/g, ' ')}: the compiler has no typology for it and no massing engine draws it. The capacity card above carries the ordinance caps; pick a residential use to compile and draw a plan.
         </p>
       )}
-      {!loading && !context && !unsupportedUse && (
+      {!loading && !context && !unsupportedUse && !noContextReason && (
         <p className="text-xs text-red-700">
           Verified context is unavailable — generation is blocked until the snapshot loads.
         </p>

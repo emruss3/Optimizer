@@ -337,6 +337,15 @@ export function SfV1Panel({
                 <dd>{Object.entries(summary.lotKinds).map(([k, n]) => `${n} ${k}`).join(' · ')}</dd>
               </>
             )}
+            {summary.housesPlaced != null && summary.lots > 0 && (
+              <>
+                <dt className="text-slate-500">House plans</dt>
+                <dd data-testid="sfv1-houses">
+                  {summary.housesPlaced} of {summary.lots} lot{summary.lots === 1 ? '' : 's'} carr{summary.housesPlaced === 1 ? 'ies' : 'y'} a catalogue plan
+                  {summary.housesPlaced < summary.lots ? ' · the rest keep a generic pad' : ''}
+                </dd>
+              </>
+            )}
             <dt className="text-slate-500">Land</dt>
             <dd>
               {[
