@@ -234,6 +234,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sfV1CandidatesRef = useRef<SfV1CandidatesResponse | null>(null);
   const sfV1DefaultRespRef = useRef<SfV1Response | null>(null);
   const competitionSeqRef = useRef(0);
+  // Every massing call carries a run number; a response that comes back
+  // after a newer call started, or after the parcel changed, is discarded
+  // (the scope's P0.1: a delayed response from an old parcel or scheme cannot
+  // replace the current plan).
+  const mfRunSeqRef = useRef(0);
+  useEffect(() => { mfRunSeqRef.current += 1; }, [contextOgcFid]);
   // The single-family seed was asked for the one house and could not place it.
   const [sfSeedError, setSfSeedError] = useState<string | null>(null);
   // The compile's physical verdict when it blocks a by-right use (the floodplain).
@@ -565,6 +571,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     serverRejectRef.current = null;
+    const run = ++mfRunSeqRef.current;
+    const stale = () => run !== mfRunSeqRef.current;
     const snapshot = plannerCtxRef.current;
     const effectiveContextId = opts.contextId !== undefined
       ? opts.contextId
@@ -607,6 +615,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             typology: snapshot?.context.typology,
           })
       : null;
+    // A newer run or another parcel has taken over: this answer is nobody's.
+    if (stale()) return false;
     // Townhomes have no legacy fallback: silently rendering apartments in
     // their place would misrepresent the selected product.
     if (!resp && effectiveProduct === 'townhomes') {
@@ -660,6 +670,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         parentId: opts.parentId,
         persist: false,
       });
+      if (stale()) return false;
     }
     if (!resp || !resp.buildings || resp.buildings.length === 0) {
       serverFailCauseRef.current = resp
@@ -2937,6 +2948,24 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       profileStreets: streetProfiles.length,
       sheetTitle: sheetTitle.title,
       mfAccess,
+      // 2026-11-09 (the scope's P0.1): the figures every surface must agree on —
+      // the engine's unit count, the drawn buildings' mix summed, the stalls the
+      // bays hold against the engine's summary, and the requirement.
+      mfTabulation: metrics && displayElements.some(e => isMfPlanElement(e))
+        ? {
+            units: metrics.totalUnits ?? null,
+            mixUnits: displayElements
+              .filter(e => e.type === 'building' && isMfPlanElement(e) && (e.properties?.use ?? 'residential') === 'residential')
+              .reduce((s, b) => s + ((b.properties?.unitMix as Array<{ count?: number }> | undefined) ?? []).reduce((t, r) => t + (r.count ?? 0), 0), 0),
+            stallsProvided: metrics.stallsProvided ?? null,
+            stallsRequired: metrics.stallsRequired ?? null,
+            stallsDrawn: metrics.stallsDrawn ?? null,
+            stallsReported: metrics.stallsReported ?? null,
+            bayStalls: displayElements
+              .filter(e => e.type === 'parking' && isMfPlanElement(e))
+              .reduce((s, p) => s + (typeof p.properties?.parkingSpaces === 'number' ? (p.properties.parkingSpaces as number) : 0), 0),
+          }
+        : null,
       utilizationPct:
         !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
@@ -3031,6 +3060,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
+          empty={
+            isGenerating || isGeneratingLots
+              ? { state: 'generating' }
+              : serverPlanError
+                ? { state: 'failed', reason: serverPlanError }
+                : compileBlocked || generationBlocked
+                  ? { state: 'blocked', reason: compileBlocked ?? 'the selected use is not permitted as-of-right' }
+                  : { state: 'none' }
+          }
           subdivision={
             thV3OnSheet && thV3Summary
               ? { lots: thV3Summary.homes, densityDuAc: thV3Summary.homesPerAcre, fails: thV3Summary.requiredFails, status: 'done', label: 'Townhomes', densityLabel: 'homes / ac' }

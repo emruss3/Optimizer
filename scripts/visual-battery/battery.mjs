@@ -72,6 +72,8 @@ const PARCELS = [
   { ogc_fid: 680391, address: '0 HILLS LN', zoning: 'R10' },
   // 2026-11-09 batch 4: RM9 in the floodplain — the competition skips, the multifamily engine draws anyway
   { ogc_fid: 675099, address: '0 TODD PREIS DR', zoning: 'RM9' },
+  // 2026-11-09 the scope's P0.1: one plan across header, tabulation and canvas (the Whites Creek reproduction)
+  { ogc_fid: 680339, address: '0 WHITES CREEK PIKE', zoning: 'RM9' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -308,6 +310,22 @@ function judge(exp, ev) {
     }
   };
   judgeLayout(exp.requireLayout, ev);
+  // 2026-11-09 (the scope's P0.1): every surface reads one plan — the engine's
+  // unit count, the buildings' mixes summed, the stalls the drawn bays hold
+  // against the header, and the requirement (0 Whites Creek Pike).
+  if (exp.requireMfTabulation) {
+    const w = exp.requireMfTabulation;
+    const t = ev?.mfTabulation;
+    if (!t) errs.push('mf: no multifamily tabulation in the evidence (no apartment plan on the sheet?)');
+    else {
+      if (typeof w.units === 'number' && t.units !== w.units) errs.push(`mf: ${t.units} units, expected ${w.units}`);
+      if (w.mixSumEqualsUnits && t.mixUnits !== t.units) errs.push(`mf: the buildings' mixes sum to ${t.mixUnits} under a header of ${t.units}`);
+      if (w.baysEqualProvided && t.bayStalls !== t.stallsProvided) errs.push(`mf: the drawn bays hold ${t.bayStalls} stalls but the header says ${t.stallsProvided}`);
+      if (typeof w.stallsProvided === 'number' && t.stallsProvided !== w.stallsProvided) errs.push(`mf: ${t.stallsProvided} stalls provided, expected ${w.stallsProvided}`);
+      if (typeof w.stallsRequired === 'number' && t.stallsRequired !== w.stallsRequired) errs.push(`mf: ${t.stallsRequired} stalls required, expected ${w.stallsRequired}`);
+      if (typeof w.stallsReported === 'number' && t.stallsReported !== w.stallsReported) errs.push(`mf: the engine's summary reported ${t.stallsReported}, expected ${w.stallsReported}`);
+    }
+  }
   if (exp.requireSfV1Override) {
     const o = ev._override;
     if (!o) errs.push('override: the fill-scenario control was never pressed (button missing on the panel?)');

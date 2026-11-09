@@ -87,7 +87,7 @@ const TabulationPanel: React.FC<{
     // type); on a sheet of houses only, the row says what it is — the single
     // house on 0 Riverfront Dr was tabulated as a "Townhome" (2026-11-04).
     const allHouses = buildings.length > 0 && buildings.every(b => b.properties?.house === true || b.properties?.singleFamilyHouse === true);
-    return (Object.keys(TYPE_LABELS) as UnitMixEntry['type'][])
+    const rows = (Object.keys(TYPE_LABELS) as UnitMixEntry['type'][])
       .filter(t => byType.has(t))
       .map(t => {
         const v = byType.get(t)!;
@@ -100,7 +100,22 @@ const TabulationPanel: React.FC<{
           pkgReq: Math.ceil(v.units * ratio),
         };
       });
-  }, [buildings, metrics?.totalUnits]);
+    // The requirement the plan is held to is the engine's (its ratio, with
+    // guest and accessible stalls where it counts them). The per-type column
+    // splits THAT figure by units (largest remainder), so the table's total
+    // is the header's: 0 Whites Creek Pike (2026-11-09) tabulated 80 stalls
+    // required from typology defaults under a header that said 92.
+    const engineRequired = metrics?.stallsRequired;
+    if (typeof engineRequired === 'number' && engineRequired > 0 && total > 0) {
+      const raw = rows.map(r => (r.units / total) * engineRequired);
+      const floors = raw.map(Math.floor);
+      let left = Math.round(engineRequired) - floors.reduce((s, v) => s + v, 0);
+      const order = raw.map((r, i) => [r - Math.floor(r), i] as const).sort((a, b) => b[0] - a[0]);
+      for (let k = 0; left > 0 && k < order.length; k++, left--) floors[order[k]![1]] += 1;
+      rows.forEach((r, i) => { r.pkgReq = floors[i] ?? 0; });
+    }
+    return rows;
+  }, [buildings, metrics?.totalUnits, metrics?.stallsRequired]);
 
   const totals = useMemo(() => {
     const units = rows.reduce((s, r) => s + r.units, 0);
@@ -124,7 +139,10 @@ const TabulationPanel: React.FC<{
 
   // Receipts: the compiled context's provenance, always visible.
   const receipts = useMemo(() => {
-    if (!plannerCtx) return 'Context not compiled — plan uses standard defaults';
+    const parkingBasis = typeof metrics?.stallsRequired === 'number' && metrics.stallsRequired > 0
+      ? `Parking required: ${metrics.stallsRequired} from the engine, split by units`
+      : 'Parking ratios: typology defaults';
+    if (!plannerCtx) return `Context not compiled — plan uses standard defaults · ${parkingBasis}`;
     const c = plannerCtx.context;
     const n = (c.precedent as { n_comps?: number } | undefined)?.n_comps;
     const conf = (c.precedent as { confidence?: string } | undefined)?.confidence;
@@ -138,10 +156,10 @@ const TabulationPanel: React.FC<{
       n != null ? `Mix prior: ${n} local ${zone ?? ''} precedents`.replace('  ', ' ') : null,
       `Envelope: ${envelope}`,
       conf ? `Confidence: ${conf}` : null,
-      'Parking ratios: typology defaults',
+      parkingBasis,
     ].filter(Boolean);
     return parts.join(' · ');
-  }, [plannerCtx]);
+  }, [plannerCtx, metrics?.stallsRequired]);
 
   if (rows.length === 0) return null;
 
@@ -187,8 +205,17 @@ const TabulationPanel: React.FC<{
         <span>FAR <b>{(metrics?.achievedFAR ?? 0).toFixed(2)}</b></span>
         <span>Coverage <b>{(metrics?.siteCoveragePct ?? 0).toFixed(0)}%</b></span>
         {duAc != null && <span>Density <b>{duAc.toFixed(1)} DU/ac</b></span>}
-        <span>
+        <span
+          title={
+            typeof metrics?.stallsDrawn === 'number' && typeof metrics?.stallsReported === 'number' && metrics.stallsDrawn !== metrics.stallsReported
+              ? `The drawn bays hold ${metrics.stallsDrawn} stalls; the engine's summary said ${metrics.stallsReported}. The sheet counts the drawn bays.`
+              : undefined
+          }
+        >
           Stalls <b>{metrics?.stallsProvided ?? 0} / {metrics?.stallsRequired ?? 0}</b>
+          {typeof metrics?.stallsDrawn === 'number' && typeof metrics?.stallsReported === 'number' && metrics.stallsDrawn !== metrics.stallsReported && (
+            <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">(engine summary {metrics.stallsReported})</span>
+          )}
         </span>
         {metrics?.totalUnits ? (
           <span>

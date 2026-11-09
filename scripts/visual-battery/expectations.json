@@ -365,5 +365,25 @@
       "holdOnSheet": true,
       "sentenceIncludes": "does not hold the flood hazard area out yet"
     }
+  },
+  "680339": {
+    "mode": "server-plan",
+    "_basis": "0 Whites Creek Pike (RM9, 5.9 ac) - 2026-11-09, the scope's first reproduction: the max-GSF generator draws two 3-story bars under a 53-unit plan with six parking bays holding 32+85+10+108+8+49 stalls, a summary that says 85, and 92 required. Before: the header read '35 one-beds' (the per-bar GFA estimate, 64+23 units), the tabulation '1 Bed 1' (reconciled to 53), the canvas '108 stalls' on one bay under a header of 85, 'Code compliant · constrained: coverage-capped +1' hiding the shortfall. Now every surface reads one plan: the bars' mixes sum to 53, the header and the tabulation count the 292 stalls the drawn bays hold (the engine's 85 is kept as reported and flagged), the tabulation's requirement is the engine's 92.",
+    "requireBriefEnvelope": true,
+    "requireTopo": true,
+    "requireLayout": {
+      "defaultKind": "multifamily",
+      "shown": "multifamily",
+      "auto": false,
+      "multifamilyHomes": 53
+    },
+    "requireMfTabulation": {
+      "units": 53,
+      "mixSumEqualsUnits": true,
+      "baysEqualProvided": true,
+      "stallsProvided": 292,
+      "stallsRequired": 92,
+      "stallsReported": 85
+    }
   }
 }

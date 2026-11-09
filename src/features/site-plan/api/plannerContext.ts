@@ -695,6 +695,7 @@ export function planUsedActiveContext(
 // ── Flag translations (technical flag → user-readable sentence) ─────────────
 
 const FLAG_TEXT: Record<string, string> = {
+  parking_summary_disagrees: 'The engine\'s stall total disagrees with the stalls its drawn parking bays hold; the sheet counts the drawn bays.',
   regrid_typology_selection_exact_same_zoning: 'Matched the selected use and zoning subtype.',
   regrid_typology_selection_exact_any_zoning: 'Matched the selected use across nearby zoning districts.',
   regrid_typology_selection_compatible_same_zoning: 'Used compatible building uses within the same zoning subtype.',
