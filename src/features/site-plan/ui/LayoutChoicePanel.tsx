@@ -105,7 +105,7 @@ export function LayoutChoicePanel({
           data-homes={mf ?? ''} disabled={busy} onClick={() => onChoose('multifamily')} className={option(shown === 'multifamily')}
         >
           <span className="text-[11px] font-semibold text-slate-800">Multifamily</span>
-          <span className="text-base font-semibold leading-tight text-slate-900">{mf != null ? `${mf} homes` : '—'}</span>
+          <span className="text-base font-semibold leading-tight text-slate-900">{mf != null ? `${mf} home${mf === 1 ? '' : 's'}` : '—'}</span>
           <span className="text-[10px] text-slate-500">{product === 'townhomes' ? 'townhome rows, surface parking' : 'apartments, surface parking'}</span>
           {choice && def === 'multifamily' && badge('default', 'bg-emerald-100 text-emerald-800')}
         </button>
@@ -116,7 +116,7 @@ export function LayoutChoicePanel({
           onClick={() => onChoose('neighborhood')} className={option(shown === 'neighborhood')}
         >
           <span className="text-[11px] font-semibold text-slate-800">Neighborhood</span>
-          <span className="text-base font-semibold leading-tight text-slate-900">{nb ? `${nb.homes} homes` : loading ? '…' : '—'}</span>
+          <span className="text-base font-semibold leading-tight text-slate-900">{nb ? `${nb.homes} home${nb.homes === 1 ? '' : 's'}` : loading ? '…' : '—'}</span>
           <span className="text-[10px] text-slate-500">{nb ? nb.label : loading ? 'comparing the patterns…' : 'no pattern places a home'}</span>
           {choice && def === 'neighborhood' && badge('default', 'bg-emerald-100 text-emerald-800')}
           {nb && !nb.buildable && badge('fails a code test', 'bg-red-100 text-red-800')}

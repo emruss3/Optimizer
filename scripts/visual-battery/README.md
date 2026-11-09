@@ -67,6 +67,13 @@ pattern, basis, flood hold, fails, tests, hasFlood, fillView, bfeContour).
 
 `whyIncludes` checks the engine's `why` lines under the competition.
 
+**Engine g14 (2026-11-09).** The hillside hold comes back as geometry
+(`hillside_wkt`), so **4255 Brick Church Pike** (686430) gates the hatch
+(`hillsideLayer`) and its line (`hillsideNote`: "The hillside hold takes
+3.35 ac out") on a 0-lot answer beside the flood hold; **0 Hills Ln** (680391)
+gates the competition's best at MORE lots (the grid's 17 over the default's 14
+frontage lots, `autoBest: {requested: 'grid', why: 'more_lots'}`).
+
 The RM competition passes `th_budget_ms: 8000`, so its fixtures key on it:
 `rpc:fn_sf_v1_candidates_app:<fid>::{"th_budget_ms":8000}`.
 

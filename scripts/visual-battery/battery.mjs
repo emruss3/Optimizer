@@ -64,6 +64,12 @@ const PARCELS = [
   { ogc_fid: 680001, address: '0 UNION HILL RD', zoning: 'RS40' },
   { ogc_fid: 661661, address: '6404 EATONS CREEK RD', zoning: 'R40' },
   { ogc_fid: 672526, address: '0 HICKORY BEND DR', zoning: 'RS10' },
+  // 2026-11-09 engine g14: the hillside hold as geometry (4255 Brick Church
+  // Pike: 3.35 of 4.09 ac steeper than 25%, hatched beside the flood hold, 0
+  // lots) and the competition's best at MORE lots (0 Hills Ln: the grid's 17
+  // over the default's 14 frontage lots, buildable).
+  { ogc_fid: 686430, address: '4255 BRICK CHURCH PIKE', zoning: 'R20' },
+  { ogc_fid: 680391, address: '0 HILLS LN', zoning: 'R10' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -222,6 +228,9 @@ function judge(exp, ev) {
     }
     if (want.privateDriveNote && !(ev._domPrivateDrive ?? '').includes('share a private drive')) errs.push(`${label}: the shared private drive is not said on the panel`);
     if (want.heldNote && !(ev._domHeld ?? '').includes(want.heldNote)) errs.push(`${label}: the flood hold line says '${ev._domHeld ?? 'nothing'}', expected it to include '${want.heldNote}'`);
+    // 2026-11-09 engine g14: the hillside hold as geometry, hatched like the flood hold, and said in acres
+    if (typeof want.hillsideLayer === 'boolean' && !!got.hillsideLayer !== want.hillsideLayer) errs.push(`${label}: hillside-hold layer on the sheet = ${!!got.hillsideLayer}, expected ${want.hillsideLayer}`);
+    if (want.hillsideNote && !(ev._domHillside ?? '').includes(want.hillsideNote)) errs.push(`${label}: the hillside line says '${ev._domHillside ?? 'nothing'}', expected it to include '${want.hillsideNote}'`);
     for (const w of want.whyIncludes ?? []) {
       if (!(ev._domWhy ?? []).some(line => line.includes(w))) errs.push(`${label}: the engine's why does not say '${w}' (lines: ${JSON.stringify(ev._domWhy ?? [])})`);
     }
@@ -440,6 +449,7 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
         _domAutoBestWhy: document.querySelector('[data-testid="sfv1-auto-best"]')?.getAttribute('data-why') ?? null,
         _domPrivateDrive: document.querySelector('[data-testid="sfv1-private-drive"]')?.textContent ?? null,
         _domHeld: document.querySelector('[data-testid="sfv1-held"]')?.textContent ?? null,
+        _domHillside: document.querySelector('[data-testid="sfv1-hillside"]')?.textContent ?? null,
         _domWhy: Array.from(document.querySelectorAll('[data-testid="sfv1-competition-why"] li')).map(e => e.textContent),
       };
     });

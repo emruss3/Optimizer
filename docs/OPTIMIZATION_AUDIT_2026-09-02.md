@@ -1736,3 +1736,36 @@ Still open on the engine side:
 - **A no-lot reason that counts held land as buildable.**
 - **`fn_mf_money`'s sales $/SF.** It reads $1,069–$6,704 on most parcels,
   which gives a 1,882.7% margin on 0 Old Lebanon Dirt Rd.
+
+## 29. Twenty more lots against engine g14 (2026-11-09)
+
+Eric: "run 20 more scenarios." Same recipe (16 vacant R / RS by a fixed hash
+in four size bands, 4 RM), new parcels only. The engine's g14 (2026-11-08)
+landed between the draw and the harvest: the no-lot reason counts land after
+the holds, the hillside hold comes back as geometry, `pattern: 'drive'` is
+self-contained, `fn_mf_money` prices by the comps' total floor area, and the
+750-ft drive figure is a quality flag (`access.private_drive_length`).
+Write-up, ranking and pictures: `qa/audits/2026-11-09/`.
+
+The app side of g14: the hillside hold is hatched beside the flood hold (0-lot
+answers too) with "N ac out … M ac left after every hold"; the hillside counts
+in the title block's held share; the client's copy of the drive params is
+gone; the length test files with the quality flags; the legend keys the
+held-out land when it is on the sheet; "1 home".
+
+The batch: nine of twenty are "no new lots / one house / skipped" and seven
+of those are right; of the eleven drawn layouts three are what a civil would
+draw (0 Hillwood Blvd's two estate lots, 1014 Antioch Pike's 8 lots on a
+cul-de-sac, 0 Hills Ln's 17 on one street, the grid taken from the
+competition at more lots) and one is close (29 townhomes on a mews on a 90-ft
+RM20 strip). The hillside hold turned the mountain lots into honest zeros.
+What decides the bottom: the estate grammar on long tracts (7695 Old
+Charlotte Pike, 21 ac buildable, 0 lots; 0 Walker Ln, 3 lots on a through
+street), a 4,499-ft loop at 49% grade on landlocked 0 Blevins Rd, and the
+max-GSF generator's parking on small RM lots (101 stalls for 9 units on 0
+Nashboro Blvd, 112 for 30 on 0 Cedarstone Way).
+
+USGS 3DEP refused 8 of 20 first fetches; retried through
+`fn_parcel_topo_fetch` until 19 of 20 had terrain (the twentieth is a flood
+skip). Battery: 4255 Brick Church Pike (the hillside hatch, 0 lots) and 0
+Hills Ln (the grid at more lots).

@@ -174,6 +174,11 @@ export interface SfV1Response {
   low_point_wkt?: string | null;
   origin_wkt?: string | null;
   generator_version?: string | null;
+  /** engine g14: land steeper than 25% held out before the layout, as geometry (0-lot answers included) and acres */
+  hillside_wkt?: string | null;
+  hillside_ac?: number | null;
+  /** engine g14: the site less every hold (flood, hillside) */
+  buildable_after_holds_ac?: number | null;
   [k: string]: unknown;
 }
 
@@ -207,33 +212,18 @@ const BY_RIGHT_OPTION_KEYS = new Set(['pattern', 'module_by_right', 'th_budget_m
 /** The townhome search's share of the competition on multifamily land (engine g13: "~8 s to stay under 20 s cold"). */
 export const RM_COMPETITION_TH_BUDGET_MS = 8000;
 
-/**
- * The shared private drive (engine g13, the estate grammar's first form): the
- * competition calls fn_sf_v1_plan with pattern 'drive' AND this drive section
- * as params — a 24-ft easement, a 16-ft lane, no turnaround bulb, no block
- * test, at most 750 ft. Called with pattern 'drive' alone the plan falls back
- * to frontage lots, so "View this plan" on a drive row sends the same section
- * (the values are fn_sf_v1_params()' private_drive_* on 2026-11-06).
- */
-export const SFV1_DRIVE_PARAMS: Readonly<Record<string, number>> = Object.freeze({
-  row_ft: 24,
-  pave_ft: 16,
-  turnaround_from_ft: 1e9,
-  block_len_max_ft: 1e9,
-  dead_end_max_ft: 750,
-  second_connection_homes: 1e9,
-  street_ft_per_lot_max_factor: 4,
-});
-
+/** The shared private drive (engine g13, the estate grammar's first form): a
+ *  24-ft easement, a 16-ft lane, no turnaround bulb, at most 6 lots. Since
+ *  engine g14 `pattern: 'drive'` is self-contained (the client once had to
+ *  send the drive section as params). */
 export const DRIVE_PATTERN = 'shared private drive';
 export const isDrivePattern = (pattern: string | null | undefined): boolean => (pattern ?? '').trim().toLowerCase() === DRIVE_PATTERN;
 
 /** The option set the competition used for one grammar's plan: the user's
- *  options, the pattern, and for the drive its section (never an override). */
+ *  options and the pattern (never an override). */
 export function candidateOpt(requested: string, opt: SfV1Options): SfV1Options {
   const base = withoutPattern(opt);
   if (requested === 'loop') return base;
-  if (requested === 'drive') return { ...base, pattern: 'drive', params: { ...(base.params ?? {}), ...SFV1_DRIVE_PARAMS } };
   return { ...base, pattern: requested };
 }
 
@@ -403,6 +393,9 @@ export interface SfV1Summary {
   streetGrade: { maxPct: number | null; limitPct: number | null; ftOverLimit: number | null } | null;
   /** the shared private drive (pattern 'shared private drive'): its easement and lane, measured off the drawing, and the lot cap */
   privateDrive: { easementFt: number | null; laneFt: number | null; lengthFt: number | null; maxLots: number | null } | null;
+  /** engine g14: the hillside hold (land steeper than 25%) and what is left after every hold */
+  hillsideAcres: number | null;
+  buildableAfterHoldsAc: number | null;
   ms: number | null;
   generatorVersion: string | null;
   basisLine: string;
@@ -539,6 +532,27 @@ export function sfV1ToElements(
       metadata: meta,
     });
   });
+  // The hillside hold (engine g14): land steeper than 25% the generator holds
+  // out before the layout, returned as geometry on every plan, 0-lot answers
+  // included (0 Dry Fork Rd: 25 of 31 ac). Drawn like the flood hold, unless
+  // the plan already carries it as natural open pieces (the same land, named).
+  const hillsideInPieces = (Array.isArray(resp.open_pieces) ? resp.open_pieces : []).some(p => /hillside/i.test(str(p?.kind) ?? ''));
+  const hillsideLabel = 'Hillside · held out (over 25% slope)';
+  if (!hillsideInPieces) {
+    polys3857(str(resp.hillside_wkt)).forEach((poly, i) => {
+      elements.push({
+        id: `${SFV1_ID_PREFIX}hillside-${i + 1}`,
+        type: 'greenspace',
+        name: hillsideLabel,
+        geometry: poly,
+        properties: props({
+          kind: 'greenway', hazardKind: 'slope', label: hillsideLabel,
+          styleOverride: true, color: '#FDE68A', opacity: 0.45, strokeColor: '#B45309',
+        }),
+        metadata: meta,
+      });
+    });
+  }
   const m = resp.metrics ?? {};
   const tests = normalizeTests(resp.tests);
   const fails = strings(resp.fails).length > 0 ? strings(resp.fails) : tests.filter(t => t.pass === false).map(t => t.id);
@@ -798,7 +812,10 @@ export function sfV1ToElements(
   const siteAcres = num(resp.site_acres);
   const heldAcres = num(resp.held_acres);
   const naturalAcres = openPieces.filter(p => p.kind.toLowerCase().startsWith('natural')).reduce((a, p) => a + (p.acres ?? 0), 0);
-  const heldPct = siteAcres != null && siteAcres > 0 ? Math.round((((heldAcres ?? 0) + naturalAcres) / (siteAcres + (heldAcres ?? 0))) * 1000) / 10 : null;
+  // the hillside hold counts as held land; on a drawn plan it is already among the natural pieces
+  const hillsideAcres = num(resp.hillside_ac);
+  const heldOutAcres = (heldAcres ?? 0) + naturalAcres + (hillsideInPieces ? 0 : hillsideAcres ?? 0);
+  const heldPct = siteAcres != null && siteAcres > 0 ? Math.round((heldOutAcres / (siteAcres + (heldAcres ?? 0))) * 1000) / 10 : null;
   const summary: SfV1Summary = {
     status: str(resp.status) ?? (resp.error ? 'error' : 'done'),
     reason: str(resp.reason) ?? str(resp.error),
@@ -841,6 +858,8 @@ export function sfV1ToElements(
     fillView,
     streetGrade: sg ? { maxPct: num(sg.max_pct), limitPct: num(sg.limit_pct), ftOverLimit: num(sg.ft_over_limit) } : null,
     privateDrive,
+    hillsideAcres,
+    buildableAfterHoldsAc: num(resp.buildable_after_holds_ac),
     ms: num(resp.ms),
     generatorVersion: str(resp.generator_version) ?? 'sf_v1',
     basisLine: '',
@@ -1036,7 +1055,9 @@ export interface SfV1CandidatesResponse {
 }
 
 /** Quality flags: shown, not ranked on, not "fails" in the code sense (the engine's own split). */
-export const SFV1_QUALITY_FLAGS = new Set(['open.unassigned', 'cost.street_ft_per_lot', 'yield.vs_arithmetic']);
+export const SFV1_QUALITY_FLAGS = new Set(['open.unassigned', 'cost.street_ft_per_lot', 'yield.vs_arithmetic',
+  // engine g14: a private drive's total length against the 750-ft figure, a flag until Metro's reading is confirmed
+  'access.private_drive_length']);
 export const codeFails = (fails: string[]): string[] => fails.filter(f => !SFV1_QUALITY_FLAGS.has(f));
 export const qualityFlags = (fails: string[]): string[] => fails.filter(f => SFV1_QUALITY_FLAGS.has(f));
 

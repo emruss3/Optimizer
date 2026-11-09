@@ -46,6 +46,8 @@ const SUMMARY: SfV1Summary = {
   },
   fillView: true,
   privateDrive: null,
+  hillsideAcres: null,
+  buildableAfterHoldsAc: null,
   generatorVersion: 'sf_v1',
   basisLine: '24 lots @ 60 × 130 ft by right on a loop · 3.1 du/ac gross',
 };
@@ -321,5 +323,13 @@ describe('SfV1Panel — third batch (2026-11-04)', () => {
     // a street plan on a landlocked parcel is not flagged as frontage lots
     rerender(<SfV1Panel summary={SUMMARY} override={{}} onOverride={() => undefined} frontageLandlocked />);
     expect(screen.queryByTestId('sfv1-frontage-landlocked')).toBeNull();
+  });
+
+  it('engine g14: the hillside hold is said in acres, with what is left after every hold (0 Dry Fork Rd)', () => {
+    const zero = { ...SUMMARY, lots: 0, pattern: null, tests: [], fails: [], notes: ['25.0 ac steeper than 25% held out as hillside'], earthwork: null, fillView: false, hasFlood: false, hillsideAcres: 25.03, buildableAfterHoldsAc: 5.64 };
+    const { rerender } = render(<SfV1Panel summary={zero} override={{}} onOverride={() => undefined} />);
+    expect(screen.getByTestId('sfv1-hillside').textContent).toBe('The hillside hold takes 25.03 ac out (steeper than 25%, hatched tan on the sheet); 5.64 ac are left after every hold.');
+    rerender(<SfV1Panel summary={SUMMARY} override={{}} onOverride={() => undefined} />);
+    expect(screen.queryByTestId('sfv1-hillside')).toBeNull();
   });
 });
