@@ -1953,3 +1953,15 @@ with no compile and no solver, in place of "zoning context unavailable".
 Terrain gets one automatic re-fetch 95 s after a miss, matching the engine's
 90-s block after a real USGS failure. Tests on the mapper, the status
 parser, the panel and the workspace.
+
+## 38. The cohort retest, P0.2b: progress apart from the evidence in hand (2026-11-09)
+
+A failed massing context no longer curtains a by-right answer: on R / RS
+parcels the by-right generator runs regardless (it reads the district
+standards directly) and the block is a banner with its own retry over the
+finished result (0 W Trinity Ln: the zero-lot answer and its flood hold stay
+readable). The flag lots' access poles are "Access strip N", not lots 6 and
+7 (4727 Post Rd). The evidence hook reports each task (context, terrain,
+lot fit, massing) with its state, reason and last duration, and lists every
+element on the sheet. Left: a bounded working state for a slow compile,
+request correlation ids (engine).

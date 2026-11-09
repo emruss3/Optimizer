@@ -545,3 +545,21 @@ describe('the engine\'s house plans on the lots (2026-11-09)', () => {
     expect(houseLabel({ beds: 3 })).toBe('3 bed');
   });
 });
+
+describe('flag lots\' poles are access strips, not lots (4727 Post Rd, the cohort retest 2026-11-09)', () => {
+  it('polygons past the engine\'s lot count are named Access strip and carry no lot number', () => {
+    const sq = (x: number, y: number, w: number, h: number) => `POLYGON((${x} ${y},${x + w} ${y},${x + w} ${y + h},${x} ${y + h},${x} ${y}))`;
+    const resp: SfV1Response = {
+      status: 'done', lots: 2, basis: 'by_right', fails: [],
+      lot_kinds: ['estate', 'flag'], lot_areas_sf: [41457, 52141],
+      // two lots, then the flag lot's pole as its own polygon
+      lots_wkt: `GEOMETRYCOLLECTION(${sq(1715500, 652600, 140, 290)},${sq(1715640, 652600, 140, 290)},${sq(1715640, 652890, 20, 200)})`,
+    };
+    const { elements, summary } = sfV1ToElements(resp);
+    expect(elements.filter(e => /^Lot \d+$/.test(e.name ?? '')).map(e => e.name)).toEqual(['Lot 1', 'Lot 2']);
+    const strips = elements.filter(e => e.id.startsWith('sfv1-access-strip-'));
+    expect(strips.map(e => e.name)).toEqual(['Access strip 1']);
+    expect(strips[0].properties?.accessStrip).toBe(true);
+    expect(summary.lots).toBe(2);
+  });
+});

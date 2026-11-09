@@ -654,7 +654,25 @@ export function sfV1ToElements(
   const lotKindCounts: Record<string, number> = {};
   const houses = Array.isArray(resp.houses) ? resp.houses : [];
   const lotPolys = polys3857(resp.lots_wkt);
+  // The engine aligns lots_wkt with lot_kinds, lot_areas_sf and houses; the
+  // polygons past that count are the flag lots' access poles. Numbered like
+  // lots they read as yield (4727 Post Rd: "lots" 6 and 7 on a 5-lot plan,
+  // the cohort retest, 2026-11-09). They are access strips, and say so.
+  const lotCount = lotKinds.length > 0 ? lotKinds.length : (num(resp.lots) ?? lotPolys.length);
+  let stripN = 0;
   lotPolys.forEach((poly, i) => {
+    if (i >= lotCount) {
+      stripN += 1;
+      elements.push({
+        id: `${SFV1_ID_PREFIX}access-strip-${stripN}`,
+        type: 'other',
+        name: `Access strip ${stripN}`,
+        geometry: poly,
+        properties: props({ accessStrip: true, color: '#CBD5E1', strokeColor: '#64748B', opacity: 0.55, styleOverride: true }),
+        metadata: meta,
+      });
+      return;
+    }
     const kind = lotKinds[i] ?? null;
     if (kind) lotKindCounts[kind] = (lotKindCounts[kind] ?? 0) + 1;
     const house = houses[i] ?? null;

@@ -215,6 +215,20 @@ Three engine changes the app did not read yet.
 Shot: `420007_post_rd_house_plans.png`. The Post Rd fixture in the local
 store was refreshed from the live engine (it now carries the houses).
 
+## Retest P0.2b, in the same PR as the handoff: progress apart from the evidence already in hand
+
+| Case | Before | After |
+|---|---|---|
+| 0 W Trinity Ln (RS5), the massing context fails | the block curtained the whole canvas, the by-right generator never ran | the by-right generator runs anyway (it reads the district standards directly): "Skipped — floodplain leaves no buildable piece", the flood hold drawn; the block is a **banner** with its own Retry over the finished result (`compile-blocked-banner`) |
+| 4727 Post Rd | the flag lots' access poles were numbered 6 and 7, like lots, on a five-lot plan | polygons past the engine's lot count are **Access strip N**: grey, no lot number, not yield |
+| Evidence | one flat hook | `__planEvidence.tasks`: context / terrain / lot fit / massing, each with `state` (working, done, blocked, unsupported, skipped, failed, none), `reason` and the last duration in ms; `elementIndex` lists every element on the sheet by id, name and type |
+
+Not done: a bounded working state for a slow compile beyond the existing
+"Compiling context…" overlay and Retry; request correlation ids across the
+browser and the service (needs the engine to echo an id).
+
+Shots: `675987_w_trinity_compile_failed_banner.png`, `420007_post_rd_access_strips.png`.
+
 ## Left for the next releases
 
 - **P0.2** — the explainable status: per-check rows with value, threshold,

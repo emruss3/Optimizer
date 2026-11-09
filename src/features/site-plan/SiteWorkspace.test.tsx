@@ -809,3 +809,21 @@ describe('SiteWorkspace: an SP parcel whose ordinance is not loaded is a termina
     expect(screen.getByTestId('context-no-context-reason').textContent).toContain('BL2012-306');
   });
 });
+
+describe('SiteWorkspace: a failed massing context does not curtain the by-right answer (0 W Trinity Ln, the cohort retest 2026-11-09)', () => {
+  it('on an RS parcel the by-right generator still runs and the block is a banner over its result', async () => {
+    permittedUsesMock.mockResolvedValue(['single_family']);
+    compileMock.mockImplementation(async () => null);
+    sfV1PlanMock.mockResolvedValue({
+      status: 'done', lots: 1, basis: 'by_right', ogc_fid: 669046, lot_kinds: ['standard'], fails: [], tests: {},
+      lots_wkt: 'GEOMETRYCOLLECTION(POLYGON((1727000 670000,1727140 670000,1727140 670290,1727000 670290,1727000 670000)))',
+    });
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'RS5' } as never} />);
+    await waitFor(() => expect(sfV1PlanMock).toHaveBeenCalled());
+    const banner = await screen.findByTestId('compile-blocked-banner');
+    expect(banner.textContent).toContain('The zoning context compile failed for this parcel.');
+    expect(banner.textContent).toContain('The by-right result below is complete');
+    expect(screen.queryByText(/Massing blocked — zoning context unavailable/)).toBeNull();
+    expect(genV2Mock).not.toHaveBeenCalled();
+  });
+});
