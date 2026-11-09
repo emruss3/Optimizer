@@ -392,6 +392,12 @@ describe('chooseAutoBest (third audit; engine g13)', () => {
     expect(autoBestSentence(a)).toBe('The neighborhood grammar draws the same 3 lots as the default (loop) grammar on 384 ft of new street against 699 ft, failing no test to its 1, so the sheet shows it. It is still by right.');
     // equal lots go on the sheet even when the best is not buildable: the engine ranked it no worse
     expect(chooseAutoBest({ best_requested: 'grid', best_buildable: false, best: { lots: 3, fails: ['street.grade_max'] } }, { ...loop, fails: ['street.grade_max', 'street.dead_end_max'] })?.why).toBe('same_lots');
+    // engine g15 (0 Hillwood Blvd): the grid request fell back to the very estate plan the default drew —
+    // the same 3 lots, no street, no fails either way — so nothing takes the sheet from the default
+    const estate: SfV1Response = { status: 'done', lots: 3, pattern: 'estate lots (flag lots behind the frontage)', metrics: { street_ft: 0 }, fails: [] };
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: true, best: { ...estate } }, estate)).toBeNull();
+    // and the same lots on the same street with the same fails is no reason to switch either
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: true, best: { lots: 3, metrics: { street_ft: 699 }, fails: ['cost.street_ft_per_lot'] } }, loop)).toBeNull();
   });
 
   it('more lots go on the sheet only when buildable; the default stays whenever it draws strictly more', async () => {
@@ -430,6 +436,11 @@ describe('the shared private drive (engine g13)', () => {
     expect(summary.basisLine).toContain('2 lots @ 65 × 125 ft by right on a shared private drive (no new public street)');
     expect(summary.basisLine).toContain('% easement /');
     expect(patternPhrase('shared private drive')).toBe(' on a shared private drive (no new public street)');
+    // engine g15: flag lots behind the frontage, and the competition's 'single' row
+    expect(patternPhrase('estate lots (flag lots behind the frontage)')).toBe(' as estate lots (flag lots behind the frontage, no new street)');
+    const { grammarName } = await import('./sfV1Plan');
+    expect(grammarName('single')).toBe('single-street grammar');
+    expect(grammarName('estate')).toBe('estate lots');
     // a street plan has no private drive
     expect(sfV1ToElements(PLAN).summary.privateDrive).toBeNull();
     // "View this plan" on a drive row asks for the drive by name (self-contained since engine g14); the user's own options carry

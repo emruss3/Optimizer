@@ -306,31 +306,30 @@
   },
   "686430": {
     "mode": "server-plan",
-    "_basis": "4255 Brick Church Pike (R20, 7 ac deeded, 4.09 ac mapped site, 28.5% mean slope) - 2026-11-09 engine g14: 1.13 ac in the flood hold and 3.35 ac steeper than 25% held out as hillside leave 0.65 ac; no 20,000-SF lot fits, every grammar draws 0. The hillside hold comes back as geometry (hillside_wkt) and is hatched on the sheet beside the flood hold; the panel says how much each hold takes and what is left after every hold (buildable_after_holds_ac). The one house stays on offer.",
+    "_basis": "4255 Brick Church Pike (R20, 7 ac deeded, 4.09 ac mapped site, 28.5% mean slope) - 2026-11-09 engine g14/g15: 1.13 ac in the flood hold and 3.35 ac steeper than 25% held out as hillside leave 0.65 ac. The hillside hold comes back as geometry (hillside_wkt) and is hatched beside the flood hold; the panel says how much each hold takes and what is left after every hold. With g15's estate grammar the by-right answer is 1 estate lot (flag lots behind the frontage: the lot may include the hillside in its area, the pad stays off it), no new street; the competition's grid and neighborhood requests fall back to the same estate plan, so nothing replaces the default.",
     "requireBriefEnvelope": true,
     "requireTopo": true,
     "requireSfV1": {
       "status": "done",
-      "maxLots": 0,
+      "minLots": 1,
+      "maxLots": 1,
+      "pattern": "estate lots (flag lots behind the frontage)",
       "basis": "by_right",
       "heldLayer": true,
       "hillsideLayer": true,
       "hillsideNote": "The hillside hold takes 3.35 ac out",
-      "offersOneHouse": true,
       "competitionState": "done",
       "autoBest": null
     },
     "requireSfV1Competition": {
       "state": "done",
-      "rows": 4,
-      "whyIncludes": [
-        "0.65 ac buildable after the holds"
-      ]
+      "minBestLots": 1,
+      "verdict": "buildable as drawn"
     }
   },
   "680391": {
     "mode": "server-plan",
-    "_basis": "0 Hills Ln (R10, 7.8 ac deeded, 6.62 ac mapped, 4% slope) - 2026-11-09: the default (loop) grammar draws 14 frontage lots with no new street; the competition's grid draws 17 lots on 1,188 ft of street with no fails and is buildable, so by the engine's rule (more lots and buildable) the grid takes the sheet (more_lots), by right, with the 14-lot default one tap away. A 62% net-to-gross estimate says 17.",
+    "_basis": "0 Hills Ln (R10, 7.8 ac deeded, 6.62 ac mapped, 4% slope) - 2026-11-09: the default (loop) grammar draws 14 frontage lots with no new street; the competition's grid draws 17 lots on 1,188 ft of street with no fails and is buildable, so by the engine's rule (more lots and buildable) the grid takes the sheet (more_lots), by right, with the 14-lot default one tap away. A 62% net-to-gross estimate says 17. Re-captured against g15 (2026-11-09 evening): unchanged — 14 frontage lots by default, the grid's 17 on the sheet.",
     "requireBriefEnvelope": true,
     "requireTopo": true,
     "requireSfV1": {

@@ -221,6 +221,63 @@ hillside layer and its line.
 8. **Townhome under-yield on Cedarstone Way** (8 homes where the density
    allows 30 and the owner builds townhomes).
 
+## Re-test the same evening: the engine moved (g15)
+
+Eric: "test the parcels you just ran. Are we getting the results you
+wanted?" Re-running all twenty live a few hours later found the engine on a
+newer release: an **estate grammar** ("estate lots (flag lots behind the
+frontage)": a rear tier of flag lots on poles, taking the plan when it yields
+more lots than the street and frontage plans), **0 lots with a stated reason
+on landlocked hillsides** ("landlocked, and 20.9 of the 31.80 ac is steeper
+than 25%: no plan is drawn"), a **"single" row** in the competition, and the
+**townhome row carrying th_v3's answer** on a landlocked RM lot. Four of the
+handoff's asks, landed before the handoff was read. The app on main handled
+the new shape; this round adds the pattern's phrase, the grammar's name, and
+one rule fix: a competition request that fell back to the very plan the
+default drew (the grid on Hillwood Blvd came back as the same three flag
+lots) no longer "takes the sheet" from itself — the same lots switch only on
+less street or fewer fails.
+
+What changed, and the ranking as the app shows it now:
+
+| # | Lot | Was (g14, this morning) | Now (g15) | Likelihood |
+|---|---|---|---|---|
+| 1 | 4819 Fairmeade Ct | 0 new lots | 1 estate lot (the parcel; the lot may include the hillside, the pad stays off it) | 90% |
+| 2 | 0 Penn Meade Way | skipped | skipped | 90% |
+| 3 | 0 Hillwood Blvd | 2 frontage lots | **3 estate lots** (flag lots behind the frontage), 41,387 SF each, all pass | 85% |
+| 4 | 54 Park Crescent Cir | 0 lots | 0 lots | 85% |
+| 5 | 4255 Brick Church Pike | 0 lots | 1 estate lot (one house) | 80% |
+| 6 | 1422 Campbell Rd | 0 lots | 0 lots, now with the reason and an `access.landlocked` fail | 80% |
+| 7 | **0 Blevins Rd** | 4 lots on a 4,499-ft loop at 49% grade | **0 lots**: "landlocked, and 20.9 of the 31.80 ac is steeper than 25%: no plan is drawn" | 5% → **80%** |
+| 8 | 1014 Antioch Pike | 8 lots | 7 lots on a 223-ft cul-de-sac, all pass | 75% |
+| 9 | 0 Old Hydes Ferry Pike | 1 frontage lot | **2 estate lots** | 55% → 75% |
+| 10 | 0 Robinson Rd | skipped | skipped | 70% |
+| 11 | 0 Hills Ln | 17 (grid, from the competition) | 17 (unchanged) | 70% |
+| 12 | 4525 Cato Rd | 0 lots | **2 lots on a 225-ft single street**, all pass | 40% → 65% |
+| 13 | 0 Old Hickory Blvd (RS20) | 2 lots on a public cul-de-sac (grid) | 4 lots on a 337-ft single street, all pass | 45% → 60% |
+| 14 | 0 Hickory Hollow Pkwy | 29 townhomes | 29 townhomes | 60% |
+| 15 | 0 Old Hickory Blvd (R40) | 0 lots (landlocked) | 2 lots on a 217-ft street that fails `access.landlocked` — a plan on a parcel with no access, flagged | 70% → 55% |
+| 16 | 7695 Old Charlotte Pike | 0 lots | 8 lots on a 3,169-ft single street through the bench: dead end, block and grade fail, 1,871 ft in wetland buffer | 25% → 35% |
+| 17 | 0 Nashboro Blvd | 9 apartments (tie) | unchanged | 30% |
+| 18 | 0 Walker Ln | 3 lots, 2 fails | 2 lots on an 890-ft single street, 2 flags; the drive draws 3 on 1,059 ft (flagged) | 25% |
+| 19 | 0 Cedarstone Way | 30 apartments | unchanged | 20% |
+| 20 | 0 Hicks Rd | 14 apartments; townhome row refused (v2) | 14 apartments; the townhome row now carries th_v3's 16 that fail `access.second_connection`, and the panel says so | 15% → 20% |
+
+Now **eight of twenty** are zero / one house / skipped and all eight are
+right; of the twelve drawn, five are what a civil would draw (Hillwood's
+three flag lots, Antioch Pike, Hills Ln, Cato Rd, Old Hickory Blvd RS20) and
+one is close. What remains: the long-tract estate problem (Old Charlotte
+Pike's 8 lots on 3,169 ft of failing street where a drive along the bench
+would do), Walker Ln's under-yield, a street drawn on a landlocked R40 lot
+instead of a zero with the reason, and the multifamily product and parking
+on Nashboro Blvd and Cedarstone Way.
+
+Pictures from the re-test: `679618_hillwood_blvd_3_flag_lots_g15.png`,
+`692464_old_charlotte_pike_8_lots_g15.png`, `670893_blevins_rd_zero_g15.png`,
+`673844_old_hickory_blvd_4_lots_g15.png`. The battery's two new parcels were
+re-captured against g15 (Brick Church Pike is now 1 estate lot with both
+holds hatched; Hills Ln is unchanged).
+
 ## Pictures
 
 - `680391_hills_ln_grid_17.png`: the competition's grid on the sheet at more lots.

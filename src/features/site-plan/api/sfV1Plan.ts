@@ -231,6 +231,8 @@ export function candidateOpt(requested: string, opt: SfV1Options): SfV1Options {
 export function grammarName(requested: string): string {
   if (requested === 'drive') return DRIVE_PATTERN;
   if (requested === 'townhome') return 'townhomes';
+  if (requested === 'single') return 'single-street grammar';
+  if (requested === 'estate') return 'estate lots';
   return `${requested} grammar`;
 }
 
@@ -899,6 +901,8 @@ export function patternPhrase(pattern: string | null | undefined): string {
   if (!p) return '';
   if (/^frontage lots/i.test(p)) return ' as frontage lots (no new street)';
   if (isDrivePattern(p)) return ' on a shared private drive (no new public street)';
+  // engine g15: the estate grammar's second form — a rear tier of flag lots on poles to the frontage
+  if (/^estate lots/i.test(p)) return ' as estate lots (flag lots behind the frontage, no new street)';
   if (/^2 loops$/i.test(p)) return ' on two loops';
   if (/^grid$/i.test(p)) return ' on a street grid';
   if (/^neighbou?rhood$/i.test(p)) return ' as a neighborhood plan';
@@ -1271,15 +1275,27 @@ export function chooseAutoBest(
     return normalizeTests(p.tests).filter(t => t.pass === false).length;
   };
   const metricsOf = (p: Record<string, unknown>) => (p.metrics && typeof p.metrics === 'object' ? (p.metrics as Record<string, unknown>) : {});
+  const defaultStreetFt = num(metricsOf(def as Record<string, unknown>).street_ft);
+  const bestStreetFt = num(metricsOf(best).street_ft);
+  const defaultFails = failsOf(def as Record<string, unknown>);
+  const bestFails = failsOf(best);
+  // Engine g15 (0 Hillwood Blvd): a grid or neighborhood request can fall back
+  // to the very plan the default drew (the estate grammar's three flag lots).
+  // The same lots take the sheet only when the plan is better — less street or
+  // fewer failed tests — never an identical plan under another grammar's name.
+  if (same && defaultLots > 0) {
+    const lessStreet = bestStreetFt != null && defaultStreetFt != null && bestStreetFt < defaultStreetFt;
+    if (!lessStreet && !(bestFails < defaultFails)) return null;
+  }
   return {
     requested: resp.best_requested,
     why: defaultLots === 0 ? 'default_empty' : same ? 'same_lots' : 'more_lots',
     defaultLots,
     bestLots,
-    defaultStreetFt: num(metricsOf(def as Record<string, unknown>).street_ft),
-    bestStreetFt: num(metricsOf(best).street_ft),
-    defaultFails: failsOf(def as Record<string, unknown>),
-    bestFails: failsOf(best),
+    defaultStreetFt,
+    bestStreetFt,
+    defaultFails,
+    bestFails,
   };
 }
 
