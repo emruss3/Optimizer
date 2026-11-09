@@ -1941,3 +1941,27 @@ computes (the strip reads "0 / not evaluated" and the table "—" instead of
 unformatted parcel number. Fixtures for conflicting, agreeing, zero-provided
 and no-requirement cases; verified on the local build. The engine ask is
 unchanged: the multifamily summary total must agree with its bays.
+
+## 37. The engine handoff of 2026-11-09 in the app: house plans, SP ordinances, terrain retry
+
+The sf_v1 plan's `houses` array is on the sheet: each lot reads its
+catalogue plan ("4 bed · 3,184 sf"), each pad carries the plan's footprint,
+and the by-right panel says how many lots carry a plan (4727 Post Rd: 5 of
+5). An SP parcel's `sp_ordinance_not_loaded` status is a terminal state that
+names the bill and the case (4225 Stammer Pl: BL2012-306, 2005SP-099-001)
+with no compile and no solver, in place of "zoning context unavailable".
+Terrain gets one automatic re-fetch 95 s after a miss, matching the engine's
+90-s block after a real USGS failure. Tests on the mapper, the status
+parser, the panel and the workspace.
+
+## 38. The cohort retest, P0.2b: progress apart from the evidence in hand (2026-11-09)
+
+A failed massing context no longer curtains a by-right answer: on R / RS
+parcels the by-right generator runs regardless (it reads the district
+standards directly) and the block is a banner with its own retry over the
+finished result (0 W Trinity Ln: the zero-lot answer and its flood hold stay
+readable). The flag lots' access poles are "Access strip N", not lots 6 and
+7 (4727 Post Rd). The evidence hook reports each task (context, terrain,
+lot fit, massing) with its state, reason and last duration, and lists every
+element on the sheet. Left: a bounded working state for a slow compile,
+request correlation ids (engine).

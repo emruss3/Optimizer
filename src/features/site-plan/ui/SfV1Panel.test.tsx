@@ -27,6 +27,7 @@ const SUMMARY: SfV1Summary = {
   heldPct: 0,
   openPieces: [{ kind: 'pond', acres: 0.14 }, { kind: 'edge open space', acres: 0.9 }],
   lotKinds: { standard: 14, edge: 6, corner: 4 },
+  housesPlaced: null,
   tests: [
     { id: 'street.dead_end_max', pass: true, value: 0, limit: 750 },
     { id: 'access.second_connection', pass: false, value: 1, needed: 2 },
@@ -356,5 +357,16 @@ describe('SfV1Panel — explainable status (the scope\'s P0.2, 2026-11-09)', () 
     expect(d).toContain('4 checks from the district\'s standards');
     expect(d).toContain('Not evaluated here: survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits');
     expect(screen.queryByTestId('sfv1-edges')).toBeNull();
+  });
+});
+
+describe('SfV1Panel — the engine\'s house plans (2026-11-09)', () => {
+  it('says how many lots carry a catalogue plan', () => {
+    render(<SfV1Panel summary={{ ...SUMMARY, lots: 5, housesPlaced: 3 }} override={{}} onOverride={() => undefined} />);
+    expect(screen.getByTestId('sfv1-houses').textContent).toBe('3 of 5 lots carry a catalogue plan · the rest keep a generic pad');
+  });
+  it('stays silent when the engine did not say', () => {
+    render(<SfV1Panel summary={{ ...SUMMARY, housesPlaced: null }} override={{}} onOverride={() => undefined} />);
+    expect(screen.queryByTestId('sfv1-houses')).toBeNull();
   });
 });

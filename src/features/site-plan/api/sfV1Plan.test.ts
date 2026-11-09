@@ -3,7 +3,7 @@ import { validatePlanElements } from '../../../engine/validatePlan';
 import { isSfPlanElement } from './generateSfPlan';
 import {
   sfV1Route, normalizeTests, fillBand, fillColor, padFillByLot, earthworkHasFlood, openStyle,
-  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence,
+  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence, houseLabel,
   type SfV1Response,
 } from './sfV1Plan';
 
@@ -518,5 +518,48 @@ describe('typed frontage edges (0 Ivey Point Rd, 2026-11-09)', () => {
     expect(edgeClassSentence(edges)).toBe('2,069 ft open edge (no street, no parcel) · 945 ft residential neighbour · no mapped street contact');
     expect(parseEdgeClasses('floodplain leaves no buildable piece')).toEqual([]);
     expect(edgeClassSentence([])).toBeNull();
+  });
+});
+
+describe('the engine\'s house plans on the lots (2026-11-09)', () => {
+  it('labels each lot and pad with its catalogue plan, counts the placed ones, and leaves generic pads plain', () => {
+    const house = (beds: number, sf: number) => ({ plan: '12500', floorplan_id: 'fp-1', footprint_sf: sf, w_ft: 62.8, d_ft: 66.7, beds, baths: 3, floors: 1, garage: true, turned: false, source: 'public.floorplans (CubiCasa5k)' });
+    const lots = sfV1ToElements(PLAN).elements.filter(e => e.id.startsWith('sfv1-lot-')).length;
+    const houses = Array.from({ length: lots }, (_, i) => (i === 0 ? null : house(i % 2 ? 4 : 3, 2068 + i)));
+    const { elements, summary } = sfV1ToElements({ ...PLAN, houses, houses_placed: lots - 1 });
+    const lot1 = elements.find(e => e.id === 'sfv1-lot-1')!;
+    const lot2 = elements.find(e => e.id === 'sfv1-lot-2')!;
+    expect(lot1.properties?.houseLabel).toBeUndefined();
+    expect(lot2.properties?.houseLabel).toBe('4 bed · 2,069 sf');
+    expect(lot2.properties?.houseBeds).toBe(4);
+    const pad1 = elements.find(e => e.id === 'sfv1-pad-1')!;
+    const pad2 = elements.find(e => e.id === 'sfv1-pad-2')!;
+    expect(pad1.name).toBe('House 1');
+    expect(pad2.name).toBe('House 2 · 4 bed · 2,069 sf');
+    expect(pad2.properties?.floorplanId).toBe('fp-1');
+    expect(pad2.properties?.areaSqFt).toBe(2069);
+    expect(summary.housesPlaced).toBe(lots - 1);
+    // without the key the summary says nothing rather than zero
+    expect(sfV1ToElements(PLAN).summary.housesPlaced).toBeNull();
+    expect(houseLabel(null)).toBeNull();
+    expect(houseLabel({ beds: 3 })).toBe('3 bed');
+  });
+});
+
+describe('flag lots\' poles are access strips, not lots (4727 Post Rd, the cohort retest 2026-11-09)', () => {
+  it('polygons past the engine\'s lot count are named Access strip and carry no lot number', () => {
+    const sq = (x: number, y: number, w: number, h: number) => `POLYGON((${x} ${y},${x + w} ${y},${x + w} ${y + h},${x} ${y + h},${x} ${y}))`;
+    const resp: SfV1Response = {
+      status: 'done', lots: 2, basis: 'by_right', fails: [],
+      lot_kinds: ['estate', 'flag'], lot_areas_sf: [41457, 52141],
+      // two lots, then the flag lot's pole as its own polygon
+      lots_wkt: `GEOMETRYCOLLECTION(${sq(1715500, 652600, 140, 290)},${sq(1715640, 652600, 140, 290)},${sq(1715640, 652890, 20, 200)})`,
+    };
+    const { elements, summary } = sfV1ToElements(resp);
+    expect(elements.filter(e => /^Lot \d+$/.test(e.name ?? '')).map(e => e.name)).toEqual(['Lot 1', 'Lot 2']);
+    const strips = elements.filter(e => e.id.startsWith('sfv1-access-strip-'));
+    expect(strips.map(e => e.name)).toEqual(['Access strip 1']);
+    expect(strips[0].properties?.accessStrip).toBe(true);
+    expect(summary.lots).toBe(2);
   });
 });

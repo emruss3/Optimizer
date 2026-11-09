@@ -1663,7 +1663,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.fillStyle = '#334155';
     ctx.fillText(num, 0, roomy ? -6 / zoom : 0);
     if (roomy) {
-      const p = element.properties as { widthFt?: number; depthFt?: number; areaSqFt?: number } | undefined;
+      const p = element.properties as { widthFt?: number; depthFt?: number; areaSqFt?: number; houseLabel?: string } | undefined;
       const dims = typeof p?.widthFt === 'number' && typeof p?.depthFt === 'number'
         ? `${Math.round(p.widthFt)}' × ${Math.round(p.depthFt)}'`
         : '';
@@ -1672,6 +1672,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.fillStyle = '#64748B';
       if (dims) ctx.fillText(dims, 0, 5 / zoom);
       if (area) ctx.fillText(area, 0, 15 / zoom);
+      // the engine's house plan for the lot ("4 bed · 3,184 sf", 2026-11-09)
+      if (typeof p?.houseLabel === 'string' && p.houseLabel) {
+        ctx.fillStyle = '#1D4ED8';
+        ctx.fillText(p.houseLabel, 0, (area ? 25 : dims ? 15 : 5) / zoom);
+      }
     }
     ctx.restore();
   }, []);

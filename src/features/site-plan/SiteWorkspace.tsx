@@ -22,7 +22,7 @@ import ResultsPanel from './ui/ResultsPanel';
 import KpiStrip from './ui/KpiStrip';
 import ContextPanel from './ui/ContextPanel';
 import { CensusBanner } from './ui/CensusBanner';
-import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, pickDefaultUse, isNonResidentialOnly, defaultUseFromZoningBase, NON_RESIDENTIAL_USES, type DesignContext } from './api/designContext';
+import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, permittedUsesStatus, pickDefaultUse, isNonResidentialOnly, defaultUseFromZoningBase, NON_RESIDENTIAL_USES, type DesignContext, type PermittedUsesStatus } from './api/designContext';
 import { CommercialCapacityCard } from './ui/CommercialCapacityCard';
 import { fetchPlanPattern, type PlanPattern } from './api/planPattern';
 import { PlanPatternPanel } from './ui/PlanPatternPanel';
@@ -209,6 +209,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   // ── SF lot generator (brief Phase 2) ─────────────────────────────────────
   const [isGeneratingLots, setIsGeneratingLots] = useState(false);
+  // Per-task timings and outcomes for the evidence hook (the cohort retest,
+  // 2026-11-09: "record timings and reason codes for context compile, solve,
+  // fallback"): each task's last duration, read off its own busy flag.
+  const taskTimingsRef = useRef<{ compileMs: number | null; massingMs: number | null; lotFitMs: number | null; compileStarted: number | null; massingStarted: number | null; lotFitStarted: number | null }>({
+    compileMs: null, massingMs: null, lotFitMs: null, compileStarted: null, massingStarted: null, lotFitStarted: null,
+  });
+  const [taskTimingsVersion, setTaskTimingsVersion] = useState(0);
   const [lotFitSummary, setLotFitSummary] = useState<string | null>(null);
   // Subdivision generator (2026-09-03): the neighbourhood the server drew and
   // the scheme it was asked for (district lots / SP 25-ft / SP + amenity).
@@ -350,6 +357,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // industrial): the compile is not attempted, no solver is dispatched, the
   // capacity card carries the ordinance caps (the scope's P0.3, 2026-11-09).
   const [unsupportedUse, setUnsupportedUse] = useState<string | null>(null);
+  // An SP parcel whose ordinance is not loaded: the resolver names the bill
+  // and the case; no use resolves, so nothing compiles or seeds (2026-11-09).
+  const [spOrdinance, setSpOrdinance] = useState<PermittedUsesStatus | null>(null);
+  const spOrdinanceRef = useRef<PermittedUsesStatus | null>(null);
   // Plan-organization layer (fn_plan_pattern): how this site should be
   // organized, with precedent plans and an honest generator-alignment verdict.
   const [planPattern, setPlanPattern] = useState<PlanPattern | null>(null);
@@ -2259,6 +2270,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return () => { cancelled = true; };
   }, [contextOgcFid]);
 
+  useEffect(() => {
+    const t = taskTimingsRef.current;
+    if (plannerLoading) t.compileStarted = performance.now();
+    else if (t.compileStarted != null) { t.compileMs = Math.round(performance.now() - t.compileStarted); t.compileStarted = null; setTaskTimingsVersion(v => v + 1); }
+  }, [plannerLoading]);
+  useEffect(() => {
+    const t = taskTimingsRef.current;
+    if (isGenerating) t.massingStarted = performance.now();
+    else if (t.massingStarted != null) { t.massingMs = Math.round(performance.now() - t.massingStarted); t.massingStarted = null; setTaskTimingsVersion(v => v + 1); }
+  }, [isGenerating]);
+  useEffect(() => {
+    const t = taskTimingsRef.current;
+    if (isGeneratingLots) t.lotFitStarted = performance.now();
+    else if (t.lotFitStarted != null) { t.lotFitMs = Math.round(performance.now() - t.lotFitStarted); t.lotFitStarted = null; setTaskTimingsVersion(v => v + 1); }
+  }, [isGeneratingLots]);
+
   // Topography loads once per parcel (fail-soft; the first fetch of a parcel
   // makes the database sample the DEM, which can take tens of seconds on a
   // large site — the sheet fills in when it lands).
@@ -2268,10 +2295,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return;
     }
     let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | null = null;
     fetchParcelTopo(contextOgcFid).then(t => {
-      if (!cancelled) setTopo(t);
+      if (cancelled) return;
+      setTopo(t);
+      // The engine blocks a re-fetch for 90 s after a real USGS failure and
+      // retries 3DEP itself; a miss here usually succeeds a minute later
+      // (engine handoff, 2026-11-09). One automatic retry, then the note stands.
+      if (!t) {
+        retry = setTimeout(() => {
+          fetchParcelTopo(contextOgcFid).then(t2 => { if (!cancelled && t2) setTopo(t2); });
+        }, 95_000);
+      }
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; if (retry) clearTimeout(retry); };
   }, [contextOgcFid]);
 
   useEffect(() => {
@@ -2445,10 +2482,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // blocks massing outright — nothing renders on default assumptions.
     // The Retry screen re-compiles; a later success lands below and re-arms.
     if (!resp) {
+      // An R / RS parcel's by-right generator reads the district standards
+      // itself (standardsDirect): the massing context's failure blocks the
+      // massing, not the lot fit (0 W Trinity Ln, the cohort retest: the
+      // block curtained a finished zero-lot answer). It runs, under a banner.
+      const byRightRoute = sfV1Route(typeof parcel.zoning === 'string' ? parcel.zoning : null) === 'sf_v1';
       markCompileBlocked('The zoning context compile failed for this parcel.');
-      hasAutoGeneratedRef.current = true; // no auto-plan may run while blocked
+      hasAutoGeneratedRef.current = true; // no massing auto-plan may run while blocked
       planModeRef.current = null;
-      setPlanBasis('Massing blocked — zoning context unavailable.');
+      setPlanBasis(byRightRoute
+        ? 'Massing context unavailable — the by-right generator answers from the district standards directly.'
+        : 'Massing blocked — zoning context unavailable.');
+      if (byRightRoute) handleGenerateLots().catch(() => undefined);
       return;
     }
     // A real context arrived (retry succeeded, or a hung compile settled
@@ -2465,7 +2510,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       hasAutoGeneratedRef.current = false;
     }
     autoPlan(ctx);
-  }, [autoPlan, markDraft, markCompileBlocked, parcel.zoning]);
+  }, [autoPlan, markDraft, markCompileBlocked, parcel.zoning, handleGenerateLots]);
 
   // Resolve the parcel's as-of-right uses once; correct the default use
   // BEFORE compiling so the first snapshot is for the right use.
@@ -2485,6 +2530,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         if (cancelled) return;
       }
       const list = normalizePermittedUses(raw);
+      const status = permittedUsesStatus(raw);
+      const sp = status?.status === 'sp_ordinance_not_loaded' ? status : null;
+      spOrdinanceRef.current = sp;
+      setSpOrdinance(sp);
       // Order-5 item 2a: the string-inference fallback is DELETED. When the
       // RPC has no list, the selector shows only the compiled use (bootstrap
       // default) — never uses inferred from a zoning-string prefix. The
@@ -2533,6 +2582,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       appliedContextRef.current = null;
       if (planModeRef.current != null) setPlanStale(true);
       hasAutoGeneratedRef.current = false;
+    }
+    if (spOrdinanceRef.current) {
+      // The district alone resolves no use: the SP ordinance sets them and it
+      // is not loaded. A terminal state with the bill number, not a compile
+      // of a boot default and not "zoning context unavailable".
+      const sp = spOrdinanceRef.current;
+      plannerCtxRef.current = null;
+      setPlannerCtx(null);
+      appliedContextRef.current = null;
+      setPlannerLoading(false);
+      hasAutoGeneratedRef.current = true;
+      planModeRef.current = null;
+      setServerPlanError(null);
+      setViolations([]);
+      setPlanStale(false);
+      setPlanBasis(`Specific Plan — ${sp.ordinance ?? 'the SP ordinance'}${sp.caseNo ? ` (${sp.caseNo})` : ''} is not loaded: no as-of-right use resolves from the district alone, so nothing is compiled or drawn.`);
+      return;
     }
     if (NON_RESIDENTIAL_USES.has(contextUse)) {
       // fn_compile_planner_context has no typology for 'commercial' (it hung
@@ -2749,6 +2815,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // The legacy lot generator's lots (gen-lot-N): on the sheet only when the
   // by-right generator was unreachable; the strip labels them provisional.
   const legacyLotCount = displayElements.filter(e => e.id.startsWith('gen-lot-')).length;
+  // a by-right / lot-fit / house result on the sheet: complete in itself, whatever the massing context does
+  const sfPlanOnSheet = displayElements.some(e => isSfPlanElement(e));
   const legacyLots = legacyLotCount > 0 ? legacyLotCount : null;
   const layoutZoningBase = plannerCtx?.context?.legal?.zoning_base ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
   const isRmLayout = sfV1Route(layoutZoningBase) === 'th' && plannerCtx?.context.typology === 'multifamily' && sfV1Competition != null;
@@ -3022,6 +3090,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       mfAccess,
       // 2026-11-09 (the scope's P0.2): the precondition the sketched plan rests on, if any.
       conditional: metrics?.conditional ?? null,
+      spOrdinance: spOrdinance ? { ordinance: spOrdinance.ordinance, caseNo: spOrdinance.caseNo } : null,
+      // the tasks, each with its own state and last duration (ms); a terminal
+      // state for every one, so "generating" and an error never coexist
+      tasks: {
+        context: { state: plannerLoading ? 'working' : compileBlocked ? 'blocked' : spOrdinance ? 'unsupported' : plannerCtx ? 'done' : unsupportedUse ? 'unsupported' : 'none', reason: compileBlocked ?? (spOrdinance ? `sp_ordinance_not_loaded:${spOrdinance.ordinance ?? ''}` : null), ms: taskTimingsRef.current.compileMs },
+        terrain: { state: topo ? 'done' : 'none', ms: null },
+        lotFit: { state: isGeneratingLots ? 'working' : sfPlanOnSheet ? 'done' : sfV1Summary?.status === 'skipped' ? 'skipped' : 'none', reason: sfV1Summary?.status === 'skipped' ? sfV1Summary.reason : null, ms: taskTimingsRef.current.lotFitMs },
+        massing: { state: isGenerating ? 'working' : serverPlanError ? 'failed' : displayElements.some(e => isMfPlanElement(e)) ? 'done' : 'none', reason: serverPlanError, ms: taskTimingsRef.current.massingMs },
+      },
+      taskTimingsVersion,
+      // every element on the sheet by id, name and type: what the labels are made of
+      elementIndex: displayElements.map(e => ({ id: e.id, name: e.name, type: e.type })),
+      unsupportedUse,
       // 2026-11-09 (the scope's P0.1): the figures every surface must agree on —
       // the engine's unit count, the drawn buildings' mix summed, the stalls the
       // bays hold against the engine's summary, and the requirement.
@@ -3046,7 +3127,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -3082,6 +3163,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               : null
           }
         />
+      )}
+      {spOrdinance && (
+        <div data-testid="sp-ordinance" className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">
+            Specific Plan{spOrdinance.district ? ` · ${spOrdinance.district}` : ''} — uses and standards are set by {spOrdinance.ordinance ?? 'its SP ordinance'}{spOrdinance.caseNo ? ` (${spOrdinance.caseNo})` : ''}, which is not loaded.
+          </div>
+          <div className="mt-1 text-xs text-amber-800">
+            {spOrdinance.reason ?? 'No as-of-right use can be resolved from the district alone.'} Nothing is compiled or drawn from the base code: a plan here waits for the ordinance to be loaded into the engine.
+          </div>
+        </div>
       )}
       {unsupportedUse && !nonResidentialOnly && (() => {
         // the ordinance caps the parcel row carries (the compiler is not asked for a use it cannot type)
@@ -3167,6 +3258,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           empty={
             isGenerating || isGeneratingLots
               ? { state: 'generating' }
+              : spOrdinance
+                ? { state: 'blocked', reason: `Specific Plan ordinance ${spOrdinance.ordinance ?? ''}${spOrdinance.caseNo ? ` (${spOrdinance.caseNo})` : ''} is not loaded; no as-of-right use resolves from the district alone`.replace('  ', ' ') }
               : unsupportedUse
                 ? { state: 'blocked', reason: `no massing engine draws ${unsupportedUse.replace(/_/g, ' ')} geometry; the capacity card carries the ordinance caps. Pick a residential use to draw a plan` }
               : serverPlanError
@@ -3394,6 +3487,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             contextSummary={plannerCtx ? plannerContextSummary(plannerCtx) : null}
             loading={plannerLoading}
             unsupportedUse={unsupportedUse}
+            noContextReason={
+              spOrdinance
+                ? `No compiled context: this Specific Plan's uses are set by ${spOrdinance.ordinance ?? 'its ordinance'}${spOrdinance.caseNo ? ` (${spOrdinance.caseNo})` : ''}, which is not loaded.`
+                : compileBlocked && sfPlanOnSheet
+                  ? `The massing context compile failed; the by-right result on the sheet stands on the district's standards directly. Retry the context from the banner on the canvas.`
+                  : null
+            }
             uses={permittedUses}
             use={contextUse}
             onUseChange={handleUseChange}
@@ -3541,7 +3641,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               blocked outright. Whatever numbers a context-free solve would
               show cannot be traced to an ordinance, so nothing is shown.
               (Covers the 3D view too — same container.) */}
-          {compileBlocked && (
+          {compileBlocked && sfPlanOnSheet && (
+            // A finished lot-fit result stays readable when the massing
+            // context fails: the block is a banner, not a curtain (0 W
+            // Trinity Ln, the cohort retest: the overlay dimmed the zero-lot
+            // answer and its flood overlay).
+            <div data-testid="compile-blocked-banner" className="absolute left-3 right-3 top-12 z-30 rounded-md border border-slate-300 bg-slate-900/90 px-3 py-2 text-xs text-slate-100 flex items-center gap-3">
+              <span className="flex-1">Massing context unavailable — {compileBlocked} The by-right result below is complete and stands on the district's standards.</span>
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded bg-blue-600 text-white font-medium hover:bg-blue-700"
+                onClick={() => { markCompileBlocked(null); hasAutoGeneratedRef.current = false; setCompileNonce(n => n + 1); }}
+              >
+                Retry context
+              </button>
+            </div>
+          )}
+          {compileBlocked && !sfPlanOnSheet && (
             <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-slate-900/85 text-center px-8 rounded-lg">
               <div className="text-white text-base font-semibold">
                 Massing blocked — zoning context unavailable

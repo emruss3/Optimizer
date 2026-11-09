@@ -116,6 +116,30 @@ export interface SfV1OpenPiece {
   [k: string]: unknown;
 }
 
+/** A catalogue floor plan the engine placed on a lot (CubiCasa5k, scaled). */
+export interface SfV1House {
+  plan?: string | null;
+  floorplan_id?: string | null;
+  footprint_sf?: number | null;
+  w_ft?: number | null;
+  d_ft?: number | null;
+  beds?: number | null;
+  baths?: number | null;
+  floors?: number | null;
+  garage?: boolean | null;
+  turned?: boolean | null;
+  source?: string | null;
+}
+
+/** "4 bed · 3,184 sf", or null when the lot carries only the generic pad. */
+export function houseLabel(h: SfV1House | null | undefined): string | null {
+  if (!h) return null;
+  const parts: string[] = [];
+  if (typeof h.beds === 'number') parts.push(`${h.beds} bed`);
+  if (typeof h.footprint_sf === 'number') parts.push(`${Math.round(h.footprint_sf).toLocaleString()} sf`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
 export interface SfV1Response {
   status?: 'done' | 'skipped' | string;
   reason?: string | null;
@@ -150,6 +174,9 @@ export interface SfV1Response {
   lot_kinds?: string[] | null;
   /** square feet, parallel to the lots */
   lot_areas_sf?: number[] | null;
+  /** 2026-11-09: a catalogue house plan per lot (aligned with lots_wkt), or null where only the generic pad fit */
+  houses?: Array<SfV1House | null> | null;
+  houses_placed?: number | null;
   tests?: Record<string, unknown> | SfV1Test[] | null;
   fails?: string[] | null;
   notes?: string[] | null;
@@ -384,6 +411,8 @@ export interface SfV1Summary {
   heldPct: number | null;
   openPieces: Array<{ kind: string; acres: number | null }>;
   lotKinds: Record<string, number>;
+  /** lots that carry a catalogue house plan (the rest keep a generic pad); null when the engine did not say */
+  housesPlaced: number | null;
   tests: SfV1Test[];
   fails: string[];
   notes: string[];
@@ -623,10 +652,30 @@ export function sfV1ToElements(
   const lotKinds = strings(resp.lot_kinds);
   const lotAreas = Array.isArray(resp.lot_areas_sf) ? resp.lot_areas_sf : [];
   const lotKindCounts: Record<string, number> = {};
+  const houses = Array.isArray(resp.houses) ? resp.houses : [];
   const lotPolys = polys3857(resp.lots_wkt);
+  // The engine aligns lots_wkt with lot_kinds, lot_areas_sf and houses; the
+  // polygons past that count are the flag lots' access poles. Numbered like
+  // lots they read as yield (4727 Post Rd: "lots" 6 and 7 on a 5-lot plan,
+  // the cohort retest, 2026-11-09). They are access strips, and say so.
+  const lotCount = lotKinds.length > 0 ? lotKinds.length : (num(resp.lots) ?? lotPolys.length);
+  let stripN = 0;
   lotPolys.forEach((poly, i) => {
+    if (i >= lotCount) {
+      stripN += 1;
+      elements.push({
+        id: `${SFV1_ID_PREFIX}access-strip-${stripN}`,
+        type: 'other',
+        name: `Access strip ${stripN}`,
+        geometry: poly,
+        properties: props({ accessStrip: true, color: '#CBD5E1', strokeColor: '#64748B', opacity: 0.55, styleOverride: true }),
+        metadata: meta,
+      });
+      return;
+    }
     const kind = lotKinds[i] ?? null;
     if (kind) lotKindCounts[kind] = (lotKindCounts[kind] ?? 0) + 1;
+    const house = houses[i] ?? null;
     elements.push({
       id: `${SFV1_ID_PREFIX}lot-${i + 1}`,
       type: 'other',
@@ -634,6 +683,11 @@ export function sfV1ToElements(
       geometry: poly,
       properties: props({
         lotKind: kind ?? undefined,
+        // the engine's house plan for this lot, read on the sheet as "4 bed · 3,184 sf" (2026-11-09)
+        houseLabel: houseLabel(house) ?? undefined,
+        houseBeds: house?.beds ?? undefined,
+        houseBaths: house?.baths ?? undefined,
+        houseFootprintSf: house?.footprint_sf ?? undefined,
         areaSqFt: num(lotAreas[i]) ?? undefined,
         // the module is the standard lot's dimension; an edge, corner, pie or estate lot has its own
         widthFt: kind === 'standard' ? num(resp.lot_w_ft) ?? undefined : undefined,
@@ -650,16 +704,27 @@ export function sfV1ToElements(
   const fillView = hasFlood && !!perPadFill && perPadFill.some(v => v != null);
   padPolys.forEach((poly, i) => {
     const fill = fillView ? perPadFill?.[i] ?? null : null;
+    const house = houses[i] ?? null;
+    const label = houseLabel(house);
     elements.push({
       id: `${SFV1_ID_PREFIX}pad-${i + 1}`,
       type: 'building',
-      name: `House ${i + 1}`,
+      // a placed catalogue plan is the real footprint; the generic pad says so by having no plan
+      name: label ? `House ${i + 1} · ${label}` : `House ${i + 1}`,
       geometry: poly,
       properties: props({
-        floors: 1,
-        stories: 1,
+        floors: house?.floors ?? 1,
+        stories: house?.floors ?? 1,
         use: 'residential',
         house: true,
+        housePlan: house?.plan ?? undefined,
+        floorplanId: house?.floorplan_id ?? undefined,
+        houseBeds: house?.beds ?? undefined,
+        houseBaths: house?.baths ?? undefined,
+        houseFootprintSf: house?.footprint_sf ?? undefined,
+        houseGarage: house?.garage ?? undefined,
+        houseSource: house?.source ?? undefined,
+        areaSqFt: house?.footprint_sf ?? undefined,
         padFillFt: fill ?? undefined,
         fillBand: fill != null ? fillBand(fill) : undefined,
         ...(fill != null
@@ -852,6 +917,7 @@ export function sfV1ToElements(
     heldPct,
     openPieces,
     lotKinds: lotKindCounts,
+    housesPlaced: num(resp.houses_placed) ?? (Array.isArray(resp.houses) ? resp.houses.filter(Boolean).length : null),
     tests,
     fails,
     notes,
