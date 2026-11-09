@@ -74,6 +74,13 @@ pattern, basis, flood hold, fails, tests, hasFlood, fillView, bfeContour).
 gates the competition's best at MORE lots (the grid's 17 over the default's 14
 frontage lots, `autoBest: {requested: 'grid', why: 'more_lots'}`).
 
+**Batch 4 (2026-11-09).** **0 Todd Preis Dr** (675099, RM9, 9.9 of 10.5 ac in
+the SFHA): the competition skips for the floodplain while the multifamily
+engine draws 94 apartments on it. The fixture gates the layout's `floodHold`,
+the hold hatched over the plan (`holdOnSheet`) and the sentence
+(`sentenceIncludes`); the apartments stay on the sheet because nothing else
+draws.
+
 The RM competition passes `th_budget_ms: 8000`, so its fixtures key on it:
 `rpc:fn_sf_v1_candidates_app:<fid>::{"th_budget_ms":8000}`.
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chooseLayout, neighborhoodOption, homesPhrase } from './layoutChoice';
+import { chooseLayout, neighborhoodOption, homesPhrase, isFloodSkip } from './layoutChoice';
 import { summarizeCandidates, type SfV1CandidatesResponse } from './sfV1Plan';
 
 const row = (requested: string, pattern: string | null, lots: number, fails: string[] = [], extra: Record<string, unknown> = {}) =>
@@ -89,7 +89,8 @@ describe('chooseLayout (the owner, 2026-11-04: multifamily where it makes more s
     });
     const c = chooseLayout({ multifamilyHomes: 57, multifamilyProduct: 'townhomes', competition: lots });
     expect(c.neighborhood).toMatchObject({ requested: 'loop', homes: 12, attached: false });
-    expect(c.sentence).toBe('The townhome rows place more homes here: 57 townhomes in rows against the neighborhood\'s best of 12 house lots (frontage lots, no new street), so they are the default.');
+    // the townhome row of the competition drew more than the best but fails: said, not hidden
+    expect(c.sentence).toBe('The townhome rows place more homes here: 57 townhomes in rows against the neighborhood\'s best of 12 house lots (frontage lots, no new street), so they are the default. The townhome row drew 19 homes but fails alley.street_to_street.');
   });
 
   it('no neighborhood plan: every pattern draws nothing, the competition skipped, or it has not run', () => {
@@ -103,6 +104,35 @@ describe('chooseLayout (the owner, 2026-11-04: multifamily where it makes more s
     const why = comp({ best_requested: 'grid', best_lots: 0, why: 'no lot of 6000 sf fits on the frontage or beside a new street: 0.4 ac buildable | grid: 1 local street', candidates: [row('grid', null, 0)] as never });
     expect(chooseLayout({ multifamilyHomes: 15, competition: why }).sentence).toBe(
       'No neighborhood pattern places a home here (no lot of 6000 sf fits on the frontage or beside a new street: 0.4 ac buildable), so the sheet stays multifamily.');
+  });
+
+  it('0 Todd Preis Dr: the competition skipped for the floodplain, the multifamily plan stands in it and the sentence says so', () => {
+    const skipped = summarizeCandidates({ status: 'skipped', reason: 'floodplain leaves no buildable piece' } as SfV1CandidatesResponse);
+    const c = chooseLayout({ multifamilyHomes: 94, competition: skipped });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.floodHold).toBe(true);
+    expect(c.sentence).toBe('No neighborhood plan: floodplain leaves no buildable piece. The multifamily engine does not hold the flood hazard area out yet, so its 94 apartments stand in it: a what-if until it does, not a by-right default.');
+    expect(isFloodSkip('floodplain leaves no buildable piece')).toBe(true);
+    expect(isFloodSkip('landlocked: no edge touches a mapped street')).toBe(false);
+    // a landlocked skip is not a flood hold
+    const landlocked = summarizeCandidates({ status: 'skipped', reason: 'landlocked: no edge touches a mapped street' } as SfV1CandidatesResponse);
+    expect(chooseLayout({ multifamilyHomes: 15, competition: landlocked }).floodHold).toBe(false);
+    // with no multifamily plan either there is nothing to flag
+    expect(chooseLayout({ multifamilyHomes: null, competition: skipped }).sentence).toBe('No neighborhood plan: floodplain leaves no buildable piece, so the sheet stays multifamily.');
+  });
+
+  it('0 Carothers Rd: the townhome row drew as many homes as the apartments but fails a code test; the sentence says what it drew', () => {
+    const carothers = comp({
+      best_requested: 'loop', best_lots: 20, best_buildable: true, homes_allowed_by_density: 42, attached_permitted: true,
+      candidates: [
+        row('grid', 'grid', 22, ['cost.street_ft_per_lot', 'street.grade_max']),
+        row('loop', 'single street', 20, []),
+        row('townhome', 'townhomes (street)', 42, ['alley.street_to_street'], { product: 'attached', engine: 'v3' }),
+      ] as never,
+    });
+    const c = chooseLayout({ multifamilyHomes: 42, competition: carothers });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.sentence).toBe('Apartments place more homes here: 42 apartments against the neighborhood\'s best of 20 house lots (single street), so they are the default. The townhome row drew 42 homes but fails alley.street_to_street.');
   });
 
   it('homesPhrase', () => {

@@ -350,5 +350,20 @@
       "rows": 3,
       "verdict": "buildable as drawn"
     }
+  },
+  "675099": {
+    "mode": "server-plan",
+    "_basis": "0 Todd Preis Dr (RM9, 10.45 ac mapped, 7.4 deeded; 9.9 ac in the SFHA, 3.1 ac floodway) - 2026-11-09 batch 4: the by-right competition skips ('floodplain leaves no buildable piece'); the multifamily engine, which does not hold the floodplain out, draws 94 apartments in four bars with 'flood_constrained' as a flag. The sheet keeps the apartments (nothing else draws) but says they stand in the flood hazard area, badges the option, and hatches the flood hold over the plan. The engine is asked to hold the floodplain out of the massing run; until it does, this is the sheet.",
+    "requireBriefEnvelope": true,
+    "requireTopo": true,
+    "requireLayout": {
+      "defaultKind": "multifamily",
+      "shown": "multifamily",
+      "auto": false,
+      "multifamilyHomes": 94,
+      "floodHold": true,
+      "holdOnSheet": true,
+      "sentenceIncludes": "does not hold the flood hazard area out yet"
+    }
   }
 }

@@ -70,6 +70,8 @@ const PARCELS = [
   // over the default's 14 frontage lots, buildable).
   { ogc_fid: 686430, address: '4255 BRICK CHURCH PIKE', zoning: 'R20' },
   { ogc_fid: 680391, address: '0 HILLS LN', zoning: 'R10' },
+  // 2026-11-09 batch 4: RM9 in the floodplain — the competition skips, the multifamily engine draws anyway
+  { ogc_fid: 675099, address: '0 TODD PREIS DR', zoning: 'RM9' },
 ];
 
 // Live mode only: one extra parcel drawn from the sweep cohort, advisory —
@@ -288,6 +290,10 @@ function judge(exp, ev) {
     if (typeof want.neighborhoodHomes === 'number' && l.neighborhoodHomes !== want.neighborhoodHomes) errs.push(`layout: neighborhood ${l.neighborhoodHomes} homes, expected ${want.neighborhoodHomes}`);
     if (want.neighborhoodRequested && l.neighborhoodRequested !== want.neighborhoodRequested) errs.push(`layout: the neighborhood's best from '${l.neighborhoodRequested}', expected '${want.neighborhoodRequested}'`);
     if (typeof want.densityCap === 'number' && l.densityCap !== want.densityCap) errs.push(`layout: density allows ${l.densityCap}, expected ${want.densityCap}`);
+    // 2026-11-09 (0 Todd Preis Dr): the competition skipped for the floodplain; the multifamily plan is flagged and the hold hatched over it
+    if (typeof want.floodHold === 'boolean' && !!l.floodHold !== want.floodHold) errs.push(`layout: flood hold = ${!!l.floodHold}, expected ${want.floodHold} (${l.sentence})`);
+    if (typeof want.holdOnSheet === 'boolean' && !!l.holdOnSheet !== want.holdOnSheet) errs.push(`layout: the flood hold ${l.holdOnSheet ? 'is' : 'is not'} on the sheet beside the plan, expected ${want.holdOnSheet}`);
+    if (want.sentenceIncludes && !String(l.sentence ?? '').includes(want.sentenceIncludes)) errs.push(`layout: the sentence lacks '${want.sentenceIncludes}' (${l.sentence})`);
     if (typeof want.homesDrawn === 'number' && gotEv.thV3?.homesDrawn !== want.homesDrawn) errs.push(`layout: ${gotEv.thV3?.homesDrawn ?? 'no'} townhomes drawn on the sheet, expected ${want.homesDrawn}`);
     if (want.switchAndBack) {
       const sw = gotEv._layoutSwitch;
