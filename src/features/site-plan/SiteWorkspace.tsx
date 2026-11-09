@@ -43,7 +43,7 @@ import {
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { fetchThV3Plan, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
-import { chooseLayout, type LayoutKind } from './api/layoutChoice';
+import { chooseLayout, isFloodSkip, type LayoutKind } from './api/layoutChoice';
 import { LayoutChoicePanel } from './ui/LayoutChoicePanel';
 import { line2274To3857 } from './api/parcelTopo';
 import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
@@ -246,6 +246,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sfV1ShownRef = useRef<string>('loop');
   const renderSfV1Ref = useRef<((resp: SfV1Response, opt: SfV1Options, shown: string) => Promise<void>) | null>(null);
   const elementsRef = useRef<Element[]>([]);
+  const metricsRef = useRef<typeof metrics>(metrics);
   // The layout choice on multifamily land (the owner, 2026-11-04): the
   // multifamily plan by default where it places more homes, with a switch to
   // the neighborhood layout (the competition's best: townhomes from th_v3, or
@@ -1522,6 +1523,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [contextOgcFid, elements, setPlanOutput, gateNonGesturePlan, parcel?.geometry]);
   renderSfV1Ref.current = renderSfV1Answer;
   elementsRef.current = elements;
+  metricsRef.current = metrics;
 
   /** The pattern competition for the parcel and the option set (cached per
    *  parcel in the client). A newer ask — a new parcel, a new override —
@@ -1860,6 +1862,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       sfV1CandidatesRef.current = r.data;
       const comp = summarizeCandidates(r.data);
       setSfV1Competition({ state: 'done', data: comp, error: null });
+      // 0 Todd Preis Dr (2026-11-09): the competition skipped because the flood
+      // hazard area leaves no buildable piece, while the multifamily engine,
+      // which does not hold it out yet, drew 94 apartments on it. The hold goes
+      // on the sheet beside that plan so the sheet shows what the plan stands in.
+      if (comp.status === 'skipped' && isFloodSkip(comp.reason)) {
+        void fetchSfV1Site(fid, null).then(site => {
+          if (seq !== competitionSeqRef.current || !site?.holdWkt) return;
+          const { elements: context } = sfV1ToElements(
+            { status: 'skipped', reason: comp.reason, ogc_fid: fid } as SfV1Response,
+            { holdWkt: site.holdWkt, nobuildWkt: site.nobuildWkt ?? null },
+          );
+          const holds = context.filter(e => e.type === 'greenspace');
+          if (holds.length === 0) return;
+          setSfV1Site(site);
+          setPlanOutput([...elementsRef.current.filter(e => !e.id.startsWith('sfv1-hold-')), ...holds], metricsRef.current);
+        }).catch(() => undefined);
+      }
       const mf = mfLayoutHomesRef.current;
       const choice = chooseLayout({ multifamilyHomes: mf?.homes ?? null, multifamilyProduct: mf?.product ?? 'apartments', multifamilyFailed: mf?.failed ?? true, competition: comp });
       const neighborhoodOnSheet = elementsRef.current.some(e => isSfPlanElement(e));
@@ -2872,6 +2891,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             densityCap: layoutChoice.densityCap,
             competitionState: sfV1Competition?.state ?? null,
             sentence: layoutChoice.sentence,
+            // 0 Todd Preis Dr: the floodplain leaves no buildable piece; the hold is hatched over the multifamily plan
+            floodHold: layoutChoice.floodHold,
+            holdOnSheet: displayElements.some(e => e.id.startsWith('sfv1-hold-')),
           }
         : null,
       thV3: thV3OnSheet && thV3Summary

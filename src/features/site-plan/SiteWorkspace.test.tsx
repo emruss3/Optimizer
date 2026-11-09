@@ -607,6 +607,24 @@ describe('SiteWorkspace: the layout choice on multifamily land (the owner, 2026-
     expect(screen.queryByTestId('layout-auto')).toBeNull();
   });
 
+  it('0 Todd Preis Dr: the competition skipped for the floodplain; the hold goes on the sheet beside the apartments and the panel says so', async () => {
+    sfV1CandMock.mockResolvedValue({ data: { status: 'skipped', reason: 'floodplain leaves no buildable piece', ogc_fid: 669046 }, error: null });
+    sfV1SiteMock.mockResolvedValue({
+      nobuildWkt: null, heldAcres: 9.98, siteAcres: 0, floodHold: 'sfha', reason: 'floodplain leaves no buildable piece',
+      holdWkt: 'POLYGON((1727000 670000,1727300 670000,1727300 670300,1727000 670300,1727000 670000))',
+    });
+    render(<SiteWorkspace parcel={PARCEL} />);
+    await waitFor(() => expect(screen.getByTestId('layout-choice').getAttribute('data-flood-hold')).toBe('true'));
+    expect(screen.getByTestId('layout-choice').getAttribute('data-default')).toBe('multifamily');
+    expect(screen.getByTestId('layout-option-multifamily').textContent).toContain('in the flood hazard area');
+    expect(screen.getByTestId('layout-sentence').textContent).toContain('40 apartments stand in it');
+    // the site layers are asked for so the hold is hatched over the multifamily plan
+    await waitFor(() => expect(sfV1SiteMock).toHaveBeenCalledWith(669046, null));
+    await waitFor(() => expect((window as unknown as { __planEvidence?: { layout?: { holdOnSheet?: boolean } } }).__planEvidence?.layout?.holdOnSheet).toBe(true));
+    expect(screen.getByTestId('layout-choice').getAttribute('data-shown')).toBe('multifamily');
+    expect(thV3Mock).not.toHaveBeenCalled();
+  });
+
   it('a neighborhood that fails a code test never takes the sheet, however many homes', async () => {
     sfV1CandMock.mockResolvedValue({ data: { ...cand(60), best_buildable: false, best_code_fails: ['alley.street_to_street'], verdict: 'the best plan fails a code test: not buildable as drawn' }, error: null });
     render(<SiteWorkspace parcel={PARCEL} />);

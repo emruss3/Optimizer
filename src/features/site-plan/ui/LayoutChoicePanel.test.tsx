@@ -109,6 +109,20 @@ describe('LayoutChoicePanel (multifamily by default where it places more homes; 
     expect(nb.textContent).toContain('fails a code test');
   });
 
+  it('0 Todd Preis Dr: the floodplain leaves no buildable piece; the multifamily option is badged as standing in it', () => {
+    const skipped = summarizeCandidates({ status: 'skipped', reason: 'floodplain leaves no buildable piece' } as unknown as SfV1CandidatesResponse);
+    render(
+      <LayoutChoicePanel choice={chooseLayout({ multifamilyHomes: 94, competition: skipped })} competition={{ state: 'done', data: skipped, error: null }}
+        shown="multifamily" shownRequested={null} auto={false} onChoose={() => undefined} onViewCandidate={() => undefined} />,
+    );
+    expect(screen.getByTestId('layout-choice').getAttribute('data-flood-hold')).toBe('true');
+    const mf = screen.getByTestId('layout-option-multifamily');
+    expect(mf.textContent).toContain('94 homes');
+    expect(mf.textContent).toContain('in the flood hazard area');
+    expect(screen.getByTestId('layout-sentence').textContent).toContain('does not hold the flood hazard area out yet');
+    expect(screen.getByTestId('layout-option-neighborhood').textContent).toContain('no pattern places a home');
+  });
+
   it('while the plans are drawn, and when they fail, it says so; the multifamily plan stands', () => {
     const onRetry = vi.fn();
     const { rerender } = render(

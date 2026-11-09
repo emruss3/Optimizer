@@ -1788,3 +1788,34 @@ no new street)"), the "single-street grammar" name, and a rule fix — a
 competition request that falls back to the very plan the default drew no
 longer takes the sheet from itself; the same lots switch only on less street
 or fewer fails. The two new battery fixtures were re-captured against g15.
+
+## 31. Ten random parcels against g15, with detailed engine feedback (2026-11-09, batch 4)
+
+Eric: "Run 10 more random parcels, and give detailed engine feedback." Two
+per size band of vacant R / RS and two RM, by hash, 105 earlier ids
+excluded. USGS 3DEP was down for 25 minutes of the run (7 of 10 first
+fetches refused); the seven were harvested without terrain and re-harvested
+with it, and every answer is graded with terrain. Write-up:
+`qa/audits/2026-11-09b/README.md`.
+
+Three of ten are zero / skipped, all right (0 Newsom Station Rd in the
+floodway; 0 Drakes Branch Rd and 70 Hillenglade Dr landlocked on hillsides
+— the latter checked against the parcel fabric: a private lane, and an
+assemblage under one owner). Of the seven drawn, one is what a civil would
+draw (810 Due West Ave N, one lot) and one is close (0 Clovernook Dr, 2 of
+3). Three rules decide the bottom: the remainder lot (the leftover land
+becomes one oversized lot: 34,138 SF on a 10,000-SF district, a 9.96-ac flag
+lot on 8282 Charlotte Pike), a public street for one or two lots (605
+Harpeth Ln, 744 ft at 17.7% grade through the wetland buffer for one lot;
+8192 Charlotte Pike, 1,414 ft for two), and a multifamily generator that
+does not hold the floodplain out (0 Todd Preis Dr: 94 apartments on 9.9 ac
+of SFHA with 3.1 ac of floodway, `feasible`).
+
+App: a flood-skipped competition on multifamily land now flags the
+multifamily plan — the option is badged "in the flood hazard area", the
+sentence says the engine does not hold it out yet, and the flood hold is
+hatched over the apartments (`floodHold` on the layout choice, the site
+layers fetched for the hold). The townhome row's count is said when it drew
+more than the best but fails (0 Carothers Rd: 42 homes, `alley.street_to_street`).
+Battery: 0 Todd Preis Dr (675099) gates the badge, the sentence and the
+hold on the sheet.

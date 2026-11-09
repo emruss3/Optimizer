@@ -93,6 +93,7 @@ export function LayoutChoicePanel({
       data-default={choice ? def : ''}
       data-shown={shown ?? ''}
       data-auto={String(auto)}
+      data-flood-hold={String(!!choice?.floodHold)}
       className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-sm"
     >
       <div className="flex items-baseline justify-between gap-2">
@@ -108,6 +109,8 @@ export function LayoutChoicePanel({
           <span className="text-base font-semibold leading-tight text-slate-900">{mf != null ? `${mf} home${mf === 1 ? '' : 's'}` : '—'}</span>
           <span className="text-[10px] text-slate-500">{product === 'townhomes' ? 'townhome rows, surface parking' : 'apartments, surface parking'}</span>
           {choice && def === 'multifamily' && badge('default', 'bg-emerald-100 text-emerald-800')}
+          {/* 0 Todd Preis Dr: the floodplain leaves no buildable piece; the multifamily engine drew on it anyway */}
+          {choice?.floodHold && badge('in the flood hazard area', 'bg-red-100 text-red-800')}
         </button>
         <button
           type="button" role="radio" aria-checked={shown === 'neighborhood'} data-testid="layout-option-neighborhood"

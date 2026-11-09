@@ -44,6 +44,20 @@ export interface LayoutChoice {
   defaultKind: LayoutKind;
   /** one sentence: why the default is the default */
   sentence: string;
+  /**
+   * The competition skipped because the flood hazard area leaves no buildable
+   * piece (0 Todd Preis Dr, 2026-11-09: 9.9 of 10.5 ac in the SFHA, 3 ac of it
+   * floodway). The multifamily engine does not hold the floodplain out yet, so
+   * its plan stands in it: the sheet says so and hatches the hold over it.
+   */
+  floodHold: boolean;
+}
+
+const FLOOD_SKIP = /floodplain leaves no buildable piece/i;
+
+/** The engine's reason for a skip is the floodplain (sf_v1 and the competition say it the same way). */
+export function isFloodSkip(reason: string | null | undefined): boolean {
+  return typeof reason === 'string' && FLOOD_SKIP.test(reason);
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -98,9 +112,17 @@ export function chooseLayout(input: {
   const nb = neighborhoodOption(comp);
   const densityCap = comp?.homesAllowedByDensity ?? null;
   const mfWord = product === 'townhomes' ? 'The townhome rows' : 'Apartments';
-  const base = { multifamilyHomes: mf, multifamilyProduct: product, neighborhood: nb, densityCap };
+  const floodHold = comp?.status === 'skipped' && isFloodSkip(comp.reason);
+  const base = { multifamilyHomes: mf, multifamilyProduct: product, neighborhood: nb, densityCap, floodHold };
 
   if (!nb) {
+    if (floodHold && mf != null) {
+      return {
+        ...base,
+        defaultKind: 'multifamily',
+        sentence: `No neighborhood plan: ${comp!.reason}. The multifamily engine does not hold the flood hazard area out yet, so its ${mfProductPhrase(mf, product)} stand in it: a what-if until it does, not a by-right default.`,
+      };
+    }
     const why = !comp
       ? 'the neighborhood plans have not been drawn'
       : comp.status !== 'done'
@@ -137,6 +159,14 @@ export function chooseLayout(input: {
     sentence = `Both place ${plural(mf, 'home', 'homes')}${densityCap != null && densityCap === mf ? ', the most the district\'s density allows' : ''}; ${mfWord.toLowerCase()} stay the default.`;
   } else {
     sentence = `${mfWord} place more homes here: ${mfProductPhrase(mf ?? 0, product)} against the neighborhood's best of ${nbWords}, so they are the default.`;
+    // 0 Carothers Rd (2026-11-09): the townhome row drew 42 homes, as many as the
+    // apartments, but fails a code test, so the competition's best is the 20-lot
+    // street. The owner builds townhomes: say what the row drew and why it is not the best.
+    const th = comp?.rows.find(r => r.requested === 'townhome' && r.status === 'done' && r.lots > nb.homes);
+    const thFails = th ? codeFails(th.fails) : [];
+    if (th && thFails.length > 0) {
+      sentence += ` The townhome row drew ${plural(th.lots, 'home', 'homes')} but fails ${thFails.join(', ')}.`;
+    }
   }
   return { ...base, defaultKind: 'multifamily', sentence };
 }
