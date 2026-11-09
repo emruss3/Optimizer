@@ -1769,3 +1769,22 @@ USGS 3DEP refused 8 of 20 first fetches; retried through
 `fn_parcel_topo_fetch` until 19 of 20 had terrain (the twentieth is a flood
 skip). Battery: 4255 Brick Church Pike (the hillside hatch, 0 lots) and 0
 Hills Ln (the grid at more lots).
+
+## 30. The same twenty against engine g15, the same evening (2026-11-09)
+
+Eric: "test the parcels you just ran. Are we getting the results you
+wanted?" The engine had moved since the morning harvest: an estate grammar
+(flag lots behind the frontage), 0 lots with the reason on landlocked
+hillsides, a "single" competition row, and th_v3's answer in the townhome row
+— four of §29's asks. Re-run live and through the app, eight of twenty are
+zero / one house / skipped (all right) and five of the twelve drawn are what
+a civil would draw (0 Hillwood Blvd's three flag lots, 1014 Antioch Pike,
+0 Hills Ln, 4525 Cato Rd, 0 Old Hickory Blvd RS20); 0 Blevins Rd went from
+a 4-lot loop at 49% grade to a zero with its reason. Write-up:
+`qa/audits/2026-11-09/README.md` ("Re-test the same evening").
+
+App: the pattern's phrase ("as estate lots (flag lots behind the frontage,
+no new street)"), the "single-street grammar" name, and a rule fix — a
+competition request that falls back to the very plan the default drew no
+longer takes the sheet from itself; the same lots switch only on less street
+or fewer fails. The two new battery fixtures were re-captured against g15.
