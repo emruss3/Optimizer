@@ -370,3 +370,20 @@ describe('SfV1Panel — the engine\'s house plans (2026-11-09)', () => {
     expect(screen.queryByTestId('sfv1-houses')).toBeNull();
   });
 });
+
+describe('SfV1Panel — the generator raised instead of answering (8192 Charlotte Pike, 2026-11-10)', () => {
+  it('says it is an engine error, draws no offer and no override in its place', () => {
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, status: 'error', reason: 'division by zero', lots: 0, tests: [], fails: [], notes: [], earthwork: null, fillView: false }}
+        override={{}}
+        onOverride={() => undefined}
+        onDrawHouse={() => undefined}
+      />
+    );
+    expect(screen.getByTestId('sfv1-error').textContent).toBe('The by-right generator failed on this parcel: division by zero. This is an engine error, not a finding about the land. No plan is drawn; nothing was substituted for it.');
+    expect(screen.queryByTestId('sfv1-skipped')).toBeNull();
+    expect(screen.queryByTestId('sfv1-draw-house')).toBeNull();
+    expect(screen.queryByTestId('sfv1-override-floodway')).toBeNull();
+  });
+});

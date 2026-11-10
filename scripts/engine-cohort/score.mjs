@@ -43,14 +43,28 @@ export const QUALITY_FLAGS = new Set(['open.unassigned', 'cost.street_ft_per_lot
 export const codeFails = fails => (Array.isArray(fails) ? fails : []).filter(f => !QUALITY_FLAGS.has(f));
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
+/** The grammar the best plan was asked for: the engine's field, or (since its 2026-11-09 release dropped it) the
+ *  candidate row that drew the best plan's pattern and lots; 'loop' when the default row is among them. */
+export function bestRequestedOf(comp) {
+  if (!comp) return null;
+  if (typeof comp.best_requested === 'string' && comp.best_requested) return comp.best_requested;
+  const pattern = comp.best_pattern ?? comp.best?.pattern ?? null;
+  const lots = num(comp.best_lots) ?? num(comp.best?.lots);
+  if (pattern == null || lots == null) return null;
+  const rows = (comp.candidates ?? []).filter(r => r.pattern === pattern && num(r.lots) === lots && (r.status ?? 'done') === 'done');
+  if (rows.length === 0) return null;
+  return rows.some(r => (r.requested ?? 'loop') === 'loop') ? 'loop' : (rows[0].requested ?? null);
+}
+
 /** The by-right side's answer: the plan, or the competition's best when the app's auto-best rule would take it. */
 export function sfAnswer(plan, comp) {
-  const a = { status: plan?.status ?? (plan ? 'done' : 'missing'), lots: num(plan?.lots) ?? 0, pattern: plan?.pattern ?? null,
+  const a = { status: plan?.status ?? (plan?.error ? 'error' : plan ? 'done' : 'missing'), lots: num(plan?.lots) ?? 0, pattern: plan?.pattern ?? null,
     streetFt: num(plan?.metrics?.street_ft) ?? 0, fails: codeFails(plan?.fails), flags: (plan?.fails ?? []).filter(f => QUALITY_FLAGS.has(f)),
     reason: plan?.reason ?? null, from: 'default', product: 'lots', hillsideAc: num(plan?.hillside_ac), buildableAc: num(plan?.buildable_after_holds_ac) };
+  if (a.status === 'error') { a.lots = 0; a.reason = plan.error ?? plan.reason ?? null; return a; }
   if (plan?.status === 'skipped') { a.lots = 0; return a; }
   const best = comp?.status === 'done' ? (comp.best ?? null) : null;
-  const bestRow = comp?.status === 'done' ? (comp.candidates ?? []).find(r => r.requested === comp.best_requested) : null;
+  const bestRow = comp?.status === 'done' ? (comp.candidates ?? []).find(r => r.requested === bestRequestedOf(comp)) : null;
   if (best && bestRow && bestRow.status === 'done' && num(bestRow.lots) > 0 && bestRow.requested !== 'loop' && bestRow.product !== 'attached') {
     const bLots = num(bestRow.lots) ?? 0;
     const bFails = codeFails(bestRow.fails);
@@ -65,7 +79,7 @@ export function sfAnswer(plan, comp) {
 /** The layout choice on RM land: the neighborhood's best or the apartments. */
 export function rmAnswer(plan, comp, mf) {
   const units = num(mf?.metrics?.units_est) ?? num(mf?.metrics?.units);
-  const bestRow = comp?.status === 'done' ? (comp.candidates ?? []).find(r => r.requested === comp.best_requested) : null;
+  const bestRow = comp?.status === 'done' ? (comp.candidates ?? []).find(r => r.requested === bestRequestedOf(comp)) : null;
   const nbLots = bestRow && bestRow.status === 'done' ? num(bestRow.lots) ?? 0 : 0;
   const nbFails = bestRow ? codeFails(bestRow.fails) : [];
   const nbBuildable = bestRow ? (comp.best_buildable ?? nbFails.length === 0) : false;
@@ -83,10 +97,14 @@ export function rmAnswer(plan, comp, mf) {
 
 /** Does the answer land where a civil would? */
 export function judge(target, ans) {
+  // the engine raised instead of answering: a miss on either side, never "not in this run"
+  if (ans.status === 'error') return { pass: false, why: `the engine raised: ${ans.reason ?? 'no message'}` };
   const nothing = ans.lots === 0 || ans.status === 'skipped' || (ans.lots === 1 && ans.streetFt === 0 && ans.product !== 'apartments');
   if (target.kind === 'refuse') {
     return nothing ? { pass: true, why: 'nothing drawn, as it should be' } : { pass: false, why: `drew ${homes(ans.lots, ans.product)} where nothing belongs` };
   }
+  // a target whose range starts at one lot names the parcel as one lot as an answer (605 Harpeth Ln)
+  if (nothing && ans.lots === 1 && ans.fails.length === 0 && target.lots[0] <= 1) return { pass: true, why: 'the parcel as one lot, as the target allows' };
   if (nothing) return target.altRefuse ? { pass: true, why: 'nothing drawn; acceptable here' } : { pass: false, why: `drew nothing; ${target.lots[0]}–${target.lots[1]} expected` };
   const [lo, hi] = target.lots;
   if (ans.lots < lo || ans.lots > hi) return { pass: false, why: `${homes(ans.lots, ans.product)}; ${lo}–${hi} expected` };

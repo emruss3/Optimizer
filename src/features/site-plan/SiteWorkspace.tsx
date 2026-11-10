@@ -38,8 +38,7 @@ import {
   fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
   parcelHoles3857, lotsOnParcelHoles, chooseAutoBest, candidateOpt, RM_COMPETITION_TH_BUDGET_MS,
   type HoleOverlap, type SfV1AutoBest,
-  type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse,
-} from './api/sfV1Plan';
+  type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { fetchThV3Plan, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
@@ -1773,7 +1772,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const raw = sfV1CandidatesRef.current;
     let resp: SfV1Response | null = null;
     if (requested === 'loop' && sfV1DefaultRespRef.current) resp = sfV1DefaultRespRef.current;
-    else if (raw?.best && raw.best_requested === requested) resp = raw.best;
+    else if (raw?.best && bestRequestedOf(raw) === requested) resp = raw.best;
     else if (raw?.structured && requested === 'neighborhood') resp = raw.structured;
     setIsGeneratingLots(true);
     try {

@@ -129,6 +129,29 @@ export function wktPolygons(wkt: string | null | undefined): Polygon[] {
   return out.filter(p => Array.isArray(p.coordinates[0]) && (p.coordinates[0] as Position[]).length >= 4);
 }
 
+/**
+ * The polygons of a WKT grouped by MEMBER. A GEOMETRYCOLLECTION's members stay
+ * together (a flag lot is one member: MULTIPOLYGON(body, pole)); a bare
+ * (MULTI)POLYGON gives one member per polygon. The by-right generator aligns
+ * `lots_wkt` members with `lot_kinds`, `lot_areas_sf` and `houses`; flattening
+ * them numbered a flag lot's pole as a lot and pushed every later lot one
+ * place along (6404 Eatons Creek Rd, 4727 Post Rd, 2026-11-10).
+ */
+export function wktMemberPolygons(wkt: string | null | undefined): Polygon[][] {
+  const g = parseWkt(wkt);
+  const ok = (p: Polygon) => Array.isArray(p.coordinates[0]) && (p.coordinates[0] as Position[]).length >= 4;
+  const flat = (geom: Geometry | null): Polygon[] => {
+    if (!geom) return [];
+    if (geom.type === 'Polygon') return geom.coordinates.length > 0 && ok(geom) ? [geom] : [];
+    if (geom.type === 'MultiPolygon') return geom.coordinates.filter(c => c.length > 0).map(c => ({ type: 'Polygon', coordinates: c }) as Polygon).filter(ok);
+    if (geom.type === 'GeometryCollection') return geom.geometries.flatMap(flat);
+    return [];
+  };
+  if (!g) return [];
+  if (g.type === 'GeometryCollection') return g.geometries.map(flat).filter(m => m.length > 0);
+  return flat(g).map(p => [p]);
+}
+
 /** Every line in a WKT (MULTI)LINESTRING / GEOMETRYCOLLECTION, in order. */
 export function wktLines(wkt: string | null | undefined): LineString[] {
   const g = parseWkt(wkt);

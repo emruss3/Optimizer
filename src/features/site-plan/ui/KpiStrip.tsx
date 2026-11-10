@@ -84,6 +84,7 @@ const KpiStrip: React.FC<{
     const checks = subdivision.tests ?? [];
     const chip =
       subdivision.legacy ? { tone: 'bg-amber-50 text-amber-700', text: 'Legacy generator · provisional', ok: false }
+      : subdivision.status === 'error' ? { tone: 'bg-red-50 text-red-700', text: 'Generator error · no plan', ok: false }
       : subdivision.status === 'skipped' ? { tone: 'bg-amber-50 text-amber-700', text: 'Skipped by the generator', ok: false }
       : subdivision.lots === 0 ? { tone: 'bg-slate-100 text-slate-700', text: 'No new lots by right', ok: false }
       : n > 0 ? { tone: 'bg-red-50 text-red-700', text: checks.length > 0 ? `${n} of ${checks.length} check${checks.length === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }

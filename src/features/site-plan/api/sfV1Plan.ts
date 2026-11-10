@@ -33,7 +33,7 @@ import { clipPolysToObstacles, unionPolys } from '../../../engine/validatePlan';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { geom2274To4326 } from '../../../utils/tnStatePlane';
 import { supabase } from '../../../lib/supabase';
-import { wktLines, wktPoint, wktPolygons } from './wkt';
+import { wktLines, wktPoint, wktPolygons, wktMemberPolygons } from './wkt';
 
 export type SfV1Basis = 'by_right' | 'override';
 
@@ -259,6 +259,8 @@ export function grammarName(requested: string): string {
   if (requested === 'drive') return DRIVE_PATTERN;
   if (requested === 'townhome') return 'townhomes';
   if (requested === 'single') return 'single-street grammar';
+  // engine 2026-11-09 (sf_v1_civil_cohort): a hillside street along the contours with short arms
+  if (requested === 'terrace') return 'terrace grammar (a hillside street with arms)';
   if (requested === 'estate') return 'estate lots';
   return `${requested} grammar`;
 }
@@ -444,6 +446,23 @@ function to3857(p: Polygon): Polygon | null {
 }
 function polys3857(wkt: string | null | undefined): Polygon[] {
   return wktPolygons(wkt).map(to3857).filter((p): p is Polygon => p != null);
+}
+/** Shoelace area of a ring in its own units (ranking a member's parts only). */
+function ringArea(r: Position[] | undefined): number {
+  if (!r) return 0;
+  let a = 0;
+  for (let i = 0; i < r.length - 1; i++) a += r[i]![0]! * r[i + 1]![1]! - r[i + 1]![0]! * r[i]![1]!;
+  return Math.abs(a) / 2;
+}
+/** One entry per WKT member: its largest polygon (the lot, the house) and the rest (a flag lot's pole). */
+function members3857(wkt: string | null | undefined): Array<{ body: Polygon; rest: Polygon[] }> {
+  const out: Array<{ body: Polygon; rest: Polygon[] }> = [];
+  for (const member of wktMemberPolygons(wkt)) {
+    const parts = [...member].sort((a, b) => ringArea(b.coordinates[0]) - ringArea(a.coordinates[0]))
+      .map(to3857).filter((p): p is Polygon => p != null);
+    if (parts.length > 0) out.push({ body: parts[0]!, rest: parts.slice(1) });
+  }
+  return out;
 }
 /** Area of an EPSG:2274 (US ft) WKT in square feet: outer rings less their holes. */
 function areaSf2274(wkt: string | null | undefined): number {
@@ -653,26 +672,26 @@ export function sfV1ToElements(
   const lotAreas = Array.isArray(resp.lot_areas_sf) ? resp.lot_areas_sf : [];
   const lotKindCounts: Record<string, number> = {};
   const houses = Array.isArray(resp.houses) ? resp.houses : [];
-  const lotPolys = polys3857(resp.lots_wkt);
-  // The engine aligns lots_wkt with lot_kinds, lot_areas_sf and houses; the
-  // polygons past that count are the flag lots' access poles. Numbered like
-  // lots they read as yield (4727 Post Rd: "lots" 6 and 7 on a 5-lot plan,
-  // the cohort retest, 2026-11-09). They are access strips, and say so.
-  const lotCount = lotKinds.length > 0 ? lotKinds.length : (num(resp.lots) ?? lotPolys.length);
+  // One member of lots_wkt per lot, aligned with lot_kinds, lot_areas_sf and
+  // houses. A flag lot is body + pole in one member: the body is the lot, the
+  // pole is its access strip (named for its lot, never numbered as one).
+  const lotMembers = members3857(resp.lots_wkt);
+  const lotPolys = lotMembers.map(m => m.body);
   let stripN = 0;
-  lotPolys.forEach((poly, i) => {
-    if (i >= lotCount) {
+  lotMembers.forEach((member, i) => {
+    member.rest.forEach(strip => {
       stripN += 1;
       elements.push({
         id: `${SFV1_ID_PREFIX}access-strip-${stripN}`,
         type: 'other',
-        name: `Access strip ${stripN}`,
-        geometry: poly,
-        properties: props({ accessStrip: true, color: '#CBD5E1', strokeColor: '#64748B', opacity: 0.55, styleOverride: true }),
+        name: `Access strip · lot ${i + 1}`,
+        geometry: strip,
+        properties: props({ accessStrip: true, forLot: i + 1, color: '#CBD5E1', strokeColor: '#64748B', opacity: 0.55, styleOverride: true }),
         metadata: meta,
       });
-      return;
-    }
+    });
+  });
+  lotPolys.forEach((poly, i) => {
     const kind = lotKinds[i] ?? null;
     if (kind) lotKindCounts[kind] = (lotKindCounts[kind] ?? 0) + 1;
     const house = houses[i] ?? null;
@@ -700,7 +719,8 @@ export function sfV1ToElements(
 
   // Pads: one house footprint per lot. In the earthwork view each pad is
   // coloured by the fill it needs (under 4 / 4–8 / 8–12 / over 12 ft).
-  const padPolys = polys3857(resp.pads_wkt);
+  // one member per lot here too (a catalogue footprint can arrive as a MULTIPOLYGON)
+  const padPolys = members3857(resp.pads_wkt).map(m => m.body);
   const fillView = hasFlood && !!perPadFill && perPadFill.some(v => v != null);
   padPolys.forEach((poly, i) => {
     const fill = fillView ? perPadFill?.[i] ?? null : null;
@@ -985,7 +1005,18 @@ export async function fetchSfV1Plan(ogcFid: number, opt: SfV1Options = {}): Prom
     const { data, error } = await supabase.rpc('fn_sf_v1_plan_app', { p_ogc_fid: ogcFid, p_opt: clean });
     if (error) {
       console.warn('[sfV1Plan] RPC failed:', error.message ?? error);
-      return null;
+      // The generator answering with an exception is not the service being
+      // unreachable: 8192 Charlotte Pike (2026-11-10) raised "division by
+      // zero" and the sheet fell through to the legacy generator without a
+      // word. A timeout or a transport failure still reads as unreachable
+      // (null); anything else is the engine's own error, shown as such.
+      // Only a SQLSTATE from inside the function's own execution counts as
+      // the engine's error (22 data exception, 23 constraint, 42 undefined
+      // object, P0 raise, XX internal); a missing function (PGRST…), a
+      // cancelled statement (57…) or no code at all stays "unreachable".
+      const code = String((error as { code?: unknown }).code ?? '');
+      const raised = /^(22|23|2F|38|39|42|P0|XX)/.test(code);
+      return raised ? { status: 'error', error: String(error.message ?? error), ogc_fid: ogcFid } : null;
     }
     return (data as SfV1Response) ?? null;
   } catch (err) {
@@ -1199,11 +1230,35 @@ function grammarList(requested: string[]): string {
 const homesWord = (n: number) => `${n} home${n === 1 ? '' : 's'}`;
 const testsWord = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
 
+/**
+ * The grammar the competition's best plan was asked for. The engine sent it
+ * as `best_requested` until its release of 2026-11-09 (sf_v1_civil_cohort),
+ * which returns null on every parcel: the best plan then silently stopped
+ * taking the sheet (0 Hills Ln fell from the 17-lot grid to the 14-lot
+ * default). Without the field it is read off the candidate rows: the row
+ * that drew the best plan's pattern and lots. When the default (loop) row is
+ * among them the best plan IS the default, and 'loop' is the answer.
+ */
+export function bestRequestedOf(resp: SfV1CandidatesResponse | null | undefined): string | null {
+  if (!resp) return null;
+  const direct = str(resp.best_requested);
+  if (direct) return direct;
+  const best = (resp.best ?? null) as Record<string, unknown> | null;
+  const pattern = str(resp.best_pattern) ?? str(best?.pattern);
+  const lots = num(resp.best_lots) ?? num(best?.lots);
+  if (pattern == null || lots == null) return null;
+  const rows = (Array.isArray(resp.candidates) ? resp.candidates : []).filter(c =>
+    str(c?.pattern) === pattern && (num(c?.lots) ?? null) === lots && (str(c?.status) ?? 'done') === 'done');
+  if (rows.length === 0) return null;
+  const loop = rows.find(c => (str(c?.requested) ?? 'loop') === 'loop');
+  return loop ? 'loop' : (str(rows[0]?.requested) ?? null);
+}
+
 /** The candidates response → the rows and the sentence the panel shows. */
 export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefined): SfV1Competition | null {
   if (!resp || typeof resp !== 'object') return null;
   const status = str(resp.status) ?? (resp.error ? 'error' : 'done');
-  const bestRequested = str(resp.best_requested);
+  const bestRequested = bestRequestedOf(resp);
   const bestByScore = str(resp.best_by_score);
   const rows: SfV1CompetitionRow[] = (Array.isArray(resp.candidates) ? resp.candidates : []).map(c => {
     const requested = str(c?.requested) ?? 'loop';
@@ -1323,7 +1378,8 @@ export function chooseAutoBest(
   resp: SfV1CandidatesResponse | null | undefined,
   def: SfV1Response | null | undefined,
 ): SfV1AutoBest | null {
-  if (!resp || !resp.best || typeof resp.best_requested !== 'string' || resp.best_requested === 'loop') return null;
+  const requested = bestRequestedOf(resp);
+  if (!resp || !resp.best || requested == null || requested === 'loop') return null;
   const best = resp.best as Record<string, unknown>;
   if (typeof best.full_plan_call === 'string' || best.product === 'attached') return null;
   if (!def || (def.status != null && def.status !== 'done') || def.error) return null;
@@ -1354,7 +1410,7 @@ export function chooseAutoBest(
     if (!lessStreet && !(bestFails < defaultFails)) return null;
   }
   return {
-    requested: resp.best_requested,
+    requested,
     why: defaultLots === 0 ? 'default_empty' : same ? 'same_lots' : 'more_lots',
     defaultLots,
     bestLots,

@@ -54,6 +54,20 @@ are the multifamily run drawing on landlocked land, 2 are by-right plans on
 land that scored a zero in an earlier release (Dry Fork Rd, Old Hickory Blvd
 R40).
 
+g16, 2026-11-10 (`runs/2026-11-10_g16.json`, write-up and ranked sheets in
+`qa/audits/2026-11-10/`): plans 19 of 40, refusals 26 of 30. Fixed: 605
+Harpeth Ln (the parcel as one lot with a driveway), 0 Old Hickory Blvd R40
+(refuses, landlocked). One raised error (8192 Charlotte Pike, division by
+zero in `fn_sf_v1_strip`). The 21 plan misses split 14 / 3 / 4 the same way;
+the 4 refusal misses are the three multifamily draws on landlocked land and
+Dry Fork Rd.
+
+Scorer changes with that run (the g15 baseline scores the same under them):
+`best_requested` came back null on every parcel, so the best plan's grammar
+is worked out from `best_pattern` and `best_lots` the way the app now does;
+an answer with `status: 'error'` is a miss that carries the engine's
+message; one lot with no fails passes a target whose range starts at one.
+
 ## Running it
 
 Live, as the app's anonymous role (the owner, or CI with the battery secrets):

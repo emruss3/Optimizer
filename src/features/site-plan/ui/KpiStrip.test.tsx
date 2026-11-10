@@ -172,3 +172,10 @@ describe('KpiStrip — parking the evidence cannot settle (the cohort retest, 20
     expect(screen.queryByTestId('kpi-parking-verify')).toBeNull();
   });
 });
+
+describe('KpiStrip — a generator error is not "no new lots" (8192 Charlotte Pike, 2026-11-10)', () => {
+  it('reads "Generator error · no plan"', () => {
+    render(<KpiStrip metrics={{ ...base, totalUnits: 0 } as SiteMetrics} investment={null} subdivision={{ lots: 0, densityDuAc: null, fails: [], status: 'error' }} />);
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('Generator error · no plan');
+  });
+});
