@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import type { HoleOverlap, SfV1AutoBest, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, autoBestSentence, edgeClassSentence, isOverride, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
+import { FILL_BANDS, autoBestSentence, edgeClassSentence, isOverride, isRemainderNote, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
 
 /** What the by-right generator does not evaluate, named beside its passing checks (the scope's P0.2). */
 export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
@@ -167,7 +167,10 @@ export function SfV1Panel({
   // The engine's steep-ground caveat leads the panel: it measures terrain but
   // does not lay out by it yet, so the lot module is not the whole story.
   const steep = steepGroundNote(summary.notes);
-  const otherNotes = steep ? summary.notes.filter(n => n !== steep) : summary.notes;
+  // Engine g20 says the unplanned land in a note of its own ("6.10 ac is carried inside 3 oversized lot(s)
+  // and is not planned…"); the panel already says it once from remainder_ac, so the note is not repeated.
+  const remainderShown = summary.remainder != null && summary.lots > 0;
+  const otherNotes = summary.notes.filter(n => n !== steep && !(remainderShown && isRemainderNote(n)));
   // An answer that drew nothing on steep ground the engine did not remark on
   // (930 Morton Mill Rd: 28.5% mean slope, "no lot of 20000 sf fits"): the
   // DEM's figures, so the lot module is not blamed alone.
