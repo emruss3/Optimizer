@@ -49,6 +49,7 @@ const SUMMARY: SfV1Summary = {
   privateDrive: null,
   hillsideAcres: null,
   buildableAfterHoldsAc: null,
+  remainder: null,
   generatorVersion: 'sf_v1',
   basisLine: '24 lots @ 60 × 130 ft by right on a loop · 3.1 du/ac gross',
 };
@@ -385,5 +386,44 @@ describe('SfV1Panel — the generator raised instead of answering (8192 Charlott
     expect(screen.queryByTestId('sfv1-skipped')).toBeNull();
     expect(screen.queryByTestId('sfv1-draw-house')).toBeNull();
     expect(screen.queryByTestId('sfv1-override-floodway')).toBeNull();
+  });
+});
+
+describe('SfV1Panel — engine g18: the holding answer and a figure that is not a check', () => {
+  it('says how much land the plan does not reach', () => {
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, lots: 13, pattern: 'frontage lots, no new street', fails: [], remainder: { acres: 11.7, lots: 7 } }}
+        override={{}}
+        onOverride={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('sfv1-remainder').textContent).toBe('⚠ 11.7 ac inside 7 oversized lots is not planned: no street, terrace or lane drawn here reaches it. The lot count is a holding answer for that land, not a subdivision of it.');
+  });
+
+  it('shows no holding line when the plan reaches the land', () => {
+    render(<SfV1Panel summary={{ ...SUMMARY, remainder: null }} override={{}} onOverride={() => undefined} />);
+    expect(screen.queryByTestId('sfv1-remainder')).toBeNull();
+  });
+
+  it('a figure over its limit is a flag on its row, not a failed check', () => {
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, fails: [], tests: [
+          { id: 'access.lane_on_held_land', pass: false, figure: true, value: 1535, share: 0.55, limit_share: 0.5 },
+          { id: 'lot.min_area', pass: true, limit: 20000, value: 20600, lots_under: 0 },
+        ] }}
+        override={{}}
+        onOverride={() => undefined}
+      />,
+    );
+    const row = screen.getByTestId('sfv1-test-access.lane_on_held_land');
+    expect(row.getAttribute('data-figure')).toBe('true');
+    expect(row.getAttribute('data-over-limit')).toBe('true');
+    expect(row.className).not.toContain('text-red-700');
+    expect(row.textContent).toContain('!');
+    expect(row.textContent).toContain('a figure over its limit: a flag, not a failed check');
+    expect(row.textContent).not.toContain('within the engine');
+    expect(screen.getByTestId('sfv1-test-lot.min_area').getAttribute('data-pass')).toBe('true');
   });
 });

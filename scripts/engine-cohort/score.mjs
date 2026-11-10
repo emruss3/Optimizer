@@ -39,7 +39,9 @@ if (!args.store) {
   process.exit(2);
 }
 
-export const QUALITY_FLAGS = new Set(['open.unassigned', 'cost.street_ft_per_lot', 'yield.vs_arithmetic', 'access.private_drive_length']);
+export const QUALITY_FLAGS = new Set(['open.unassigned', 'cost.street_ft_per_lot', 'yield.vs_arithmetic', 'access.private_drive_length',
+  // engine g18: a figure the engine keeps out of `fails`; listed so it never counts if it appears there
+  'access.lane_on_held_land']);
 export const codeFails = fails => (Array.isArray(fails) ? fails : []).filter(f => !QUALITY_FLAGS.has(f));
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -70,7 +72,7 @@ export function sfAnswer(plan, comp) {
     const bFails = codeFails(bestRow.fails);
     const bStreet = num(bestRow.street_ft) ?? num(best.metrics?.street_ft) ?? 0;
     // what the best plan builds: public street plus private drive (g17 reports a drive as street_ft 0 with drive_ft)
-    const bBuilt = bStreet + (num(best.metrics?.drive_ft) ?? 0);
+    const bBuilt = bStreet + (num(bestRow.drive_ft) ?? num(best.metrics?.drive_ft) ?? 0);
     const buildable = comp.best_buildable ?? bFails.length === 0;
     const takes = buildable && (a.lots === 0 || bLots > a.lots || (bLots === a.lots && (bBuilt < a.builtFt || bFails.length < a.fails.length)));
     if (takes) return { ...a, lots: bLots, pattern: bestRow.pattern ?? best.pattern ?? null, streetFt: bStreet, fails: bFails, from: bestRow.requested };
@@ -93,7 +95,10 @@ export function rmAnswer(plan, comp, mf) {
   if (nbLots > 0 && (units == null || nbLots > units) && nbBuildable && nbDrawable) {
     return { ...base, lots: nbLots, product: nbAttached ? 'attached' : 'lots', fails: nbFails, from: bestRow.requested, streetFt: num(bestRow.street_ft) ?? 0 };
   }
-  if (units != null && units > 0) return { ...base, lots: units, product: 'apartments', fails: [], from: 'multifamily', streetFt: 0 };
+  // The app holds the apartments out as a what-if only when the by-right side is skipped for the flood
+  // hazard area; skipped for any other reason (no standards row, a frontage the plan does not accept),
+  // the sheet stays multifamily, so the apartments are the answer (0 Lebanon Pike, batch 5).
+  if (units != null && units > 0) return { ...base, status: base.status === 'skipped' && !floodSkip ? 'done' : base.status, lots: units, product: 'apartments', fails: [], from: 'multifamily', streetFt: 0 };
   return { ...base, lots: 0, product: 'none', fails: nbFails, from: 'none', streetFt: 0 };
 }
 

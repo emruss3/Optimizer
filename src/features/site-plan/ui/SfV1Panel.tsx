@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import type { HoleOverlap, SfV1AutoBest, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, autoBestSentence, edgeClassSentence, isOverride, parseEdgeClasses, passesOverLimit, privateDriveSentence, steepGroundNote } from '../api/sfV1Plan';
+import { FILL_BANDS, autoBestSentence, edgeClassSentence, isOverride, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
 
 /** What the by-right generator does not evaluate, named beside its passing checks (the scope's P0.2). */
 export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
@@ -43,7 +43,7 @@ function fmtCy(v: unknown): string {
   return typeof v === 'number' ? `${Math.round(v).toLocaleString()} cy` : fmtVal(v);
 }
 
-const TEST_META = new Set(['id', 'pass', 'ok', 'test', 'name', 'note', 'rule']);
+const TEST_META = new Set(['id', 'pass', 'ok', 'test', 'name', 'note', 'rule', 'figure']);
 
 /** Every figure a test carries, in its own words: `value 26.8 · limit 10 · ft over limit 440`,
  *  `acres 0.23`, `area sf 6,848 · needed sf 6,013`, `pad fill ft: min 3.5, median 9.8, max 16`. */
@@ -78,27 +78,33 @@ function yieldSentence(t: SfV1Test): string | null {
 }
 
 function TestRow({ t }: { t: SfV1Test }) {
-  const failed = t.pass === false;
+  // a figure over its limit (engine g18: access.lane_on_held_land) is a flag, not a failed check
+  const figure = t.figure === true;
+  const failed = t.pass === false && !figure;
   const details = yieldSentence(t) ?? testDetails(t);
   const note = typeof t.rule === 'string' ? t.rule : typeof t.note === 'string' ? t.note : null;
   // A pass with the value over the limit (street.grade_max 12% against 10%,
   // 100 ft over): the engine allows some length over the limit. A plain tick
   // beside a number over the limit reads as a test passing on its own failure.
   const allowance = passesOverLimit(t);
+  // amber for either: a pass over its limit, or a figure over its limit
+  const flagged = allowance != null || figure;
   return (
     <li
       data-testid={`sfv1-test-${t.id}`}
       data-pass={t.pass == null ? 'unknown' : String(t.pass)}
-      data-over-limit={allowance ? 'true' : undefined}
-      className={'flex items-start gap-1.5 ' + (failed ? 'text-red-700' : allowance ? 'text-amber-800' : t.pass ? 'text-slate-700' : 'text-slate-500')}
+      data-over-limit={flagged ? 'true' : undefined}
+      data-figure={figure ? 'true' : undefined}
+      className={'flex items-start gap-1.5 ' + (failed ? 'text-red-700' : flagged ? 'text-amber-800' : t.pass ? 'text-slate-700' : 'text-slate-500')}
     >
-      <span aria-hidden className={'mt-px shrink-0 font-bold ' + (failed ? 'text-red-600' : allowance ? 'text-amber-600' : t.pass ? 'text-emerald-600' : 'text-slate-400')}>
-        {failed ? '✗' : allowance ? '!' : t.pass ? '✓' : '·'}
+      <span aria-hidden className={'mt-px shrink-0 font-bold ' + (failed ? 'text-red-600' : flagged ? 'text-amber-600' : t.pass ? 'text-emerald-600' : 'text-slate-400')}>
+        {failed ? '✗' : flagged ? '!' : t.pass ? '✓' : '·'}
       </span>
       <span className="leading-snug">
         <span className="font-medium">{testLabel(t.id)}</span>
         {details && <span className="text-slate-500"> · {details}</span>}
         {note ? <span className="text-slate-500"> — {note}</span> : null}
+        {figure && <span className="text-amber-800"> — a figure over its limit: a flag, not a failed check</span>}
         {allowance && (
           <span className="text-amber-800">
             {' '}— passes over the limit{allowance.ftOver != null && allowance.ftOver > 0 ? ` for ${Math.round(allowance.ftOver).toLocaleString()} ft` : ''}, within the engine's allowance
@@ -266,6 +272,13 @@ export function SfV1Panel({
             // engine g13, the estate grammar's first form: no public street
             <p data-testid="sfv1-private-drive" className="mt-1 leading-snug text-slate-600">
               {privateDriveSentence(summary.privateDrive)}
+            </p>
+          )}
+          {summary.remainder && summary.lots > 0 && (
+            // engine g18: land the plan does not reach, carried inside oversized lots. "13 lots, all tests
+            // pass" on 29 ac (0 Brittany Park Dr) is a holding answer for 11.7 of them, and the sheet says so.
+            <p data-testid="sfv1-remainder" className="mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 leading-snug text-amber-900">
+              ⚠ {remainderSentence(summary.remainder)}
             </p>
           )}
           {holeOverlap && holeOverlap.lotsOnHoles > 0 && (

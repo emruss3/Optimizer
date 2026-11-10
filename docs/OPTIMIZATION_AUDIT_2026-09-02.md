@@ -2003,3 +2003,48 @@ easement widths are measured across the centreline (16 ft in 24, not 44 in
 56), and the header chip reads "Cannot be built as drawn" where lots sit
 off the parcel. Ranking, sheets and the engine handoff:
 `qa/audits/2026-11-10b/`.
+
+## 41. Batch 5: forty new parcels on engine g18 (2026-11-10)
+
+Forty vacant parcels the engine had not been measured on (32 R / RS in four
+size bands, 8 RM), drawn by the batch recipe with a new salt, run through
+the live engine and the app and read sheet by sheet. Plans 14 of 21,
+refusals 18 of 19; mean likelihood 48.6 on the plans and 74.7 on the
+refusals. The original 70 re-scored on the same engine: plans 23 of 39,
+refusals 28 of 31. All 110: 37 of 60 and 46 of 50. The engine had taken up
+the last handoff (no lot under the district minimum on any plan, common
+land refused, holding answers named, a house across held hillside not a
+lot). Found: access decided 15 of the 40 and the plan and the frontage
+record disagree on five, two of them RM parcels on public roads called
+landlocked; the lane finds nothing on deep narrow strips (Currey Rd,
+Hunters Ln); one-spine plans leave 39% of a 20-ac tract unassigned
+(Dickerson Pike); a failing default stays where a passing lane exists and
+its 24% station carries no grade test (Old Dickerson Pike); nine apartments
+with 235 stalls on RM2-NS, which has no standards row. No app change; the
+scorer now counts the apartments the app sheets when the by-right side is
+skipped for something other than flood. The cohort is 110 parcels. Ranking,
+sheets and the engine handoff: `qa/audits/2026-11-10c/`.
+
+## 42. The engine's g18 note answered, and g19 measured (2026-11-10)
+
+The engine side replied to the run-3 handoff (release g18) and shipped g19
+an hour later, acting on the batch-5 handoff. All 110 parcels were
+harvested again on g19 and the sixteen changed sheets read: plans 39 of 60
+(37 at g18), refusals 46 of 50; the 40 new parcels 16 of 21 and 18 of 19.
+0 Currey Rd and 0 Hunters Ln are fixed by a lane down one side of a narrow
+strip; landlocked parcels with a driveway-width touch or a private lane
+now read "one house by the existing access". App changes from the g18
+contract: the engine's fail list is the list (a figure row with
+`pass: false`, `access.lane_on_held_land`, was being counted as a failed
+check); `remainder_ac` puts the holding answer on the sheet and in the
+header chip ("All 15 checks pass · 11.7 ac not planned"); lane widths come
+from the engine. Found while checking: the overlap gate was discarding two
+whole g18 plans, 0 Hart Ln's 51 lots on a library failure read as a 2 m²
+overlap and 0 Brittany Park Dr's 13 on two driveways sharing 7 m²; it now
+re-measures after cleaning the rings and doubled driveways are one apron.
+Open with the engine: the replacement rule takes the 7-lot lane on 29 flat
+acres where a 17-lot plan passes (Old Clarksville Pike); a lane 86% on held
+land takes the plan (Old Dickerson Pike); multifamily. Five cohort targets
+are proposed to come down and wait for the owner. Reply and addendum:
+`qa/audits/2026-11-10c/APP_REPLY.md`.
+
