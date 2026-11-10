@@ -2048,5 +2048,378 @@
   },
   "judged": 5,
   "why": "landlocked and 1.5 of 2.1 ac over 25%"
+ },
+ {
+  "fid": 679627,
+  "address": "0 KNIGHT DR",
+  "zoning": "RS20",
+  "acres": 2.46,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 85,
+  "why": "No street, no right-of-way, no lane; 1.5 of 2.46 ac steeper than 25%"
+ },
+ {
+  "fid": 674590,
+  "address": "0 BUFFALO ST",
+  "zoning": "R15",
+  "acres": 1.61,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 75,
+  "why": "No boundary on a street: vacant land and house lots all round"
+ },
+ {
+  "fid": 395119,
+  "address": "317 CONNARE DR",
+  "zoning": "RS20",
+  "acres": 1.53,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    2,
+    3
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": false
+  },
+  "judged": 55,
+  "why": "1.53 ac of RS20 with 316 ft on Connare Dr: three lots from the frontage"
+ },
+ {
+  "fid": 677761,
+  "address": "0 NORA LN",
+  "zoning": "RS10",
+  "acres": 2.33,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    5,
+    8
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 35,
+  "why": "2.33 flat ac of RS10 off the end of Eversong Ln: a short stub and 5 to 8 lots"
+ },
+ {
+  "fid": 673347,
+  "address": "0 WRIGHT AVE",
+  "zoning": "RS10",
+  "acres": 2.88,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 50,
+  "why": "Wright Ave is mapped over the neighbours, not on the boundary: one lot until an easement or dedication is shown. Needs a look at Wright Ave"
+ },
+ {
+  "fid": 660480,
+  "address": "3262 KINGS LN",
+  "zoning": "RS40",
+  "acres": 5.44,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    3,
+    5
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 50,
+  "why": "5.44 ac of RS40 behind 94 ft of frontage: a drive or short street and 3 to 5 lots"
+ },
+ {
+  "fid": 672722,
+  "address": "0 PENNINGTON BEND RD",
+  "zoning": "R15",
+  "acres": 3.64,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    5,
+    8
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 20,
+  "why": "3.64 flat ac of R15: 5 to 8 lots, reached from Pennington Bend Rd and not from Briley Pkwy"
+ },
+ {
+  "fid": 676928,
+  "address": "0 BUENA VISTA PIKE",
+  "zoning": "RS15",
+  "acres": 2.89,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 75,
+  "why": "No boundary on a street; vacant land all round"
+ },
+ {
+  "fid": 670613,
+  "address": "0 OLD CHARLOTTE PIKE",
+  "zoning": "R80",
+  "acres": 6.52,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 90,
+  "why": "No street; 3.8 of 6.5 ac steeper than 25%; a wetland"
+ },
+ {
+  "fid": 677434,
+  "address": "0 UNION HILL RD",
+  "zoning": "RS40",
+  "acres": 6.04,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 80,
+  "why": "No street: house lots along 2,200 ft of boundary"
+ },
+ {
+  "fid": 680757,
+  "address": "0 MOSS RD",
+  "zoning": "RS7.5",
+  "acres": 8.48,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    20,
+    32
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 20,
+  "why": "8.48 ac of RS7.5 with 391 ft on Moss Rd, rolling at 14%, nothing over 25%: a street along the slope and 20 to 32 lots"
+ },
+ {
+  "fid": 485279,
+  "address": "4080 BRICK CHURCH PIKE",
+  "zoning": "RS20",
+  "acres": 7.57,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 85,
+  "why": "5.8 of 7.6 ac steeper than 25%: one house on the lot of record"
+ },
+ {
+  "fid": 672095,
+  "address": "0 HUDSON RD",
+  "zoning": "RS80",
+  "acres": 15.47,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    5,
+    8
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 55,
+  "why": "15.5 flat ac of RS80 with 690 ft on Hudson Rd: 5 to 8 two-acre lots"
+ },
+ {
+  "fid": 699525,
+  "address": "4775 DRAKES BRANCH RD",
+  "zoning": "RS15",
+  "acres": 30.41,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    48,
+    70
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 50,
+  "why": "30 ac of RS15 at 8% mean slope, 1.3 ac held for the creek: 48 to 70 lots"
+ },
+ {
+  "fid": 300575,
+  "address": "3432 HOBSON PIKE",
+  "zoning": "RS80",
+  "acres": 15.41,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    4,
+    7
+   ],
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 50,
+  "why": "A 265-ft-wide strip of RS80 running 2,500 ft back from Hobson Pike: 4 to 7 lots off one drive or street"
+ },
+ {
+  "fid": 666342,
+  "address": "1021 HITT LN",
+  "zoning": "R20",
+  "acres": 28.79,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    1,
+    4
+   ],
+   "product": "lots",
+   "noStreet": true,
+   "altRefuse": true
+  },
+  "judged": 75,
+  "why": "A 49-ft pole to Hitt Ln and 13 of 28.8 ac steeper than 25%: one to four houses, or nothing"
+ },
+ {
+  "fid": 677012,
+  "address": "0 WHITES CREEK PIKE",
+  "zoning": "RM9",
+  "acres": 1.92,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 20,
+  "why": "A 1.9-ac strip with no boundary on a street; 17 ft of a mapped lane within reach over other land"
+ },
+ {
+  "fid": 660601,
+  "address": "2840 OLD FRANKLIN RD",
+  "zoning": "RM15",
+  "acres": 8.69,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    100,
+    130
+   ],
+   "product": "any",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 60,
+  "why": "8.7 ac of RM15 with street frontage: 100 to 130 homes"
+ },
+ {
+  "fid": 679632,
+  "address": "0 WHITES CREEK PIKE",
+  "zoning": "RM4",
+  "acres": 4.31,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "plan",
+   "lots": [
+    12,
+    17
+   ],
+   "product": "attached",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 15,
+  "why": "4.3 ac of RM4, density 17: attached homes along Whites Creek Pike"
+ },
+ {
+  "fid": 405068,
+  "address": "262 MARTINGALE DR",
+  "zoning": "RM20",
+  "acres": 2.04,
+  "batch": 6,
+  "audit": "qa/audits/2026-11-10d",
+  "target": {
+   "kind": "refuse",
+   "lots": null,
+   "product": "lots",
+   "noStreet": false,
+   "altRefuse": false
+  },
+  "judged": 20,
+  "why": "No street: the open edge is the railroad; other owners on the rest"
  }
 ]

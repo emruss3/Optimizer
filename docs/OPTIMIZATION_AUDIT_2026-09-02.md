@@ -2048,3 +2048,23 @@ land takes the plan (Old Dickerson Pike); multifamily. Five cohort targets
 are proposed to come down and wait for the owner. Reply and addendum:
 `qa/audits/2026-11-10c/APP_REPLY.md`.
 
+## 43. Batch 6 and the batch-5 re-run on engine g21 (2026-11-10)
+
+The owner asked for 20 more parcels and the last 40 again, and whether the
+engine is getting better. The engine moved from g19 to g20 to g21 during
+the day; the run was taken twice and the second pass, with one release name
+before and after, is the measurement. On the same 40: plans 14, 16, 17 of
+21 across g18 mid-patch, g19 and g21; refusals 18 of 19 throughout. On 20
+new parcels: plans 8 of 11, refusals 7 of 9. Two of the passes are not
+real (a lane the engine's own rule blocks; lots fronting Briley Pkwy), so
+the honest read is no movement since g19.
+
+The handoff is ranked by cost for the first time. First: the street grade
+test reads raw ground one 100-ft station at a time and throws out 155 lots
+of street plans on four parcels, leaving 110. Second: streets loaded on one
+side and lots at twice the minimum. Third: multifamily, where the access
+guard is off unless the caller asks for it, parking fills the site (237
+stalls for 17 homes) and apartments are drawn where attached homes fit.
+The cohort is 130 parcels. App: the panel no longer repeats the engine's
+own note of the unplanned land. Write-up and handoff:
+`qa/audits/2026-11-10d/`.

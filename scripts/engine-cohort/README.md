@@ -4,9 +4,9 @@ Eric, 2026-11-09: "If we aren't getting better each time we do this, we need
 to re-focus." Random draws measure the land as much as the engine, and each
 batch sent the engine ten asks. This is the fixed measure instead.
 
-`cohort.json` holds every parcel from the audit batches (batches 1–5,
-2026-11-04 to 2026-11-10: 110 parcels, 92 R/RS and 18 RM; batch 5 added 40
-on 2026-11-10) with what a civil
+`cohort.json` holds every parcel from the audit batches (batches 1–6,
+2026-11-04 to 2026-11-10: 130 parcels, 108 R/RS and 22 RM; batch 5 added 40
+and batch 6 added 20 on 2026-11-10) with what a civil
 engineer or developer would draw on it — the **target**:
 
 - `kind: "refuse"` — nothing new belongs: 0 lots, skipped, or the parcel as
@@ -117,6 +117,16 @@ as `_engine_release` and `_engine_release_after`. The run file carries
 engine side (`batch5_targets.json` beside it), the districts ending in
 "-NS" that have no standards row, and what an access rule on multifamily
 would do to the board.
+
+g21, 2026-11-10 (`runs/2026-11-10_g21.json`, write-up and handoff in
+`qa/audits/2026-11-10d/`): 60 parcels, the 40 of batch 5 and 20 new ones
+(batch 6), which makes the cohort 130. The other 70 were not run. Batch 5:
+plans 17 of 21, refusals 18 of 19 (g19: 16 and 18). Batch 6: plans 8 of 11,
+refusals 7 of 9. Two passes are not real and the scorer cannot see it:
+1055 Old Dickerson Pike takes a lane the engine's own rule blocks, and
+0 Pennington Bend Rd fronts its lots on Briley Pkwy. The release changed
+twice during the first harvest; the run is the second, taken with one
+release name before and after.
 
 Proposed and not applied (the owner's call; see `APP_REPLY.md` §4): lower
 targets for 1019 Hitt Ln, 8282 Charlotte Pike, 0 Newsom Station Rd,

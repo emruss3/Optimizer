@@ -401,6 +401,28 @@ describe('SfV1Panel — engine g18: the holding answer and a figure that is not 
     expect(screen.getByTestId('sfv1-remainder').textContent).toBe('⚠ 11.7 ac inside 7 oversized lots is not planned: no street, terrace or lane drawn here reaches it. The lot count is a holding answer for that land, not a subdivision of it.');
   });
 
+  it('does not repeat the engine\'s own note of the same land (g20, 0 Moss Rd)', () => {
+    const note = '6.10 ac is carried inside 3 oversized lot(s) and is not planned: no street, terrace or lane drawn here serves it with lots of its own; this is a holding answer for that land, not a subdivision of it';
+    const other = 'no new street or lane asked for: lots from the existing frontage only';
+    render(
+      <SfV1Panel
+        summary={{ ...SUMMARY, lots: 9, pattern: 'frontage lots, no new street', fails: [], notes: [other, note], remainder: { acres: 6.1, lots: 3 } }}
+        override={{}}
+        onOverride={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId('sfv1-remainder').textContent).toContain('6.1 ac inside 3 oversized lots is not planned');
+    const notes = screen.getByTestId('sfv1-notes').textContent ?? '';
+    expect(notes).toContain(other);
+    expect(notes).not.toContain('carried inside');
+  });
+
+  it('keeps the engine\'s note when the panel has no holding line of its own', () => {
+    const note = '0.40 ac is carried inside 1 oversized lot(s) and is not planned: no street, terrace or lane drawn here serves it';
+    render(<SfV1Panel summary={{ ...SUMMARY, notes: [note], remainder: null }} override={{}} onOverride={() => undefined} />);
+    expect(screen.getByTestId('sfv1-notes').textContent).toContain('carried inside');
+  });
+
   it('shows no holding line when the plan reaches the land', () => {
     render(<SfV1Panel summary={{ ...SUMMARY, remainder: null }} override={{}} onOverride={() => undefined} />);
     expect(screen.queryByTestId('sfv1-remainder')).toBeNull();

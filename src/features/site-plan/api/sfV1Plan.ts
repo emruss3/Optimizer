@@ -317,6 +317,11 @@ export function passesOverLimit(t: SfV1Test): { over: number; ftOver: number | n
 
 /** The engine's steep-ground caveat ("ground averages 36% slope with 325 ft of fall …"):
  *  the engine measures terrain but does not lay out by it yet, so the panel leads with it. */
+/** The engine's own note of the land left unplanned inside oversized lots (g20: `remainder_ac` on every plan). */
+export function isRemainderNote(note: string): boolean {
+  return /\bcarried inside \d+ oversized lot/i.test(note) && /not planned/i.test(note);
+}
+
 export function steepGroundNote(notes: string[]): string | null {
   return notes.find(n => /\bslope\b/i.test(n) && /\bfall\b/i.test(n)) ?? null;
 }
