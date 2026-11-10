@@ -179,6 +179,9 @@ const missing = rows.filter(r => !r.answer);
 if (missing.length) console.log(`\n${missing.length} not in this run: ${missing.map(r => r.fid).join(', ')}`);
 if (args.out) {
   fs.mkdirSync(path.dirname(args.out), { recursive: true });
-  fs.writeFileSync(args.out, JSON.stringify({ engine: args.engine ?? null, scoredAt: new Date().toISOString(), board, rows: rows.map(r => ({ fid: r.fid, address: r.address, zoning: r.zoning, target: r.target, answer: r.answer, verdict: r.verdict })) }, null, 1));
+  // the release the engine named for itself when the store was harvested (run.mjs records it), beside the label
+  const release = typeof store._engine_release === 'string' ? store._engine_release : null;
+  const releaseAfter = typeof store._engine_release_after === 'string' ? store._engine_release_after : release;
+  fs.writeFileSync(args.out, JSON.stringify({ engine: args.engine ?? null, engineRelease: release, engineReleaseChangedDuringRun: release != null && releaseAfter !== release, scoredAt: new Date().toISOString(), board, rows: rows.map(r => ({ fid: r.fid, address: r.address, zoning: r.zoning, target: r.target, answer: r.answer, verdict: r.verdict })) }, null, 1));
   console.log(`\nsaved ${args.out}`);
 }

@@ -1,6 +1,8 @@
 {
  "engine": "g19",
- "scoredAt": "2026-11-10T21:43:43.707Z",
+ "engineRelease": "g19",
+ "engineReleaseChangedDuringRun": false,
+ "scoredAt": "2026-11-10T22:02:39.400Z",
  "board": {
   "parcels": 110,
   "run": 110,
