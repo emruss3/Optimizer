@@ -2003,3 +2003,25 @@ easement widths are measured across the centreline (16 ft in 24, not 44 in
 56), and the header chip reads "Cannot be built as drawn" where lots sit
 off the parcel. Ranking, sheets and the engine handoff:
 `qa/audits/2026-11-10b/`.
+
+## 41. Batch 5: forty new parcels on engine g18 (2026-11-10)
+
+Forty vacant parcels the engine had not been measured on (32 R / RS in four
+size bands, 8 RM), drawn by the batch recipe with a new salt, run through
+the live engine and the app and read sheet by sheet. Plans 14 of 21,
+refusals 18 of 19; mean likelihood 48.6 on the plans and 74.7 on the
+refusals. The original 70 re-scored on the same engine: plans 23 of 39,
+refusals 28 of 31. All 110: 37 of 60 and 46 of 50. The engine had taken up
+the last handoff (no lot under the district minimum on any plan, common
+land refused, holding answers named, a house across held hillside not a
+lot). Found: access decided 15 of the 40 and the plan and the frontage
+record disagree on five, two of them RM parcels on public roads called
+landlocked; the lane finds nothing on deep narrow strips (Currey Rd,
+Hunters Ln); one-spine plans leave 39% of a 20-ac tract unassigned
+(Dickerson Pike); a failing default stays where a passing lane exists and
+its 24% station carries no grade test (Old Dickerson Pike); nine apartments
+with 235 stalls on RM2-NS, which has no standards row. No app change; the
+scorer now counts the apartments the app sheets when the by-right side is
+skipped for something other than flood. The cohort is 110 parcels. Ranking,
+sheets and the engine handoff: `qa/audits/2026-11-10c/`.
+

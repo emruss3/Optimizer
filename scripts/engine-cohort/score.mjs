@@ -93,7 +93,10 @@ export function rmAnswer(plan, comp, mf) {
   if (nbLots > 0 && (units == null || nbLots > units) && nbBuildable && nbDrawable) {
     return { ...base, lots: nbLots, product: nbAttached ? 'attached' : 'lots', fails: nbFails, from: bestRow.requested, streetFt: num(bestRow.street_ft) ?? 0 };
   }
-  if (units != null && units > 0) return { ...base, lots: units, product: 'apartments', fails: [], from: 'multifamily', streetFt: 0 };
+  // The app holds the apartments out as a what-if only when the by-right side is skipped for the flood
+  // hazard area; skipped for any other reason (no standards row, a frontage the plan does not accept),
+  // the sheet stays multifamily, so the apartments are the answer (0 Lebanon Pike, batch 5).
+  if (units != null && units > 0) return { ...base, status: base.status === 'skipped' && !floodSkip ? 'done' : base.status, lots: units, product: 'apartments', fails: [], from: 'multifamily', streetFt: 0 };
   return { ...base, lots: 0, product: 'none', fails: nbFails, from: 'none', streetFt: 0 };
 }
 
