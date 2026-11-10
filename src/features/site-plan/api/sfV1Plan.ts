@@ -464,15 +464,6 @@ function members3857(wkt: string | null | undefined): Array<{ body: Polygon; res
   }
   return out;
 }
-/** Area of an EPSG:2274 (US ft) WKT in square feet: outer rings less their holes. */
-function areaSf2274(wkt: string | null | undefined): number {
-  const ring = (r: Position[]) => {
-    let a = 0;
-    for (let i = 0; i < r.length - 1; i++) a += r[i]![0]! * r[i + 1]![1]! - r[i + 1]![0]! * r[i]![1]!;
-    return Math.abs(a) / 2;
-  };
-  return wktPolygons(wkt).reduce((sum, p) => sum + p.coordinates.reduce((s, r, k) => s + (k === 0 ? ring(r) : -ring(r)), 0), 0);
-}
 /** Length of an EPSG:2274 WKT line in feet. */
 function lengthFt2274(wkt: string | null | undefined): number {
   return wktLines(wkt).reduce((sum, l) => {
@@ -480,6 +471,46 @@ function lengthFt2274(wkt: string | null | undefined): number {
     for (let i = 1; i < l.coordinates.length; i++) L += Math.hypot(l.coordinates[i]![0]! - l.coordinates[i - 1]![0]!, l.coordinates[i]![1]! - l.coordinates[i - 1]![1]!);
     return sum + L;
   }, 0);
+}
+/** Width in feet of an EPSG:2274 band (pavement, easement) measured across its
+ *  centreline: twice the distance from the line to the band's edge, sampled at
+ *  three stations along the longest line, the narrowest kept. Area over length
+ *  counts a turnaround as width (a 16-ft lane with a 50-ft bulb on a 207-ft
+ *  drive read "44-ft lane"); a station inside the bulb reads wide and loses to
+ *  the two on the lane. */
+export function bandWidthFt2274(bandWkt: string | null | undefined, lineWkt: string | null | undefined): number | null {
+  const rings = wktPolygons(bandWkt).flatMap(p => p.coordinates);
+  const lines = wktLines(lineWkt).map(l => l.coordinates).filter(c => c.length >= 2);
+  if (rings.length === 0 || lines.length === 0) return null;
+  const lenOf = (c: Position[]) => c.slice(1).reduce((L, q, i) => L + Math.hypot(q[0]! - c[i]![0]!, q[1]! - c[i]![1]!), 0);
+  const line = lines.reduce((a, b) => (lenOf(b) > lenOf(a) ? b : a));
+  const total = lenOf(line);
+  if (!(total > 0)) return null;
+  const at = (f: number): [number, number] => {
+    let t = total * f;
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1]!, b = line[i]!;
+      const l = Math.hypot(b[0]! - a[0]!, b[1]! - a[1]!);
+      if (t <= l && l > 0) return [a[0]! + ((b[0]! - a[0]!) * t) / l, a[1]! + ((b[1]! - a[1]!) * t) / l];
+      t -= l;
+    }
+    const e = line[line.length - 1]!;
+    return [e[0]!, e[1]!];
+  };
+  const toSeg = (p: [number, number], a: Position, b: Position) => {
+    const dx = b[0]! - a[0]!, dy = b[1]! - a[1]!;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]!) * dx + (p[1] - a[1]!) * dy) / l2));
+    return Math.hypot(p[0] - (a[0]! + t * dx), p[1] - (a[1]! + t * dy));
+  };
+  let best = Infinity;
+  for (const f of [0.2, 0.5, 0.8]) {
+    const p = at(f);
+    let d = Infinity;
+    for (const r of rings) for (let i = 1; i < r.length; i++) d = Math.min(d, toSeg(p, r[i - 1]!, r[i]!));
+    best = Math.min(best, 2 * d);
+  }
+  return Number.isFinite(best) && best > 0 ? Math.round(best) : null;
 }
 /** A path drawn as a thin band: each segment of the EPSG:2274 line becomes a
  *  quad ~8 ft wide in the canvas frame, unioned into one piece per line. */
@@ -613,14 +644,15 @@ export function sfV1ToElements(
   const basis: SfV1Basis = opts.overrideRequested || resp.basis === 'override' ? 'override' : 'by_right';
   // The shared private drive (engine g13): the band is an access easement and
   // the pavement a private lane, not a public street — measured off the
-  // drawing (area over centreline length), so the label follows the engine.
+  // drawing across the centreline, so the label follows the engine and a
+  // turnaround at the end does not read as width.
   const drivePlan = isDrivePattern(str(resp.pattern));
   const driveLenFt = drivePlan ? lengthFt2274(resp.street_lines_wkt) : 0;
   const privateDrive = drivePlan
     ? {
-        easementFt: driveLenFt > 0 ? Math.round(areaSf2274(resp.row_wkt) / driveLenFt) || null : null,
-        laneFt: driveLenFt > 0 ? Math.round(areaSf2274(resp.pave_wkt) / driveLenFt) || null : null,
-        lengthFt: driveLenFt > 0 ? Math.round(driveLenFt) : num(m.street_ft),
+        easementFt: bandWidthFt2274(resp.row_wkt, resp.street_lines_wkt),
+        laneFt: bandWidthFt2274(resp.pave_wkt, resp.street_lines_wkt),
+        lengthFt: driveLenFt > 0 ? Math.round(driveLenFt) : (num(m.drive_ft) ?? num(m.street_ft)),
         maxLots: num(tests.find(t => t.id === 'access.private_drive_max_lots')?.limit),
       }
     : null;
@@ -1397,8 +1429,18 @@ export function chooseAutoBest(
     return normalizeTests(p.tests).filter(t => t.pass === false).length;
   };
   const metricsOf = (p: Record<string, unknown>) => (p.metrics && typeof p.metrics === 'object' ? (p.metrics as Record<string, unknown>) : {});
-  const defaultStreetFt = num(metricsOf(def as Record<string, unknown>).street_ft);
-  const bestStreetFt = num(metricsOf(best).street_ft);
+  // What each plan builds: new public street plus private drive. Engine g17
+  // reports a shared drive as street_ft 0 with its length in drive_ft, so on
+  // street_ft alone a 536-ft drive read "0 ft" and beat a 520-ft street at
+  // the same ten lots (0 Longwood Pl).
+  const builtFt = (p: Record<string, unknown>): number | null => {
+    const mm = metricsOf(p);
+    const st = num(mm.street_ft);
+    const dr = num(mm.drive_ft);
+    return st == null && dr == null ? null : (st ?? 0) + (dr ?? 0);
+  };
+  const defaultStreetFt = builtFt(def as Record<string, unknown>);
+  const bestStreetFt = builtFt(best);
   const defaultFails = failsOf(def as Record<string, unknown>);
   const bestFails = failsOf(best);
   // Engine g15 (0 Hillwood Blvd): a grid or neighborhood request can fall back

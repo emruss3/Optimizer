@@ -179,3 +179,19 @@ describe('KpiStrip — a generator error is not "no new lots" (8192 Charlotte Pi
     expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('Generator error · no plan');
   });
 });
+
+describe('KpiStrip — lots on land that is not the parcel (1716 Red Jacket Dr, 2026-11-10)', () => {
+  it('does not say every check passes over a plan that cannot be built as drawn', () => {
+    render(<KpiStrip metrics={{ ...base, totalUnits: 9 } as SiteMetrics} investment={null}
+      subdivision={{ lots: 9, densityDuAc: 0.21, fails: [], status: 'done', tests: ['block.length', 'street.grade_max'], offParcelLots: 7 }} />);
+    const chip = screen.getByTestId('kpi-subdivision-verdict');
+    expect(chip.textContent).toBe('Cannot be built as drawn · 7 lots off the parcel');
+    expect(chip.getAttribute('title')).toContain('7 of 9 lots lie partly on land inside the outline that is not this parcel');
+  });
+
+  it('a plan with no lot off the parcel keeps its verdict', () => {
+    render(<KpiStrip metrics={{ ...base, totalUnits: 9 } as SiteMetrics} investment={null}
+      subdivision={{ lots: 9, densityDuAc: 0.21, fails: [], status: 'done', tests: ['block.length', 'street.grade_max'], offParcelLots: 0 }} />);
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('All 2 checks pass');
+  });
+});

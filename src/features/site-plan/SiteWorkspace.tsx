@@ -3271,7 +3271,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             thV3OnSheet && thV3Summary
               ? { lots: thV3Summary.homes, densityDuAc: thV3Summary.homesPerAcre, fails: thV3Summary.requiredFails, status: 'done', label: 'Townhomes', densityLabel: 'homes / ac' }
               : sfV1Summary && !displayElements.some(e => e.id.startsWith('sfseed-'))
-              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status, tests: sfV1Summary.tests.map(t => t.id) }
+              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status, tests: sfV1Summary.tests.map(t => t.id), offParcelLots: sfV1HoleOverlap?.lotsOnHoles ?? null }
               : legacyLots != null
               // the legacy lot generator's answer: a lot count, provisional (no code tests ran on it)
               ? { lots: legacyLots, densityDuAc: mappedAcres && mappedAcres > 0 ? Math.round((legacyLots / mappedAcres) * 100) / 100 : null, fails: [], status: 'done', legacy: true }
