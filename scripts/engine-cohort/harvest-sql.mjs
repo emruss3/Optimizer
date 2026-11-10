@@ -66,4 +66,7 @@ select (jsonb_build_object('_plan_ms:${f}', round(extract(epoch from (select t f
 const out = [];
 for (let i = 0; i < sf.length; i += per) out.push(sfStatement(sf.slice(i, i + per)));
 for (const c of rm) out.push(rmStatement(c));
-process.stdout.write(out.map((s, i) => `-- statement ${i + 1} of ${out.length}\n${s}\n`).join('\n'));
+// Run this first and last: if the two answers differ, the engine changed during the harvest and the store
+// mixes two releases (it happened twice on 2026-11-10). Put the value in the store as "_engine_release".
+const release = `-- the release the engine names itself; run before the first statement and after the last\nselect public.fn_sf_v1_params()->>'engine_release' as engine_release;\n\n`;
+process.stdout.write(release + out.map((s, i) => `-- statement ${i + 1} of ${out.length}\n${s}\n`).join('\n'));

@@ -29,7 +29,6 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, arr) =>
   if (a.startsWith('--')) acc.push([a.slice(2), arr[i + 1] && !arr[i + 1].startsWith('--') ? arr[i + 1] : true]);
   return acc;
 }, []));
-const engine = args.engine ?? 'engine';
 const only = args.only ? new Set(String(args.only).split(',').map(s => s.trim())) : null;
 const cohort = JSON.parse(fs.readFileSync(path.join(HERE, 'cohort.json'), 'utf8')).filter(c => !only || only.has(String(c.fid)));
 
@@ -53,7 +52,21 @@ async function rpc(fn, body, timeoutMs = 25_000) {
   }
 }
 
-const store = { _timings: {} };
+// The release the engine names itself (fn_sf_v1_params()->>'engine_release', from g18 on). Read before the
+// run and again after it: on 2026-11-10 the engine changed twice in the middle of a harvest, and a run that
+// straddles a release is not a measurement of either.
+const releaseOf = async () => {
+  const p = await rpc('fn_sf_v1_params', {});
+  return p && typeof p === 'object' && typeof p.engine_release === 'string' ? p.engine_release : null;
+};
+const releaseBefore = await releaseOf();
+const engine = args.engine ?? releaseBefore ?? 'engine';
+if (args.engine && releaseBefore && args.engine !== releaseBefore) {
+  console.warn(`--engine ${args.engine} but the engine names itself ${releaseBefore}: the run is labelled ${args.engine} and records both.`);
+}
+console.log(`engine release: ${releaseBefore ?? 'not reported'}`);
+
+const store = { _timings: {}, _engine_release: releaseBefore };
 const t0 = Date.now();
 for (const c of cohort) {
   const fid = c.fid;
@@ -82,6 +95,11 @@ for (const c of cohort) {
   console.log(`${fid} ${c.address} (${c.zoning}) — ${a} · ${Date.now() - started} ms`);
 }
 console.log(`\n${cohort.length} parcels in ${Math.round((Date.now() - t0) / 1000)} s`);
+const releaseAfter = await releaseOf();
+store._engine_release_after = releaseAfter;
+if (releaseAfter !== releaseBefore) {
+  console.error(`\nThe engine release changed during the run (${releaseBefore ?? 'none'} → ${releaseAfter ?? 'none'}). Run it again: this store mixes two engines.`);
+}
 
 const stamp = new Date().toISOString().slice(0, 10);
 const storePath = path.join(HERE, 'runs', `${stamp}_${engine}.store.json`);

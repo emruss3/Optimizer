@@ -82,7 +82,9 @@ rule compares what each plan builds, public street plus private drive
 (`metrics.drive_ft`), since a shared drive reports `street_ft: 0`.
 
 g18, 2026-11-10 (`runs/2026-11-10_g18.json`, write-up in
-`qa/audits/2026-11-10c/`; again no migration recorded): all 110. Plans 37
+`qa/audits/2026-11-10c/`). **A mid-patch measurement: the engine side was
+still applying g18 while this harvest ran, so the store mixes two engines.
+It is kept as a record. Do not use it as a baseline.** All 110. Plans 37
 of 60, refusals 46 of 50. The original 70: plans 23 of 39, refusals 28 of
 31 (g17 under today's targets: 23 and 26). The 40 new parcels of batch 5:
 plans 14 of 21, refusals 18 of 19. The competition on 1716 Red Jacket Dr
@@ -104,7 +106,19 @@ plans 39 of 60, refusals 46 of 50. Fixed since g18: 0 Currey Rd and
 passed fell. The reply to the engine side with the asks that stand is
 `qa/audits/2026-11-10c/APP_REPLY.md`.
 
-Proposed and not applied (the owner's call; see that reply, §4): lower
+Since that run the runner names the engine it measured. `run.mjs` reads
+`fn_sf_v1_params()->>'engine_release'` before the first parcel and after
+the last, labels the run with it when `--engine` is not given, and says to
+run again when the two reads differ. `harvest-sql.mjs` prints the same
+query to run before and after a SQL harvest; put the answers in the store
+as `_engine_release` and `_engine_release_after`. The run file carries
+`engineRelease` and `engineReleaseChangedDuringRun`. The second reply,
+`qa/audits/2026-11-10c/APP_REPLY_2.md`, has the batch-5 target list for the
+engine side (`batch5_targets.json` beside it), the districts ending in
+"-NS" that have no standards row, and what an access rule on multifamily
+would do to the board.
+
+Proposed and not applied (the owner's call; see `APP_REPLY.md` §4): lower
 targets for 1019 Hitt Ln, 8282 Charlotte Pike, 0 Newsom Station Rd,
 0 Campbell Rd and 0 Old Hickory Blvd R15, where the engine measured that no
 lane holds grade into the land. They would read 44 of 60 on g19.
