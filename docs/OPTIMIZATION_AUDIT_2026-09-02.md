@@ -1983,3 +1983,23 @@ first tier. App fixes from the read: flag lots read by member (the pole is
 the engine omits it, an engine error shown as an engine error with nothing
 substituted. Ranking, sheets and the engine handoff:
 `qa/audits/2026-11-10/`.
+
+## 40. The engine cohort, run 3 (g17): the lane rule lands (2026-11-10)
+
+The engine changed after the g16 handoff, so all 70 parcels were harvested
+and scored again: plans 24 of 40 (was 19), refusals 26 of 30. Mean
+likelihood on the 40 plans 42.2 → 48.0; plans at 60 or better 10 → 15.
+Fixed: 3345 Pugh Rd, 7695 Old Charlotte Pike and 0 Neelys Bend Rd (estate
+lots on a shared private drive), 0 Clovernook Dr (two front lots and a
+flag), 8192 Charlotte Pike (no division by zero). `best_requested` is back;
+the grade test is bounded at the peak; street plans that fail grade by a
+wide margin are withdrawn. Found in the read: lots under the district
+minimum on 21 plans with no test for it; three parcels planned across other
+owners' lots inside their outline; a full turnaround on every lane; the
+frontage-lot fallback under-draws Brittany Park (13 on 29 ac) and Red
+Jacket (9 on 38.7 ac). App fixes: a drive is compared by its own length
+(a 536-ft lane no longer beats a 520-ft street as "0 ft"), lane and
+easement widths are measured across the centreline (16 ft in 24, not 44 in
+56), and the header chip reads "Cannot be built as drawn" where lots sit
+off the parcel. Ranking, sheets and the engine handoff:
+`qa/audits/2026-11-10b/`.

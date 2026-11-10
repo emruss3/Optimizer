@@ -59,7 +59,7 @@ export function bestRequestedOf(comp) {
 /** The by-right side's answer: the plan, or the competition's best when the app's auto-best rule would take it. */
 export function sfAnswer(plan, comp) {
   const a = { status: plan?.status ?? (plan?.error ? 'error' : plan ? 'done' : 'missing'), lots: num(plan?.lots) ?? 0, pattern: plan?.pattern ?? null,
-    streetFt: num(plan?.metrics?.street_ft) ?? 0, fails: codeFails(plan?.fails), flags: (plan?.fails ?? []).filter(f => QUALITY_FLAGS.has(f)),
+    streetFt: num(plan?.metrics?.street_ft) ?? 0, builtFt: (num(plan?.metrics?.street_ft) ?? 0) + (num(plan?.metrics?.drive_ft) ?? 0), fails: codeFails(plan?.fails), flags: (plan?.fails ?? []).filter(f => QUALITY_FLAGS.has(f)),
     reason: plan?.reason ?? null, from: 'default', product: 'lots', hillsideAc: num(plan?.hillside_ac), buildableAc: num(plan?.buildable_after_holds_ac) };
   if (a.status === 'error') { a.lots = 0; a.reason = plan.error ?? plan.reason ?? null; return a; }
   if (plan?.status === 'skipped') { a.lots = 0; return a; }
@@ -69,8 +69,10 @@ export function sfAnswer(plan, comp) {
     const bLots = num(bestRow.lots) ?? 0;
     const bFails = codeFails(bestRow.fails);
     const bStreet = num(bestRow.street_ft) ?? num(best.metrics?.street_ft) ?? 0;
+    // what the best plan builds: public street plus private drive (g17 reports a drive as street_ft 0 with drive_ft)
+    const bBuilt = bStreet + (num(best.metrics?.drive_ft) ?? 0);
     const buildable = comp.best_buildable ?? bFails.length === 0;
-    const takes = buildable && (a.lots === 0 || bLots > a.lots || (bLots === a.lots && (bStreet < a.streetFt || bFails.length < a.fails.length)));
+    const takes = buildable && (a.lots === 0 || bLots > a.lots || (bLots === a.lots && (bBuilt < a.builtFt || bFails.length < a.fails.length)));
     if (takes) return { ...a, lots: bLots, pattern: bestRow.pattern ?? best.pattern ?? null, streetFt: bStreet, fails: bFails, from: bestRow.requested };
   }
   return a;

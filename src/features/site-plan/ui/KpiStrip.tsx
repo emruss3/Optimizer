@@ -56,6 +56,10 @@ const KpiStrip: React.FC<{
     tests?: string[];
     /** a plan from a legacy generator: provisional, its inputs unverified */
     legacy?: boolean;
+    /** lots drawn partly on land inside the outline that is not this parcel (other owners' lots in its holes):
+     *  the panel says the plan cannot be built as drawn, so the chip cannot say every check passes
+     *  (1716 Red Jacket Dr, 2026-11-10: "All 13 checks pass" over "7 of 9 lots lie partly on land that is not this parcel") */
+    offParcelLots?: number | null;
   } | null;
   /**
    * Why there are no metrics: a solve in flight, a solve that failed, a
@@ -82,15 +86,19 @@ const KpiStrip: React.FC<{
   if (subdivision) {
     const n = subdivision.fails.length;
     const checks = subdivision.tests ?? [];
+    const offParcel = subdivision.offParcelLots ?? 0;
     const chip =
       subdivision.legacy ? { tone: 'bg-amber-50 text-amber-700', text: 'Legacy generator · provisional', ok: false }
       : subdivision.status === 'error' ? { tone: 'bg-red-50 text-red-700', text: 'Generator error · no plan', ok: false }
       : subdivision.status === 'skipped' ? { tone: 'bg-amber-50 text-amber-700', text: 'Skipped by the generator', ok: false }
       : subdivision.lots === 0 ? { tone: 'bg-slate-100 text-slate-700', text: 'No new lots by right', ok: false }
+      : offParcel > 0 ? { tone: 'bg-red-50 text-red-700', text: `Cannot be built as drawn · ${offParcel} lot${offParcel === 1 ? '' : 's'} off the parcel`, ok: false }
       : n > 0 ? { tone: 'bg-red-50 text-red-700', text: checks.length > 0 ? `${n} of ${checks.length} check${checks.length === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
       // "All tests pass" named no scope (4727 Post Rd): the count and the list travel with it
       : { tone: 'bg-green-50 text-green-700', text: checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass', ok: true };
-    const title = n > 0
+    const title = offParcel > 0
+      ? `${offParcel} of ${subdivision.lots} lots lie partly on land inside the outline that is not this parcel (other owners' lots). The generator planned on the outer boundary.${n > 0 ? ` Also fails: ${subdivision.fails.join(', ')}.` : ''}`
+      : n > 0
       ? `Fails: ${subdivision.fails.join(', ')}`
       : subdivision.legacy
         ? 'Drawn by the legacy generator while the by-right generator was unreachable: no code tests ran on this plan.'

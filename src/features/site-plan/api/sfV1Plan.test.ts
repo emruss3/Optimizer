@@ -368,6 +368,35 @@ describe('lots on a parcel\'s holes (0 Longwood Pl, 2026-11-04)', () => {
   });
 });
 
+describe('a shared drive is measured as what it builds (engine g17)', () => {
+  it('a turnaround at the end of a drive is not lane width', async () => {
+    const { bandWidthFt2274 } = await import('./sfV1Plan');
+    // a 16-ft lane 207 ft long ending in a 100-ft turnaround, one outline (0 Stewarts Ferry Pike read "44-ft lane")
+    const pave = `POLYGON((${X} ${Y - 8},${X + 157} ${Y - 8},${X + 157} ${Y - 50},${X + 257} ${Y - 50},${X + 257} ${Y + 50},${X + 157} ${Y + 50},${X + 157} ${Y + 8},${X} ${Y + 8},${X} ${Y - 8}))`;
+    const row = `POLYGON((${X} ${Y - 12},${X + 153} ${Y - 12},${X + 153} ${Y - 54},${X + 261} ${Y - 54},${X + 261} ${Y + 54},${X + 153} ${Y + 54},${X + 153} ${Y + 12},${X} ${Y + 12},${X} ${Y - 12}))`;
+    const line = `MULTILINESTRING((${X} ${Y},${X + 207} ${Y}))`;
+    expect(bandWidthFt2274(pave, line)).toBe(16);
+    expect(bandWidthFt2274(row, line)).toBe(24);
+    expect(bandWidthFt2274(null, line)).toBeNull();
+    expect(bandWidthFt2274(pave, null)).toBeNull();
+    const { summary } = sfV1ToElements({ ...PLAN, pattern: 'shared private drive', lots: 4, street_lines_wkt: line, row_wkt: row, pave_wkt: pave, metrics: { ...(PLAN.metrics ?? {}), street_ft: 0, drive_ft: 207 }, fails: [] });
+    expect(summary.privateDrive).toMatchObject({ easementFt: 24, laneFt: 16, lengthFt: 207 });
+  });
+
+  it('the same lots on a longer drive do not take the sheet from a shorter street', async () => {
+    const { chooseAutoBest, autoBestSentence } = await import('./sfV1Plan');
+    const street = { status: 'done', lots: 10, pattern: 'single street', metrics: { street_ft: 520 }, fails: [] };
+    // 0 Longwood Pl: the drive reports street_ft 0 and drive_ft 536
+    expect(chooseAutoBest({ best_requested: 'drive', best_buildable: true, best: { lots: 10, pattern: 'shared private drive', metrics: { street_ft: 0, drive_ft: 536 }, fails: [] } }, street)).toBeNull();
+    const shorter = chooseAutoBest({ best_requested: 'drive', best_buildable: true, best: { lots: 10, pattern: 'shared private drive', metrics: { street_ft: 0, drive_ft: 300 }, fails: [] } }, street)!;
+    expect(shorter).toMatchObject({ why: 'same_lots', bestStreetFt: 300, defaultStreetFt: 520 });
+    expect(autoBestSentence(shorter)).toBe('The shared private drive draws the same 10 lots as the default (loop) grammar on 300 ft of new private drive against 520 ft, so the sheet shows it. It is still by right.');
+    // and a default that is itself a drive is measured the same way
+    const drive = { status: 'done', lots: 4, pattern: 'shared private drive', metrics: { street_ft: 0, drive_ft: 636 }, fails: [] };
+    expect(chooseAutoBest({ best_requested: 'grid', best_buildable: true, best: { lots: 4, pattern: 'grid', metrics: { street_ft: 700 }, fails: [] } }, drive)).toBeNull();
+  });
+});
+
 describe('chooseAutoBest (third audit; engine g13)', () => {
   const ZERO: SfV1Response = { status: 'done', lots: 0, fails: [] };
   it('a default that draws nothing: only a buildable best with two lots or more that the client can draw', async () => {

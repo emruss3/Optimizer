@@ -68,6 +68,18 @@ is worked out from `best_pattern` and `best_lots` the way the app now does;
 an answer with `status: 'error'` is a miss that carries the engine's
 message; one lot with no fails passes a target whose range starts at one.
 
+g17, 2026-11-10 (`runs/2026-11-10_g17.json`, write-up in
+`qa/audits/2026-11-10b/`; the engine changed with no migration recorded, so
+the name is this repository's): plans 24 of 40, refusals 26 of 30. Fixed:
+3345 Pugh Rd, 7695 Old Charlotte Pike and 0 Neelys Bend Rd (estate lots on a
+shared private drive), 0 Clovernook Dr (the remainder lotted again), 8192
+Charlotte Pike (no error). The 16 plan misses: 9 under-yield behind the
+first tier, 3 hillside, 4 apartments where the product is attached.
+
+Scorer change with that run (g16 scores the same under it): the same-lots
+rule compares what each plan builds, public street plus private drive
+(`metrics.drive_ft`), since a shared drive reports `street_ft: 0`.
+
 ## Running it
 
 Live, as the app's anonymous role (the owner, or CI with the battery secrets):
