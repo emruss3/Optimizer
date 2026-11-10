@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import type { SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
 import type { MfMoney } from '../api/generateMfPlan';
@@ -60,6 +60,9 @@ const KpiStrip: React.FC<{
      *  the panel says the plan cannot be built as drawn, so the chip cannot say every check passes
      *  (1716 Red Jacket Dr, 2026-11-10: "All 13 checks pass" over "7 of 9 lots lie partly on land that is not this parcel") */
     offParcelLots?: number | null;
+    /** acres inside oversized lots that the plan does not reach (engine g18 `remainder_ac`, an acre or more):
+     *  every check can pass on a plan that is only a holding answer for most of the land */
+    unplannedAcres?: number | null;
   } | null;
   /**
    * Why there are no metrics: a solve in flight, a solve that failed, a
@@ -87,6 +90,7 @@ const KpiStrip: React.FC<{
     const n = subdivision.fails.length;
     const checks = subdivision.tests ?? [];
     const offParcel = subdivision.offParcelLots ?? 0;
+    const unplanned = subdivision.unplannedAcres != null && subdivision.unplannedAcres >= 1 ? Math.round(subdivision.unplannedAcres * 10) / 10 : null;
     const chip =
       subdivision.legacy ? { tone: 'bg-amber-50 text-amber-700', text: 'Legacy generator · provisional', ok: false }
       : subdivision.status === 'error' ? { tone: 'bg-red-50 text-red-700', text: 'Generator error · no plan', ok: false }
@@ -95,7 +99,11 @@ const KpiStrip: React.FC<{
       : offParcel > 0 ? { tone: 'bg-red-50 text-red-700', text: `Cannot be built as drawn · ${offParcel} lot${offParcel === 1 ? '' : 's'} off the parcel`, ok: false }
       : n > 0 ? { tone: 'bg-red-50 text-red-700', text: checks.length > 0 ? `${n} of ${checks.length} check${checks.length === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
       // "All tests pass" named no scope (4727 Post Rd): the count and the list travel with it
+      // every check passes and most of the land is not planned: say both (0 Brittany Park Dr, 13 lots on 29 ac)
+      : unplanned != null ? { tone: 'bg-amber-50 text-amber-700', text: `${checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass'} · ${unplanned} ac not planned`, ok: false }
       : { tone: 'bg-green-50 text-green-700', text: checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass', ok: true };
+    // the amber "passes, and part of the land is not planned" chip carries a warning, not a cross
+    const passesUnplanned = unplanned != null && !chip.ok && chip.text.endsWith('not planned');
     const title = offParcel > 0
       ? `${offParcel} of ${subdivision.lots} lots lie partly on land inside the outline that is not this parcel (other owners' lots). The generator planned on the outer boundary.${n > 0 ? ` Also fails: ${subdivision.fails.join(', ')}.` : ''}`
       : n > 0
@@ -115,7 +123,7 @@ const KpiStrip: React.FC<{
           title={title}
           className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${chip.tone}`}
         >
-          {chip.ok ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+          {chip.ok ? <CheckCircle className="w-3.5 h-3.5" /> : passesUnplanned ? <AlertTriangle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
           {chip.text}
         </div>
       </div>

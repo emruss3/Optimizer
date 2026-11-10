@@ -195,3 +195,23 @@ describe('KpiStrip — lots on land that is not the parcel (1716 Red Jacket Dr, 
     expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('All 2 checks pass');
   });
 });
+
+describe('KpiStrip — every check passes and most of the land is not planned (0 Brittany Park Dr, engine g18)', () => {
+  it('says both', () => {
+    render(<KpiStrip metrics={{ ...base, totalUnits: 13 } as SiteMetrics} investment={null}
+      subdivision={{ lots: 13, densityDuAc: 0.45, fails: [], status: 'done', tests: ['block.length', 'lot.min_area'], unplannedAcres: 11.7 }} />);
+    const chip = screen.getByTestId('kpi-subdivision-verdict');
+    expect(chip.textContent).toBe('All 2 checks pass · 11.7 ac not planned');
+    expect(chip.className).toContain('text-amber-700');
+  });
+
+  it('under an acre the verdict is unchanged, and a failing plan leads with its fails', () => {
+    const { rerender } = render(<KpiStrip metrics={{ ...base, totalUnits: 5 } as SiteMetrics} investment={null}
+      subdivision={{ lots: 5, densityDuAc: 2.5, fails: [], status: 'done', tests: ['block.length'], unplannedAcres: 0.4 }} />);
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('All 1 checks pass');
+    rerender(<KpiStrip metrics={{ ...base, totalUnits: 5 } as SiteMetrics} investment={null}
+      subdivision={{ lots: 5, densityDuAc: 2.5, fails: ['street.grade_max'], status: 'done', tests: ['block.length', 'street.grade_max'], unplannedAcres: 8 }} />);
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('1 of 2 checks fail');
+  });
+});
+

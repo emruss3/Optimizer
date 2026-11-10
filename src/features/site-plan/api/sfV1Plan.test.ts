@@ -368,6 +368,85 @@ describe('lots on a parcel\'s holes (0 Longwood Pl, 2026-11-04)', () => {
   });
 });
 
+describe('two driveways that share pavement are one apron (0 Brittany Park Dr, engine g18)', () => {
+  it('the second driveway is cut to the first, and the plan passes the overlap gate', async () => {
+    const { validatePlanElements } = await import('../../../engine/validatePlan');
+    // two 12-ft driveways whose first 30 ft coincide over 8 ft of width
+    const doubled = { ...PLAN, drives_wkt: `MULTIPOLYGON(${rect(X + 20, Y + 225, 12, 30)},${rect(X + 24, Y + 225, 12, 30)})` };
+    const { elements } = sfV1ToElements(doubled);
+    const drives = elements.filter(e => e.id.startsWith('sfv1-drive-'));
+    expect(drives.length).toBe(2);
+    const overlaps = validatePlanElements(elements as never).overlaps.filter(o => o.aId.startsWith('sfv1-drive-') && o.bId.startsWith('sfv1-drive-'));
+    expect(overlaps).toEqual([]);
+  });
+});
+
+describe('engine g18: the fail list is the engine\'s, and the holding answer is read', () => {
+  const LANE = { pass: false, value: 1535, share: 0.55, limit_share: 0.5, rule: 'a figure, not a code test' };
+
+  it('a figure row with pass: false is not a fail when the engine lists none', () => {
+    // 0 Swiss Ave: fails [] and access.lane_on_held_land pass: false read "1 of 16 checks fail"
+    const { summary } = sfV1ToElements({ ...PLAN, fails: [], tests: { 'access.lane_on_held_land': LANE, 'lot.min_area': { pass: true, limit: 10000, value: 10171, lots_under: 0 } } });
+    expect(summary.fails).toEqual([]);
+    expect(summary.tests.find(t => t.id === 'access.lane_on_held_land')).toMatchObject({ pass: false, figure: true });
+    expect(summary.tests.find(t => t.id === 'lot.min_area')!.figure).toBeUndefined();
+    expect(summary.basisLine).toContain('1 tests pass');
+  });
+
+  it('a listed fail is kept; a row the list leaves out is a figure', () => {
+    const { summary } = sfV1ToElements({ ...PLAN, fails: ['access.private_drive_length'], tests: { 'access.lane_on_held_land': LANE, 'access.private_drive_length': { pass: false, limit: 750, value: 2810 } } });
+    expect(summary.fails).toEqual(['access.private_drive_length']);
+    expect(summary.tests.find(t => t.id === 'access.private_drive_length')!.figure).toBeUndefined();
+    expect(summary.tests.find(t => t.id === 'access.lane_on_held_land')!.figure).toBe(true);
+  });
+
+  it('with no list at all the rows are read, the figure left out', () => {
+    const noList = { ...PLAN, tests: { 'access.lane_on_held_land': LANE, 'street.grade_max': { pass: false, limit: 10, value: 14 } } } as SfV1Response;
+    delete (noList as Record<string, unknown>).fails;
+    expect(sfV1ToElements(noList).summary.fails).toEqual(['street.grade_max']);
+  });
+
+  it('a lot under the district minimum is a code fail', async () => {
+    const { codeFails, qualityFlags } = await import('./sfV1Plan');
+    expect(codeFails(['lot.min_area', 'access.lane_on_held_land', 'open.unassigned'])).toEqual(['lot.min_area']);
+    expect(qualityFlags(['lot.min_area', 'access.lane_on_held_land'])).toEqual(['access.lane_on_held_land']);
+  });
+
+  it('the land a plan does not reach is on the summary, from an acre up', async () => {
+    const { remainderSentence } = await import('./sfV1Plan');
+    const held = sfV1ToElements({ ...PLAN, remainder_ac: 11.7, remainder_lots: 7 }).summary;
+    expect(held.remainder).toEqual({ acres: 11.7, lots: 7 });
+    expect(remainderSentence(held.remainder!)).toBe('11.7 ac inside 7 oversized lots is not planned: no street, terrace or lane drawn here reaches it. The lot count is a holding answer for that land, not a subdivision of it.');
+    expect(remainderSentence({ acres: 2.41, lots: 1 })).toContain('2.4 ac inside 1 oversized lot is not planned');
+    expect(sfV1ToElements({ ...PLAN, remainder_ac: 0.6, remainder_lots: 1 }).summary.remainder).toBeNull();
+    expect(sfV1ToElements(PLAN).summary.remainder).toBeNull();
+  });
+
+  it('overlapping holds never read as more than the whole parcel', () => {
+    // 1055 Old Dickerson Pike: flood, hillside and wetland buffer overlap and summed to "119.8% held out"
+    const { summary } = sfV1ToElements({ ...PLAN, site_acres: 10, held_acres: 0, hillside_ac: 9,
+      open_pieces: [{ kind: 'natural: wetland / water buffer', acres: 8 }], open_wkt: `MULTIPOLYGON(${rect(X, Y, 10, 10)})` });
+    expect(summary.heldPct).not.toBeNull();
+    expect(summary.heldPct!).toBeLessThanOrEqual(100);
+  });
+
+  it('the lane and easement widths the engine reports are used', () => {
+    const lane = `MULTILINESTRING((${X} ${Y},${X + 400} ${Y}))`;
+    const { summary } = sfV1ToElements({ ...PLAN, pattern: 'shared private drive', lots: 4, street_lines_wkt: lane,
+      row_wkt: `POLYGON${rect(X, Y - 20, 400, 40)}`, pave_wkt: `POLYGON${rect(X, Y - 15, 400, 30)}`,
+      metrics: { ...(PLAN.metrics ?? {}), street_ft: 0, drive_ft: 400, lane_w_ft: 16, easement_w_ft: 24 }, fails: [] });
+    expect(summary.privateDrive).toMatchObject({ laneFt: 16, easementFt: 24, lengthFt: 400 });
+  });
+
+  it('the same lots with an empty fail list do not lose to a figure row', async () => {
+    const { chooseAutoBest } = await import('./sfV1Plan');
+    const def = { status: 'done', lots: 4, pattern: 'single street', metrics: { street_ft: 300 }, fails: ['cost.street_ft_per_lot'] };
+    const best = { lots: 4, pattern: 'shared private drive', metrics: { street_ft: 0, drive_ft: 400 }, fails: [], tests: { 'access.lane_on_held_land': LANE } };
+    // longer, but it fails nothing where the default carries a flag: the figure row is not counted against it
+    expect(chooseAutoBest({ best_requested: 'drive', best_buildable: true, best }, def)).toMatchObject({ why: 'same_lots', bestFails: 0, defaultFails: 1 });
+  });
+});
+
 describe('a shared drive is measured as what it builds (engine g17)', () => {
   it('a turnaround at the end of a drive is not lane width', async () => {
     const { bandWidthFt2274 } = await import('./sfV1Plan');

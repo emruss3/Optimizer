@@ -97,6 +97,18 @@ land a by-right side skipped for a reason other than the flood hazard area
 leaves the apartments on the sheet, as the app does, so they are the answer
 scored.
 
+g19, 2026-11-10 (`runs/2026-11-10_g19.json`; migration `sf_v1_engine_g19`,
+`fn_sf_v1_params()->>'engine_release'` names the release from g18 on):
+plans 39 of 60, refusals 46 of 50. Fixed since g18: 0 Currey Rd and
+0 Hunters Ln, by a lane down one side of a deep narrow strip. Nothing that
+passed fell. The reply to the engine side with the asks that stand is
+`qa/audits/2026-11-10c/APP_REPLY.md`.
+
+Proposed and not applied (the owner's call; see that reply, §4): lower
+targets for 1019 Hitt Ln, 8282 Charlotte Pike, 0 Newsom Station Rd,
+0 Campbell Rd and 0 Old Hickory Blvd R15, where the engine measured that no
+lane holds grade into the land. They would read 44 of 60 on g19.
+
 ## Running it
 
 Live, as the app's anonymous role (the owner, or CI with the battery secrets):

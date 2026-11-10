@@ -2025,3 +2025,26 @@ scorer now counts the apartments the app sheets when the by-right side is
 skipped for something other than flood. The cohort is 110 parcels. Ranking,
 sheets and the engine handoff: `qa/audits/2026-11-10c/`.
 
+## 42. The engine's g18 note answered, and g19 measured (2026-11-10)
+
+The engine side replied to the run-3 handoff (release g18) and shipped g19
+an hour later, acting on the batch-5 handoff. All 110 parcels were
+harvested again on g19 and the sixteen changed sheets read: plans 39 of 60
+(37 at g18), refusals 46 of 50; the 40 new parcels 16 of 21 and 18 of 19.
+0 Currey Rd and 0 Hunters Ln are fixed by a lane down one side of a narrow
+strip; landlocked parcels with a driveway-width touch or a private lane
+now read "one house by the existing access". App changes from the g18
+contract: the engine's fail list is the list (a figure row with
+`pass: false`, `access.lane_on_held_land`, was being counted as a failed
+check); `remainder_ac` puts the holding answer on the sheet and in the
+header chip ("All 15 checks pass · 11.7 ac not planned"); lane widths come
+from the engine. Found while checking: the overlap gate was discarding two
+whole g18 plans, 0 Hart Ln's 51 lots on a library failure read as a 2 m²
+overlap and 0 Brittany Park Dr's 13 on two driveways sharing 7 m²; it now
+re-measures after cleaning the rings and doubled driveways are one apron.
+Open with the engine: the replacement rule takes the 7-lot lane on 29 flat
+acres where a 17-lot plan passes (Old Clarksville Pike); a lane 86% on held
+land takes the plan (Old Dickerson Pike); multifamily. Five cohort targets
+are proposed to come down and wait for the owner. Reply and addendum:
+`qa/audits/2026-11-10c/APP_REPLY.md`.
+

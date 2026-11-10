@@ -189,6 +189,12 @@ export interface SfV1Response {
   lots_wkt?: string | null;
   pads_wkt?: string | null;
   drives_wkt?: string | null;
+  /** engine g18: land inside oversized lots that the plan does not reach (a holding answer), and how many lots carry it */
+  remainder_ac?: number | null;
+  remainder_lots?: number | null;
+  /** engine g18: other owners' lots inside the parcel's outline, left out of the plan */
+  holes?: number | null;
+  holes_ac?: number | null;
   open_wkt?: string | null;
   pond_wkt?: string | null;
   park_wkt?: string | null;
@@ -429,6 +435,10 @@ export interface SfV1Summary {
   /** engine g14: the hillside hold (land steeper than 25%) and what is left after every hold */
   hillsideAcres: number | null;
   buildableAfterHoldsAc: number | null;
+  /** engine g18: land carried inside oversized lots that no street, terrace or lane reaches. The plan is a
+   *  holding answer for it, so "all checks pass" is not the whole story (0 Brittany Park Dr: 13 lots, 11.7 ac).
+   *  Null under one acre. */
+  remainder: { acres: number; lots: number | null } | null;
   ms: number | null;
   generatorVersion: string | null;
   basisLine: string;
@@ -636,7 +646,15 @@ export function sfV1ToElements(
   }
   const m = resp.metrics ?? {};
   const tests = normalizeTests(resp.tests);
-  const fails = strings(resp.fails).length > 0 ? strings(resp.fails) : tests.filter(t => t.pass === false).map(t => t.id);
+  // The engine's own list is the list. A test row can read pass: false without being a failed check:
+  // engine g18's access.lane_on_held_land is a figure with a limit, "not in fails" by the engine's
+  // word, and with an empty list the old fallback counted it (0 Swiss Ave: "1 of 16 checks fail" on a
+  // plan with no fails). The rows are read only when the engine sent no list at all.
+  const failsListed = Array.isArray(resp.fails);
+  const fails = failsListed ? strings(resp.fails) : tests.filter(t => t.pass === false && !SFV1_FIGURE_TESTS.has(t.id)).map(t => t.id);
+  for (const t of tests) {
+    if (t.pass === false && (SFV1_FIGURE_TESTS.has(t.id) || (failsListed && !fails.includes(t.id)))) t.figure = true;
+  }
   const notes = strings(resp.notes);
   const earthwork = resp.earthwork && typeof resp.earthwork === 'object' ? resp.earthwork : null;
   const hasFlood = earthworkHasFlood(earthwork);
@@ -650,8 +668,9 @@ export function sfV1ToElements(
   const driveLenFt = drivePlan ? lengthFt2274(resp.street_lines_wkt) : 0;
   const privateDrive = drivePlan
     ? {
-        easementFt: bandWidthFt2274(resp.row_wkt, resp.street_lines_wkt),
-        laneFt: bandWidthFt2274(resp.pave_wkt, resp.street_lines_wkt),
+        // engine g18 reports both; measured off the drawing for an answer that does not
+        easementFt: num(m.easement_w_ft) ?? bandWidthFt2274(resp.row_wkt, resp.street_lines_wkt),
+        laneFt: num(m.lane_w_ft) ?? bandWidthFt2274(resp.pave_wkt, resp.street_lines_wkt),
         lengthFt: driveLenFt > 0 ? Math.round(driveLenFt) : (num(m.drive_ft) ?? num(m.street_ft)),
         maxLots: num(tests.find(t => t.id === 'access.private_drive_max_lots')?.limit),
       }
@@ -794,11 +813,18 @@ export function sfV1ToElements(
     ...padPolys.map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] })),
     ...(pavePieces as Poly3857[]),
   ];
-  const drivePieces = clipPolysToObstacles(
+  const driveClipped = clipPolysToObstacles(
     polys3857(resp.drives_wkt).map(p => ({ type: 'Polygon' as const, coordinates: p.coordinates as number[][][] })),
     driveObstacles,
     1
   );
+  // Two driveways that share pavement (a flag lot's drive meeting its neighbour's at the street) are
+  // one apron, not two slabs over each other: each driveway is cut to the ones drawn before it, so the
+  // gate does not throw away a 13-lot plan for 7 m² of doubled driveway (0 Brittany Park Dr, engine g18).
+  const drivePieces: Poly3857[] = [];
+  for (const piece of driveClipped as Poly3857[]) {
+    drivePieces.push(...(clipPolysToObstacles([piece], drivePieces, 1) as Poly3857[]));
+  }
   (drivePieces as Poly3857[]).forEach((piece, i) => {
     elements.push({
       id: `${SFV1_ID_PREFIX}drive-${i + 1}`,
@@ -934,7 +960,9 @@ export function sfV1ToElements(
   // the hillside hold counts as held land; on a drawn plan it is already among the natural pieces
   const hillsideAcres = num(resp.hillside_ac);
   const heldOutAcres = (heldAcres ?? 0) + naturalAcres + (hillsideInPieces ? 0 : hillsideAcres ?? 0);
-  const heldPct = siteAcres != null && siteAcres > 0 ? Math.round((heldOutAcres / (siteAcres + (heldAcres ?? 0))) * 1000) / 10 : null;
+  // The holds can overlap (hillside inside the wetland buffer inside the flood area) and the engine reports each
+  // one whole, so the sum can pass the parcel: 1055 Old Dickerson Pike read "119.8% held out". Never over 100.
+  const heldPct = siteAcres != null && siteAcres > 0 ? Math.min(100, Math.round((heldOutAcres / (siteAcres + (heldAcres ?? 0))) * 1000) / 10) : null;
   const summary: SfV1Summary = {
     status: str(resp.status) ?? (resp.error ? 'error' : 'done'),
     reason: str(resp.reason) ?? str(resp.error),
@@ -980,6 +1008,7 @@ export function sfV1ToElements(
     privateDrive,
     hillsideAcres,
     buildableAfterHoldsAc: num(resp.buildable_after_holds_ac),
+    remainder: (num(resp.remainder_ac) ?? 0) >= 1 ? { acres: num(resp.remainder_ac)!, lots: num(resp.remainder_lots) } : null,
     ms: num(resp.ms),
     generatorVersion: str(resp.generator_version) ?? 'sf_v1',
     basisLine: '',
@@ -1000,6 +1029,13 @@ export function sfV1SummaryLine(s: SfV1Summary): string {
   const passed = s.tests.filter(t => t.pass === true).length;
   const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : passed > 0 ? ` · ${passed} tests pass` : '';
   return `${s.lots} lot${s.lots === 1 ? '' : 's'}${module} ${basis}${patternPhrase(s.pattern)}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
+}
+
+/** The holding answer in a sentence: "11.7 ac inside 7 oversized lots is not planned: …". */
+export function remainderSentence(r: NonNullable<SfV1Summary['remainder']>): string {
+  const ac = Math.round(r.acres * 10) / 10;
+  const inside = r.lots != null && r.lots > 0 ? ` inside ${r.lots} oversized lot${r.lots === 1 ? '' : 's'}` : '';
+  return `${ac} ac${inside} is not planned: no street, terrace or lane drawn here reaches it. The lot count is a holding answer for that land, not a subdivision of it.`;
 }
 
 /** "The lots share a private drive (857 ft long, a 16-ft lane in a 24-ft access easement) off the existing street: …" */
@@ -1187,10 +1223,16 @@ export interface SfV1CandidatesResponse {
   [k: string]: unknown;
 }
 
+/** Test rows that are figures with a limit, not checks: a pass: false on one is a flag on the sheet,
+ *  never a failed check (engine g18: "a figure, not a code test"). */
+export const SFV1_FIGURE_TESTS = new Set(['access.lane_on_held_land']);
+
 /** Quality flags: shown, not ranked on, not "fails" in the code sense (the engine's own split). */
 export const SFV1_QUALITY_FLAGS = new Set(['open.unassigned', 'cost.street_ft_per_lot', 'yield.vs_arithmetic',
   // engine g14: a private drive's total length against the 750-ft figure, a flag until Metro's reading is confirmed
-  'access.private_drive_length']);
+  'access.private_drive_length',
+  // engine g18: the share of a lane on held land, a figure the engine keeps out of fails
+  'access.lane_on_held_land']);
 export const codeFails = (fails: string[]): string[] => fails.filter(f => !SFV1_QUALITY_FLAGS.has(f));
 export const qualityFlags = (fails: string[]): string[] => fails.filter(f => SFV1_QUALITY_FLAGS.has(f));
 
@@ -1424,9 +1466,8 @@ export function chooseAutoBest(
   const same = bestLots === defaultLots;
   if (!buildable && !same) return null;
   const failsOf = (p: Record<string, unknown>) => {
-    const f = strings(p.fails);
-    if (f.length > 0) return f.length;
-    return normalizeTests(p.tests).filter(t => t.pass === false).length;
+    if (Array.isArray(p.fails)) return strings(p.fails).length;
+    return normalizeTests(p.tests).filter(t => t.pass === false && !SFV1_FIGURE_TESTS.has(t.id)).length;
   };
   const metricsOf = (p: Record<string, unknown>) => (p.metrics && typeof p.metrics === 'object' ? (p.metrics as Record<string, unknown>) : {});
   // What each plan builds: new public street plus private drive. Engine g17

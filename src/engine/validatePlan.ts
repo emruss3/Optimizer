@@ -146,9 +146,21 @@ export function validatePlanElements(elements: Element[]): PlanValidation {
         );
         areaM2 = multiPolyArea(inter as unknown as Ring[][]);
       } catch {
-        // polygon-clipping throws on degenerate rings; degenerate inputs are
-        // themselves a broken plan — treat as an overlap so the plan re-solves.
-        areaM2 = OVERLAP_TOLERANCE_M2 + 1;
+        // polygon-clipping throws on degenerate rings (a repeated vertex, a
+        // sliver left by clipping a driveway to its house). Clean the rings
+        // and measure again before calling it an overlap: 0 Hart Ln's 51-lot
+        // plan was rejected for "2 m²" that was this fallback, not geometry
+        // (2026-11-10). Rings that still will not intersect are a broken plan.
+        try {
+          const inter = polyclip.intersection(
+            // 1 mm: a clipped driveway keeps corner points a few microns apart, which a 1e-9 dedupe leaves in
+            [cleanCoordinates(a!.rings as unknown as number[][][], 1e-3)] as never,
+            [cleanCoordinates(b!.rings as unknown as number[][][], 1e-3)] as never
+          );
+          areaM2 = multiPolyArea(inter as unknown as Ring[][]);
+        } catch {
+          areaM2 = OVERLAP_TOLERANCE_M2 + 1;
+        }
       }
       if (areaM2 > OVERLAP_TOLERANCE_M2 && !isGroundFloorCarveOut(a, b, areaM2)) {
         overlaps.push({
@@ -191,20 +203,20 @@ function polyAreaM2(p: PolyLike): number {
  */
 /** Dedupe consecutive (near-)identical vertices — the classic cause of
  *  polygon-clipping "degenerate segment" throws — and re-close the ring. */
-function cleanCoordinates(coords: number[][][]): number[][][] {
+function cleanCoordinates(coords: number[][][], eps = 1e-9): number[][][] {
   return coords
     .map(ring => {
       const out: number[][] = [];
       for (const pt of ring) {
         const prev = out[out.length - 1];
-        if (!prev || Math.abs(prev[0] - pt[0]) > 1e-9 || Math.abs(prev[1] - pt[1]) > 1e-9) {
+        if (!prev || Math.abs(prev[0] - pt[0]) > eps || Math.abs(prev[1] - pt[1]) > eps) {
           out.push([pt[0], pt[1]]);
         }
       }
       if (out.length >= 3) {
         const [fx, fy] = out[0];
         const [lx, ly] = out[out.length - 1];
-        if (Math.abs(fx - lx) > 1e-9 || Math.abs(fy - ly) > 1e-9) out.push([fx, fy]);
+        if (Math.abs(fx - lx) > eps || Math.abs(fy - ly) > eps) out.push([fx, fy]);
         else { out[out.length - 1] = [fx, fy]; }
       }
       return out;

@@ -161,3 +161,32 @@ describe('structured parking (2026-10-07, the wrap garage)', () => {
     expect(v.ok).toBe(false);
   });
 });
+
+describe('validatePlanElements — rings a clip left degenerate (0 Hart Ln, 2026-11-10)', () => {
+  // The house and its driveway as the app drew them on lot 45: the driveway was cut to the
+  // house, which left pairs of corner points a few microns apart. polygon-clipping throws on
+  // them, and the gate read the throw as a 2 m² overlap and rejected a 51-lot plan.
+  // full precision, as drawn: rounding these to the centimetre hides the failure
+  const house: number[][][] = [[[-9657115.350184377, 4331262.396164069], [-9657118.040487362, 4331262.335095311], [-9657117.959681174, 4331258.744009076], [-9657123.206321627, 4331258.624910639], [-9657122.802056888, 4331240.659454039], [-9657114.52764536, 4331240.847281249], [-9657114.52233126, 4331240.611115394], [-9657114.434688877, 4331240.61310482], [-9657114.378699765, 4331238.124871117], [-9657110.869770095, 4331238.204521046], [-9657110.983185759, 4331243.244941453], [-9657110.862898026, 4331243.24767187], [-9657111.286319, 4331262.065340492], [-9657115.340669462, 4331261.973309685], [-9657115.350184377, 4331262.396164069]]];
+  const drive: number[][][] = [[[-9657119.726977315, 4331270.080944474], [-9657119.551907947, 4331262.300786399], [-9657118.040487356, 4331262.335095102], [-9657118.040487362, 4331262.335095311], [-9657115.350184377, 4331262.396164069], [-9657115.350184377, 4331262.396164009], [-9657115.024366554, 4331262.403559957], [-9657115.200038971, 4331270.210661507], [-9657116.866328457, 4331269.953976278], [-9657119.726977315, 4331270.080944474]]];
+  const el = (id: string, type: string, coordinates: number[][][]) =>
+    ({ id, type, name: id, geometry: { type: 'Polygon', coordinates }, properties: {}, metadata: {} }) as never;
+
+  it('the library does throw on these rings, which is what the gate has to survive', async () => {
+    const polyclip = (await import('polygon-clipping')).default;
+    expect(() => polyclip.intersection([house] as never, [drive] as never)).toThrow();
+  });
+
+  it('a driveway that meets its house along an edge is not an overlap', () => {
+    const v = validatePlanElements([el('pad', 'building', house), el('drive', 'circulation', drive)]);
+    expect(v.overlaps).toEqual([]);
+    expect(v.ok).toBe(true);
+  });
+
+  it('a driveway laid across the house still is', () => {
+    const across = [[[-9657121, 4331245], [-9657112, 4331245], [-9657112, 4331255], [-9657121, 4331255], [-9657121, 4331245]]];
+    const v = validatePlanElements([el('pad', 'building', house), el('drive', 'circulation', across)]);
+    expect(v.ok).toBe(false);
+    expect(v.reason).toContain('building overlaps drive');
+  });
+});

@@ -19,7 +19,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 148.4,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 85,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 674703,
@@ -41,7 +44,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 80,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 671253,
@@ -66,7 +72,10 @@
   "ok": true,
   "verdict": "2 lots (estate lots (flag lots behind the frontage))",
   "frontage_ft": 192.4,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 75,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 680272,
@@ -88,7 +97,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 80,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 474699,
@@ -110,7 +122,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 95.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 80,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 669278,
@@ -125,14 +140,17 @@
    "noStreet": false,
    "altRefuse": false
   },
-  "now": 55,
-  "sheet": "0 lots, \"landlocked\"",
-  "read": "Right to draw no subdivision. The reason is off: the parcel touches Woodland Way for 19 ft and carries a \"B\" address, so one house by the existing access is the answer, not \"no edge touches a mapped street\".",
+  "now": 70,
+  "sheet": "1 lot, the parcel",
+  "read": "g19: one house by the existing access (\"touches Woodland Way for 22 ft: room for a driveway, not for a street\"). Right, with the right reason.",
   "why": "a remnant behind a cul-de-sac with a 12-ft touch on the street: one house at most",
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 19.0,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 55,
+  "ok_g18": true,
+  "changed": true
  },
  {
   "fid": 675439,
@@ -150,14 +168,17 @@
    "noStreet": true,
    "altRefuse": false
   },
-  "now": 40,
-  "sheet": "2 frontage lots",
-  "read": "A 10,618-SF front lot and a 62,655-SF remainder the engine itself calls a holding answer. A drive down one side serves four or five.",
+  "now": 65,
+  "sheet": "4 lots on a one-sided lane",
+  "read": "g19: four 100 \u00d7 100 lots facing a 507-ft lane along the north line (was 2 lots and a 62,655-SF remainder). The civil answer; the turnaround is large for four houses.",
   "why": "3-5 lots on a shared drive down a 105-ft-wide, 700-ft-deep strip",
-  "ok": false,
-  "verdict": "2 lots; 3\u20135 expected",
+  "ok": true,
+  "verdict": "4 lots (shared private drive)",
   "frontage_ft": 151.3,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 40,
+  "ok_g18": false,
+  "changed": true
  },
  {
   "fid": 675289,
@@ -182,7 +203,10 @@
   "ok": true,
   "verdict": "5 lots (frontage lots, no new street)",
   "frontage_ft": 802.1,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 80,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 677554,
@@ -204,7 +228,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 719.3,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 85,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 612443,
@@ -229,7 +256,10 @@
   "ok": true,
   "verdict": "4 lots (estate lots (flag lots behind the frontage))",
   "frontage_ft": 221.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 55,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 679669,
@@ -251,7 +281,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 3047.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 85,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 678549,
@@ -269,14 +302,17 @@
    "noStreet": true,
    "altRefuse": false
   },
-  "now": 35,
-  "sheet": "4 estate lots (2 flag)",
-  "read": "Two front lots and two 2.2-ac flag lots. The engine says 3.45 ac is \"a holding answer\"; the lane that would lot it returns nothing.",
+  "now": 70,
+  "sheet": "9 lots on a one-sided lane",
+  "read": "g19: nine 110 \u00d7 185 lots facing a 1,203-ft lane down the west line (was 4 with 3.45 ac held). Exactly the plan; over the engine's 750-ft flag.",
   "why": "a 210-ft-wide, 1,130-ft-deep strip: 6-9 lots on a lane down one side",
-  "ok": false,
-  "verdict": "4 lots; 6\u20139 expected",
+  "ok": true,
+  "verdict": "9 lots (shared private drive)",
   "frontage_ft": 210.4,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 35,
+  "ok_g18": false,
+  "changed": true
  },
  {
   "fid": 676299,
@@ -301,7 +337,10 @@
   "ok": true,
   "verdict": "8 lots (shared private drive)",
   "frontage_ft": 263.3,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 55,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 679300,
@@ -323,7 +362,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 80,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 677861,
@@ -345,7 +387,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 1117.1,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 75,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 666864,
@@ -370,7 +415,10 @@
   "ok": true,
   "verdict": "2 lots (estate lots (flag lots behind the frontage))",
   "frontage_ft": 244.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 85,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 679942,
@@ -395,7 +443,10 @@
   "ok": true,
   "verdict": "the parcel as one lot, as the target allows",
   "frontage_ft": 52.2,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 50,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 664765,
@@ -420,7 +471,10 @@
   "ok": false,
   "verdict": "17 lots; 20\u201330 expected",
   "frontage_ft": 677.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 30,
+  "ok_g18": false,
+  "changed": false
  },
  {
   "fid": 566991,
@@ -445,7 +499,10 @@
   "ok": true,
   "verdict": "10 lots (shared private drive)",
   "frontage_ft": 36.1,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 65,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 678361,
@@ -460,14 +517,17 @@
    "noStreet": false,
    "altRefuse": false
   },
-  "now": 65,
-  "sheet": "0 lots, landlocked",
-  "read": "Right not to subdivide. The frontage record counts 605 ft of that edge as frontage; the plan says no mapped street. One of them is wrong.",
+  "now": 70,
+  "sheet": "1 lot, the parcel",
+  "read": "g19: one house by the private lane; 9.9 ac not planned. Right.",
   "why": "no built street on the frontage edge and 5.8 of 10.3 ac over 25%: one house by the private lane",
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 605.1,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 65,
+  "ok_g18": true,
+  "changed": true
  },
  {
   "fid": 680044,
@@ -489,7 +549,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 844.3,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 85,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 677449,
@@ -514,7 +577,10 @@
   "ok": true,
   "verdict": "17 lots (single street)",
   "frontage_ft": 151.4,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 60,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 678224,
@@ -536,7 +602,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 80,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 406289,
@@ -551,14 +620,17 @@
    "noStreet": false,
    "altRefuse": false
   },
-  "now": 70,
-  "sheet": "0 lots, landlocked",
-  "read": "Right not to subdivide; one house by the lane is what the address implies.",
+  "now": 75,
+  "sheet": "1 lot, the parcel",
+  "read": "g19: one house by Trail Hollow Ln, a private lane. Right.",
   "why": "no public street; an addressed parcel on a private lane: one house",
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 70,
+  "ok_g18": true,
+  "changed": true
  },
  {
   "fid": 678315,
@@ -583,7 +655,10 @@
   "ok": true,
   "verdict": "3 lots (estate lots (flag lots behind the frontage))",
   "frontage_ft": 473.2,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 65,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 678961,
@@ -605,7 +680,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 80,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 679197,
@@ -625,12 +703,15 @@
   },
   "now": 45,
   "sheet": "17 lots (neighborhood)",
-  "read": "Seventeen lots on two streets that converge to a sliver, 17% right-of-way, two interior lots of 1.4 and 2.1 ac. A single spine or a loop takes 19-22 with less street.",
+  "read": "g19: the default is now a 7-lot lane where the 17-lot neighborhood row passes; the sheet still shows the 17. Two streets that converge to a sliver, 17% right-of-way.",
   "why": "16-24 lots on 29 flat acres of RS40",
   "ok": true,
   "verdict": "17 lots (neighborhood)",
   "frontage_ft": 467.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 45,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 677633,
@@ -652,7 +733,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 85,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 680449,
@@ -668,13 +752,16 @@
    "altRefuse": false
   },
   "now": 85,
-  "sheet": "0 lots, landlocked",
-  "read": "Right.",
+  "sheet": "1 lot, the parcel",
+  "read": "g19: one house by the existing access; 19.5 ac of hillside not planned. Right.",
   "why": "landlocked and 15 of 21.3 ac over 25%",
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 85,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 332543,
@@ -692,14 +779,17 @@
    "noStreet": false,
    "altRefuse": false
   },
-  "now": 20,
-  "sheet": "15 lots on a single-loaded street (fails 2 tests)",
-  "read": "One 1,431-ft street with lots on one side only, 45% of the site unassigned, 536 ft in the buffer; fails dead end and block length, and its 24% station is not tested at all. A passing 7-lot lane sits unused in the competition.",
+  "now": 30,
+  "sheet": "7 lots on a shared drive",
+  "read": "g19: the failing 15-lot street is replaced. Three frontage lots, and a 705-ft lane with 603 ft on held land to four lots in a pocket of the hillside hold. Passes; a civil stops at the three.",
   "why": "8-16 lots that pass; the lane row draws 7",
   "ok": false,
-  "verdict": "15 lots but fails street.dead_end_max, block.length",
+  "verdict": "7 lots; 8\u201316 expected",
   "frontage_ft": 1016.9,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 20,
+  "ok_g18": false,
+  "changed": true
  },
  {
   "fid": 677102,
@@ -724,7 +814,10 @@
   "ok": false,
   "verdict": "45 lots; 50\u201375 expected",
   "frontage_ft": 123.5,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 45,
+  "ok_g18": false,
+  "changed": false
  },
  {
   "fid": 680782,
@@ -746,7 +839,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 899.7,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 90,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 679218,
@@ -766,12 +862,15 @@
   },
   "now": 45,
   "sheet": "228 apartments",
-  "read": "Six buildings packed into the north third; the bays hold 551 stalls where the summary says 113. The by-right side calls this parcel landlocked: its 1,329 ft on Lebanon Pike is typed \"open edge\".",
+  "read": "g19: the by-right side now gives one house by a private lane; the edge on Lebanon Pike is still not typed as a street. Six buildings in the north third; 551 stalls drawn against 113 in the summary.",
   "why": "150-228 apartments on 11.4 ac of RM20 on Lebanon Pike",
   "ok": true,
   "verdict": "228 apartments",
   "frontage_ft": 1428.3,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 45,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 678903,
@@ -791,12 +890,15 @@
   },
   "now": 40,
   "sheet": "10 apartments",
-  "read": "One small building and 18 stalls on a 15% slope. The by-right side says the street touch is 16 ft; the frontage record says 108 ft.",
+  "read": "g19: the by-right side now gives one house (\"touches Woodland Hills Dr for 31 ft\"). One small building and 18 stalls on a 15% slope.",
   "why": "8-12 homes on 2.1 ac of RM6",
   "ok": true,
   "verdict": "10 apartments",
   "frontage_ft": 107.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 40,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 672188,
@@ -816,12 +918,15 @@
   },
   "now": 35,
   "sheet": "41 apartments",
-  "read": "One bar at the east end and a parking lot 600 ft away. The townhome run places 48 and fails three tests. The by-right side says landlocked; the frontage record says 1,590 ft.",
+  "read": "g19: the frontage is recognised and the by-right side draws 24 lots (26 in the neighborhood row). The sheet is still one apartment bar with its parking 600 ft away; townhomes are the product.",
   "why": "townhomes along a 1,600-ft strip of RM9",
   "ok": false,
   "verdict": "41 apartments; attached homes expected",
   "frontage_ft": 1590.2,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 35,
+  "ok_g18": false,
+  "changed": false
  },
  {
   "fid": 309819,
@@ -846,7 +951,10 @@
   "ok": true,
   "verdict": "56 apartments",
   "frontage_ft": 482.8,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 55,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 664926,
@@ -871,7 +979,10 @@
   "ok": false,
   "verdict": "9 apartments; attached homes expected",
   "frontage_ft": 2047.6,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 5,
+  "ok_g18": false,
+  "changed": false
  },
  {
   "fid": 672657,
@@ -893,7 +1004,10 @@
   "ok": true,
   "verdict": "nothing drawn, as it should be",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 70,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 663910,
@@ -918,7 +1032,10 @@
   "ok": true,
   "verdict": "10 apartments",
   "frontage_ft": 261.4,
-  "frontage_landlocked": false
+  "frontage_landlocked": false,
+  "g18": 35,
+  "ok_g18": true,
+  "changed": false
  },
  {
   "fid": 677274,
@@ -935,11 +1052,14 @@
   },
   "now": 5,
   "sheet": "8 apartments",
-  "read": "The by-right side refuses; the multifamily run draws 8 units and 64-85 stalls.",
+  "read": "g19: the by-right side gives one house by the existing access; the multifamily run still draws 8 units and 64-85 stalls.",
   "why": "landlocked and 1.5 of 2.1 ac over 25%",
   "ok": false,
   "verdict": "drew 8 apartments where nothing belongs",
   "frontage_ft": 0,
-  "frontage_landlocked": true
+  "frontage_landlocked": true,
+  "g18": 5,
+  "ok_g18": false,
+  "changed": false
  }
 ]

@@ -4,12 +4,17 @@ For the engine-side Claude working in Supabase project `okxrvetbzpoazrybhcqj`.
 Written from the app side (emruss3/Optimizer). This follows
 `qa/audits/2026-11-10b/ENGINE_HANDOFF.md` (run 3, g17).
 
+> **Status, 21:40 UTC.** This was written on g18. g19 shipped at 21:30 UTC
+> and already answers §2 (in part), §3 and §5 below. Read
+> [APP_REPLY.md](APP_REPLY.md) for what was measured on g19 and the asks
+> that stand now; this file is kept as the record of what was found on g18.
+
 The engine changed again after that handoff: `fn_sf_v1_plan`,
 `fn_sf_v1_strip` and `fn_sf_v1_candidates` all differ from what run 3
-measured, `fn_generate_mf_site_plan_v2` does not. There is still no row in
-`supabase_migrations.schema_migrations` after `20261109155542`. This run is
-called g18 here. Please record a migration so a run can be tied to a
-version; it is the third time this has been asked.
+measured, `fn_generate_mf_site_plan_v2` does not. When this batch was
+harvested there was no migration row after `20261109155542`; the row
+`sf_v1_engine_g18` (`20261110204900`) was recorded shortly after, and
+`fn_sf_v1_params()->>'engine_release'` now names the release.
 
 ## 0. The short version
 
@@ -239,7 +244,7 @@ Run `node scripts/engine-cohort/score.mjs --store <store> --engine g19
 - Every plan with a street carries `street.grade_max`.
 - No competition over 30 s on any of the 110.
 - No parcel that passes at g18 falls to a miss.
-- A migration row.
+- A migration row (done since: `sf_v1_engine_g18`, `sf_v1_engine_g19`).
 
 ## 10. For the owner
 
