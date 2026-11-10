@@ -3,8 +3,8 @@ import { validatePlanElements } from '../../../engine/validatePlan';
 import { isSfPlanElement } from './generateSfPlan';
 import {
   sfV1Route, normalizeTests, fillBand, fillColor, padFillByLot, earthworkHasFlood, openStyle,
-  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence, houseLabel,
-  type SfV1Response,
+  sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence, houseLabel, bestRequestedOf,
+  type SfV1Response, type SfV1CandidatesResponse,
 } from './sfV1Plan';
 
 // A small by-right plan in EPSG:2274 feet, shaped like the live payload for
@@ -546,20 +546,91 @@ describe('the engine\'s house plans on the lots (2026-11-09)', () => {
   });
 });
 
-describe('flag lots\' poles are access strips, not lots (4727 Post Rd, the cohort retest 2026-11-09)', () => {
-  it('polygons past the engine\'s lot count are named Access strip and carry no lot number', () => {
-    const sq = (x: number, y: number, w: number, h: number) => `POLYGON((${x} ${y},${x + w} ${y},${x + w} ${y + h},${x} ${y + h},${x} ${y}))`;
-    const resp: SfV1Response = {
-      status: 'done', lots: 2, basis: 'by_right', fails: [],
-      lot_kinds: ['estate', 'flag'], lot_areas_sf: [41457, 52141],
-      // two lots, then the flag lot's pole as its own polygon
-      lots_wkt: `GEOMETRYCOLLECTION(${sq(1715500, 652600, 140, 290)},${sq(1715640, 652600, 140, 290)},${sq(1715640, 652890, 20, 200)})`,
-    };
+describe('a flag lot is one member: body and pole (6404 Eatons Creek Rd, 4727 Post Rd, 2026-11-10)', () => {
+  const sq = (x: number, y: number, w: number, h: number) => `((${x} ${y},${x + w} ${y},${x + w} ${y + h},${x} ${y + h},${x} ${y}))`;
+  // the engine's shape: three lots, the last two flag lots (pole first on one, body first on the other)
+  const resp: SfV1Response = {
+    status: 'done', lots: 3, basis: 'by_right', fails: [],
+    lot_kinds: ['estate', 'flag', 'flag'], lot_areas_sf: [40600, 123757, 123826],
+    lots_wkt: `GEOMETRYCOLLECTION(POLYGON${sq(1715500, 652600, 140, 290)},MULTIPOLYGON(${sq(1715640, 652600, 300, 400)},${sq(1715640, 653000, 20, 200)}),MULTIPOLYGON(${sq(1715960, 653000, 20, 200)},${sq(1715960, 652600, 300, 400)}))`,
+    pads_wkt: `GEOMETRYCOLLECTION(MULTIPOLYGON(${sq(1715520, 652700, 40, 50)}),MULTIPOLYGON(${sq(1715700, 652700, 40, 50)}),MULTIPOLYGON(${sq(1716000, 652700, 40, 50)}))`,
+    houses: [{ beds: 3, footprint_sf: 2000 }, { beds: 4, footprint_sf: 3184 }, { beds: 6, footprint_sf: 3040 }],
+    houses_placed: 3,
+  };
+
+  it('numbers three lots, each with its own area and house, and names each pole for its lot', () => {
     const { elements, summary } = sfV1ToElements(resp);
-    expect(elements.filter(e => /^Lot \d+$/.test(e.name ?? '')).map(e => e.name)).toEqual(['Lot 1', 'Lot 2']);
+    const lots = elements.filter(e => /^Lot \d+$/.test(e.name ?? ''));
+    expect(lots.map(e => e.name)).toEqual(['Lot 1', 'Lot 2', 'Lot 3']);
+    expect(lots.map(e => e.properties?.areaSqFt)).toEqual([40600, 123757, 123826]);
+    expect(lots.map(e => e.properties?.houseLabel)).toEqual(['3 bed · 2,000 sf', '4 bed · 3,184 sf', '6 bed · 3,040 sf']);
+    expect(lots.map(e => e.properties?.lotKind)).toEqual(['estate', 'flag', 'flag']);
     const strips = elements.filter(e => e.id.startsWith('sfv1-access-strip-'));
-    expect(strips.map(e => e.name)).toEqual(['Access strip 1']);
-    expect(strips[0].properties?.accessStrip).toBe(true);
-    expect(summary.lots).toBe(2);
+    expect(strips.map(e => e.name)).toEqual(['Access strip · lot 2', 'Access strip · lot 3']);
+    expect(strips.every(e => e.properties?.accessStrip === true)).toBe(true);
+    // the body is the big part whichever order the engine wrote the member in
+    const ring = (e: (typeof lots)[number]) => e.geometry.coordinates[0]!;
+    const span = (e: (typeof lots)[number]) => Math.max(...ring(e).map(p => p[0]!)) - Math.min(...ring(e).map(p => p[0]!));
+    expect(span(lots[2]!)).toBeGreaterThan(span(strips[1]!) * 5);
+    expect(elements.filter(e => e.id.startsWith('sfv1-pad-')).map(e => e.name)).toEqual(['House 1 · 3 bed · 2,000 sf', 'House 2 · 4 bed · 3,184 sf', 'House 3 · 6 bed · 3,040 sf']);
+    expect(summary.lots).toBe(3);
+  });
+
+  it('a bare MULTIPOLYGON is one lot per polygon, with no strips', () => {
+    const { elements } = sfV1ToElements({ status: 'done', lots: 2, fails: [], lots_wkt: `MULTIPOLYGON(${sq(0, 0, 100, 100)},${sq(100, 0, 100, 100)})` });
+    expect(elements.filter(e => /^Lot \d+$/.test(e.name ?? ''))).toHaveLength(2);
+    expect(elements.filter(e => e.id.startsWith('sfv1-access-strip-'))).toHaveLength(0);
+  });
+});
+
+describe('the best plan\'s grammar without best_requested (engine release of 2026-11-09)', () => {
+  const HILLS: SfV1CandidatesResponse = {
+    status: 'done', best_requested: null, best_pattern: 'grid', best_lots: 17, best_buildable: true,
+    best: { status: 'done', lots: 17, pattern: 'grid', fails: [], metrics: { street_ft: 1188 } } as never,
+    candidates: [
+      { requested: 'grid', pattern: 'grid', lots: 17, fails: [], status: 'done' },
+      { requested: 'neighborhood', pattern: 'neighborhood', lots: 11, fails: [], status: 'done' },
+      { requested: 'loop', pattern: 'frontage lots, no new street', lots: 14, fails: [], status: 'done' },
+    ] as never,
+  };
+  const DEFAULT14: SfV1Response = { status: 'done', lots: 14, pattern: 'frontage lots, no new street', fails: [], metrics: { street_ft: 0 } as never };
+
+  it('reads it off the candidate row that drew the best plan, so the best takes the sheet again (0 Hills Ln)', async () => {
+    const { chooseAutoBest, summarizeCandidates } = await import('./sfV1Plan');
+    expect(bestRequestedOf(HILLS)).toBe('grid');
+    expect(chooseAutoBest(HILLS, DEFAULT14)).toMatchObject({ requested: 'grid', why: 'more_lots', defaultLots: 14, bestLots: 17 });
+    expect(summarizeCandidates(HILLS)?.bestRequested).toBe('grid');
+    // the engine's own field still wins when it is sent
+    expect(bestRequestedOf({ ...HILLS, best_requested: 'neighborhood' })).toBe('neighborhood');
+  });
+
+  it('is the default when the loop row drew the best plan: nothing replaces it (0 Homeland Dr)', async () => {
+    const { chooseAutoBest } = await import('./sfV1Plan');
+    const same: SfV1CandidatesResponse = {
+      status: 'done', best_requested: null, best_pattern: 'single street', best_lots: 5, best_buildable: true,
+      best: { status: 'done', lots: 5, pattern: 'single street', fails: ['cost.street_ft_per_lot'] } as never,
+      candidates: [
+        { requested: 'loop', pattern: 'single street', lots: 5, fails: ['cost.street_ft_per_lot'], status: 'done' },
+        { requested: 'single', pattern: 'single street', lots: 5, fails: ['cost.street_ft_per_lot'], status: 'done' },
+      ] as never,
+    };
+    expect(bestRequestedOf(same)).toBe('loop');
+    expect(chooseAutoBest(same, { status: 'done', lots: 5, pattern: 'single street', fails: ['cost.street_ft_per_lot'] })).toBeNull();
+    expect(bestRequestedOf(null)).toBeNull();
+    expect(bestRequestedOf({ status: 'done', best_pattern: 'grid', best_lots: 9, candidates: [] })).toBeNull();
+  });
+
+  it('the earlier rule stands: a failing default with more lots keeps the sheet from a buildable best with fewer (0 Hart Ln)', async () => {
+    const { chooseAutoBest } = await import('./sfV1Plan');
+    const hart: SfV1CandidatesResponse = {
+      status: 'done', best_requested: null, best_pattern: 'terrace (hillside street with arms)', best_lots: 50, best_buildable: true,
+      best: { status: 'done', lots: 50, pattern: 'terrace (hillside street with arms)', fails: ['open.unassigned'] } as never,
+      candidates: [
+        { requested: 'loop', pattern: 'loop', lots: 76, fails: ['street.grade_max'], status: 'done' },
+        { requested: 'terrace', pattern: 'terrace (hillside street with arms)', lots: 50, fails: ['open.unassigned'], status: 'done' },
+      ] as never,
+    };
+    expect(bestRequestedOf(hart)).toBe('terrace');
+    expect(chooseAutoBest(hart, { status: 'done', lots: 76, pattern: 'loop', fails: ['street.grade_max'] })).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseWkt, wktPolygons, wktLines, wktPoint } from './wkt';
+import { parseWkt, wktPolygons, wktLines, wktPoint, wktMemberPolygons } from './wkt';
 
 describe('parseWkt (the by-right generator speaks WKT in EPSG:2274 feet)', () => {
   it('parses POINT, LINESTRING and POLYGON with holes, dropping Z', () => {
@@ -47,5 +47,16 @@ describe('parseWkt (the by-right generator speaks WKT in EPSG:2274 feet)', () =>
     expect(wktLines('LINESTRING(0 0,1 1)')).toHaveLength(1);
     expect(wktPoint('POINT(3 4)')).toEqual({ type: 'Point', coordinates: [3, 4] });
     expect(wktPoint('POINT EMPTY')).toBeNull();
+  });
+});
+
+describe('wktMemberPolygons (lots aligned with their members, 2026-11-10)', () => {
+  it('keeps a GEOMETRYCOLLECTION member together and gives a bare MULTIPOLYGON one member per polygon', () => {
+    const sq = (x: number) => `((${x} 0,${x + 1} 0,${x + 1} 1,${x} 1,${x} 0))`;
+    const gc = wktMemberPolygons(`GEOMETRYCOLLECTION(POLYGON${sq(0)},MULTIPOLYGON(${sq(2)},${sq(4)}),POLYGON EMPTY)`);
+    expect(gc.map(m => m.length)).toEqual([1, 2]);
+    expect(wktMemberPolygons(`MULTIPOLYGON(${sq(0)},${sq(2)},${sq(4)})`).map(m => m.length)).toEqual([1, 1, 1]);
+    expect(wktMemberPolygons(null)).toEqual([]);
+    expect(wktMemberPolygons('LINESTRING(0 0,1 1)')).toEqual([]);
   });
 });

@@ -1965,3 +1965,21 @@ readable). The flag lots' access poles are "Access strip N", not lots 6 and
 lot fit, massing) with its state, reason and last duration, and lists every
 element on the sheet. Left: a bounded working state for a slow compile,
 request correlation ids (engine).
+
+## 39. The engine cohort on g16: the re-run, the sheets, the ranking (2026-11-10)
+
+All 70 cohort parcels re-harvested on the engine at `20261109155542
+sf_v1_civil_cohort` and scored against the g15 baseline: plans 19 of 40
+(was 18), refusals 26 of 30 (was 25). Each plan sheet was driven through
+the app and read; the mean likelihood on the parcels judged in both runs
+is flat (plans 46.9 → 46.7, refusals 67.4 → 65.6). Fixed: 605 Harpeth Ln,
+0 Old Hickory Blvd R40. New: a terrace grammar that holds grade on 0 Hart
+Ln (50 lots at 9.2%), "the parcel as one lot" with a driveway length. Lost:
+`fn_sf_v1_plan` raises division by zero on 8192 Charlotte Pike;
+`best_requested` is null on every competition; 0 Dry Fork Rd still draws a
+loop at 59%. Fourteen of the 21 plan misses remain the land behind the
+first tier. App fixes from the read: flag lots read by member (the pole is
+"Access strip · lot N", not a lot), the best plan's grammar derived when
+the engine omits it, an engine error shown as an engine error with nothing
+substituted. Ranking, sheets and the engine handoff:
+`qa/audits/2026-11-10/`.

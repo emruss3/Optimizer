@@ -148,7 +148,8 @@ export function SfV1Panel({
   const fillScenario = override.flood === 'floodway';
   const ew = summary.earthwork;
   const fillByComponent = ew && ew.fill_cy && typeof ew.fill_cy === 'object' ? Object.entries(ew.fill_cy) : null;
-  const noNewLots = summary.status === 'skipped' || summary.lots === 0;
+  const errored = summary.status === 'error';
+  const noNewLots = !errored && (summary.status === 'skipped' || summary.lots === 0);
   const landlocked = summary.status === 'skipped' && /landlocked/i.test(summary.reason ?? '');
   const edges = parseEdgeClasses(summary.reason);
   const edgeSentence = edgeClassSentence(edges);
@@ -219,7 +220,13 @@ export function SfV1Panel({
         </div>
       </div>
 
-      {summary.status === 'skipped' ? (
+      {summary.status === 'error' ? (
+        // the generator raised instead of answering: an engine defect, not a
+        // finding about the land, and never a reason to draw something else
+        <p data-testid="sfv1-error" className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 leading-snug text-red-800">
+          The by-right generator failed on this parcel{summary.reason ? `: ${summary.reason}` : ''}. This is an engine error, not a finding about the land. No plan is drawn; nothing was substituted for it.
+        </p>
+      ) : summary.status === 'skipped' ? (
         <>
           <p data-testid="sfv1-skipped" className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 leading-snug text-amber-800">
             Skipped — {summary.reason ?? 'no reason given'}
@@ -580,7 +587,7 @@ export function SfV1Panel({
 
       {/* A skipped parcel (landlocked) is not fixed by a lot module or a fill
           scenario: no controls that cannot help, only the way back. */}
-      {!onOverride ? null : summary.status === 'skipped' ? ((overridden || floodSkip) ? (
+      {!onOverride || errored ? null : summary.status === 'skipped' ? ((overridden || floodSkip) ? (
         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2">
           {floodSkip && !fillScenario && (
             <button

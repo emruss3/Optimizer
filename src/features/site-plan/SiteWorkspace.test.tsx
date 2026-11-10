@@ -827,3 +827,21 @@ describe('SiteWorkspace: a failed massing context does not curtain the by-right 
     expect(genV2Mock).not.toHaveBeenCalled();
   });
 });
+
+describe('SiteWorkspace: the by-right generator raising an error is shown as one, with nothing substituted (8192 Charlotte Pike, 2026-11-10)', () => {
+  it('shows the engine error in the panel and never falls through to a legacy generator', async () => {
+    permittedUsesMock.mockResolvedValue(['single_family']);
+    const sf = ctxResp('single_family', 'ctx-sf');
+    (sf as unknown as { context: Record<string, unknown> }).context = {
+      ...(sf as unknown as { context: Record<string, unknown> }).context,
+      legal: { permitted_as_of_right: true, zoning_base: 'R40', confidence: 'high' },
+    };
+    compileMock.mockImplementation(async () => sf);
+    sfV1PlanMock.mockResolvedValue({ status: 'error', error: 'division by zero', ogc_fid: 669046 });
+    render(<SiteWorkspace parcel={{ ...(PARCEL as object), zoning: 'R40' } as never} />);
+    const err = await screen.findByTestId('sfv1-error');
+    expect(err.textContent).toContain('The by-right generator failed on this parcel: division by zero');
+    expect(genSfMock).not.toHaveBeenCalled();
+    expect(genV2Mock).not.toHaveBeenCalled();
+  });
+});
