@@ -333,7 +333,17 @@ steep to plan. Send `remainder_buildable_ac`, or take holds out of
 - Time: the slowest competition in the 60 was 18.5 s, Drakes Branch Rd.
   None over 20 s.
 
-### 5.4 One access reading to look at
+### 5.4 Your question on Old Dickerson Pike's six lots
+
+You asked whether the flags are wrong. They are not. At g21 the default is
+five frontage lots of 20,600 to 22,600 sf on Dry Creek Rd, each wholly
+clear of the hillside hold, and one lot of 15.4 ac behind them with 7.2 ac
+buildable. That is a sound by-right answer. My "three" was about the lots
+the lane reached, not these. The target of 8 to 16 stands for the 7.2
+buildable acres behind, and what keeps a street out of them is the grade
+test in §1: the 17-lot single street fails at 18% over 700 ft.
+
+### 5.5 One access reading to look at
 
 673347 0 Wright Ave, RS10, 2.88 flat ac. `private_lane`: "Wright Ave is
 mapped along or across the boundary (197 ft of it within 15 ft) over
@@ -355,7 +365,7 @@ are beside this file as `<fid>.png`.
 | 674590 0 Buffalo St | R15, 1.61 | refuse | nothing | pass | Right. |
 | 395119 317 Connare Dr | RS20, 1.53 | 2 to 3, no street | 3 estate lots | pass | Three lots is right. With 316 ft on the street, plain frontage lots look possible where it draws flags. |
 | 677761 0 Nora Ln | RS10, 2.33 | 5 to 8 | 5 on the sheet, 4 by default | pass | Low. The bulb and greens take 43% of the site. §2. |
-| 673347 0 Wright Ave | RS10, 2.88 | refuse | one lot | pass | Safe. §5.4. |
+| 673347 0 Wright Ave | RS10, 2.88 | refuse | one lot | pass | Safe. §5.5. |
 | 660480 3262 Kings Ln | RS40, 5.44 | 3 to 5 | 4 on a 1,090-ft drive | pass | Right count. The drive is 340 ft over Metro's limit and is flagged. |
 | 672722 0 Pennington Bend Rd | R15, 3.64 | 5 to 8 | 6 frontage lots | pass on count | Wrong. Driveways on Briley Pkwy. §4. |
 | 676928 0 Buena Vista Pike | RS15, 2.89 | refuse | nothing | pass | Right on this data. |
