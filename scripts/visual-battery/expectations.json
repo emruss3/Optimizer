@@ -46,7 +46,18 @@
       "neighborhoodHomes": 24,
       "neighborhoodRequested": "townhome",
       "densityCap": 35
-    }
+    },
+    "requireScene": {
+      "buildings": 1,
+      "tag": "A",
+      "floors": 4,
+      "footprintSqFt": 13561,
+      "heightFt": 44,
+      "heightBasis": "estimated",
+      "frame": "verified",
+      "consistent": true
+    },
+    "_scene": "2026-11-11: the drawing scene carries the engine's one building as A, 4 stories, 13,561 sf, with an estimated height of 44 ft, and its frame agrees with the engine's footprint."
   },
   "667574": {
     "mode": "server-plan",

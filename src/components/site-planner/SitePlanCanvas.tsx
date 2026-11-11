@@ -146,6 +146,11 @@ interface SitePlanCanvasProps {
   annotations?: SheetAnnotation[];
   /** Title block (screen-space, top-left). */
   sheet?: SheetTitleBlock | null;
+  /** The drawing scene of the plan on the sheet. With it the canvas reads
+   *  lengths in ground feet (the canvas frame is EPSG:3857, whose metres are
+   *  longer than ground metres here) and tags buildings as the 3D view and the
+   *  printed sheets do. Without it the canvas draws as it did before. */
+  scene?: import('../../features/site-plan/scene/types').DrawingScene | null;
 }
 
 export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
@@ -174,8 +179,11 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   neighbors = null,
   topo = null,
   annotations = NO_ANNOTATIONS,
-  sheet = null
+  sheet = null,
+  scene = null
 }) => {
+  // Ground metres per canvas unit. 1 without a scene: the original reading.
+  const groundScale = scene?.frame.groundScale ?? 1;
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Add a non-passive wheel listener so the parent can prevent page scrolling
@@ -391,7 +399,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // World coords are EPSG:3857 metres → convert to feet for display.
     const dx = endPoint.x - startPoint.x;
     const dy = endPoint.y - startPoint.y;
-    const distance = metersToFeet(Math.sqrt(dx * dx + dy * dy));
+    const distance = scene
+      ? scene.frame.distanceFt([startPoint.x, startPoint.y], [endPoint.x, endPoint.y])
+      : metersToFeet(Math.sqrt(dx * dx + dy * dy));
     const midX = (startPoint.x + endPoint.x) / 2;
     const midY = (startPoint.y + endPoint.y) / 2;
 
@@ -420,7 +430,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.restore();
 
     ctx.restore();
-  }, []);
+  }, [scene]);
 
   // Square corner handles on selected buildings — the grab points for
   // parametric resize (width/depth through the solver).
@@ -582,6 +592,63 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
   const renderElementLabel = useCallback((ctx: CanvasRenderingContext2D, element: Element, zoom: number) => {
     if (element.type !== 'building') return; // Only label buildings
 
+    // With a scene the building carries its tag (A, B, C) at a point inside
+    // the footprint, and a caption of the scene's own strings under it: the
+    // tag, stories, footprint and height the 3D inspector and the sheets show.
+    const tagged = scene?.buildings.find(b => b.id === element.id);
+    if (scene && tagged) {
+      if (!tagged.tagOnPlan) return;
+      const ring = element.geometry?.coordinates?.[0];
+      if (!ring || ring.length < 4) return;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of ring) {
+        const x = p[0] ?? NaN, y = p[1] ?? NaN;
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+      const sw = (maxX - minX) * zoom, sh = (maxY - minY) * zoom;
+      if (Math.max(sw, sh) < 26) return;
+      const [px, py] = scene.frame.fromFeet(tagged.labelPoint);
+      const r = 10 / zoom;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.scale(1, -1);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fill();
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.strokeStyle = '#0F172A';
+      ctx.stroke();
+      ctx.fillStyle = '#0F172A';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `700 ${(tagged.tag.length > 1 ? 9.5 : 12) / zoom}px Inter, system-ui, sans-serif`;
+      ctx.fillText(tagged.tag, 0, 0.5 / zoom);
+      if (sw >= 110 && sh >= 60) {
+        const lines = tagged.display.planLines;
+        const sizes = [11, 10];
+        let w = 0;
+        lines.forEach((t, i) => {
+          ctx.font = `${i === 0 ? 600 : 400} ${(sizes[i] ?? 10) / zoom}px Inter, system-ui, sans-serif`;
+          w = Math.max(w, ctx.measureText(t).width);
+        });
+        const lh = 13 / zoom, pad = 4 / zoom;
+        const top = r + 4 / zoom;
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.beginPath();
+        ctx.roundRect(-w / 2 - pad * 1.5, top, w + pad * 3, lh * lines.length + pad * 1.5, 3 / zoom);
+        ctx.fill();
+        lines.forEach((t, i) => {
+          ctx.font = `${i === 0 ? 600 : 400} ${(sizes[i] ?? 10) / zoom}px Inter, system-ui, sans-serif`;
+          ctx.fillStyle = i === 0 ? '#0F172A' : '#475569';
+          ctx.fillText(t, 0, top + pad + lh * (i + 0.45));
+        });
+      }
+      ctx.restore();
+      return;
+    }
+
     const coords = element.geometry?.coordinates?.[0];
     if (!coords || coords.length < 3) return;
 
@@ -659,7 +726,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
 
     ctx.restore();
-  }, []);
+  }, [scene]);
 
   // Render individual element
   const renderElement = useCallback((ctx: CanvasRenderingContext2D, element: Element, isSelected: boolean, isHovered: boolean, zoom: number) => {    const style = getElementStyle(element);
@@ -1126,7 +1193,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const text = `${Math.round(metersToFeet(d.lengthM))} ft`;
+      const text = `${Math.round(metersToFeet(d.lengthM) * groundScale)} ft`;
       const w = ctx.measureText(text).width + 8 / zoom;
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.fillRect(-w / 2, -fontSize * 0.8, w, fontSize * 1.6);
@@ -1135,7 +1202,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.restore();
     }
     ctx.restore();
-  }, []);
+  }, [groundScale]);
 
   // Road-classified setback edges: front (blue) / rear (amber) / side (gray),
   // labeled with the setback distance — the zoning read TestFit charges for.
@@ -1517,8 +1584,10 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
 
   // Screen-space scale bar (drawn after the world transform is popped)
   const renderScaleBar = useCallback((ctx: CanvasRenderingContext2D, zoom: number, cssW: number, cssH: number) => {
-    const { ft, px } = pickScaleBarFt(zoom);
-    const x2 = cssW - 20;
+    // px per ground metre: a ground metre is 1/groundScale canvas units
+    const { ft, px } = pickScaleBarFt(zoom / groundScale);
+    // with a scene the bar stands clear of the zoom cluster in the corner
+    const x2 = cssW - (scene ? 64 : 20);
     const x1 = x2 - px;
     const y = cssH - 18;
 
@@ -1539,7 +1608,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.textBaseline = 'bottom';
     ctx.fillText(`${ft} ft`, (x1 + x2) / 2, y - 4);
     ctx.restore();
-  }, []);
+  }, [groundScale, scene]);
 
   // Existing topography (USGS 3DEP 1-m DEM): 1-ft contours screened over the
   // plan the way a civil sheet carries existing conditions — minor lines thin
@@ -1697,8 +1766,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.font = font;
       wrapText(ctx, text, maxW).forEach((t, i) => rows.push({ text: t, font, color, h: Math.round(size * 1.3), gap: i === 0 ? gap : 0 }));
     };
-    // 1 in on screen = 96 px = 96/zoom m
-    const scaleFt = Math.round((96 / zoom) * 3.28084);
+    // 1 in on screen = 96 px = 96/zoom canvas units = that times groundScale in ground metres
+    const scaleFt = Math.round((96 / zoom) * groundScale * 3.28084);
     add(sheet.project, 12, 700, '#0F172A');
     add(sheet.title, 10, 700, '#1E3A8A', 2);
     if (sheet.subtitle) add(sheet.subtitle, 10, 500, '#475569', 1);
@@ -1732,7 +1801,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       cy += r.h;
     }
     ctx.restore();
-  }, [sheet]);
+  }, [sheet, groundScale]);
 
   // Render function
   const render = useCallback(() => {
@@ -1806,7 +1875,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       }
 
       // Dimension callouts (width × depth) on the selected building
-      if (isSelected && element.type === 'building') {
+      // (with a scene, only on a four-cornered footprint: the callouts are a
+      // width and a depth, and a traced engine footprint has neither)
+      if (isSelected && element.type === 'building' && (!scene || (element.geometry?.coordinates?.[0]?.length ?? 0) <= 5)) {
         renderDimensions(ctx, element, viewport.zoom);
       }
 

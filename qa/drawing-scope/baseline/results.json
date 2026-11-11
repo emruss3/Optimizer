@@ -1,0 +1,121 @@
+{
+ "682644_1440x900": {
+  "role": "subdivision",
+  "scene": null,
+  "ms2d": 27254,
+  "msFirst3d": 10938
+ },
+ "488278_1440x900": {
+  "role": "multifamily, one building, surface parking",
+  "scene": null,
+  "ms2d": 21636,
+  "msFirst3d": 9628
+ },
+ "669046_1440x900": {
+  "role": "multifamily, surface parking",
+  "scene": null,
+  "ms2d": 21497,
+  "msFirst3d": 9988
+ },
+ "469303_1440x900": {
+  "role": "wrap round a garage and court",
+  "scene": null,
+  "ms2d": 21727,
+  "msFirst3d": 10442
+ },
+ "686430_1440x900": {
+  "role": "sloped site with flood and hillside holds",
+  "scene": null,
+  "ms2d": 21643,
+  "msFirst3d": 11090
+ },
+ "672526_1440x900": {
+  "role": "no generated geometry (flood skip)",
+  "scene": null,
+  "ms2d": 21826,
+  "msFirst3d": 7619
+ },
+ "408571_1440x900": {
+  "role": "commercial capacity only",
+  "scene": null,
+  "ms2d": 21766,
+  "msFirst3d": 20043
+ },
+ "682644_1920x1080": {
+  "role": "subdivision",
+  "scene": null,
+  "ms2d": 21954,
+  "msFirst3d": 374
+ },
+ "488278_1920x1080": {
+  "role": "multifamily, one building, surface parking",
+  "scene": null,
+  "ms2d": 21897,
+  "msFirst3d": 10137
+ },
+ "669046_1920x1080": {
+  "role": "multifamily, surface parking",
+  "scene": null,
+  "ms2d": 21778,
+  "msFirst3d": 9989
+ },
+ "469303_1920x1080": {
+  "role": "wrap round a garage and court",
+  "scene": null,
+  "ms2d": 21892,
+  "msFirst3d": 10295
+ },
+ "686430_1920x1080": {
+  "role": "sloped site with flood and hillside holds",
+  "scene": null,
+  "ms2d": 21679,
+  "msFirst3d": 10207
+ },
+ "672526_1920x1080": {
+  "role": "no generated geometry (flood skip)",
+  "scene": null,
+  "ms2d": 21537,
+  "msFirst3d": 7901
+ },
+ "408571_1920x1080": {
+  "role": "commercial capacity only",
+  "scene": null,
+  "ms2d": 21632,
+  "msFirst3d": 20055
+ },
+ "682644_1280x800": {
+  "role": "subdivision",
+  "scene": null,
+  "ms2d": 21891
+ },
+ "488278_1280x800": {
+  "role": "multifamily, one building, surface parking",
+  "scene": null,
+  "ms2d": 21677
+ },
+ "669046_1280x800": {
+  "role": "multifamily, surface parking",
+  "scene": null,
+  "ms2d": 21711
+ },
+ "469303_1280x800": {
+  "role": "wrap round a garage and court",
+  "scene": null,
+  "ms2d": 21833
+ },
+ "686430_1280x800": {
+  "role": "sloped site with flood and hillside holds",
+  "scene": null,
+  "ms2d": 21999
+ },
+ "672526_1280x800": {
+  "role": "no generated geometry (flood skip)",
+  "scene": null,
+  "ms2d": 21986
+ },
+ "408571_1280x800": {
+  "role": "commercial capacity only",
+  "scene": null,
+  "ms2d": 21720
+ }
+}

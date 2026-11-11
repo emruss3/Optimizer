@@ -384,6 +384,27 @@ function judge(exp, ev) {
       else if (a.served < a.bays) errs.push(`${a.bays - a.served} of ${a.bays} parking bays have no drive at them`);
     }
   }
+  // 2026-11-11 drawing scene: the plan on the sheet must reach the scene the
+  // plan, the 3D view and the printed sheets all read, with the engine's own
+  // building figures, a height marked as estimated, a frame checked against
+  // the engine's footprint and drawn counts that add up to the schedule.
+  if (exp.requireScene) {
+    const want = exp.requireScene;
+    const sc = ev.scene;
+    if (!sc) errs.push('drawing scene missing (evidence.scene absent)');
+    else {
+      const b = (sc.buildings ?? []).find(x => x.tag === want.tag);
+      if ((sc.buildings ?? []).length !== want.buildings) errs.push(`scene: ${(sc.buildings ?? []).length} buildings, expected ${want.buildings}`);
+      if (!b) errs.push(`scene: no building tagged ${want.tag}`);
+      else {
+        for (const k of ['floors', 'footprintSqFt', 'heightFt', 'heightBasis']) {
+          if (want[k] != null && b[k] !== want[k]) errs.push(`scene: building ${want.tag} ${k} is ${b[k]}, expected ${want[k]}`);
+        }
+      }
+      if (want.frame && sc.frame?.check?.status !== want.frame) errs.push(`scene: frame check is ${sc.frame?.check?.status}, expected ${want.frame}`);
+      if (want.consistent && !sc.schedule?.consistent) errs.push('scene: the drawn features do not add up to the scheme schedule');
+    }
+  }
   // 2026-09-04 civil sheet: the topography must LOAD and render (contours in
   // the canvas frame). On a subdivision every through-street must carry a
   // profile and spot grades — the DEM fetch, the fn_parcel_topo grant and the

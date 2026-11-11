@@ -84,6 +84,8 @@ import { mfAccessSummary } from './api/mfAccess';
 import SchemesRail from './ui/SchemesRail';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
+import { buildDrawingScene, sceneEvidence, selectionFor, type SelectionCache } from './scene/buildScene';
+import { ExhibitSheets } from './ui/ExhibitSheets';
 const Massing3D = React.lazy(() => import('./ui/Massing3D'));
 
 /**
@@ -133,6 +135,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // collapsible left rail, reporting in tabs docked under the canvas.
   const [leftRailCollapsed, setLeftRailCollapsed] = useState(false);
   const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results' | 'profile'>('tabulation');
+  // The drawing scene path (2026-11-11). `?drawing=classic` turns it off: the
+  // plan, the 3D view and the export then draw exactly as they did before it.
+  const classicDrawing = useMemo(() => {
+    try { return new URLSearchParams(window.location.search).get('drawing') === 'classic'; } catch { return false; }
+  }, []);
+  const [sheetsOpen, setSheetsOpen] = useState(false);
+  const [sceneSelection, setSceneSelection] = useState<SelectionCache | null>(null);
   // Exit artifact (P1-5): print-ready scheme report with a plan snapshot.
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPng, setExportPng] = useState<string | null>(null);
@@ -2922,6 +2931,44 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   // The one-line plan-basis row (2026-09-04): the context state, the two lead
   // segments of the basis, the upper bound and the capture.
+  // The drawing scene: one description of the plan on the sheet, built once,
+  // read by the plan, the 3D view and the printed sheets. Solver outputs go in
+  // and nothing comes back: no view changes an element through it.
+  const sceneSchemeId = seedViewOn
+    ? 'quick-massing'
+    : layoutShown === 'multifamily'
+      ? `mf:${activeCandidateId ?? planLineage?.generatorVersion ?? 'plan'}`
+      : layoutShown === 'neighborhood'
+        ? `neighborhood:${layoutShownRequested ?? 'plan'}`
+        : subdivisionOnSheet ? 'subdivision' : 'plan';
+  const scene = useMemo(
+    () => (classicDrawing || displayElements.length === 0
+      ? null
+      : buildDrawingScene({
+          parcelId: parcel.ogc_fid ?? 'unknown',
+          schemeId: sceneSchemeId,
+          elements: displayElements,
+          parcelGeometry: (parcel.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined) ?? null,
+          envelope: envelopeMeters ?? null,
+          context: neighbors,
+          schedule: seedViewOn ? null : { units: metrics?.totalUnits ?? null, stalls: metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null },
+          generator: planLineage?.generatorVersion ?? null,
+        })),
+    [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion],
+  );
+  // One selection for the plan and the 3D view, remembered for this parcel and scheme.
+  const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
+  const sceneKey = scene?.identity.key ?? null;
+  const handleSceneSelection = useCallback((ids: string[]) => {
+    if (!sceneKey) return;
+    setSceneSelection(prev => (prev && prev.key === sceneKey && prev.ids.length === ids.length && prev.ids.every((id, i) => id === ids[i])
+      ? prev
+      : { key: sceneKey, ids }));
+  }, [sceneKey]);
+  const sheetsTitle = useMemo(
+    () => ({ project: sheetTitle.project, subtitle: sheetTitle.subtitle, date: sheetTitle.date, notes: sheetTitle.notes }),
+    [sheetTitle],
+  );
   const contextState = resolveContextApplication({
     compiling: plannerLoading,
     blocked: generationBlocked,
@@ -3094,6 +3141,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       },
       profileStreets: streetProfiles.length,
       sheetTitle: sheetTitle.title,
+      // the drawing scene (2026-11-11): what the plan, the 3D view and the sheets all read
+      scene: sceneEvidence(scene),
+      sceneSelection: sceneSelectedIds,
       mfAccess,
       // 2026-11-09 (the scope's P0.2): the precondition the sketched plan rests on, if any.
       conditional: metrics?.conditional ?? null,
@@ -3134,7 +3184,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
           : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess]);
+  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -3358,6 +3408,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         >
           Export
         </button>
+        {!classicDrawing && (
+          <button
+            data-testid="open-sheets"
+            onClick={() => setSheetsOpen(true)}
+            disabled={!scene || draftMode || !!compileBlocked}
+            title={
+              !scene
+                ? 'Nothing is drawn on the sheet yet'
+                : draftMode || compileBlocked
+                  ? 'Sheets are only produced from context-verified plans'
+                  : 'Exhibit sheets as vector drawings at page size: A-01 Site Plan'
+            }
+            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Sheets
+          </button>
+        )}
         </div>
       </div>
 
@@ -3606,6 +3673,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 envelope={envelopeMeters ?? undefined}
                 neighbors={neighbors}
                 edgeClassifications={edgeClassifications}
+                scene={scene}
+                selectedId={sceneSelectedIds.length === 1 ? sceneSelectedIds[0] : null}
+                onSelect={scene ? (id => handleSceneSelection(id ? [id] : [])) : undefined}
               />
               </React.Suspense>
             </SitePlannerErrorBoundary>
@@ -3618,6 +3688,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 topo={showTopo ? topoCanvas : null}
                 annotations={sheetAnnotations}
                 sheet={sheetTitle}
+                scene={scene}
+                initialSelectedIds={sceneSelectedIds}
+                onSelectionChange={scene ? handleSceneSelection : undefined}
                 parcel={plannerParcel}
                 planElements={displayElements}
                 metrics={metrics || undefined}
@@ -3774,6 +3847,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
         </div>
       </div>
+      {sheetsOpen && scene && (
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} />
+      )}
       {exportOpen && (
         <ExportReport
           address={parcel.address ?? parcelIdStr}

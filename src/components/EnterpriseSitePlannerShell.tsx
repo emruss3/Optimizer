@@ -114,6 +114,13 @@ interface EnterpriseSitePlannerProps {
   annotations?: import('../features/site-plan/api/sheetAnnotations').SheetAnnotation[];
   /** Title block drawn in the sheet's corner */
   sheet?: import('../features/site-plan/api/sheetAnnotations').SheetTitleBlock | null;
+  /** The drawing scene of the plan on the sheet (see SitePlanCanvas). */
+  scene?: import('../features/site-plan/scene/types').DrawingScene | null;
+  /** The selection to start from: what was selected in another view of the
+   *  same parcel and scheme. */
+  initialSelectedIds?: string[];
+  /** Told whenever the selection changes, so another view can take it up. */
+  onSelectionChange?: (ids: string[]) => void;
 }
 
 const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
@@ -140,7 +147,10 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   neighbors = null,
   topo = null,
   annotations,
-  sheet = null
+  sheet = null,
+  scene = null,
+  initialSelectedIds,
+  onSelectionChange
 }) => {
   // NOTE: Do NOT early-return before the hooks below — React requires hooks to
   // run unconditionally on every render. The `!parcel` guard lives just before
@@ -223,7 +233,13 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   // Modular hooks
   const viewport = useViewport();
-  const selection = useSelection();
+  const selection = useSelection(initialSelectedIds);
+  // Tell the workspace what is selected, so the 3D view opens on it.
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
+  useEffect(() => {
+    onSelectionChangeRef.current?.(Array.from(selection.selectedElements));
+  }, [selection.selectedElements]);
   const drag = useDrag();
   const drawingTools = useDrawingTools();
   const rotation = useRotation();
@@ -1179,15 +1195,27 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             // GFA from LIVE geometry, not the stored areaSqFt property — the
             // property lags a resize gesture, freezing the readout mid-drag.
             const areaSqFt = Math.round(wFt * dFt);
+            // A generated plan's building is read from the drawing scene: the
+            // tag, footprint and height the 3D inspector and the sheets show.
+            // (The width and depth above are a rectangle's, and a traced
+            // engine footprint is not one.)
+            const sceneBuilding = staticPlan ? scene?.buildings.find(b => b.id === selectedBuilding.id) : undefined;
             return (
               <div className="absolute top-3 left-3 z-10 bg-white rounded-lg shadow-md border border-gray-200 px-3 py-2 text-sm flex items-center gap-3">
                 <div className="min-w-0">
                   <div className="font-semibold text-gray-900 truncate">
                     {selectedBuilding.name || selectedBuilding.id}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {wFt} × {dFt} ft · {Math.round(areaSqFt * floors).toLocaleString()} SF GFA
-                  </div>
+                  {sceneBuilding ? (
+                    <div className="text-xs text-gray-500" data-testid="plan-selected-building" data-feature-id={sceneBuilding.id}>
+                      <span className="font-semibold text-gray-900">{sceneBuilding.tag}</span>
+                      {' · '}{sceneBuilding.display.footprint} footprint · {sceneBuilding.display.heightLabel.toLowerCase()} {sceneBuilding.display.height}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500">
+                      {wFt} × {dFt} ft · {Math.round(areaSqFt * floors).toLocaleString()} SF GFA
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 border-l border-gray-200 pl-3">
                   <span className="text-xs text-gray-500">Floors</span>
@@ -1260,6 +1288,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             topo={topo}
             annotations={annotations}
             sheet={sheet}
+            scene={scene}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
