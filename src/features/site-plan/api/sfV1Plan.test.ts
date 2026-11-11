@@ -4,7 +4,7 @@ import { isSfPlanElement } from './generateSfPlan';
 import {
   sfV1Route, normalizeTests, fillBand, fillColor, padFillByLot, earthworkHasFlood, openStyle,
   sfV1ToElements, sfV1SummaryLine, isOverride, isSfV1Element, parseEdgeClasses, edgeClassSentence, houseLabel, bestRequestedOf,
-  type SfV1Response, type SfV1CandidatesResponse,
+  type SfV1Response, type SfV1CandidatesResponse, parseAccess, isNoStreetAccess, accessBanner, summarizeCandidates as summarizeComp, competitionRowOnSheet,
 } from './sfV1Plan';
 
 // A small by-right plan in EPSG:2274 feet, shaped like the live payload for
@@ -585,6 +585,107 @@ describe('the shared private drive (engine g13)', () => {
     const failed = summarizeCandidates({ status: 'done', candidates: [{ requested: 'drive', status: 'failed', lots: 0, error: 'statement timeout' }] as never })!;
     expect(failed.rows[0]!.error).toBe('statement timeout');
     expect(failed.rows[0]!.nothingDrawn).toBeNull();
+  });
+});
+
+describe('engine g21 and g22: the access reading, rows not drawn for time, rows that raised', () => {
+  it('reads the access object and says what the sheet should carry', () => {
+    expect(parseAccess(null)).toBeNull();
+    expect(parseAccess({ message: 'no type' })).toBeNull();
+    const none = parseAccess({ type: 'none', message: 'no boundary on a mapped street', street_ft: 0 });
+    expect(none).toEqual({ type: 'none', message: 'no boundary on a mapped street' });
+    expect(isNoStreetAccess(none)).toBe(true);
+    expect(isNoStreetAccess(parseAccess({ type: 'private_lane' }))).toBe(true);
+    expect(isNoStreetAccess(parseAccess({ type: 'narrow_touch' }))).toBe(false);
+    expect(isNoStreetAccess(parseAccess({ type: 'public_street' }))).toBe(false);
+    expect(isNoStreetAccess(null)).toBe(false);
+    // the engine's reading decides once an answer carries it
+    expect(accessBanner(none, false)).toEqual({ text: 'No street access on record — no street, right-of-way or mapped lane on the boundary.', detail: 'no boundary on a mapped street' });
+    expect(accessBanner(parseAccess({ type: 'private_lane', message: 'a lane is mapped along the boundary' }), false)?.text).toBe('No public street frontage — reached by a private lane; an access easement to confirm.');
+    // where the two disagree the engine's reading wins: an unparcelled right-of-way is frontage
+    expect(accessBanner(parseAccess({ type: 'unmapped_row' }), true)).toBeNull();
+    expect(accessBanner(parseAccess({ type: 'public_street' }), true)).toBeNull();
+    // before an answer is in, the frontage layer stands in
+    expect(accessBanner(null, true)).toEqual({ text: 'No street frontage — access via easement assumed.', detail: null });
+    expect(accessBanner(null, false)).toBeNull();
+  });
+
+  it('a plan summary and a competition carry the reading', () => {
+    const { summary } = sfV1ToElements({ status: 'done', lots: 0, access: { type: 'private_lane', message: 'reached by a private lane' } } as never);
+    expect(summary.access).toEqual({ type: 'private_lane', message: 'reached by a private lane' });
+    expect(sfV1ToElements({ status: 'done', lots: 0 } as never).summary.access).toBeNull();
+    const comp = summarizeComp({ status: 'skipped', reason: 'landlocked: no boundary on a mapped street', access: { type: 'none', message: 'no boundary on a mapped street' } } as never)!;
+    expect(comp.access).toEqual({ type: 'none', message: 'no boundary on a mapped street' });
+    expect(summarizeComp({ status: 'done', candidates: [] } as never)!.access).toBeNull();
+  });
+
+  it('a row the time budget did not reach is not drawn, a reason is not an error, and what raised says so', () => {
+    const comp = summarizeComp({
+      status: 'done', best_requested: 'grid', best_lots: 12, best_buildable: true, verdict: 'buildable as drawn',
+      candidates: [
+        { requested: 'grid', pattern: 'grid', status: 'done', lots: 12, fails: [] },
+        { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 10, fails: [] },
+        { requested: 'terrace', status: 'failed', lots: 0, error: "not drawn: the competition's time budget was spent on the patterns before it" },
+        { requested: 'drive', status: 'failed', lots: 0, error: 'landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it' },
+        { requested: 'single', status: 'failed', lots: 0, error: 'no hillside street could be laid at the grade on this parcel' },
+        { requested: 'loop', status: 'error', lots: 0, error: 'record "best" is not assigned yet' },
+      ] as never,
+    })!;
+    const byName = Object.fromEntries(comp.rows.map(r => [r.requested, r]));
+    // 0 Hart Ln, g22: the terrace is the default plan and the competition had no time left to draw it
+    expect(byName.terrace!.label).toBe('terrace grammar (a hillside street with arms): not drawn');
+    expect(byName.terrace!.notDrawn).toBe(true);
+    expect(byName.terrace!.error).toBeNull();
+    expect(byName.terrace!.nothingDrawn).toContain('time budget');
+    // the engine's reason for drawing nothing is the row's grey line
+    expect(byName.drive!.label).toBe('shared private drive: nothing drawn');
+    expect(byName.drive!.error).toBeNull();
+    expect(byName.drive!.nothingDrawn).toContain('landlocked');
+    expect(byName.single!.error).toBeNull();
+    expect(byName.single!.nothingDrawn).toBe('no hillside street could be laid at the grade on this parcel');
+    // 4775 Drakes Branch Rd, g22: the loop row raised
+    expect(byName.loop!.error).toBe('record "best" is not assigned yet');
+    expect(byName.loop!.nothingDrawn).toBeNull();
+    expect(byName.loop!.label).toBe('loop grammar: error');
+    expect(comp.errored).toEqual(['loop']);
+    expect(comp.notDrawn).toEqual(['terrace']);
+    expect(comp.sentence).toContain('The loop grammar raised an engine error, so the comparison is incomplete.');
+    expect(comp.sentence).toContain("The terrace grammar (a hillside street with arms) was not drawn: the competition's time budget was spent on the patterns before it.");
+    // a clean competition says neither
+    const clean = summarizeComp({ status: 'done', best_requested: 'grid', best_lots: 12, candidates: [{ requested: 'grid', pattern: 'grid', status: 'done', lots: 12, fails: [] }, { requested: 'neighborhood', pattern: 'neighborhood', status: 'done', lots: 12, fails: [] }] } as never)!;
+    expect(clean.errored).toEqual([]);
+    expect(clean.notDrawn).toEqual([]);
+    expect(clean.sentence).not.toContain('engine error');
+    expect(clean.sentence).not.toContain('not drawn');
+  });
+});
+
+describe('which competition row is on the sheet (engine g19: the default can be replaced)', () => {
+  const rows = [
+    { requested: 'grid', status: 'done', pattern: 'grid', lots: 73 },
+    { requested: 'loop', status: 'done', pattern: 'loop', lots: 75 },
+    { requested: 'neighborhood', status: 'done', pattern: 'neighborhood', lots: 17 },
+    { requested: 'terrace', status: 'failed', pattern: null, lots: 0 },
+  ];
+  it('is the asked grammar when the sheet is that grammar\'s plan', () => {
+    expect(competitionRowOnSheet(rows, 'loop')).toBe('loop');
+    expect(competitionRowOnSheet(rows, 'grid', null)).toBe('grid');
+    expect(competitionRowOnSheet(rows, null)).toBeNull();
+    expect(competitionRowOnSheet(rows, 'loop', { pattern: 'loop', lots: 75 })).toBe('loop');
+  });
+  it('0 Hart Ln: the default is the 57-lot terrace the competition did not draw, so no row is on the sheet', () => {
+    expect(competitionRowOnSheet(rows, 'loop', { pattern: 'terrace (hillside street with arms)', lots: 57 })).toBeNull();
+  });
+  it('0 Old Clarksville Pike: the default is the 17-lot neighborhood, so that row is', () => {
+    expect(competitionRowOnSheet(rows, 'loop', { pattern: 'neighborhood', lots: 17 })).toBe('neighborhood');
+  });
+  it('an engine error on the default puts no row on the sheet', () => {
+    expect(competitionRowOnSheet(rows, 'loop', { pattern: null, lots: -1 })).toBeNull();
+  });
+  it('a plan summary says what the default replaced', () => {
+    const { summary } = sfV1ToElements({ status: 'done', lots: 10, pattern: 'frontage lots, no new street', default_replaced: { why: 'withdrawn: the street plan fails a code test', pattern: 'loop', lots: 17, fails: ['street.grade_max'] } } as never);
+    expect(summary.defaultReplaced).toEqual({ pattern: 'loop', lots: 17, why: 'withdrawn: the street plan fails a code test' });
+    expect(sfV1ToElements({ status: 'done', lots: 4 } as never).summary.defaultReplaced).toBeNull();
   });
 });
 

@@ -2068,3 +2068,25 @@ stalls for 17 homes) and apartments are drawn where attached homes fit.
 The cohort is 130 parcels. App: the panel no longer repeats the engine's
 own note of the unplanned land. Write-up and handoff:
 `qa/audits/2026-11-10d/`.
+
+## 44. The whole cohort on engine g22; the replay baseline answered (2026-11-11)
+
+The engine side sent its reply at g21 and a replay baseline at g22: on 90
+held-out recorded subdivisions the engine draws 70% of the lots that were
+built, because its streets carry lots on about half their frontage. All 130
+cohort parcels were measured on g22: plans 49 of 71, refusals 53 of 59; on
+the 110 of g19, plans 41 of 60 (39) and refusals 46 of 50 (46).
+
+Found: g22 raises an engine error on five parcels. `fn_sf_v1_walk_best`
+reads a field of a record it never assigned when no heading of a street
+walk finds a route. The exact line and a fix went to the engine side; the
+function was not changed from here. The 28 misses are 13 streets on rolling
+ground, 13 multifamily, one plan a lot short and one landlocked target. The
+replay ran without terrain, so it cannot see the grade test; the reply asks
+that the design profile come with the new street pattern.
+
+App: the banner reads the engine's access reading; a multifamily plan on
+land with no public street is marked and stays the default until the owner
+rules; competition rows skipped for time read "not drawn", reasons are not
+errors, rows that raised say so; the row marked "on the sheet" follows the
+plan on the sheet. Reply: `qa/audits/2026-11-11/APP_REPLY_3.md`.

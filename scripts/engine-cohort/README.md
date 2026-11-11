@@ -128,6 +128,15 @@ refusals 7 of 9. Two passes are not real and the scorer cannot see it:
 twice during the first harvest; the run is the second, taken with one
 release name before and after.
 
+g22, 2026-11-11 (`runs/2026-11-11_g22.json`, reply in
+`qa/audits/2026-11-11/APP_REPLY_3.md`): all 130. Plans 49 of 71, refusals
+53 of 59. The 110 of g19: plans 41 of 60, refusals 46 of 50 (g19: 39 and
+46). Five parcels return an engine error on this release (`record "best"
+is not assigned yet`, in `fn_sf_v1_walk_best`); the scorer reads an error
+as a miss. The engine side scores the same 110 at 38 and 50 with a scorer
+that does not sheet apartments: three plans pass here on apartments and
+four refusals fail on them.
+
 Proposed and not applied (the owner's call; see `APP_REPLY.md` §4): lower
 targets for 1019 Hitt Ln, 8282 Charlotte Pike, 0 Newsom Station Rd,
 0 Campbell Rd and 0 Old Hickory Blvd R15, where the engine measured that no

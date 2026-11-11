@@ -123,6 +123,28 @@ describe('LayoutChoicePanel (multifamily by default where it places more homes; 
     expect(screen.getByTestId('layout-option-neighborhood').textContent).toContain('no pattern places a home');
   });
 
+  it('marks the multifamily plan where the engine finds no public street (engine g21)', () => {
+    const none = 'no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it';
+    const skipped = summarizeCandidates({ status: 'skipped', reason: `landlocked: ${none}`, access: { type: 'none', message: none } } as never)!;
+    const { rerender } = render(
+      <LayoutChoicePanel choice={chooseLayout({ multifamilyHomes: 35, competition: skipped })} competition={{ state: 'done', data: skipped, error: null }}
+        shown="multifamily" shownRequested={null} auto={false} onChoose={() => undefined} onViewCandidate={() => undefined} />,
+    );
+    expect(screen.getByTestId('layout-choice').getAttribute('data-access-caution')).toBe('none');
+    expect(screen.getByTestId('layout-option-multifamily').textContent).toContain('no street access on record');
+    expect(screen.getByTestId('layout-sentence').textContent).toContain('No street access is on record for this parcel');
+
+    const lane = summarizeCandidates({ status: 'done', best_requested: 'loop', best_lots: 1, access: { type: 'private_lane', message: 'reached by a private lane, an access easement to confirm' },
+      candidates: [{ requested: 'loop', pattern: 'the parcel as one lot', status: 'done', lots: 1, fails: [] }] } as never)!;
+    rerender(
+      <LayoutChoicePanel choice={chooseLayout({ multifamilyHomes: 8, competition: lane })} competition={{ state: 'done', data: lane, error: null }}
+        shown="multifamily" shownRequested={null} auto={false} onChoose={() => undefined} onViewCandidate={() => undefined} />,
+    );
+    expect(screen.getByTestId('layout-choice').getAttribute('data-access-caution')).toBe('private_lane');
+    expect(screen.getByTestId('layout-option-multifamily').textContent).toContain('private lane · easement to confirm');
+    expect(screen.getByTestId('layout-option-multifamily').textContent).not.toContain('no street access on record');
+  });
+
   it('while the plans are drawn, and when they fail, it says so; the multifamily plan stands', () => {
     const onRetry = vi.fn();
     const { rerender } = render(

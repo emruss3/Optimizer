@@ -15,7 +15,7 @@
  * A tie stays multifamily: the incumbent, and the design the owner named.
  */
 import type { SfV1Competition, SfV1CompetitionRow } from './sfV1Plan';
-import { codeFails } from './sfV1Plan';
+import { codeFails, isNoStreetAccess } from './sfV1Plan';
 
 export type LayoutKind = 'multifamily' | 'neighborhood';
 
@@ -51,6 +51,14 @@ export interface LayoutChoice {
    * its plan stands in it: the sheet says so and hatches the hold over it.
    */
   floodHold: boolean;
+  /**
+   * The engine's access reading finds no public street on the parcel (g21 sends `access` with every
+   * competition): nothing at all, or only a lane over other owners' land. The multifamily engine does not
+   * check access unless asked, so its plan is marked on the sheet (0 Hicks Rd: 8 apartments beside "one house
+   * by the existing access"; 262 Martingale Dr: 35 apartments whose open edge is the railroad). Whether such
+   * a plan still counts by right is the owner's rule, open since 2026-11-10: this only says what the engine found.
+   */
+  accessCaution?: { type: 'none' | 'private_lane'; message: string | null } | null;
 }
 
 const FLOOD_SKIP = /floodplain leaves no buildable piece/i;
@@ -96,13 +104,27 @@ export function neighborhoodOption(comp: SfV1Competition | null | undefined): La
   };
 }
 
-export function chooseLayout(input: {
+interface LayoutInput {
   multifamilyHomes: number | null;
   multifamilyProduct?: 'apartments' | 'townhomes';
   /** the multifamily plan failed to draw (as opposed to drawing without a reported count) */
   multifamilyFailed?: boolean;
   competition: SfV1Competition | null | undefined;
-}): LayoutChoice {
+}
+
+export function chooseLayout(input: LayoutInput): LayoutChoice {
+  const choice = decideLayout(input);
+  const access = input.competition?.access ?? null;
+  if (choice.multifamilyHomes == null || !access || !isNoStreetAccess(access)) return { ...choice, accessCaution: null };
+  const type = access.type === 'none' ? 'none' as const : 'private_lane' as const;
+  const found = access.message ? ` (${access.message.replace(/\.$/, '')})` : '';
+  const says = type === 'none'
+    ? `No street access is on record for this parcel${found}: the by-right engine draws nothing here without it, and the multifamily plan does not check access.`
+    : `No public street fronts this parcel${found}: the multifamily plan does not check access.`;
+  return { ...choice, accessCaution: { type, message: access.message }, sentence: `${choice.sentence} ${says}` };
+}
+
+function decideLayout(input: LayoutInput): LayoutChoice {
   const product = input.multifamilyProduct ?? 'apartments';
   const mf = input.multifamilyHomes != null && input.multifamilyHomes > 0 ? Math.round(input.multifamilyHomes) : null;
   // A plan on the sheet whose count is not reported is not a plan that failed:

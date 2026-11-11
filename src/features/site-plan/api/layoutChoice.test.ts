@@ -121,6 +121,37 @@ describe('chooseLayout (the owner, 2026-11-04: multifamily where it makes more s
     expect(chooseLayout({ multifamilyHomes: null, competition: skipped }).sentence).toBe('No neighborhood plan: floodplain leaves no buildable piece, so the sheet stays multifamily.');
   });
 
+  it('engine g21: no public street on the parcel marks the multifamily plan; the default and the count do not change', () => {
+    // 0 Hicks Rd (RM4), g22: by right "the parcel as one lot" beside 8 apartments, access by a private lane
+    const lane = 'no boundary on a public street; a lane is mapped along or across the boundary (62 ft of it within 15 ft) over neighbouring parcels: reached by a private lane, an access easement to confirm';
+    const hicks = comp({
+      best_requested: 'loop', best_lots: 1, best_buildable: true, verdict: 'buildable as drawn', homes_allowed_by_density: 8,
+      access: { type: 'private_lane', message: lane, street_ft: 0 },
+      candidates: [row('grid', null, 0, ['access.landlocked']), row('loop', 'the parcel as one lot', 1)] as never,
+    });
+    const c = chooseLayout({ multifamilyHomes: 8, competition: hicks });
+    expect(c.defaultKind).toBe('multifamily');
+    expect(c.multifamilyHomes).toBe(8);
+    expect(c.accessCaution).toEqual({ type: 'private_lane', message: lane });
+    expect(c.sentence).toBe(`Apartments place more homes here: 8 apartments against the neighborhood's best of 1 house lot (the parcel as one lot), so they are the default. No public street fronts this parcel (${lane}): the multifamily plan does not check access.`);
+
+    // 262 Martingale Dr (RM20): the competition is skipped as landlocked and still carries the reading
+    const none = 'no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it';
+    const martingale = summarizeCandidates({ status: 'skipped', reason: `landlocked: ${none}`, access: { type: 'none', message: none } } as SfV1CandidatesResponse);
+    const m = chooseLayout({ multifamilyHomes: 35, competition: martingale });
+    expect(m.defaultKind).toBe('multifamily');
+    expect(m.accessCaution).toEqual({ type: 'none', message: none });
+    expect(m.sentence).toContain('No street access is on record for this parcel');
+    expect(m.sentence).toContain('the by-right engine draws nothing here without it');
+
+    // a driveway-wide touch and a street are not marked; nor is a parcel with no multifamily plan to mark
+    const touch = comp({ best_requested: 'loop', best_lots: 1, access: { type: 'narrow_touch', message: 'the parcel touches Woodland Hills Dr for 31 ft' }, candidates: [row('loop', 'the parcel as one lot', 1)] as never });
+    expect(chooseLayout({ multifamilyHomes: 10, competition: touch }).accessCaution).toBeNull();
+    expect(chooseLayout({ multifamilyHomes: 89, competition: HEIMAN }).accessCaution).toBeNull();
+    expect(chooseLayout({ multifamilyHomes: null, competition: martingale }).accessCaution).toBeNull();
+    expect(chooseLayout({ multifamilyHomes: null, competition: martingale }).sentence).not.toContain('street access');
+  });
+
   it('0 Carothers Rd: the townhome row drew as many homes as the apartments but fails a code test; the sentence says what it drew', () => {
     const carothers = comp({
       best_requested: 'loop', best_lots: 20, best_buildable: true, homes_allowed_by_density: 42, attached_permitted: true,
