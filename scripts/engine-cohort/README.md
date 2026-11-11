@@ -4,9 +4,9 @@ Eric, 2026-11-09: "If we aren't getting better each time we do this, we need
 to re-focus." Random draws measure the land as much as the engine, and each
 batch sent the engine ten asks. This is the fixed measure instead.
 
-`cohort.json` holds every parcel from the audit batches (batches 1–6,
-2026-11-04 to 2026-11-10: 130 parcels, 108 R/RS and 22 RM; batch 5 added 40
-and batch 6 added 20 on 2026-11-10) with what a civil
+`cohort.json` holds every parcel from the audit batches (batches 1–7,
+2026-11-04 to 2026-11-11: 150 parcels, 124 R/RS and 26 RM; batch 5 added
+40, batch 6 added 20 and batch 7 added 20) with what a civil
 engineer or developer would draw on it — the **target**:
 
 - `kind: "refuse"` — nothing new belongs: 0 lots, skipped, or the parcel as
@@ -136,6 +136,15 @@ is not assigned yet`, in `fn_sf_v1_walk_best`); the scorer reads an error
 as a miss. The engine side scores the same 110 at 38 and 50 with a scorer
 that does not sheet apartments: three plans pass here on apartments and
 four refusals fail on them.
+
+g23, 2026-11-11 (`runs/2026-11-11_g23.json`, audit in
+`qa/audits/2026-11-11b/`): the 20 new parcels of batch 7 and the 22 RM
+parcels of the cohort, 42 in all; the other 108 were last measured on g22.
+Batch 7: plans 8 of 9, refusals 10 of 11. One of the plan passes is not on
+the sheet: 330 Athens Way's multifamily plan fails the app's geometry check
+and nothing is drawn, which the scorer does not see. The 22 RM parcels read
+9 of 22 on g22 and on g23, with no sheet changed. The engine error of g22
+is still raised on g23.
 
 Proposed and not applied (the owner's call; see `APP_REPLY.md` §4): lower
 targets for 1019 Hitt Ln, 8282 Charlotte Pike, 0 Newsom Station Rd,

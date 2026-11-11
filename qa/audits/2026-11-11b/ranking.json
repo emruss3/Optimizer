@@ -1,0 +1,414 @@
+{
+ "engine": "g23",
+ "date": "2026-11-11",
+ "note": "likelihood: how likely a civil engineer or developer would accept the sheet as drawn, 0 to 100",
+ "rows": [
+  {
+   "fid": 420885,
+   "address": "6305 ROBIN HILL RD",
+   "zoning": "RS40",
+   "acres": 1.26,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "one lot, one house",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 90,
+   "why": "1.26 ac of RS40: one lot",
+   "rank": 1
+  },
+  {
+   "fid": 675288,
+   "address": "0 ANTIOCH PIKE",
+   "zoning": "RS7.5",
+   "acres": 4.8,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "nothing: all in the flood hazard area",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 90,
+   "why": "All of it in the flood hazard area",
+   "rank": 2
+  },
+  {
+   "fid": 680676,
+   "address": "0 KIRKMAN LN",
+   "zoning": "R40",
+   "acres": 1.56,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "nothing: flood hazard area and no street",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 85,
+   "why": "Most of it in the flood hazard area, the dry piece under one R40 lot, and no street",
+   "rank": 3
+  },
+  {
+   "fid": 675939,
+   "address": "0 VADENWOOD LN",
+   "zoning": "RS40",
+   "acres": 15.04,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "nothing: no street",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 85,
+   "why": "No street; 7.1 of 15 ac steeper than 25%",
+   "rank": 4
+  },
+  {
+   "fid": 672901,
+   "address": "0 VADENWOOD LN",
+   "zoning": "RS40",
+   "acres": 17.72,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "nothing: no street",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 85,
+   "why": "No street; 9.2 of 17.7 ac steeper than 25%",
+   "rank": 5
+  },
+  {
+   "fid": 679103,
+   "address": "0 OLD HICKORY BLVD",
+   "zoning": "RS20",
+   "acres": 5.69,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     3
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "sheet": "the parcel as one lot",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 80,
+   "why": "A strip about 100 ft wide and 2,400 ft long behind 55 ft of frontage, flood at one end and hillside at the other: one to three houses",
+   "rank": 6
+  },
+  {
+   "fid": 673467,
+   "address": "0 VESTER RD",
+   "zoning": "RS40",
+   "acres": 9.02,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "the parcel as one lot",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 80,
+   "why": "No public street, a lane over other land, 33% mean slope: one house at most",
+   "rank": 7
+  },
+  {
+   "fid": 693461,
+   "address": "7070 RIVER ROAD PIKE",
+   "zoning": "R80",
+   "acres": 2.89,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "one lot, house above the hillside",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 75,
+   "why": "2.9 ac of R80 at 27% mean slope: one house on the lot of record",
+   "rank": 8
+  },
+  {
+   "fid": 405284,
+   "address": "9052 OLD CHARLOTTE PIKE",
+   "zoning": "R80",
+   "acres": 1.8,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "nothing: no 80,000-sf lot fits",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 65,
+   "why": "1.8 ac of R80, under one district lot: one house on the lot of record",
+   "rank": 9
+  },
+  {
+   "fid": 680641,
+   "address": "0 BELLSHIRE DR",
+   "zoning": "R10",
+   "acres": 5.02,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     2
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "sheet": "the parcel as one lot, house on the dry corner",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 65,
+   "why": "3.2 of 5 ac in the flood hazard area; 1.1 ac buildable along one side: one or two houses",
+   "rank": 10
+  },
+  {
+   "fid": 666667,
+   "address": "4329 CENTRAL PIKE",
+   "zoning": "RS15",
+   "acres": 7.27,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     13,
+     19
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "13 lots on one street to a bulb",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 60,
+   "why": "7.3 ac of RS15 with 331 ft on Central Pike: a street and 13 to 19 lots",
+   "rank": 11
+  },
+  {
+   "fid": 660428,
+   "address": "4044 DICKERSON PIKE",
+   "zoning": "R20",
+   "acres": 17.05,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "nothing: no street",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 60,
+   "why": "No boundary on a street on this data. It has an address number: needs a look",
+   "rank": 12
+  },
+  {
+   "fid": 421423,
+   "address": "2957 MORGAN RD",
+   "zoning": "RS40",
+   "acres": 13.27,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     9,
+     13
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "10 lots on one street, 1,553 ft",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 55,
+   "why": "13.3 flat ac of RS40 behind a 58-ft neck: one street and 9 to 13 lots",
+   "rank": 13
+  },
+  {
+   "fid": 670638,
+   "address": "0 BELL RD",
+   "zoning": "RM15",
+   "acres": 5.07,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "42 apartments as a flood what-if",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 55,
+   "why": "The flood hazard area leaves no buildable piece",
+   "rank": 14
+  },
+  {
+   "fid": 660058,
+   "address": "6564 HOLT RD",
+   "zoning": "R20",
+   "acres": 9.83,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     12,
+     18
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "12 lots on a T street; the default is 10",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 50,
+   "why": "9.8 ac of R20 in a strip behind 50 ft of frontage, 10% mean slope: 12 to 18 lots",
+   "rank": 15
+  },
+  {
+   "fid": 628101,
+   "address": "3335 WALTON LN",
+   "zoning": "RM20",
+   "acres": 1.59,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     16,
+     31
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "23 apartments",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 45,
+   "why": "1.6 ac of RM20 with 210 ft on Walton Ln, density 31: 16 to 31 homes",
+   "rank": 16
+  },
+  {
+   "fid": 664916,
+   "address": "3210 LAKESHORE DR",
+   "zoning": "RS20",
+   "acres": 2.05,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     4
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "sheet": "4 lots: one on the street, three flag lots behind it",
+   "scorer_pass": true,
+   "pass": true,
+   "likelihood": 40,
+   "why": "2.05 flat ac of RS20 with 239 ft on Lakeshore Dr: three or four lots from the frontage",
+   "rank": 17
+  },
+  {
+   "fid": 675327,
+   "address": "0 CAMPBELL RD",
+   "zoning": "R20",
+   "acres": 34.2,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     35,
+     55
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "24 lots on a terrace; 8.4 ac not planned",
+   "scorer_pass": false,
+   "pass": false,
+   "likelihood": 30,
+   "why": "34 ac of R20 with 472 ft on Campbell Rd, rolling at 14%, 1.9 ac over 25%: 35 to 55 lots",
+   "rank": 18
+  },
+  {
+   "fid": 680159,
+   "address": "0 WHITES CREEK PIKE",
+   "zoning": "RM9",
+   "acres": 3.87,
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "25 apartments, marked no street access",
+   "scorer_pass": false,
+   "pass": false,
+   "likelihood": 20,
+   "why": "No street, no right-of-way, no lane",
+   "rank": 19
+  },
+  {
+   "fid": 701867,
+   "address": "330 ATHENS WAY",
+   "zoning": "RM15",
+   "acres": 5.93,
+   "target": {
+    "kind": "plan",
+    "lots": [
+     60,
+     88
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "sheet": "no plan on the sheet: the 88-apartment plan fails the geometry check",
+   "scorer_pass": true,
+   "pass": false,
+   "likelihood": 5,
+   "why": "5.9 ac of RM15 with 448 ft on Athens Way, density 88: 60 to 88 homes",
+   "rank": 20
+  }
+ ]
+}
