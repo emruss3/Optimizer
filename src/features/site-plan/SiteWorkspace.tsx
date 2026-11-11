@@ -37,6 +37,7 @@ import {
   sfV1ToElements, sfV1Route, isOverride, withoutPattern,
   fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
   parcelHoles3857, lotsOnParcelHoles, chooseAutoBest, candidateOpt, RM_COMPETITION_TH_BUDGET_MS,
+  accessBanner, isNoStreetAccess,
   type HoleOverlap, type SfV1AutoBest,
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
@@ -2809,6 +2810,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // A 0-lot answer keeps its wetland hatch and flood hold on the sheet as
   // context; that is existing conditions, not a layout plan.
   const sfV1OnSheet = !!sfV1Summary && sfV1Summary.status !== 'skipped' && sfV1Summary.lots > 0 && displayElements.some(e => e.id.startsWith('sfv1-lot-'));
+  // Whether a street reaches the parcel: the engine's access reading (on every plan and competition answer
+  // from g21) once an answer is in, the frontage layer until then. The two disagree where the frontage
+  // layer takes an edge no neighbour shares for a street (262 Martingale Dr: 404 ft of railroad).
+  const engineAccess = sfV1Summary?.access ?? (sfV1Competition?.state === 'done' ? sfV1Competition.data?.access ?? null : null);
+  const noStreetAccess = engineAccess ? isNoStreetAccess(engineAccess) : frontage?.landlocked === true;
+  const accessNote = accessBanner(engineAccess, frontage?.landlocked === true);
   // The layout choice on multifamily land: what the sheet shows, and which side the default is.
   const thV3OnSheet = !!thV3Summary && displayElements.some(e => e.id.startsWith('thv3-home-'));
   // The legacy lot generator's lots (gen-lot-N): on the sheet only when the
@@ -3043,6 +3050,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             sentence: layoutChoice.sentence,
             // 0 Todd Preis Dr: the floodplain leaves no buildable piece; the hold is hatched over the multifamily plan
             floodHold: layoutChoice.floodHold,
+            accessCaution: layoutChoice.accessCaution?.type ?? null,
             holdOnSheet: displayElements.some(e => e.id.startsWith('sfv1-hold-')),
           }
         : null,
@@ -3476,7 +3484,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               site={sfV1Site || mappedAcres != null ? { heldAcres: sfV1Site?.heldAcres ?? null, siteAcres: sfV1Site?.siteAcres ?? null, parcelAcres: mappedAcres } : null}
               autoBest={sfV1AutoBest}
               holeOverlap={sfV1HoleOverlap}
-              frontageLandlocked={frontage?.landlocked === true}
+              frontageLandlocked={noStreetAccess}
             />
           )}
           <ContextPanel
@@ -3547,9 +3555,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
-          {frontage?.landlocked === true && !draftMode && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-orange-50 border border-orange-300 text-orange-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm" data-testid="landlocked-banner">
-              No street frontage — access via easement assumed.
+          {accessNote && !draftMode && (
+            <div
+              className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-orange-50 border border-orange-300 text-orange-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm"
+              data-testid="landlocked-banner" data-access-type={engineAccess?.type ?? 'frontage-layer'} title={accessNote.detail ?? undefined}
+            >
+              {accessNote.text}
             </div>
           )}
           {draftMode && (
@@ -3602,7 +3613,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             <SitePlannerErrorBoundary key="plan-2d">
               <EnterpriseSitePlanner
                 draftMode={draftMode}
-                suppressCurbCut={frontage?.landlocked === true}
+                suppressCurbCut={noStreetAccess}
                 neighbors={neighbors}
                 topo={showTopo ? topoCanvas : null}
                 annotations={sheetAnnotations}

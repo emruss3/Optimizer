@@ -451,6 +451,8 @@ export function SfV1Panel({
         <SfV1CompetitionBlock
           competition={competition}
           shownRequested={shownRequested ?? null}
+          // the default can be a plan the engine put in place of the loop grammar's, or an engine error
+          sheet={summary.status === 'error' ? { pattern: null, lots: -1 } : summary.defaultReplaced ? { pattern: summary.pattern, lots: summary.lots } : null}
           {...(onViewCandidate ? { onView: onViewCandidate } : {})}
           {...(onRetryCompetition ? { onRetry: onRetryCompetition } : {})}
           busy={busy ?? false}

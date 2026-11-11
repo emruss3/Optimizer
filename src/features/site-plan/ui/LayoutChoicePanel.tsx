@@ -94,6 +94,7 @@ export function LayoutChoicePanel({
       data-shown={shown ?? ''}
       data-auto={String(auto)}
       data-flood-hold={String(!!choice?.floodHold)}
+      data-access-caution={choice?.accessCaution?.type ?? ''}
       className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-sm"
     >
       <div className="flex items-baseline justify-between gap-2">
@@ -111,6 +112,9 @@ export function LayoutChoicePanel({
           {choice && def === 'multifamily' && badge('default', 'bg-emerald-100 text-emerald-800')}
           {/* 0 Todd Preis Dr: the floodplain leaves no buildable piece; the multifamily engine drew on it anyway */}
           {choice?.floodHold && badge('in the flood hazard area', 'bg-red-100 text-red-800')}
+          {/* 0 Hicks Rd, 262 Martingale Dr: the engine's access reading finds no public street; the massing drew anyway */}
+          {choice?.accessCaution?.type === 'none' && badge('no street access on record', 'bg-red-100 text-red-800')}
+          {choice?.accessCaution?.type === 'private_lane' && badge('private lane · easement to confirm', 'bg-amber-100 text-amber-800')}
         </button>
         <button
           type="button" role="radio" aria-checked={shown === 'neighborhood'} data-testid="layout-option-neighborhood"

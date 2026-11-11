@@ -181,6 +181,10 @@ export interface SfV1Response {
   fails?: string[] | null;
   notes?: string[] | null;
   earthwork?: SfV1Earthwork | null;
+  /** engine g21: the typed access reading, on every plan (fn_parcel_access) */
+  access?: SfV1AccessRaw | null;
+  /** engine g19: the default answer is a plan the engine put in place of the loop grammar's own */
+  default_replaced?: { why?: string | null; pattern?: string | null; lots?: number | null; fails?: string[] | null } | null;
   /** WKT, EPSG:2274 feet */
   street_lines_wkt?: string | null;
   row_wkt?: string | null;
@@ -430,6 +434,10 @@ export interface SfV1Summary {
   fails: string[];
   notes: string[];
   earthwork: SfV1Earthwork | null;
+  /** the engine's access reading (g21); absent on answers from before it */
+  access?: SfV1Access | null;
+  /** engine g19: this plan stands in for the default the engine withdrew or replaced (what that was) */
+  defaultReplaced?: { pattern: string | null; lots: number | null; why: string | null } | null;
   /** the plan builds in the SFHA: fill, cut and the pad target apply */
   hasFlood: boolean;
   /** fill-depth colouring applied to the pads (per-pad fill from the DEM) */
@@ -1007,6 +1015,10 @@ export function sfV1ToElements(
     fails,
     notes,
     earthwork,
+    access: parseAccess(resp.access),
+    defaultReplaced: resp.default_replaced && typeof resp.default_replaced === 'object'
+      ? { pattern: str(resp.default_replaced.pattern), lots: num(resp.default_replaced.lots), why: str(resp.default_replaced.why) }
+      : null,
     hasFlood,
     fillView,
     streetGrade: sg ? { maxPct: num(sg.max_pct), limitPct: num(sg.limit_pct), ftOverLimit: num(sg.ft_over_limit) } : null,
@@ -1225,7 +1237,40 @@ export interface SfV1CandidatesResponse {
   attached_permitted?: boolean | null;
   /** engine g13: why no pattern drew a lot, " | "-separated ("no lot of 40000 sf … fits … | 25.0 ac steeper than 25% held out as hillside …") */
   why?: string | null;
+  /** engine g21: the typed access reading, on every competition answer */
+  access?: SfV1AccessRaw | null;
   [k: string]: unknown;
+}
+
+/** The engine's access reading as it is sent (fn_parcel_access): `type` is one of
+ *  public_street | unmapped_row | narrow_touch | private_lane | none. */
+export interface SfV1AccessRaw { type?: string | null; message?: string | null; [k: string]: unknown }
+export interface SfV1Access { type: string; message: string | null }
+
+export function parseAccess(raw: unknown): SfV1Access | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const type = str(o.type);
+  return type ? { type, message: str(o.message) } : null;
+}
+
+/** No public street on the boundary: nothing at all, or only a lane over other owners' land. */
+export function isNoStreetAccess(access: SfV1Access | null | undefined): boolean {
+  return access != null && (access.type === 'none' || access.type === 'private_lane');
+}
+
+/**
+ * The line over the sheet when no street reaches the parcel. The engine's access reading decides once an
+ * answer carries it (g21); the older frontage layer is only the fallback, because it reads any boundary no
+ * neighbour shares as a street: 262 Martingale Dr "fronts" 404 ft of railroad there.
+ */
+export function accessBanner(access: SfV1Access | null | undefined, frontageLandlocked: boolean): { text: string; detail: string | null } | null {
+  if (access) {
+    if (access.type === 'none') return { text: 'No street access on record — no street, right-of-way or mapped lane on the boundary.', detail: access.message };
+    if (access.type === 'private_lane') return { text: 'No public street frontage — reached by a private lane; an access easement to confirm.', detail: access.message };
+    return null;
+  }
+  return frontageLandlocked ? { text: 'No street frontage — access via easement assumed.', detail: null } : null;
 }
 
 /** Test rows that are figures with a limit, not checks: a pass: false on one is a flag on the sheet,
@@ -1252,6 +1297,8 @@ export interface SfV1CompetitionRow {
   error: string | null;
   /** a grammar that ran and found no lot ("no lot of 40000 sf … fits …"): a reason, not an error */
   nothingDrawn: string | null;
+  /** engine g21: the grammar was skipped because the competition's time budget ran out */
+  notDrawn?: boolean;
   lots: number;
   streetFt: number | null;
   lotsPer100Ft: number | null;
@@ -1295,7 +1342,34 @@ export interface SfV1Competition {
   attachedPermitted: boolean | null;
   /** engine g13: why no pattern drew a lot, one reason per line */
   why: string[];
+  /** the engine's access reading (g21); absent on answers from before it */
+  access?: SfV1Access | null;
+  /** grammars the engine skipped for its time budget, and grammars that raised: the comparison is short by these */
+  notDrawn?: string[];
+  errored?: string[];
 }
+
+/**
+ * The competition row whose plan is on the sheet. `shownRequested` names the grammar asked for ('loop' is the
+ * default answer), and until g19 that was the row. Now the default can be a plan the engine put in place of
+ * the loop grammar's (0 Hart Ln: the 57-lot terrace, while the loop row is 75 lots failing the grade), or an
+ * engine error with no plan at all. With `sheet` given, a row is on the sheet only when it is that plan.
+ */
+export function competitionRowOnSheet(
+  rows: Array<Pick<SfV1CompetitionRow, 'requested' | 'status' | 'pattern' | 'lots'>>,
+  shownRequested: string | null,
+  sheet?: { pattern: string | null; lots: number } | null,
+): string | null {
+  if (!shownRequested) return null;
+  if (!sheet) return shownRequested;
+  const same = (r: Pick<SfV1CompetitionRow, 'status' | 'pattern' | 'lots'>) => r.status === 'done' && r.pattern === sheet.pattern && r.lots === sheet.lots;
+  const asked = rows.find(r => r.requested === shownRequested);
+  if (asked && same(asked)) return shownRequested;
+  return rows.find(same)?.requested ?? null;
+}
+
+/** A row's `error` that is the engine's exception, not its reason for drawing nothing. */
+const ROW_EXCEPTION = /\b(engine error|exception|sqlstate|timeout|timed out|canceling statement|not assigned|violates|invalid|does not exist|division by zero)\b/i;
 
 const lotsWord = (n: number) => `${n} lot${n === 1 ? '' : 's'}`;
 
@@ -1348,10 +1422,16 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
       ((requested === 'grid' || requested === 'neighborhood') && pattern !== requested)
       || (requested === 'drive' && !isDrivePattern(pattern)));
     // a grammar that ran and found no lot is not an error (the drive row on
-    // 0 Dry Fork Rd: "failed — no lot of 40000 sf … fits")
+    // 0 Dry Fork Rd: "failed — no lot of 40000 sf … fits"). From g19 the engine gives its reason on every
+    // such row ("landlocked: …", "no hillside street could be laid at the grade on this parcel"), so any
+    // reason that is not an exception is the row's grey line; only what the engine raised stays red.
     const err = str(c?.error);
-    const nothingDrawn = lots === 0 && err != null && /^no lots?\b/i.test(err) ? err : null;
-    const label = pattern ?? (cstatus === 'done' || nothingDrawn ? `${grammarName(requested)}: nothing drawn` : `${grammarName(requested)}: ${cstatus}`);
+    const raised = err != null && (cstatus === 'error' || ROW_EXCEPTION.test(err));
+    // engine g21: a grammar the competition's time budget did not reach is not drawn, and not a failure
+    const notDrawn = err != null && !raised && /^not drawn\b/i.test(err);
+    const nothingDrawn = lots === 0 && err != null && !raised ? err : null;
+    const label = pattern ?? (notDrawn ? `${grammarName(requested)}: not drawn`
+      : cstatus === 'done' || nothingDrawn ? `${grammarName(requested)}: nothing drawn` : `${grammarName(requested)}: ${cstatus}`);
     const score = c?.score && typeof c.score === 'object' ? c.score : null;
     const criteria = score
       ? Object.entries(score)
@@ -1359,7 +1439,7 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
           .map(([k, v]) => ({ name: k.replace(/_/g, ' '), score: num((v as Record<string, unknown>).score) }))
       : [];
     return {
-      requested, pattern, label, fellBack, status: cstatus, error: nothingDrawn ? null : err, nothingDrawn, lots,
+      requested, pattern, label, fellBack, status: cstatus, error: nothingDrawn ? null : err, nothingDrawn, notDrawn, lots,
       streetFt: num(c?.street_ft), lotsPer100Ft: num(c?.lots_per_100ft), openPct: num(c?.open_pct), connections: num(c?.connections),
       fails: strings(c?.fails), notes: strings(c?.notes),
       score: num(score?.total) ?? num(resp.scores?.[requested]),
@@ -1403,8 +1483,18 @@ export function summarizeCandidates(resp: SfV1CandidatesResponse | null | undefi
     // 0 Neelys Bend Rd: one pattern draws lots at all, and its streets fail the grade
     sentence = `The only pattern that draws lots here fails the street grade, so it is not buildable as drawn; the engine does not lay streets out by grade yet. ${sentence}`;
   }
+  // The comparison is short by any grammar that raised or was not reached (engine g21's time budget, and
+  // 4775 Drakes Branch Rd on g22: the loop row raised while four others drew): say so beside the verdict.
+  const errored = status === 'done' ? rows.filter(r => r.error != null && r.status !== 'done').map(r => r.requested) : [];
+  const notDrawnRows = status === 'done' ? rows.filter(r => r.notDrawn).map(r => r.requested) : [];
+  const capFirst = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+  if (errored.length > 0) sentence += ` ${capFirst(grammarList(errored))} raised an engine error, so the comparison is incomplete.`;
+  if (notDrawnRows.length > 0) {
+    sentence += ` ${capFirst(grammarList(notDrawnRows))} ${notDrawnRows.length === 1 ? 'was' : 'were'} not drawn: the competition's time budget was spent on the patterns before ${notDrawnRows.length === 1 ? 'it' : 'them'}.`;
+  }
   const bestRow = rows.find(r => r.isBest) ?? null;
   return {
+    access: parseAccess(resp.access), notDrawn: notDrawnRows, errored,
     status, reason: str(resp.reason) ?? str(resp.error), rows,
     bestRequested, bestLots: num(resp.best_lots), structuredLots: num(resp.structured_lots), forgone,
     bestByScore, arithmetic: num(resp.arithmetic), ms: num(resp.ms), allZero, sentence,

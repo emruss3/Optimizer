@@ -9,7 +9,7 @@
  */
 import { useState } from 'react';
 import type { SfV1Competition, SfV1CompetitionRow } from '../api/sfV1Plan';
-import { codeFails, qualityFlags } from '../api/sfV1Plan';
+import { codeFails, qualityFlags, competitionRowOnSheet } from '../api/sfV1Plan';
 
 export interface SfV1CompetitionState {
   /** 'idle' = not run yet: under the fill scenario each of the three runs is the heavy one, so it waits to be asked */
@@ -40,11 +40,13 @@ function Badges({ row }: { row: SfV1CompetitionRow }) {
 }
 
 export function SfV1CompetitionBlock({
-  competition, shownRequested, onView, onRetry, busy, title,
+  competition, shownRequested, sheet, onView, onRetry, busy, title,
 }: {
   competition: SfV1CompetitionState;
   /** the grammar whose plan is on the sheet ('loop' = the default by-right answer) */
   shownRequested: string | null;
+  /** the plan on the sheet, when it may not be the asked grammar's row: a replaced default, or an engine error */
+  sheet?: { pattern: string | null; lots: number } | null;
   onView?: (requested: string) => void;
   onRetry?: () => void;
   busy?: boolean;
@@ -53,6 +55,7 @@ export function SfV1CompetitionBlock({
 }) {
   const [showScores, setShowScores] = useState(false);
   const data = competition.data;
+  const rowOnSheet = competitionRowOnSheet(data?.rows ?? [], shownRequested, sheet);
   return (
     <div
       data-testid="sfv1-competition"
@@ -112,7 +115,7 @@ export function SfV1CompetitionBlock({
             // seven columns collided there (4701 Bowfield Dr, 2026-11-04).
             <ul data-testid="sfv1-competition-table" className="mt-1 space-y-1">
               {data.rows.map(row => {
-                const onSheet = shownRequested === row.requested;
+                const onSheet = rowOnSheet === row.requested;
                 return (
                   <li key={row.requested} data-testid={`sfv1-cand-${row.requested}`} data-pattern={row.pattern ?? ''} data-lots={row.lots}
                     className={'rounded border px-1.5 py-1 text-[10.5px] leading-snug ' + (onSheet ? 'border-sky-300 bg-white' : 'border-indigo-100 bg-white/60')}>
