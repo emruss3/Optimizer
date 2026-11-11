@@ -1,0 +1,1892 @@
+{
+ "682644_1440x900": {
+  "role": "subdivision",
+  "scene": {
+   "identity": {
+    "parcelId": "682644",
+    "schemeId": "neighborhood:loop",
+    "revision": "815794cf",
+    "key": "682644|neighborhood:loop"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80749,
+    "check": {
+     "status": "verified",
+     "samples": 35,
+     "worstPct": 0.41,
+     "note": "Areas in the drawing frame match the engine's within 0.4%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "sfv1-pad-1",
+     "tag": "H1",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H1 \u00b7 sfv1-pad-1 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-2",
+     "tag": "H2",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H2 \u00b7 sfv1-pad-2 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-3",
+     "tag": "H3",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H3 \u00b7 sfv1-pad-3 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-4",
+     "tag": "H4",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H4 \u00b7 sfv1-pad-4 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-5",
+     "tag": "H5",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H5 \u00b7 sfv1-pad-5 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-6",
+     "tag": "H6",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H6 \u00b7 sfv1-pad-6 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-7",
+     "tag": "H7",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H7 \u00b7 sfv1-pad-7 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-8",
+     "tag": "H8",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H8 \u00b7 sfv1-pad-8 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-9",
+     "tag": "H9",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H9 \u00b7 sfv1-pad-9 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-10",
+     "tag": "H10",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H10 \u00b7 sfv1-pad-10 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-11",
+     "tag": "H11",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H11 \u00b7 sfv1-pad-11 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-12",
+     "tag": "H12",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H12 \u00b7 sfv1-pad-12 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-13",
+     "tag": "H13",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H13 \u00b7 sfv1-pad-13 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-14",
+     "tag": "H14",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H14 \u00b7 sfv1-pad-14 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-15",
+     "tag": "H15",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H15 \u00b7 sfv1-pad-15 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-16",
+     "tag": "H16",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H16 \u00b7 sfv1-pad-16 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-17",
+     "tag": "H17",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H17 \u00b7 sfv1-pad-17 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-18",
+     "tag": "H18",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H18 \u00b7 sfv1-pad-18 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-19",
+     "tag": "H19",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H19 \u00b7 sfv1-pad-19 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-20",
+     "tag": "H20",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H20 \u00b7 sfv1-pad-20 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-21",
+     "tag": "H21",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H21 \u00b7 sfv1-pad-21 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-22",
+     "tag": "H22",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H22 \u00b7 sfv1-pad-22 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-23",
+     "tag": "H23",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H23 \u00b7 sfv1-pad-23 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-24",
+     "tag": "H24",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H24 \u00b7 sfv1-pad-24 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-25",
+     "tag": "H25",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H25 \u00b7 sfv1-pad-25 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-26",
+     "tag": "H26",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H26 \u00b7 sfv1-pad-26 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-27",
+     "tag": "H27",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H27 \u00b7 sfv1-pad-27 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-28",
+     "tag": "H28",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H28 \u00b7 sfv1-pad-28 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-29",
+     "tag": "H29",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H29 \u00b7 sfv1-pad-29 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-30",
+     "tag": "H30",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H30 \u00b7 sfv1-pad-30 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-31",
+     "tag": "H31",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H31 \u00b7 sfv1-pad-31 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-32",
+     "tag": "H32",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H32 \u00b7 sfv1-pad-32 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-33",
+     "tag": "H33",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H33 \u00b7 sfv1-pad-33 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-34",
+     "tag": "H34",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H34 \u00b7 sfv1-pad-34 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-35",
+     "tag": "H35",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H35 \u00b7 sfv1-pad-35 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    }
+   ],
+   "features": 118,
+   "schedule": {
+    "units": 35,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 22236,
+  "msFirst3d": 11059
+ },
+ "488278_1440x900": {
+  "role": "multifamily, one building, surface parking",
+  "scene": {
+   "identity": {
+    "parcelId": "488278",
+    "schemeId": "mf:seed_v2",
+    "revision": "de87f8d2",
+    "key": "488278|mf:seed_v2"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80645,
+    "check": {
+     "status": "verified",
+     "samples": 1,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 4,
+     "footprintSqFt": 13561,
+     "heightFt": 44,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 4 stories \u00b7 13,561 sf footprint \u00b7 estimated height 44 ft"
+    }
+   ],
+   "features": 6,
+   "schedule": {
+    "units": 30,
+    "stalls": 52,
+    "buildingUnits": 30,
+    "featureStalls": 52,
+    "consistent": true
+   }
+  },
+  "ms2d": 22405,
+  "msFirst3d": 11369
+ },
+ "669046_1440x900": {
+  "role": "multifamily, surface parking",
+  "scene": {
+   "identity": {
+    "parcelId": "669046",
+    "schemeId": "mf:seed_v2",
+    "revision": "46151b58",
+    "key": "669046|mf:seed_v2"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80642,
+    "check": {
+     "status": "verified",
+     "samples": 1,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 20237,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 5 stories \u00b7 20,237 sf footprint \u00b7 estimated height 54 ft"
+    }
+   ],
+   "features": 8,
+   "schedule": {
+    "units": 57,
+    "stalls": 99,
+    "buildingUnits": 57,
+    "featureStalls": 99,
+    "consistent": true
+   }
+  },
+  "ms2d": 21747,
+  "msFirst3d": 9647
+ },
+ "469303_1440x900": {
+  "role": "wrap round a garage and court",
+  "scene": {
+   "identity": {
+    "parcelId": "469303",
+    "schemeId": "mf:wrap_v1",
+    "revision": "82a80810",
+    "key": "469303|mf:wrap_v1"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.8064,
+    "check": {
+     "status": "verified",
+     "samples": 5,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 21725,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 5 stories \u00b7 21,725 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-2",
+     "tag": "B",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 21725,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "B \u00b7 mfgen-bldg-2 \u00b7 Apartments \u00b7 5 stories \u00b7 21,725 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-3",
+     "tag": "C",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 9771,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "C \u00b7 mfgen-bldg-3 \u00b7 Apartments \u00b7 5 stories \u00b7 9,771 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-4",
+     "tag": "D",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 9771,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "D \u00b7 mfgen-bldg-4 \u00b7 Apartments \u00b7 5 stories \u00b7 9,771 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-amenity-1",
+     "tag": "E",
+     "use": "amenity",
+     "floors": 1,
+     "footprintSqFt": 1800,
+     "heightFt": 14,
+     "heightBasis": "estimated",
+     "oneLine": "E \u00b7 mfgen-amenity-1 \u00b7 Amenity \u00b7 1 story \u00b7 1,800 sf footprint \u00b7 estimated height 14 ft"
+    }
+   ],
+   "features": 9,
+   "schedule": {
+    "units": 131,
+    "stalls": 238,
+    "buildingUnits": 129,
+    "featureStalls": 238,
+    "consistent": false
+   }
+  },
+  "ms2d": 21780,
+  "msFirst3d": 10517
+ },
+ "686430_1440x900": {
+  "role": "sloped site with flood and hillside holds",
+  "scene": {
+   "identity": {
+    "parcelId": "686430",
+    "schemeId": "neighborhood:loop",
+    "revision": "2f179905",
+    "key": "686430|neighborhood:loop"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80525,
+    "check": {
+     "status": "unverified",
+     "samples": 0,
+     "worstPct": null,
+     "note": "No footprint with an engine-reported area to check the frame against."
+    }
+   },
+   "buildings": [
+    {
+     "id": "sfv1-pad-1",
+     "tag": "H1",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H1 \u00b7 sfv1-pad-1 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    }
+   ],
+   "features": 7,
+   "schedule": {
+    "units": 1,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 21725,
+  "msFirst3d": 10079
+ },
+ "672526_1440x900": {
+  "role": "no generated geometry (flood skip)",
+  "scene": {
+   "identity": {
+    "parcelId": "672526",
+    "schemeId": "plan",
+    "revision": "b2b4a6b8",
+    "key": "672526|plan"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80658,
+    "check": {
+     "status": "unverified",
+     "samples": 0,
+     "worstPct": null,
+     "note": "No footprint with an engine-reported area to check the frame against."
+    }
+   },
+   "buildings": [],
+   "features": 1,
+   "schedule": {
+    "units": 0,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 21672,
+  "msFirst3d": 8250
+ },
+ "408571_1440x900": {
+  "role": "commercial capacity only",
+  "scene": null,
+  "ms2d": 21800
+ },
+ "682644_1920x1080": {
+  "role": "subdivision",
+  "scene": {
+   "identity": {
+    "parcelId": "682644",
+    "schemeId": "neighborhood:loop",
+    "revision": "815794cf",
+    "key": "682644|neighborhood:loop"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80749,
+    "check": {
+     "status": "verified",
+     "samples": 35,
+     "worstPct": 0.41,
+     "note": "Areas in the drawing frame match the engine's within 0.4%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "sfv1-pad-1",
+     "tag": "H1",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H1 \u00b7 sfv1-pad-1 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-2",
+     "tag": "H2",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H2 \u00b7 sfv1-pad-2 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-3",
+     "tag": "H3",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H3 \u00b7 sfv1-pad-3 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-4",
+     "tag": "H4",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H4 \u00b7 sfv1-pad-4 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-5",
+     "tag": "H5",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H5 \u00b7 sfv1-pad-5 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-6",
+     "tag": "H6",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H6 \u00b7 sfv1-pad-6 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-7",
+     "tag": "H7",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H7 \u00b7 sfv1-pad-7 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-8",
+     "tag": "H8",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H8 \u00b7 sfv1-pad-8 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-9",
+     "tag": "H9",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H9 \u00b7 sfv1-pad-9 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-10",
+     "tag": "H10",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H10 \u00b7 sfv1-pad-10 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-11",
+     "tag": "H11",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H11 \u00b7 sfv1-pad-11 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-12",
+     "tag": "H12",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H12 \u00b7 sfv1-pad-12 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-13",
+     "tag": "H13",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H13 \u00b7 sfv1-pad-13 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-14",
+     "tag": "H14",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H14 \u00b7 sfv1-pad-14 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-15",
+     "tag": "H15",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H15 \u00b7 sfv1-pad-15 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-16",
+     "tag": "H16",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H16 \u00b7 sfv1-pad-16 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-17",
+     "tag": "H17",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H17 \u00b7 sfv1-pad-17 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-18",
+     "tag": "H18",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H18 \u00b7 sfv1-pad-18 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-19",
+     "tag": "H19",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H19 \u00b7 sfv1-pad-19 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-20",
+     "tag": "H20",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H20 \u00b7 sfv1-pad-20 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-21",
+     "tag": "H21",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H21 \u00b7 sfv1-pad-21 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-22",
+     "tag": "H22",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H22 \u00b7 sfv1-pad-22 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-23",
+     "tag": "H23",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H23 \u00b7 sfv1-pad-23 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-24",
+     "tag": "H24",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H24 \u00b7 sfv1-pad-24 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-25",
+     "tag": "H25",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H25 \u00b7 sfv1-pad-25 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-26",
+     "tag": "H26",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H26 \u00b7 sfv1-pad-26 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-27",
+     "tag": "H27",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H27 \u00b7 sfv1-pad-27 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-28",
+     "tag": "H28",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H28 \u00b7 sfv1-pad-28 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-29",
+     "tag": "H29",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H29 \u00b7 sfv1-pad-29 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-30",
+     "tag": "H30",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H30 \u00b7 sfv1-pad-30 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-31",
+     "tag": "H31",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H31 \u00b7 sfv1-pad-31 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-32",
+     "tag": "H32",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H32 \u00b7 sfv1-pad-32 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-33",
+     "tag": "H33",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H33 \u00b7 sfv1-pad-33 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-34",
+     "tag": "H34",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H34 \u00b7 sfv1-pad-34 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-35",
+     "tag": "H35",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H35 \u00b7 sfv1-pad-35 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    }
+   ],
+   "features": 118,
+   "schedule": {
+    "units": 35,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 21986,
+  "msFirst3d": 9530
+ },
+ "488278_1920x1080": {
+  "role": "multifamily, one building, surface parking",
+  "scene": {
+   "identity": {
+    "parcelId": "488278",
+    "schemeId": "mf:seed_v2",
+    "revision": "de87f8d2",
+    "key": "488278|mf:seed_v2"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80645,
+    "check": {
+     "status": "verified",
+     "samples": 1,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 4,
+     "footprintSqFt": 13561,
+     "heightFt": 44,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 4 stories \u00b7 13,561 sf footprint \u00b7 estimated height 44 ft"
+    }
+   ],
+   "features": 6,
+   "schedule": {
+    "units": 30,
+    "stalls": 52,
+    "buildingUnits": 30,
+    "featureStalls": 52,
+    "consistent": true
+   }
+  },
+  "ms2d": 21791,
+  "msFirst3d": 10152
+ },
+ "669046_1920x1080": {
+  "role": "multifamily, surface parking",
+  "scene": {
+   "identity": {
+    "parcelId": "669046",
+    "schemeId": "mf:seed_v2",
+    "revision": "46151b58",
+    "key": "669046|mf:seed_v2"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80642,
+    "check": {
+     "status": "verified",
+     "samples": 1,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 20237,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 5 stories \u00b7 20,237 sf footprint \u00b7 estimated height 54 ft"
+    }
+   ],
+   "features": 8,
+   "schedule": {
+    "units": 57,
+    "stalls": 99,
+    "buildingUnits": 57,
+    "featureStalls": 99,
+    "consistent": true
+   }
+  },
+  "ms2d": 21698,
+  "msFirst3d": 10138
+ },
+ "469303_1920x1080": {
+  "role": "wrap round a garage and court",
+  "scene": {
+   "identity": {
+    "parcelId": "469303",
+    "schemeId": "mf:wrap_v1",
+    "revision": "82a80810",
+    "key": "469303|mf:wrap_v1"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.8064,
+    "check": {
+     "status": "verified",
+     "samples": 5,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 21725,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 5 stories \u00b7 21,725 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-2",
+     "tag": "B",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 21725,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "B \u00b7 mfgen-bldg-2 \u00b7 Apartments \u00b7 5 stories \u00b7 21,725 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-3",
+     "tag": "C",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 9771,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "C \u00b7 mfgen-bldg-3 \u00b7 Apartments \u00b7 5 stories \u00b7 9,771 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-4",
+     "tag": "D",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 9771,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "D \u00b7 mfgen-bldg-4 \u00b7 Apartments \u00b7 5 stories \u00b7 9,771 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-amenity-1",
+     "tag": "E",
+     "use": "amenity",
+     "floors": 1,
+     "footprintSqFt": 1800,
+     "heightFt": 14,
+     "heightBasis": "estimated",
+     "oneLine": "E \u00b7 mfgen-amenity-1 \u00b7 Amenity \u00b7 1 story \u00b7 1,800 sf footprint \u00b7 estimated height 14 ft"
+    }
+   ],
+   "features": 9,
+   "schedule": {
+    "units": 131,
+    "stalls": 238,
+    "buildingUnits": 129,
+    "featureStalls": 238,
+    "consistent": false
+   }
+  },
+  "ms2d": 21869,
+  "msFirst3d": 11678
+ },
+ "686430_1920x1080": {
+  "role": "sloped site with flood and hillside holds",
+  "scene": {
+   "identity": {
+    "parcelId": "686430",
+    "schemeId": "neighborhood:loop",
+    "revision": "2f179905",
+    "key": "686430|neighborhood:loop"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80525,
+    "check": {
+     "status": "unverified",
+     "samples": 0,
+     "worstPct": null,
+     "note": "No footprint with an engine-reported area to check the frame against."
+    }
+   },
+   "buildings": [
+    {
+     "id": "sfv1-pad-1",
+     "tag": "H1",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H1 \u00b7 sfv1-pad-1 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    }
+   ],
+   "features": 7,
+   "schedule": {
+    "units": 1,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 21980,
+  "msFirst3d": 10891
+ },
+ "672526_1920x1080": {
+  "role": "no generated geometry (flood skip)",
+  "scene": {
+   "identity": {
+    "parcelId": "672526",
+    "schemeId": "plan",
+    "revision": "b2b4a6b8",
+    "key": "672526|plan"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80658,
+    "check": {
+     "status": "unverified",
+     "samples": 0,
+     "worstPct": null,
+     "note": "No footprint with an engine-reported area to check the frame against."
+    }
+   },
+   "buildings": [],
+   "features": 1,
+   "schedule": {
+    "units": 0,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 21927,
+  "msFirst3d": 8347
+ },
+ "408571_1920x1080": {
+  "role": "commercial capacity only",
+  "scene": null,
+  "ms2d": 21882
+ },
+ "682644_1280x800": {
+  "role": "subdivision",
+  "scene": {
+   "identity": {
+    "parcelId": "682644",
+    "schemeId": "neighborhood:loop",
+    "revision": "815794cf",
+    "key": "682644|neighborhood:loop"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80749,
+    "check": {
+     "status": "verified",
+     "samples": 35,
+     "worstPct": 0.41,
+     "note": "Areas in the drawing frame match the engine's within 0.4%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "sfv1-pad-1",
+     "tag": "H1",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H1 \u00b7 sfv1-pad-1 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-2",
+     "tag": "H2",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H2 \u00b7 sfv1-pad-2 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-3",
+     "tag": "H3",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H3 \u00b7 sfv1-pad-3 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-4",
+     "tag": "H4",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H4 \u00b7 sfv1-pad-4 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-5",
+     "tag": "H5",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H5 \u00b7 sfv1-pad-5 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-6",
+     "tag": "H6",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H6 \u00b7 sfv1-pad-6 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-7",
+     "tag": "H7",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H7 \u00b7 sfv1-pad-7 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-8",
+     "tag": "H8",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H8 \u00b7 sfv1-pad-8 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-9",
+     "tag": "H9",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H9 \u00b7 sfv1-pad-9 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-10",
+     "tag": "H10",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H10 \u00b7 sfv1-pad-10 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-11",
+     "tag": "H11",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H11 \u00b7 sfv1-pad-11 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-12",
+     "tag": "H12",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H12 \u00b7 sfv1-pad-12 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-13",
+     "tag": "H13",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H13 \u00b7 sfv1-pad-13 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-14",
+     "tag": "H14",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H14 \u00b7 sfv1-pad-14 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-15",
+     "tag": "H15",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H15 \u00b7 sfv1-pad-15 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-16",
+     "tag": "H16",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H16 \u00b7 sfv1-pad-16 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-17",
+     "tag": "H17",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H17 \u00b7 sfv1-pad-17 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-18",
+     "tag": "H18",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H18 \u00b7 sfv1-pad-18 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-19",
+     "tag": "H19",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H19 \u00b7 sfv1-pad-19 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-20",
+     "tag": "H20",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H20 \u00b7 sfv1-pad-20 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-21",
+     "tag": "H21",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H21 \u00b7 sfv1-pad-21 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-22",
+     "tag": "H22",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H22 \u00b7 sfv1-pad-22 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-23",
+     "tag": "H23",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H23 \u00b7 sfv1-pad-23 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-24",
+     "tag": "H24",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H24 \u00b7 sfv1-pad-24 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-25",
+     "tag": "H25",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H25 \u00b7 sfv1-pad-25 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-26",
+     "tag": "H26",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H26 \u00b7 sfv1-pad-26 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-27",
+     "tag": "H27",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H27 \u00b7 sfv1-pad-27 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-28",
+     "tag": "H28",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H28 \u00b7 sfv1-pad-28 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-29",
+     "tag": "H29",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H29 \u00b7 sfv1-pad-29 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-30",
+     "tag": "H30",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H30 \u00b7 sfv1-pad-30 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-31",
+     "tag": "H31",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H31 \u00b7 sfv1-pad-31 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-32",
+     "tag": "H32",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H32 \u00b7 sfv1-pad-32 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-33",
+     "tag": "H33",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H33 \u00b7 sfv1-pad-33 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-34",
+     "tag": "H34",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H34 \u00b7 sfv1-pad-34 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    },
+    {
+     "id": "sfv1-pad-35",
+     "tag": "H35",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H35 \u00b7 sfv1-pad-35 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    }
+   ],
+   "features": 118,
+   "schedule": {
+    "units": 35,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 22221
+ },
+ "488278_1280x800": {
+  "role": "multifamily, one building, surface parking",
+  "scene": {
+   "identity": {
+    "parcelId": "488278",
+    "schemeId": "mf:seed_v2",
+    "revision": "de87f8d2",
+    "key": "488278|mf:seed_v2"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80645,
+    "check": {
+     "status": "verified",
+     "samples": 1,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 4,
+     "footprintSqFt": 13561,
+     "heightFt": 44,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 4 stories \u00b7 13,561 sf footprint \u00b7 estimated height 44 ft"
+    }
+   ],
+   "features": 6,
+   "schedule": {
+    "units": 30,
+    "stalls": 52,
+    "buildingUnits": 30,
+    "featureStalls": 52,
+    "consistent": true
+   }
+  },
+  "ms2d": 21526
+ },
+ "669046_1280x800": {
+  "role": "multifamily, surface parking",
+  "scene": {
+   "identity": {
+    "parcelId": "669046",
+    "schemeId": "mf:seed_v2",
+    "revision": "46151b58",
+    "key": "669046|mf:seed_v2"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80642,
+    "check": {
+     "status": "verified",
+     "samples": 1,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 20237,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 5 stories \u00b7 20,237 sf footprint \u00b7 estimated height 54 ft"
+    }
+   ],
+   "features": 8,
+   "schedule": {
+    "units": 57,
+    "stalls": 99,
+    "buildingUnits": 57,
+    "featureStalls": 99,
+    "consistent": true
+   }
+  },
+  "ms2d": 21731
+ },
+ "469303_1280x800": {
+  "role": "wrap round a garage and court",
+  "scene": {
+   "identity": {
+    "parcelId": "469303",
+    "schemeId": "mf:wrap_v1",
+    "revision": "82a80810",
+    "key": "469303|mf:wrap_v1"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.8064,
+    "check": {
+     "status": "verified",
+     "samples": 5,
+     "worstPct": 0.01,
+     "note": "Footprint areas in the drawing frame match the engine's within 0.1%."
+    }
+   },
+   "buildings": [
+    {
+     "id": "mfgen-bldg-1",
+     "tag": "A",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 21725,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "A \u00b7 mfgen-bldg-1 \u00b7 Apartments \u00b7 5 stories \u00b7 21,725 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-2",
+     "tag": "B",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 21725,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "B \u00b7 mfgen-bldg-2 \u00b7 Apartments \u00b7 5 stories \u00b7 21,725 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-3",
+     "tag": "C",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 9771,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "C \u00b7 mfgen-bldg-3 \u00b7 Apartments \u00b7 5 stories \u00b7 9,771 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-bldg-4",
+     "tag": "D",
+     "use": "apartments",
+     "floors": 5,
+     "footprintSqFt": 9771,
+     "heightFt": 54,
+     "heightBasis": "estimated",
+     "oneLine": "D \u00b7 mfgen-bldg-4 \u00b7 Apartments \u00b7 5 stories \u00b7 9,771 sf footprint \u00b7 estimated height 54 ft"
+    },
+    {
+     "id": "mfgen-amenity-1",
+     "tag": "E",
+     "use": "amenity",
+     "floors": 1,
+     "footprintSqFt": 1800,
+     "heightFt": 14,
+     "heightBasis": "estimated",
+     "oneLine": "E \u00b7 mfgen-amenity-1 \u00b7 Amenity \u00b7 1 story \u00b7 1,800 sf footprint \u00b7 estimated height 14 ft"
+    }
+   ],
+   "features": 9,
+   "schedule": {
+    "units": 131,
+    "stalls": 238,
+    "buildingUnits": 129,
+    "featureStalls": 238,
+    "consistent": false
+   }
+  },
+  "ms2d": 21916
+ },
+ "686430_1280x800": {
+  "role": "sloped site with flood and hillside holds",
+  "scene": {
+   "identity": {
+    "parcelId": "686430",
+    "schemeId": "neighborhood:loop",
+    "revision": "2f179905",
+    "key": "686430|neighborhood:loop"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80525,
+    "check": {
+     "status": "unverified",
+     "samples": 0,
+     "worstPct": null,
+     "note": "No footprint with an engine-reported area to check the frame against."
+    }
+   },
+   "buildings": [
+    {
+     "id": "sfv1-pad-1",
+     "tag": "H1",
+     "use": "house",
+     "floors": 1,
+     "footprintSqFt": null,
+     "heightFt": 10,
+     "heightBasis": "estimated",
+     "oneLine": "H1 \u00b7 sfv1-pad-1 \u00b7 House \u00b7 1 story \u00b7 footprint not reported \u00b7 estimated height 10 ft"
+    }
+   ],
+   "features": 7,
+   "schedule": {
+    "units": 1,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 21956
+ },
+ "672526_1280x800": {
+  "role": "no generated geometry (flood skip)",
+  "scene": {
+   "identity": {
+    "parcelId": "672526",
+    "schemeId": "plan",
+    "revision": "b2b4a6b8",
+    "key": "672526|plan"
+   },
+   "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80658,
+    "check": {
+     "status": "unverified",
+     "samples": 0,
+     "worstPct": null,
+     "note": "No footprint with an engine-reported area to check the frame against."
+    }
+   },
+   "buildings": [],
+   "features": 1,
+   "schedule": {
+    "units": 0,
+    "stalls": null,
+    "buildingUnits": null,
+    "featureStalls": null,
+    "consistent": true
+   }
+  },
+  "ms2d": 21780
+ },
+ "408571_1280x800": {
+  "role": "commercial capacity only",
+  "scene": null,
+  "ms2d": 22050
+ }
+}

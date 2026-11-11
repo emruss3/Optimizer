@@ -1,0 +1,62 @@
+{
+ "parcel": {
+  "ogc_fid": 488278,
+  "address": "1710 MEHARRY BLVD",
+  "zoning": "RM20"
+ },
+ "scene": {
+  "identity": {
+   "parcelId": "488278",
+   "schemeId": "mf:seed_v2",
+   "revision": "de87f8d2",
+   "key": "488278|mf:seed_v2"
+  },
+  "frame": {
+   "crs": "EPSG:3857",
+   "groundScale": 0.80645,
+   "check": {
+    "status": "verified",
+    "samples": 1,
+    "worstPct": 0.01,
+    "note": "Areas in the drawing frame match the engine's within 0.1%."
+   }
+  },
+  "buildings": [
+   {
+    "id": "mfgen-bldg-1",
+    "tag": "A",
+    "use": "apartments",
+    "floors": 4,
+    "footprintSqFt": 13561,
+    "heightFt": 44,
+    "heightBasis": "estimated",
+    "oneLine": "A · mfgen-bldg-1 · Apartments · 4 stories · 13,561 sf footprint · estimated height 44 ft"
+   }
+  ],
+  "features": 6,
+  "schedule": {
+   "units": 30,
+   "stalls": 52,
+   "buildingUnits": 30,
+   "featureStalls": 52,
+   "consistent": true
+  }
+ },
+ "inspector": {
+  "id": "mfgen-bldg-1",
+  "tag": "A",
+  "floors": "4 stories",
+  "footprint": "13,561 sf",
+  "height": "44 ft"
+ },
+ "sheetRow": [
+  "A",
+  "Apartments",
+  "4",
+  "13,561 sf",
+  "est. 44 ft"
+ ],
+ "sheetScale": "Scale 1\" = 50' at full size (17 × 11 in)",
+ "first3dMs": 9545,
+ "fails": []
+}

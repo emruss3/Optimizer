@@ -553,6 +553,10 @@ export function seedFamilyPlanToElements(
         areaSqFt: footprint ?? undefined,
         floors: stories,
         stories,
+        // The unit count this building's caption states. The drawing scene
+        // reads it, so a tag or a sheet cannot state another (the mix rows
+        // below can sum one short of it).
+        ...(opts.house ? {} : { planUnits: unitsHere }),
         // When the server SENT a mix — even an all-zero one (the degenerate
         // 1-unit/no-parking seeds found in the 2026-07-28 sweep) — it travels
         // verbatim. The GFA-derived estimate exists only for payloads with NO

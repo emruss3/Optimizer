@@ -1,8 +1,15 @@
 import type { Element } from '../../../engine/types';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { pointsAlongSegment, type Segment } from '../../../components/site-planner/planRendering';
+import { createGroundFrame } from '../scene/frame';
+import { buildingHeight } from '../scene/heights';
+import { buildingUse } from '../scene/buildScene';
 
 export interface MassingPolygon {
+  /** The plan element's id: the same id the plan and the sheets use. Absent on context. */
+  id?: string;
+  /** True for a plan building: the only solids that can be selected. */
+  building?: boolean;
   /** Polygon rings in local metres, centred on the plan's bbox centre */
   polygon: number[][][];
   /** Extrusion height in metres */
@@ -20,10 +27,10 @@ const TYPE_COLORS: Record<string, [number, number, number, number]> = {
   greenspace: [134, 239, 172, 170],
 };
 
-/** Ground floor 14 ft + 10 ft per upper floor, in metres. */
+/** Height of an existing neighborhood building from its story count, in
+ *  metres: an estimate, from the one table of story heights (scene/heights). */
 export function buildingHeightM(floors: number): number {
-  const f = Math.max(1, Math.floor(Number.isFinite(floors) ? floors : 1));
-  return (4 + 10 * f) * METERS_PER_FOOT;
+  return buildingHeight('existing', floors).aboveGradeFt * METERS_PER_FOOT;
 }
 
 /**
@@ -81,17 +88,21 @@ export function buildMassingData(
   }
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
-  // EPSG:3857 → ground metres at this latitude
-  const latRad = 2 * Math.atan(Math.exp(cy / 6378137)) - Math.PI / 2;
-  const k = Math.cos(latRad);
+  // EPSG:3857 → ground metres: the drawing workspace's one frame (scene/frame)
+  const frame = createGroundFrame(cx, cy);
+  const m = (p: number[]): number[] => frame.toMeters(p);
+  // A building's height comes from the one place a story count becomes a
+  // height (scene/heights), so the model, the plan and the sheets agree.
+  const heightOf = (el: Element) =>
+    buildingHeight(buildingUse(el), (el.properties?.floors as number) ?? (el.properties?.stories as number) ?? 1, el.properties?.heightFt);
 
   const polygons: MassingPolygon[] = drawable.map(el => ({
-    polygon: el.geometry.coordinates.map(ring =>
-      ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k])
-    ),
+    id: el.id,
+    building: el.type === 'building',
+    polygon: el.geometry.coordinates.map(ring => ring.map(m)),
     elevation:
       el.type === 'building'
-        ? buildingHeightM((el.properties?.floors as number) ?? 1)
+        ? heightOf(el).aboveGradeFt * METERS_PER_FOOT
         : 0.15, // flatwork gets a sliver of height so it reads above the ground plane
     color: TYPE_COLORS[el.type],
     label:
@@ -102,7 +113,7 @@ export function buildMassingData(
 
   // Parcel + envelope outlines on the ground plane, in the SAME centred frame
   const groundPaths: Array<{ path: number[][]; color: [number, number, number, number]; widthM: number }> = [];
-  const toLocal = (ring: number[][]) => ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k, 0.05]);
+  const toLocal = (ring: number[][]) => ring.map(p => [...m(p), 0.05]);
   if (ground?.parcelRing && ground.parcelRing.length >= 4) {
     groundPaths.push({ path: toLocal(ground.parcelRing), color: [71, 85, 105, 255], widthM: 0.9 });
   }
@@ -117,7 +128,7 @@ export function buildMassingData(
     const ring = p.coordinates?.[0];
     if (!ring || ring.length < 4) continue;
     contextPolygons.push({
-      polygon: [ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k])],
+      polygon: [ring.map(m)],
       elevation: 0.05,
       color: [241, 245, 249, 160],
       label: 'Neighboring parcel',
@@ -127,7 +138,7 @@ export function buildMassingData(
     const ring = b.polygon?.coordinates?.[0];
     if (!ring || ring.length < 4) continue;
     contextPolygons.push({
-      polygon: [ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k])],
+      polygon: [ring.map(m)],
       elevation: buildingHeightM(b.stories),
       color: [255, 255, 255, 235],
       label: `Existing · ${Math.max(1, Math.round(b.stories))} floors`,
@@ -149,31 +160,27 @@ export function buildMassingData(
     for (const edge of ground.frontEdges) {
       for (const [tx, ty] of pointsAlongSegment(edge, 10, 4)) {
         if (nearDrive(tx, ty)) continue;
-        trees.push({ position: [(tx - cx) * k, (ty - cy) * k] });
+        trees.push({ position: m([tx, ty]) as [number, number] });
       }
     }
   }
 
-  // Floor banding: a spandrel ring at every intermediate floor line (ground
-  // floor is 14 ft, uppers 10 ft — same arithmetic as buildingHeightM) plus
-  // a parapet ring at the roof line.
+  // Floor banding: a spandrel ring at the top of every story, the last at the
+  // roof line. The levels are the scene's (scene/heights).
   const floorLines: Array<{ path: number[][] }> = [];
   for (const el of drawable) {
     if (el.type !== 'building') continue;
-    const floors = Math.max(1, Math.floor((el.properties?.floors as number) ?? 1));
     const ring = el.geometry.coordinates[0];
     if (!ring || ring.length < 4) continue;
-    const local = ring.map(([x, y]) => [(x - cx) * k, (y - cy) * k]);
-    for (let fl = 1; fl <= Math.min(floors, 30); fl++) {
-      const zFt = fl < floors ? 4 + 10 * fl : 4 + 10 * floors; // parapet at roof
+    const local = ring.map(m);
+    for (const zFt of heightOf(el).levelsFt.slice(0, 30)) {
       const z = zFt * METERS_PER_FOOT;
       floorLines.push({ path: local.map(([x, y]) => [x, y, z]) });
     }
   }
 
-  const lonDeg = (cx / 6378137) * (180 / Math.PI);
-  const latDeg = latRad * (180 / Math.PI);
+  const { lonDeg, latDeg } = frame;
 
-  const extent = Math.max((maxX - minX) * k, (maxY - minY) * k, 10);
+  const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
   return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, origin: { latDeg, lonDeg } };
 }

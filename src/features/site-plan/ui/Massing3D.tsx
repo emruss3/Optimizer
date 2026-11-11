@@ -9,6 +9,8 @@ import { buildMassingData, type MassingPolygon } from './massingData';
 import { sunPosition, SUN_DATES } from './sunPosition';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { normalizeToPolygon } from '../../../engine/geometry';
+import type { DrawingScene } from '../scene/types';
+import { SceneInspector } from './SceneInspector';
 
 const ORBIT_VIEW = new OrbitView({ orbitAxis: 'Z' });
 
@@ -24,6 +26,9 @@ function ringIn3857(geom: Polygon | MultiPolygon | undefined | null): number[][]
     return undefined;
   }
 }
+
+/** The selected building: darker and saturated, so it reads without colour too. */
+const SELECTED_FILL: [number, number, number, number] = [234, 88, 12, 240];
 
 /** Camera bookmarks: repeatable views for decks and comparisons. */
 const CAMERA_BOOKMARKS: Record<string, { rotationX: number; rotationOrbit: number }> = {
@@ -51,7 +56,13 @@ const Massing3D: React.FC<{
   neighbors?: import('../api/neighbors').PlannerNeighbors | null;
   /** Front-edge classifications (3857) — street trees plant along fronts */
   edgeClassifications?: EdgeClassification[];
-}> = ({ elements, parcelGeometry, envelope, neighbors, edgeClassifications }) => {
+  /** The drawing scene of the plan on the sheet: the model's buildings carry
+   *  its ids, and the inspector shows its values. */
+  scene?: DrawingScene | null;
+  /** The selected feature, shared with the plan. */
+  selectedId?: string | null;
+  onSelect?: (id: string | null) => void;
+}> = ({ elements, parcelGeometry, envelope, neighbors, edgeClassifications, scene, selectedId, onSelect }) => {
   // Order-6 item 5b (second head of the same bug): during a resize/teardown
   // race, luma's device probe reads `limits.maxTextureDimension2D` off an
   // undefined device and throws UNCAUGHT — it never reaches DeckGL's onError
@@ -158,11 +169,12 @@ const Massing3D: React.FC<{
         extruded: true,
         getPolygon: (d: MassingPolygon) => d.polygon,
         getElevation: (d: MassingPolygon) => d.elevation,
-        getFillColor: (d: MassingPolygon) => d.color,
+        getFillColor: (d: MassingPolygon) => (d.building && d.id === selectedId ? SELECTED_FILL : d.color),
         getLineColor: [30, 41, 59, 255],
         getLineWidth: 0.3,
         lineWidthUnits: 'meters',
         pickable: true,
+        updateTriggers: { getFillColor: [selectedId] },
       }),
       // Spandrel rings at every floor line + parapet: the slab reads as a
       // building. Same arithmetic as the extrusion heights.
@@ -200,7 +212,7 @@ const Massing3D: React.FC<{
         pickable: false,
       }),
     ],
-    [polygons, groundPaths, contextPolygons, trees, floorLines]
+    [polygons, groundPaths, contextPolygons, trees, floorLines, selectedId]
   );
 
   const snapshot = useCallback(() => {
@@ -212,6 +224,10 @@ const Massing3D: React.FC<{
     a.click();
   }, []);
 
+  const sceneBuildings = scene?.buildings ?? [];
+  const selected = selectedId ? sceneBuildings.find(b => b.id === selectedId) ?? null : null;
+  const tagged = sceneBuildings.filter(b => b.tagOnPlan);
+
   if (polygons.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-sm text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
@@ -221,7 +237,7 @@ const Massing3D: React.FC<{
   }
 
   return (
-    <div className="relative w-full h-full bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
+    <div data-testid="massing-3d" data-scene-key={scene?.identity.key ?? ''} className="relative w-full h-full bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
       <DeckGL
         ref={deckRef as never}
         views={ORBIT_VIEW}
@@ -246,9 +262,17 @@ const Massing3D: React.FC<{
           console.error('[Massing3D]', err);
           setFatal(err instanceof Error ? err : new Error(String(err)));
         }}
-        getTooltip={({ object }) =>
-          object ? { text: (object as MassingPolygon).label } : null
-        }
+        onClick={(info: { object?: unknown }) => {
+          if (!onSelect) return;
+          const o = info.object as MassingPolygon | undefined;
+          onSelect(o?.building && o.id ? o.id : null);
+        }}
+        getTooltip={({ object }) => {
+          const o = object as MassingPolygon | undefined;
+          if (!o) return null;
+          const b = o.building ? sceneBuildings.find(x => x.id === o.id) : undefined;
+          return { text: b ? `${b.display.title} · ${b.display.floors} · ${b.display.heightLabel.toLowerCase()} ${b.display.height}` : o.label };
+        }}
       />
       {/* Sun study + camera controls */}
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
@@ -307,8 +331,31 @@ const Massing3D: React.FC<{
         </button>
       </div>
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/80 rounded px-2 py-1 pointer-events-none">
-        Drag to orbit · scroll to zoom
+        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''}
       </div>
+      {/* The buildings of the scene by tag: selection without a pointer, and
+          the same tags the plan and the sheets carry. */}
+      {onSelect && tagged.length > 0 && (
+        <div className="absolute top-11 right-2 flex flex-wrap justify-end items-center gap-1 max-w-[50%] bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm" role="group" aria-label="Buildings">
+          <span className="text-gray-500 px-0.5">Buildings</span>
+          {tagged.slice(0, 16).map(b => (
+            <button
+              key={b.id}
+              type="button"
+              aria-pressed={b.id === selectedId}
+              title={b.display.oneLine}
+              onClick={() => onSelect(b.id === selectedId ? null : b.id)}
+              data-testid={`scene-select-${b.tag}`}
+              className={`h-5 min-w-5 px-1 rounded-full border text-[11px] font-bold ${b.id === selectedId ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-900 border-gray-400 hover:border-gray-900'}`}
+            >
+              {b.tag}
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && (
+        <SceneInspector building={selected} onClose={onSelect ? () => onSelect(null) : undefined} className="absolute right-2 bottom-2" />
+      )}
     </div>
   );
 };

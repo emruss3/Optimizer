@@ -14,8 +14,8 @@ export interface UseSelectionReturn {
   selectedCount: number;
 }
 
-export function useSelection(): UseSelectionReturn {
-  const [selectedElements, setSelectedElements] = useState<Set<string>>(new Set());
+export function useSelection(initial?: string[]): UseSelectionReturn {
+  const [selectedElements, setSelectedElements] = useState<Set<string>>(() => new Set(initial ?? []));
 
   const selectElement = useCallback((id: string, multiSelect = false) => {
     setSelectedElements(prev => {
