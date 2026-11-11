@@ -1,0 +1,3486 @@
+{
+ "engine": "g23",
+ "engineRelease": "g23",
+ "engineReleaseChangedDuringRun": false,
+ "scoredAt": "2026-11-11T18:51:05.063Z",
+ "board": {
+  "parcels": 150,
+  "run": 42,
+  "plan": {
+   "pass": 15,
+   "of": 23
+  },
+  "refuse": {
+   "pass": 12,
+   "of": 19
+  }
+ },
+ "rows": [
+  {
+   "fid": 677010,
+   "address": "0 TEMPLE RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 676960,
+   "address": "0 COUCHVILLE PIKE",
+   "zoning": "RS80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 672524,
+   "address": "0 NASHBORO BLVD",
+   "zoning": "R10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     7,
+     10
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679226,
+   "address": "0 HESSEY RD",
+   "zoning": "RS10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     10,
+     16
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 674961,
+   "address": "0 HOMELAND DR",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     4,
+     7
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 661661,
+   "address": "6404 EATONS CREEK RD",
+   "zoning": "R40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     4,
+     7
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 676430,
+   "address": "0 RIVER LANDING WAY",
+   "zoning": "R15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679830,
+   "address": "0 NEELYS BEND RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     10
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 675128,
+   "address": "0 NEWSOM STATION RD",
+   "zoning": "R80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     5,
+     10
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 678964,
+   "address": "0 BRITTANY PARK DR",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     28,
+     45
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 667565,
+   "address": "6438 OLD CLARKSVILLE PIKE",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680860,
+   "address": "3905 LUNN DR",
+   "zoning": "RS15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     4
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 681024,
+   "address": "0 LONGWOOD PL",
+   "zoning": "R20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679273,
+   "address": "0 OLD HICKORY BLVD",
+   "zoning": "R15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     9
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680408,
+   "address": "0 RIDGEWOOD RD",
+   "zoning": "RS80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     3
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 681029,
+   "address": "0 ABBOTT MARTIN RD",
+   "zoning": "R20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 667802,
+   "address": "7963 CHARLOTTE PIKE",
+   "zoning": "R40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     10,
+     16
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 659655,
+   "address": "1019 HITT LN",
+   "zoning": "R20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     12,
+     25
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 681357,
+   "address": "1716 RED JACKET DR",
+   "zoning": "R10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     70,
+     110
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 380818,
+   "address": "3345 PUGH RD",
+   "zoning": "RS80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     10
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 424990,
+   "address": "6211 BROWNLEE DR",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 667183,
+   "address": "3730 HOMELAND DR",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 661271,
+   "address": "5014 BUENA VISTA PIKE",
+   "zoning": "RS15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680721,
+   "address": "0 LARKIN SPRINGS RD",
+   "zoning": "RS10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 666092,
+   "address": "6247 MT VIEW RD",
+   "zoning": "RS10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     12,
+     18
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680528,
+   "address": "0 GULCH ST",
+   "zoning": "RS7.5",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 692658,
+   "address": "415 EAGLE RDG",
+   "zoning": "R15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 672526,
+   "address": "0 HICKORY BEND DR",
+   "zoning": "RS10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679911,
+   "address": "0 SWISS AVE",
+   "zoning": "RM15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     30,
+     60
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 60,
+    "nbLots": 36,
+    "nbPattern": "townhomes (street)",
+    "nbFails": [],
+    "thLots": 36,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 60,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|60|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "60 apartments"
+   }
+  },
+  {
+   "fid": 679617,
+   "address": "0 STEWARTS FERRY PIKE",
+   "zoning": "RS15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     4,
+     6
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 395417,
+   "address": "1430 NEELYS BEND RD",
+   "zoning": "RS80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677645,
+   "address": "0 POPLAR CREEK RD",
+   "zoning": "RS15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     5
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680596,
+   "address": "0 HART LN",
+   "zoning": "R10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     55,
+     80
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679195,
+   "address": "0 OLD LEBANON DIRT RD",
+   "zoning": "RM9",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 38,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [
+     "access.landlocked"
+    ],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no easement is on record and the only way in is through adjoining land. No plan is drawn by right; assume_access = true draws the plan as a what-if",
+    "lots": 38,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|38|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "drew 38 apartments where nothing belongs"
+   }
+  },
+  {
+   "fid": 680202,
+   "address": "0 CAMPBELL RD",
+   "zoning": "RS80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     4
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 670533,
+   "address": "0 SMITH SPRINGS RD",
+   "zoning": "RM6",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     30,
+     42
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 42,
+    "nbLots": 42,
+    "nbPattern": "townhomes (mews)",
+    "nbFails": [
+     "alley.street_to_street"
+    ],
+    "thLots": 42,
+    "thFails": [
+     "alley.street_to_street"
+    ],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 42,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|42|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "42 apartments; attached homes expected"
+   }
+  },
+  {
+   "fid": 679820,
+   "address": "0 WESTCAP RD",
+   "zoning": "R15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     8,
+     14
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680001,
+   "address": "0 UNION HILL RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     5
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 678148,
+   "address": "0 HICKORY HOLLOW PKWY",
+   "zoning": "RM20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 9,
+    "nbLots": 1,
+    "nbPattern": "the parcel as one lot",
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": null,
+    "lots": 9,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|9|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "drew 9 apartments where nothing belongs"
+   }
+  },
+  {
+   "fid": 679540,
+   "address": "0 DRY FORK RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 661591,
+   "address": "4819 FAIRMEADE CT",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677281,
+   "address": "0 PENN MEADE WAY",
+   "zoning": "RS10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679618,
+   "address": "0 HILLWOOD BLVD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     3
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 659921,
+   "address": "54 PARK CRESCENT CIR",
+   "zoning": "R15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 686430,
+   "address": "4255 BRICK CHURCH PIKE",
+   "zoning": "R20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 667638,
+   "address": "1014 ANTIOCH PIKE",
+   "zoning": "R8",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     7,
+     9
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 665951,
+   "address": "1422 CAMPBELL RD",
+   "zoning": "R20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680785,
+   "address": "0 ROBINSON RD",
+   "zoning": "R10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680391,
+   "address": "0 HILLS LN",
+   "zoning": "R10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     14,
+     18
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 673175,
+   "address": "0 OLD HICKORY BLVD",
+   "zoning": "R40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 673710,
+   "address": "0 HICKORY HOLLOW PKWY",
+   "zoning": "RM20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     20,
+     30
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 26,
+    "nbLots": 29,
+    "nbPattern": "townhomes (mews)",
+    "nbFails": [],
+    "thLots": 29,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 29,
+    "product": "attached",
+    "fails": [],
+    "from": "townhome",
+    "streetFt": 0,
+    "fingerprint": "done|29|attached||0||townhome"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "29 attached homes"
+   }
+  },
+  {
+   "fid": 679683,
+   "address": "0 OLD HYDES FERRY PIKE",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     2
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 673844,
+   "address": "0 OLD HICKORY BLVD",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     5
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 661303,
+   "address": "4525 CATO RD",
+   "zoning": "RS15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     3
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 670783,
+   "address": "0 NASHBORO BLVD",
+   "zoning": "RM6",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     8,
+     9
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 9,
+    "nbLots": 9,
+    "nbPattern": "townhomes (mews)",
+    "nbFails": [],
+    "thLots": 9,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 9,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|9|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "9 apartments; attached homes expected"
+   }
+  },
+  {
+   "fid": 676829,
+   "address": "0 WALKER LN",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     5,
+     7
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 692464,
+   "address": "7695 OLD CHARLOTTE PIKE",
+   "zoning": "R80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     6,
+     10
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 676422,
+   "address": "0 CEDARSTONE WAY",
+   "zoning": "RM9",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     20,
+     30
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 30,
+    "nbLots": 8,
+    "nbPattern": "townhomes (street)",
+    "nbFails": [],
+    "thLots": 8,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 30,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|30|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "30 apartments; attached homes expected"
+   }
+  },
+  {
+   "fid": 673974,
+   "address": "0 HICKS RD",
+   "zoning": "RM4",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 14,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [
+     "access.landlocked"
+    ],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no easement is on record and the only way in is through adjoining land (and 2.8 of the 4.06 ac is steeper than 25%). No plan is drawn by right; assume_access = true draws the plan as a what-if",
+    "lots": 14,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|14|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "drew 14 apartments where nothing belongs"
+   }
+  },
+  {
+   "fid": 670893,
+   "address": "0 BLEVINS RD",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677706,
+   "address": "0 NEWSOM STATION RD",
+   "zoning": "R40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677593,
+   "address": "0 DRAKES BRANCH RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 661326,
+   "address": "70 HILLENGLADE DR",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 666615,
+   "address": "810 DUE WEST AVE N",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 673567,
+   "address": "0 CLOVERNOOK DR",
+   "zoning": "RS10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     4
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 673509,
+   "address": "0 CAROTHERS RD",
+   "zoning": "RM9",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     36,
+     42
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 42,
+    "nbLots": 22,
+    "nbPattern": "single street",
+    "nbFails": [],
+    "thLots": 42,
+    "thFails": [
+     "alley.street_to_street"
+    ],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 42,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|42|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "42 apartments; attached homes expected"
+   }
+  },
+  {
+   "fid": 659670,
+   "address": "8282 CHARLOTTE PIKE",
+   "zoning": "R40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     5,
+     6
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 660683,
+   "address": "605 HARPETH LN",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     2
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 668277,
+   "address": "8192 CHARLOTTE PIKE",
+   "zoning": "R40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     6
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 675099,
+   "address": "0 TODD PREIS DR",
+   "zoning": "RM9",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "skipped",
+    "mfUnits": 94,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": true,
+    "reason": "floodplain leaves no buildable piece",
+    "lots": 94,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "skipped|94|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 663221,
+   "address": "9147 OLD CHARLOTTE PIKE",
+   "zoning": "R80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 674703,
+   "address": "0 MASSMAN DR",
+   "zoning": "RS10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 671253,
+   "address": "0 GUN CLUB RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     2
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680272,
+   "address": "0 HYDES FERRY RD",
+   "zoning": "RS15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 474699,
+   "address": "2716 JONES AVE",
+   "zoning": "RS10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 669278,
+   "address": "803 B WOODLAND WAY",
+   "zoning": "R15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 675439,
+   "address": "0 CURREY RD",
+   "zoning": "RS10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     5
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 675289,
+   "address": "0 PAWNEE TRL",
+   "zoning": "RS15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     4,
+     5
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677554,
+   "address": "0 DRY FORK RD",
+   "zoning": "RS15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 612443,
+   "address": "3600 ABBOTT MARTIN RD",
+   "zoning": "R20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     4,
+     6
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679669,
+   "address": "0 CLARKSVILLE PIKE",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 678549,
+   "address": "0 HUNTERS LN",
+   "zoning": "R20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     6,
+     9
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 676299,
+   "address": "0 SMITH SPRINGS RD",
+   "zoning": "RS10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     7,
+     10
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679300,
+   "address": "0 LARKIN SPRINGS RD",
+   "zoning": "RS10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677861,
+   "address": "331 OLD HICKORY BLVD",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 666864,
+   "address": "2327 GRANNY WRIGHT LN",
+   "zoning": "RS80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     2
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679942,
+   "address": "2855 OLD HICKORY BLVD",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     5
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 664765,
+   "address": "2825 KNIGHT DR",
+   "zoning": "RS7.5",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     20,
+     30
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 566991,
+   "address": "290 FORREST VALLEY CIR",
+   "zoning": "R15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     8,
+     12
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 678361,
+   "address": "0 TRAIL HOLLOW LN",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680044,
+   "address": "0 MANSKER DR",
+   "zoning": "R20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677449,
+   "address": "0 WHITES CREEK PIKE",
+   "zoning": "R10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     17,
+     26
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 678224,
+   "address": "0 WHITES CREEK PIKE",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 406289,
+   "address": "3630 TRAIL HOLLOW LN",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 678315,
+   "address": "0 RIVER ROAD PIKE",
+   "zoning": "R80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     4
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 678961,
+   "address": "0 HITT LN",
+   "zoning": "R20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679197,
+   "address": "0 OLD CLARKSVILLE PIKE",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     16,
+     24
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677633,
+   "address": "0 BRICK CHURCH PIKE",
+   "zoning": "RS80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680449,
+   "address": "1418 CAMPBELL RD",
+   "zoning": "RS80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 332543,
+   "address": "1055 OLD DICKERSON PIKE",
+   "zoning": "R20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     8,
+     16
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677102,
+   "address": "0 DICKERSON PIKE",
+   "zoning": "RS7.5",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     50,
+     75
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680782,
+   "address": "0 ROBINSON RD",
+   "zoning": "R10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 679218,
+   "address": "0 LEBANON PIKE",
+   "zoning": "RM20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     150,
+     228
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 228,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": "landlocked: no boundary on a public street; a lane is mapped along or across the boundary (291 ft of it within 15 ft) over neighbouring parcels: reached by a private lane, an access easement to confirm; no vacant neighbour to connect through (neighbours by edge length: other 1910 ft, rail 927 ft, open_edge 505 ft)",
+    "lots": 228,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|228|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "228 apartments"
+   }
+  },
+  {
+   "fid": 678903,
+   "address": "0 WOODLAND HILLS DR",
+   "zoning": "RM6",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     8,
+     12
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 10,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": "landlocked: the parcel touches Woodland Hills Dr for 31 ft with no straight run of 40 ft: room for a driveway, not for a street; no vacant neighbour to connect through (neighbours by edge length: residential 704 ft, other 519 ft, street 16 ft, open_edge 16 ft)",
+    "lots": 10,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|10|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "10 apartments"
+   }
+  },
+  {
+   "fid": 672188,
+   "address": "0 KIDD RD",
+   "zoning": "RM9",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     30,
+     48
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 41,
+    "nbLots": 26,
+    "nbPattern": "neighborhood",
+    "nbFails": [],
+    "thLots": 48,
+    "thFails": [
+     "access.second_connection",
+     "alley.street_to_street",
+     "home.front_addresses_public_space"
+    ],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 41,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|41|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "41 apartments; attached homes expected"
+   }
+  },
+  {
+   "fid": 309819,
+   "address": "5215 BLUE HOLE RD",
+   "zoning": "RM15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     40,
+     57
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 56,
+    "nbLots": 44,
+    "nbPattern": "townhomes (mews)",
+    "nbFails": [],
+    "thLots": 44,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 56,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|56|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "56 apartments"
+   }
+  },
+  {
+   "fid": 664926,
+   "address": "428 OLD LEBANON DIRT RD",
+   "zoning": "RM2-NS",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     6,
+     9
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 9,
+    "nbLots": 4,
+    "nbPattern": "townhomes (street)",
+    "nbFails": [],
+    "thLots": 4,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 9,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|9|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "9 apartments; attached homes expected"
+   }
+  },
+  {
+   "fid": 672657,
+   "address": "0 OLD HICKORY BLVD",
+   "zoning": "RM4",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": null,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [
+     "access.landlocked"
+    ],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no easement is on record and the only way in is through adjoining land. No plan is drawn by right; assume_access = true draws the plan as a what-if",
+    "lots": 0,
+    "product": "none",
+    "fails": [
+     "access.landlocked"
+    ],
+    "from": "none",
+    "streetFt": 0,
+    "fingerprint": "done|0|none||0|access.landlocked|none"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 663910,
+   "address": "3028 GWYNNWOOD DR",
+   "zoning": "RM9",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     4,
+     10
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 10,
+    "nbLots": 1,
+    "nbPattern": "the parcel as one lot",
+    "nbFails": [],
+    "thLots": 4,
+    "thFails": [
+     "alley.street_to_street"
+    ],
+    "floodSkip": false,
+    "reason": "engine error: record \"best\" is not assigned yet",
+    "lots": 10,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|10|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "10 apartments"
+   }
+  },
+  {
+   "fid": 677274,
+   "address": "0 HICKS RD",
+   "zoning": "RM4",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 8,
+    "nbLots": 1,
+    "nbPattern": "the parcel as one lot",
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": null,
+    "lots": 8,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|8|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "drew 8 apartments where nothing belongs"
+   }
+  },
+  {
+   "fid": 679627,
+   "address": "0 KNIGHT DR",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 674590,
+   "address": "0 BUFFALO ST",
+   "zoning": "R15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 395119,
+   "address": "317 CONNARE DR",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     2,
+     3
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677761,
+   "address": "0 NORA LN",
+   "zoning": "RS10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     5,
+     8
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 673347,
+   "address": "0 WRIGHT AVE",
+   "zoning": "RS10",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 660480,
+   "address": "3262 KINGS LN",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     5
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 672722,
+   "address": "0 PENNINGTON BEND RD",
+   "zoning": "R15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     5,
+     8
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 676928,
+   "address": "0 BUENA VISTA PIKE",
+   "zoning": "RS15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 670613,
+   "address": "0 OLD CHARLOTTE PIKE",
+   "zoning": "R80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677434,
+   "address": "0 UNION HILL RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 680757,
+   "address": "0 MOSS RD",
+   "zoning": "RS7.5",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     20,
+     32
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 485279,
+   "address": "4080 BRICK CHURCH PIKE",
+   "zoning": "RS20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 672095,
+   "address": "0 HUDSON RD",
+   "zoning": "RS80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     5,
+     8
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 699525,
+   "address": "4775 DRAKES BRANCH RD",
+   "zoning": "RS15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     48,
+     70
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 300575,
+   "address": "3432 HOBSON PIKE",
+   "zoning": "RS80",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     4,
+     7
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 666342,
+   "address": "1021 HITT LN",
+   "zoning": "R20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     4
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": null,
+   "verdict": {
+    "pass": null,
+    "why": "not in this run"
+   }
+  },
+  {
+   "fid": 677012,
+   "address": "0 WHITES CREEK PIKE",
+   "zoning": "RM9",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 10,
+    "nbLots": 1,
+    "nbPattern": "the parcel as one lot",
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": null,
+    "lots": 10,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|10|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "drew 10 apartments where nothing belongs"
+   }
+  },
+  {
+   "fid": 660601,
+   "address": "2840 OLD FRANKLIN RD",
+   "zoning": "RM15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     100,
+     130
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 130,
+    "nbLots": 24,
+    "nbPattern": "grid",
+    "nbFails": [],
+    "thLots": 63,
+    "thFails": [
+     "alley.street_to_street"
+    ],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 130,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|130|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "130 apartments"
+   }
+  },
+  {
+   "fid": 679632,
+   "address": "0 WHITES CREEK PIKE",
+   "zoning": "RM4",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     12,
+     17
+    ],
+    "product": "attached",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 17,
+    "nbLots": 17,
+    "nbPattern": "townhomes (street)",
+    "nbFails": [],
+    "thLots": 17,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 17,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|17|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "17 apartments; attached homes expected"
+   }
+  },
+  {
+   "fid": 405068,
+   "address": "262 MARTINGALE DR",
+   "zoning": "RM20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 35,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no vacant neighbour to connect through (neighbours by edge length: other 466 ft, residential 422 ft, rail 407 ft)",
+    "lots": 35,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|35|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "drew 35 apartments where nothing belongs"
+   }
+  },
+  {
+   "fid": 420885,
+   "address": "6305 ROBIN HILL RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 1,
+    "pattern": "frontage lots, no new street",
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": 1.26,
+    "fingerprint": "done|1|lots|frontage lots, no new street|0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 680676,
+   "address": "0 KIRKMAN LN",
+   "zoning": "R40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "skipped",
+    "lots": 0,
+    "pattern": null,
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": "floodplain leaves no buildable piece; the parcel is also landlocked (no edge touches a mapped street or vacant land)",
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": null,
+    "fingerprint": "skipped|0|lots||0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 664916,
+   "address": "3210 LAKESHORE DR",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     3,
+     4
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 4,
+    "pattern": "estate lots (flag lots behind the frontage)",
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": 2.05,
+    "fingerprint": "done|4|lots|estate lots (flag lots behind the frontage)|0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "4 lots (estate lots (flag lots behind the frontage))"
+   }
+  },
+  {
+   "fid": 405284,
+   "address": "9052 OLD CHARLOTTE PIKE",
+   "zoning": "R80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 0,
+    "pattern": null,
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": "no lot of 80000 sf (270 x 300 ft) fits on the frontage or beside a new street: 1.80 ac buildable after the holds (site 1.80 ac)",
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": 1.8,
+    "fingerprint": "done|0|lots||0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 675288,
+   "address": "0 ANTIOCH PIKE",
+   "zoning": "RS7.5",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "skipped",
+    "lots": 0,
+    "pattern": null,
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": "floodplain leaves no buildable piece",
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": null,
+    "fingerprint": "skipped|0|lots||0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 679103,
+   "address": "0 OLD HICKORY BLVD",
+   "zoning": "RS20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     3
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": {
+    "status": "done",
+    "lots": 1,
+    "pattern": "the parcel as one lot",
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": 1.48,
+    "buildableAc": 2.25,
+    "fingerprint": "done|1|lots|the parcel as one lot|0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "the parcel as one lot, as the target allows"
+   }
+  },
+  {
+   "fid": 680641,
+   "address": "0 BELLSHIRE DR",
+   "zoning": "R10",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     1,
+     2
+    ],
+    "product": "lots",
+    "noStreet": true,
+    "altRefuse": true
+   },
+   "answer": {
+    "status": "done",
+    "lots": 1,
+    "pattern": "the parcel as one lot",
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": 1.14,
+    "fingerprint": "done|1|lots|the parcel as one lot|0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "the parcel as one lot, as the target allows"
+   }
+  },
+  {
+   "fid": 693461,
+   "address": "7070 RIVER ROAD PIKE",
+   "zoning": "R80",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 1,
+    "pattern": "estate lots (flag lots behind the frontage)",
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": 1.59,
+    "buildableAc": 1.31,
+    "fingerprint": "done|1|lots|estate lots (flag lots behind the frontage)|0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 673467,
+   "address": "0 VESTER RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 1,
+    "pattern": "the parcel as one lot",
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": null,
+    "fingerprint": "done|1|lots|the parcel as one lot|0||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 421423,
+   "address": "2957 MORGAN RD",
+   "zoning": "RS40",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     9,
+     13
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 10,
+    "pattern": "single street",
+    "streetFt": 1553,
+    "builtFt": 1553,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": 13.27,
+    "fingerprint": "done|10|lots|single street|1553||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "10 lots (single street)"
+   }
+  },
+  {
+   "fid": 666667,
+   "address": "4329 CENTRAL PIKE",
+   "zoning": "RS15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     13,
+     19
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 13,
+    "pattern": "single street",
+    "streetFt": 524,
+    "builtFt": 524,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": 0.25,
+    "buildableAc": 6.92,
+    "fingerprint": "done|13|lots|single street|524||default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "13 lots (single street)"
+   }
+  },
+  {
+   "fid": 660058,
+   "address": "6564 HOLT RD",
+   "zoning": "R20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     12,
+     18
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 12,
+    "pattern": "T street",
+    "streetFt": 1065,
+    "builtFt": 729,
+    "fails": [],
+    "flags": [],
+    "reason": null,
+    "from": "single",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": 9.83,
+    "fingerprint": "done|12|lots|T street|1065||single"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "12 lots (T street)"
+   }
+  },
+  {
+   "fid": 660428,
+   "address": "4044 DICKERSON PIKE",
+   "zoning": "R20",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 0,
+    "pattern": null,
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [
+     "access.landlocked"
+    ],
+    "flags": [],
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no easement is on record and the only way in is through adjoining land. No plan is drawn by right; assume_access = true draws the plan as a what-if",
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": null,
+    "buildableAc": 17.05,
+    "fingerprint": "done|0|lots||0|access.landlocked|default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 675939,
+   "address": "0 VADENWOOD LN",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 0,
+    "pattern": null,
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [
+     "access.landlocked"
+    ],
+    "flags": [],
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no easement is on record and the only way in is through adjoining land (and 7.1 of the 15.04 ac is steeper than 25%). No plan is drawn by right; assume_access = true draws the plan as a what-if",
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": 7.1,
+    "buildableAc": 7.94,
+    "fingerprint": "done|0|lots||0|access.landlocked|default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 672901,
+   "address": "0 VADENWOOD LN",
+   "zoning": "RS40",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 0,
+    "pattern": null,
+    "streetFt": 0,
+    "builtFt": 0,
+    "fails": [
+     "access.landlocked"
+    ],
+    "flags": [],
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no easement is on record and the only way in is through adjoining land (and 9.2 of the 17.72 ac is steeper than 25%). No plan is drawn by right; assume_access = true draws the plan as a what-if",
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": 9.2,
+    "buildableAc": 8.21,
+    "fingerprint": "done|0|lots||0|access.landlocked|default"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 675327,
+   "address": "0 CAMPBELL RD",
+   "zoning": "R20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     35,
+     55
+    ],
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "lots": 24,
+    "pattern": "terrace (hillside street with arms)",
+    "streetFt": 2589,
+    "builtFt": 2589,
+    "fails": [],
+    "flags": [
+     "open.unassigned"
+    ],
+    "reason": null,
+    "from": "default",
+    "product": "lots",
+    "hillsideAc": 1.93,
+    "buildableAc": 30.57,
+    "fingerprint": "done|24|lots|terrace (hillside street with arms)|2589||default"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "24 lots; 35–55 expected"
+   }
+  },
+  {
+   "fid": 701867,
+   "address": "330 ATHENS WAY",
+   "zoning": "RM15",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     60,
+     88
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 88,
+    "nbLots": 53,
+    "nbPattern": "townhomes (street)",
+    "nbFails": [
+     "access.second_connection"
+    ],
+    "thLots": 53,
+    "thFails": [
+     "access.second_connection"
+    ],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 88,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|88|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "88 apartments"
+   }
+  },
+  {
+   "fid": 680159,
+   "address": "0 WHITES CREEK PIKE",
+   "zoning": "RM9",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 25,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [
+     "access.landlocked"
+    ],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": false,
+    "reason": "landlocked: no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it; no easement is on record and the only way in is through adjoining land (and 0.4 of the 3.87 ac is steeper than 25%). No plan is drawn by right; assume_access = true draws the plan as a what-if",
+    "lots": 25,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|25|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": false,
+    "why": "drew 25 apartments where nothing belongs"
+   }
+  },
+  {
+   "fid": 670638,
+   "address": "0 BELL RD",
+   "zoning": "RM15",
+   "target": {
+    "kind": "refuse",
+    "lots": null,
+    "product": "lots",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "skipped",
+    "mfUnits": 42,
+    "nbLots": 0,
+    "nbPattern": null,
+    "nbFails": [],
+    "thLots": null,
+    "thFails": null,
+    "floodSkip": true,
+    "reason": "floodplain leaves no buildable piece",
+    "lots": 42,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "skipped|42|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "nothing drawn, as it should be"
+   }
+  },
+  {
+   "fid": 628101,
+   "address": "3335 WALTON LN",
+   "zoning": "RM20",
+   "target": {
+    "kind": "plan",
+    "lots": [
+     16,
+     31
+    ],
+    "product": "any",
+    "noStreet": false,
+    "altRefuse": false
+   },
+   "answer": {
+    "status": "done",
+    "mfUnits": 23,
+    "nbLots": 16,
+    "nbPattern": "townhomes (alleys)",
+    "nbFails": [],
+    "thLots": 16,
+    "thFails": [],
+    "floodSkip": false,
+    "reason": null,
+    "lots": 23,
+    "product": "apartments",
+    "fails": [],
+    "from": "multifamily",
+    "streetFt": 0,
+    "fingerprint": "done|23|apartments||0||multifamily"
+   },
+   "verdict": {
+    "pass": true,
+    "why": "23 apartments"
+   }
+  }
+ ]
+}

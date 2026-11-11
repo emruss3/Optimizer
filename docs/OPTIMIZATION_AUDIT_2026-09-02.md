@@ -2090,3 +2090,22 @@ land with no public street is marked and stays the default until the owner
 rules; competition rows skipped for time read "not drawn", reasons are not
 errors, rows that raised say so; the row marked "on the sheet" follows the
 plan on the sheet. Reply: `qa/audits/2026-11-11/APP_REPLY_3.md`.
+
+## 45. Batch 7: twenty new parcels on engine g23 (2026-11-11)
+
+The owner asked for another 20 parcels, ranked, and whether anything is
+improving. On g23: plans 7 of 9 and refusals 10 of 11 at first look, the
+best pass rate of the three batches measured this way, and it comes from
+the draw: eleven refusals, all flood, no street or one lot. The likelihood
+a civil would accept a sheet that draws lots is 49, 44 and 48 across
+batches 5, 6 and 7, so it has not moved in five engine releases. The 22 RM
+cohort parcels read 9 of 22 on g22 and on g23 with no sheet changed.
+
+Found: 330 Athens Way shows no plan, because the multifamily plan puts a
+building over a drive by 19 m² and the app's geometry check rejects it; the
+scorer counts that parcel as a pass and should run the same check. 0
+Campbell Rd is the sixth parcel where a plan inside the target fails only
+the street grade test. The engine error of g22 is still raised on g23. An
+app defect is noted for the next pass: the front setback label sits on the
+wrong edge on 4329 Central Pike. The cohort is 150 parcels. Audit and
+ranking: `qa/audits/2026-11-11b/`.
