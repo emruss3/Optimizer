@@ -18,8 +18,8 @@ APP_NAME = "optimizer-layout-model"
 GATE_URL = "https://okxrvetbzpoazrybhcqj.supabase.co/functions/v1/ml-gate"
 VOL = "/vol"
 MAX_TRAIN_MINUTES = 240      # cost guard: one run cannot ask for more training time than this
-TRAIN_GPU = None             # set to "T4" once the Modal account has a payment method (Modal refuses GPU without one)
-TRAIN_CPUS = 16              # cores for a training run while it is on CPU
+TRAIN_GPU = "T4"             # GPU for training runs (the account has a payment method since 2026-11-12)
+TRAIN_CPUS = 4               # cores beside the GPU for data preparation
 MAX_TRIES = 16               # layouts per generate call
 
 app = modal.App(APP_NAME)
