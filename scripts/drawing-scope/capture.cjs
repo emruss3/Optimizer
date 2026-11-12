@@ -4,6 +4,7 @@
 // no basemap tiles.
 //   node scripts/drawing-scope/capture.cjs OUT_DIR [fid ...]
 // CAPTURE_QUERY=?drawing=classic captures the original drawing path.
+// CAPTURE_VIEWPORTS=1440x900,1920x1080 limits the viewports.
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -27,11 +28,13 @@ const [out, ...only] = process.argv.slice(2);
 if (!out) { console.error('usage: node capture.cjs OUT_DIR [fid ...]'); process.exit(1); }
 fs.mkdirSync(out, { recursive: true });
 const parcels = only.length ? FIXTURES.filter(f => only.includes(String(f.ogc_fid))) : FIXTURES;
+// CAPTURE_VIEWPORTS=1440x900 limits the run to the named viewports
+const wanted = (process.env.CAPTURE_VIEWPORTS || '').split(',').filter(Boolean);
 
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const results = {};
-  for (const vp of VIEWPORTS) {
+  for (const vp of VIEWPORTS.filter(v => !wanted.length || wanted.includes(v.name))) {
     const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 1 });
     for (const p of parcels) {
       const page = await ctx.newPage();
@@ -59,7 +62,10 @@ const parcels = only.length ? FIXTURES.filter(f => only.includes(String(f.ogc_fi
             await btn.click({ timeout: 10000 });
             // the 3D root carries a test id from the first drawing-scope slice on; before it, the wait times out
             const found = await page.waitForSelector('[data-testid="massing-3d"] canvas', { timeout: 15000 }).then(() => true).catch(() => false);
+            // the rendering marks itself ready when its model is built and lit
+            await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 60000 }).catch(() => {});
             if (found) rec.msFirst3d = Date.now() - t1;
+            rec.rendered = await page.locator('[data-testid="massing-3d"]').getAttribute('data-rendered').catch(() => null);
             await page.waitForTimeout(5000);
             await page.screenshot({ path: path.join(out, `${key}_3d.png`) });
           } else rec.no3d = true;
