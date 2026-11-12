@@ -1,6 +1,8 @@
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { Element } from '../../../engine/types';
 import { feature4326To3857 } from '../../../utils/reproject';
+import type { Segment } from '../../../components/site-planner/planRendering';
+import { plantTrees } from './landscape';
 import { frameForRings, interiorPoint, polygonArea, type GroundFrame, type Pt } from './frame';
 import { buildingHeight, cleanFloors, type BuildingUse } from './heights';
 import type {
@@ -24,6 +26,9 @@ export interface SceneInput {
   } | null;
   /** Units and stalls of the accepted scheme's schedule. */
   schedule?: { units?: number | null; stalls?: number | null } | null;
+  /** Front property edges, EPSG:3857. Not used for planting: trees follow the
+   *  plan's streets and the property line (scene/landscape). */
+  frontEdges?: Segment[] | null;
   generator?: string | null;
 }
 
@@ -39,7 +44,19 @@ const ROLE: Record<string, [FeatureRole, StyleRole]> = {
   greenspace: ['open-space', 'open-space'],
 };
 
+/** A plan's own street, a house's driveway, or any other drive. */
+export function pavementKind(el: Pick<Element, 'type' | 'name'>): 'street' | 'driveway' | 'drive' | null {
+  if (el.type === 'road') return 'street';
+  if (el.type !== 'circulation' && el.type !== 'parking-aisle') return null;
+  if (el.name === 'Driveway') return 'driveway';
+  if (/^(Street|Private drive|Shared private drive)$/.test(el.name ?? '')) return 'street';
+  return 'drive';
+}
+
 function roleOf(el: Element): [FeatureRole, StyleRole] {
+  const pave = pavementKind(el);
+  if (pave === 'street') return ['street', 'street'];
+  if (pave === 'driveway') return ['drive', 'driveway'];
   const r = ROLE[el.type];
   if (r) return r;
   if (/^Lot \d+$/.test(el.name ?? '')) return ['lot', 'lot'];
@@ -248,6 +265,8 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     (scheduleUnits == null || buildingUnits == null || scheduleUnits === buildingUnits) &&
     (scheduleStalls == null || featureStalls == null || scheduleStalls === featureStalls);
 
+  const landscape = { trees: plantTrees(features, parcel?.polygons ?? null) };
+
   const parcelId = String(input.parcelId);
   const identity: SceneIdentity = {
     parcelId,
@@ -274,6 +293,7 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
         .filter(r => (r.line?.coordinates?.length ?? 0) >= 2)
         .map(r => ({ path: r.line.coordinates.map(p => frame.toFeet(p)), name: r.name ?? null })),
     },
+    landscape,
     schedule: { units: scheduleUnits, stalls: scheduleStalls, buildingUnits, featureStalls, consistent },
     extentFt: Number.isFinite(minX) ? { minX, minY, maxX, maxY } : { minX: -50, minY: -50, maxX: 50, maxY: 50 },
     frameCheck,

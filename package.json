@@ -36,6 +36,7 @@
     "@headlessui/react": "^2.2.7",
     "@supabase/supabase-js": "^2.39.0",
     "@turf/turf": "^7.1.0",
+    "@types/three": "^0.169.0",
     "lucide-react": "^0.344.0",
     "mapbox-gl": "^3.0.1",
     "polygon-clipping": "^0.15.7",
@@ -43,6 +44,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-map-gl": "^7.1.7",
+    "three": "^0.169.0",
     "zod": "^4.1.12",
     "zustand": "^5.0.7"
   },

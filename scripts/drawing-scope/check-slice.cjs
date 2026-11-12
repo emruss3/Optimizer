@@ -1,8 +1,11 @@
-// Drawing-scope check, first slice: one saved multifamily parcel, one building, three views.
-// Drives the dev server (:5199) against the visual battery's mock store and fails unless the plan,
-// the 3D inspector and sheet A-01 state the same building id, footprint, stories and height, the
-// selection survives the 2D/3D switch in both directions, and the classic path is still there.
-// Writes screenshots, the sheets (SVG and PDF, letter and 11 x 17) and a screen recording to OUT_DIR.
+// Drawing-scope check: one saved multifamily parcel, one building, three views.
+// Drives the dev server (:5199) against the visual battery's mock store and fails unless
+//  - the plan, the 3D inspector and sheet A-01 state the same building id, footprint, stories and height,
+//  - the selection survives the 2D/3D switch in both directions,
+//  - the 3D view is the rendering and has drawn a picture,
+//  - the sheet is laid over a render of the plan, and falls back to the drawn plan on request,
+//  - the classic path is still there.
+// Writes screenshots, the sheets (SVG and PDF) and a screen recording to OUT_DIR.
 //   CHROMIUM_PATH=/opt/pw-browsers/chromium node scripts/drawing-scope/check-slice.cjs OUT_DIR
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -27,15 +30,16 @@ async function openPlanner(page, query = '') {
   await page.waitForTimeout(1200);
   await page.getByText('Site Planner', { exact: true }).first().click({ timeout: 10000 });
   await page.waitForSelector('canvas[data-export="site-plan"]', { timeout: 45000 });
-  await page.waitForFunction(() => (window.__planEvidence?.elementCount ?? window.__planEvidence?.elements ?? 1) && !!window.__planEvidence?.solvedBy, null, { timeout: 45000 }).catch(() => {});
+  await page.waitForFunction(() => !!window.__planEvidence?.solvedBy, null, { timeout: 45000 }).catch(() => {});
   await page.waitForTimeout(4000);
 }
 const to3d = async page => {
   const t0 = Date.now();
   await page.getByText('3D Massing', { exact: true }).first().click();
   await page.waitForSelector('[data-testid="massing-3d"] canvas', { timeout: 30000 });
+  await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 60000 }).catch(() => {});
   const ms = Date.now() - t0;
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(3500);
   return ms;
 };
 const to2d = async page => {
@@ -43,6 +47,19 @@ const to2d = async page => {
   await page.waitForSelector('canvas[data-export="site-plan"]', { timeout: 30000 });
   await page.waitForTimeout(1500);
 };
+// how many different colours the 3D canvas holds, sampled coarsely: a blank or failed frame has one or two
+const colours = page => page.evaluate(() => {
+  const c = document.querySelector('[data-testid="massing-3d"] canvas');
+  if (!c) return 0;
+  const t = document.createElement('canvas');
+  t.width = 96; t.height = 60;
+  const x = t.getContext('2d');
+  x.drawImage(c, 0, 0, 96, 60);
+  const d = x.getImageData(0, 0, 96, 60).data;
+  const seen = new Set();
+  for (let i = 0; i < d.length; i += 4) seen.add(`${d[i] >> 3},${d[i + 1] >> 3},${d[i + 2] >> 3}`);
+  return seen.size;
+});
 
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
@@ -61,9 +78,23 @@ const to2d = async page => {
   check(b?.heightBasis === 'estimated', 'the height is marked as estimated');
   await page.screenshot({ path: path.join(out, 'plan.png') });
 
-  // 3D: select by tag, read the inspector
+  // 3D: the rendering, a picture on it, select by tag, read the inspector
   const first3dMs = await to3d(page);
+  const view = page.locator('[data-testid="massing-3d"]');
+  check((await view.getAttribute('data-rendered')) === 'pbr' && (await view.getAttribute('data-ready')) === 'true', 'the 3D view is the rendering and it is ready');
+  const seen = await colours(page);
+  check(seen > 60, `the rendering has drawn a picture (${seen} colours sampled)`);
   check((await page.locator('[data-testid="scene-inspector"]').count()) === 0, 'nothing is selected on first entry to 3D');
+  await view.screenshot({ path: path.join(out, 'model_aerial.png') });
+  await page.locator('[data-testid="camera-street"]').click();
+  await page.waitForTimeout(3000);
+  await view.screenshot({ path: path.join(out, 'model_street.png') });
+  await page.locator('[data-testid="camera-top"]').click();
+  await page.waitForTimeout(2000);
+  await page.locator('[data-testid="camera-fit"]').click();
+  await page.locator('[data-testid="camera-iso"]').click();
+  await page.waitForTimeout(2000);
+  check((await colours(page)) > 60, 'the cameras (Street, Top, Fit site, Aerial) each leave a picture');
   await page.locator('[data-testid="scene-select-A"]').click();
   await page.waitForSelector('[data-testid="scene-inspector"]', { timeout: 5000 });
   const field = name => page.locator(`[data-testid="scene-inspector"] [data-field="${name}"]`).first().evaluate(n => n.childNodes[0].textContent.trim());
@@ -75,6 +106,8 @@ const to2d = async page => {
   check(insp.footprint === `${Number(b?.footprintSqFt).toLocaleString('en-US')} sf`, `3D inspector footprint: ${insp.footprint}`);
   check(insp.height === `${b?.heightFt} ft` && heightLabel === 'Estimated height', `3D inspector height: ${heightLabel} ${insp.height}`);
   check(/Not a measured or controlling height/.test(note ?? ''), '3D inspector says the height is not measured or controlling');
+  check(/illustrative/.test((await view.textContent()) ?? ''), 'the rendering says its facades, planting and cars are illustrative');
+  await page.waitForTimeout(1200);
   await page.screenshot({ path: path.join(out, 'model_selected.png') });
 
   // 3D to 2D: the plan opens on the same selection, with the same values
@@ -92,24 +125,38 @@ const to2d = async page => {
   await to2d(page);
   check((await page.locator('[data-testid="plan-selected-building"]').count()) === 0, 'clearing the selection in 3D clears it in the plan');
 
-  // the sheet
+  // the sheet: a slide first, laid over a render of the plan
+  const sheet = page.locator('[data-testid="sheet-a01"]');
+  const rendered = () => page.waitForSelector('[data-testid="sheet-a01"][data-sheet-style="rendered"]', { timeout: 120000 }).then(() => true).catch(() => false);
   await page.locator('[data-testid="open-sheets"]').click();
   await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 10000 });
-  const row = await page.locator(`[data-testid="sheet-a01"] [data-schedule-row="${b?.id}"]`).evaluate(n => [...n.querySelectorAll('text')].map(t => t.textContent)).catch(() => null);
+  check(await rendered(), 'the sheet is laid over a render of the plan');
+  check((await sheet.locator('image[data-role="underlay"]').count()) === 1, 'the render is on the sheet, under the linework');
+  const row = await sheet.locator(`[data-schedule-row="${b?.id}"]`).evaluate(n => [...n.querySelectorAll('text')].map(t => t.textContent)).catch(() => null);
   check(!!row && row[0] === 'A' && row[2] === String(b?.floors) && row[3] === insp.footprint && row[4] === `est. ${insp.height}`, `sheet A-01 schedule row: ${JSON.stringify(row)}`);
-  check((await page.locator(`[data-testid="sheet-a01"] path[data-role="building"][data-feature-id="${b?.id}"]`).count()) === 1, 'sheet A-01 draws that building once');
-  check((await page.locator(`[data-testid="sheet-a01"] [data-label="building-tag"][data-feature-id="${b?.id}"]`).count()) === 1, 'sheet A-01 tags it A');
-  const scaleText = await page.locator('[data-testid="sheet-a01"] [data-role="numeric-scale"]').textContent();
+  check((await sheet.locator(`path[data-role="building"][data-feature-id="${b?.id}"]`).count()) === 1, 'sheet A-01 draws that building once');
+  check((await sheet.locator(`[data-label="building-tag"][data-feature-id="${b?.id}"]`).count()) === 1, 'sheet A-01 tags it A');
+  check((await sheet.locator('[data-site-data]').count()) >= 4, 'sheet A-01 carries a site data table');
+  check(((await sheet.locator('[data-role="numeric-scale"]').textContent()) ?? '') === 'Graphic scale', 'the slide states no numeric scale');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(out, 'sheet_A-01_slide.png') });
+  const sheets = {};
+  sheets.slide = await sheet.innerHTML();
+  await page.locator('[data-testid="sheet-size-tabloid"]').click();
+  check(await rendered(), 'the 11 x 17 sheet is rendered too');
+  const scaleText = await sheet.locator('[data-role="numeric-scale"]').textContent();
   check(/^Scale 1" = \d+' at full size \(17 × 11 in\)$/.test(scaleText ?? ''), `11 x 17 sheet scale: ${scaleText}`);
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(out, 'sheet_A-01_11x17.png') });
-  const sheets = {};
-  sheets.tabloid = await page.locator('[data-testid="sheet-a01"]').innerHTML();
+  sheets.tabloid = await sheet.innerHTML();
+  await page.locator('[data-testid="sheet-style-drawn"]').click();
+  await page.waitForSelector('[data-testid="sheet-a01"][data-sheet-style="drawn"]', { timeout: 5000 });
+  check((await sheet.locator('image[data-role="underlay"]').count()) === 0 && (await sheet.locator('[data-role="shadows"]').count()) === 1, 'the drawn plan is one click away');
   await page.locator('[data-testid="sheet-size-letter"]').click();
   await page.waitForTimeout(400);
-  sheets.letter = await page.locator('[data-testid="sheet-a01"]').innerHTML();
-  check(/width="11in" height="8.5in"/.test(sheets.letter), 'the letter sheet is 11 x 8.5 in');
-  await page.screenshot({ path: path.join(out, 'sheet_A-01_letter.png') });
+  sheets.letter_drawn = await sheet.innerHTML();
+  check(/width="11in" height="8.5in"/.test(sheets.letter_drawn), 'the letter sheet is 11 x 8.5 in');
+  await page.screenshot({ path: path.join(out, 'sheet_A-01_letter_drawn.png') });
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
   check((await page.locator('[data-testid="exhibit-sheets"]').count()) === 0, 'Escape closes the sheets');
@@ -123,12 +170,12 @@ const to2d = async page => {
 
   // the print set: each sheet as SVG and as a PDF at its page size
   const pctx = await browser.newContext();
-  for (const [size, w, h] of [['tabloid', '17in', '11in'], ['letter', '11in', '8.5in']]) {
-    const name = `A-01_site-plan_${size === 'tabloid' ? '11x17' : 'letter'}`;
-    fs.writeFileSync(path.join(out, `${name}.svg`), sheets[size]);
+  for (const [key, name, w, h] of [['slide', 'slide_16x9', '13.333in', '7.5in'], ['tabloid', '11x17', '17in', '11in'], ['letter_drawn', 'letter_drawn', '11in', '8.5in']]) {
+    const file = `A-01_site-plan_${name}`;
+    fs.writeFileSync(path.join(out, `${file}.svg`), sheets[key]);
     const p = await pctx.newPage();
-    await p.setContent(`<!doctype html><html><head><style>@page{size:${w} ${h};margin:0}html,body{margin:0}svg{display:block;width:${w};height:${h}}</style></head><body>${sheets[size]}</body></html>`);
-    await p.pdf({ path: path.join(out, `${name}.pdf`), width: w, height: h, printBackground: true, pageRanges: '1' });
+    await p.setContent(`<!doctype html><html><head><style>@page{size:${w} ${h};margin:0}html,body{margin:0}svg{display:block;width:${w};height:${h}}</style></head><body>${sheets[key]}</body></html>`);
+    await p.pdf({ path: path.join(out, `${file}.pdf`), width: w, height: h, printBackground: true, pageRanges: '1' });
     await p.close();
   }
   await pctx.close();
@@ -139,7 +186,11 @@ const to2d = async page => {
   await openPlanner(cpage, '?drawing=classic');
   check((await cpage.evaluate(() => window.__planEvidence?.scene ?? null)) === null, 'with ?drawing=classic no scene is built');
   check((await cpage.locator('[data-testid="open-sheets"]').count()) === 0, 'with ?drawing=classic the workspace is the original one');
-  await cpage.screenshot({ path: path.join(out, 'classic_plan.png') });
+  await cpage.getByText('3D Massing', { exact: true }).first().click();
+  await cpage.waitForSelector('[data-testid="massing-3d"] canvas', { timeout: 30000 });
+  check((await cpage.locator('[data-testid="massing-3d"]').getAttribute('data-rendered')) === 'false', 'with ?drawing=classic the 3D view is the original massing');
+  await cpage.waitForTimeout(3000);
+  await cpage.screenshot({ path: path.join(out, 'classic_model.png') });
   await cctx.close();
 
   fs.writeFileSync(path.join(out, 'check.json'), JSON.stringify({ parcel: PARCEL, scene, inspector: insp, sheetRow: row, sheetScale: scaleText, first3dMs, fails }, null, 1));

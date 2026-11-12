@@ -1,4 +1,4 @@
-# Drawing workspace · baseline and slice 1 · 2026-11-11
+# Drawing workspace · baseline, slice 1 and slice 2 · 2026-11-11 and 12
 
 Scope: "Parcel Proforma — Enterprise SitePlanner drawing and workspace
 scope", 2026-11-11. This folder holds the baseline of the drawing surfaces on
@@ -141,12 +141,91 @@ Time to the first 3D frame on the dev server was 8 to 11 s on every fixture,
 before and after: it is the first load of the 3D code, not the scene. It has
 not been measured on a production build yet.
 
+## Slice 2 · renderings and an illustrative site plan
+
+The owner's direction after slice 1: the buildings must look like renderings
+of things that would be built, with sidewalks and trees, and the 2D plan must
+be something to put in front of a city or an investor.
+
+What changed:
+
+- **Buildings are built from parts** (`ui/architecture.ts`). A house: a
+  foundation, sided walls, a gable roof with eaves, fascia and rake boards, a
+  porch with posts and a step, a front door, a garage door, trimmed windows
+  with shutters, a chimney, planting at the foot of the front wall and a walk
+  to the pavement. It turns its front to the nearest drive. A townhome: a
+  stoop, a door, a garage, a canopy and a cornice, in its own colour in the
+  row. An apartment building: a brick base with shopfront glass, an entry
+  with a canopy, stacks of balconies with railings, projecting bays, a
+  parapet, planting and equipment on the roof. Every one stands on the plan's
+  footprint and rises to the scene's height.
+- **The site is drawn** (`scene/landscape.ts`, `ui/massingData.ts`): walks
+  and planted strips along the plan's own streets, a walk round each larger
+  building, curbs, the block's streets with their own walks and a centre
+  line, driveways in concrete, street trees, yard trees and edge planting,
+  stall stripes where they can show exactly the reported count, and cars in
+  about half the stalls and driveways.
+- **The 3D view is a rendering** (`render3d/`, three.js): textured materials
+  (lap siding, brick, shingles, concrete, asphalt, turf), glass that reflects
+  the sky, a sun that casts soft shadows, light from the sky, ambient
+  occlusion, and a film tone curve. Cameras: Aerial, Top, Street, Fit site,
+  turn left and right. PNG at twice the screen's resolution. Selection, the
+  building tags and the inspector are the same as before. If a device cannot
+  draw it, the view falls back to the deck.gl model; `?drawing=classic` is
+  the original massing.
+- **Sheet A-01 is an illustrative site plan**: a render of the same model
+  from straight above, lit from the upper left, with the plan's linework,
+  tags, street names and labels over it in vector, key figures, a building
+  schedule, a legend and a site data table. Three sizes: a 16:9 slide,
+  11 × 17 and letter. Download as PNG at 200 dpi, as SVG, or print. "Drawn"
+  switches to the flat drawn plan.
+
+This adds three.js, a second rendering library. The scope said not to add
+one; the owner's direction on quality came after it and takes precedence.
+The deck.gl view is kept as the fallback and the classic path.
+
+What is the plan's and what is illustration:
+
+| On the picture | Source |
+|---|---|
+| Footprints, positions, story counts, eave and parapet heights | the plan, through the scene |
+| Streets, drives, driveways, parking bays, lots, open space | the plan |
+| Stall stripes | drawn only where they show exactly the reported count |
+| Roof pitch above the eave, facades, windows, doors, porches, balconies | illustration |
+| Walks, curbs, trees, shrubs, cars, shadows, sky | illustration |
+| Existing buildings | the public record's footprints and story counts, as white solids |
+
+The view and the sheet both say so on their face.
+
+Checks:
+
+| Check | Result |
+|---|---|
+| `npx vitest run` | 68 files, 704 tests pass (17 new: architecture, planting, stripes, sheet) |
+| `npx tsc --noEmit -p tsconfig.app.json` | 2,086, the same as main after slice 1; the new files have none |
+| `scripts/drawing-scope/check-slice.cjs` | 36 of 36 |
+
+Time from the 3D button to the rendering being ready, on the dev server with
+software graphics: 4.0 to 6.2 s across the six fixtures with a plan (slice 1
+measured 8 to 11 s to the massing view on the same machine). The 3D code is
+a lazy chunk of 792 kB, 210 kB gzipped. Not yet measured on a production
+build with a graphics card.
+
+Evidence in `slice-2/`: `after/` (the fixtures in 2D and 3D at 1440×900 and
+1920×1080), `sheets/` (the rendered sheet for four fixtures), `check/`
+(screenshots, sheets as SVG and PDF, a screen recording).
+
+An honest mark, by the author: the renders and the sheet are about 7 out of
+10 against "what you would show a city or an investor today". They are
+clean, lit and legible. They are not photoreal: materials are simple, the
+planting is stylised, and there are no people, lights or site furniture.
+
 ## Not done yet
 
-- The 3D view is still a massing model, and the sheet is a line drawing.
-  Rendered buildings and a deck-ready site plan are the next slice.
-- Cameras (Aerial, Top, Street, Fit site), section A–A, scheme comparison and
-  sheets A-02 and A-03.
+- Section A–A, scheme comparison and sheets A-02 and A-03.
+- The edge the app labels as the front is wrong on some parcels (1710 Meharry
+  Blvd: the west edge, with streets to the east and south). Planting no
+  longer follows it; the setback labels on the 2D canvas still do.
 - Label collision handling is on the sheet only; the canvas places building
   tags without it.
 - The plan canvas is no larger than it was.

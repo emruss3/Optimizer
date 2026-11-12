@@ -2965,10 +2965,39 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? prev
       : { key: sceneKey, ids }));
   }, [sceneKey]);
-  const sheetsTitle = useMemo(
-    () => ({ project: sheetTitle.project, subtitle: sheetTitle.subtitle, date: sheetTitle.date, notes: sheetTitle.notes }),
-    [sheetTitle],
-  );
+  const sheetsTitle = useMemo(() => {
+    // the site data table: the scheme's own figures, as the header states them
+    const acres = mappedAcres ?? (typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null);
+    const units = metrics?.totalUnits ?? null;
+    const stalls = metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null;
+    const n = (v: number, d = 0) => v.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+    const data: Array<{ label: string; value: string }> = [];
+    if (parcel.zoning) data.push({ label: 'Zoning', value: String(parcel.zoning) });
+    if (acres) data.push({ label: 'Site area', value: `${n(acres, 2)} ac` });
+    if (units) data.push({ label: sfPlanOnSheet ? 'Lots' : 'Homes', value: n(units) });
+    if (units && acres) data.push({ label: 'Density', value: `${n(units / acres, 1)} per acre` });
+    if (!sfPlanOnSheet && metrics?.totalBuiltSF) data.push({ label: 'Gross floor area', value: `${n(metrics.totalBuiltSF)} sf` });
+    if (!sfPlanOnSheet && metrics?.achievedFAR) data.push({ label: 'Floor area ratio', value: n(metrics.achievedFAR, 2) });
+    if (!sfPlanOnSheet && metrics?.siteCoveragePct) data.push({ label: 'Building coverage', value: `${n(metrics.siteCoveragePct)}%` });
+    if (stalls) data.push({ label: 'Parking', value: `${n(stalls)} stalls${units ? ` · ${n(stalls / units, 2)} per home` : ''}` });
+    return { project: sheetTitle.project, subtitle: sheetTitle.subtitle, date: sheetTitle.date, notes: sheetTitle.notes, data: seedViewOn ? [] : data };
+  }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn]);
+  // The sheet's picture: the ground it shows, rendered from above from the
+  // same model the 3D view draws. Loaded when a sheet first asks for it.
+  const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
+    if (!scene) throw new Error('no scene');
+    const [{ renderPlanImage }, { buildMassingData }] = await Promise.all([import('./render3d/still'), import('./ui/massingData')]);
+    const data = buildMassingData(displayElements, {
+      ...(scene.parcel?.polygons[0]?.[0] ? { parcelRing: scene.parcel.polygons[0][0].map(p => scene.frame.fromFeet(p)) } : {}),
+      ...(neighbors?.buildings ? { contextBuildings: neighbors.buildings } : {}),
+      ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
+      ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
+      treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
+    });
+    const a = data.toLocal(scene.frame.fromFeet([layout.ground.minX, layout.ground.minY]));
+    const b = data.toLocal(scene.frame.fromFeet([layout.ground.maxX, layout.ground.maxY]));
+    return renderPlanImage({ data, bounds: { minX: a[0] ?? 0, minY: a[1] ?? 0, maxX: b[0] ?? 0, maxY: b[1] ?? 0 }, widthPx });
+  }, [scene, displayElements, neighbors]);
   const contextState = resolveContextApplication({
     compiling: plannerLoading,
     blocked: generationBlocked,
@@ -3848,7 +3877,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       </div>
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} />
       )}
       {exportOpen && (
         <ExportReport

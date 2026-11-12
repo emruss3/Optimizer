@@ -29,7 +29,7 @@ export interface SceneIdentity {
 }
 
 export type FeatureRole = 'building' | 'parking' | 'drive' | 'street' | 'open-space' | 'lot' | 'other';
-export type StyleRole = 'building' | 'amenity' | 'house' | 'parking' | 'drive' | 'street' | 'open-space' | 'lot' | 'other';
+export type StyleRole = 'building' | 'amenity' | 'house' | 'parking' | 'drive' | 'driveway' | 'street' | 'open-space' | 'lot' | 'other';
 
 /** Polygons of one feature in local ground feet: polygon, ring (0 is the outer, the rest are holes), point. */
 export type ScenePolygons = Pt[][][];
@@ -132,6 +132,9 @@ export interface DrawingScene {
   features: SceneFeature[];
   buildings: SceneBuilding[];
   context: SceneContext;
+  /** Illustration only (scene/landscape): the trees the sheet and the model
+   *  both draw. Never counted, never scheduled. */
+  landscape: { trees: import('./landscape').SceneTree[] };
   schedule: SceneSchedule;
   /** Bounding box of the parcel and the plan, in local feet. */
   extentFt: { minX: number; minY: number; maxX: number; maxY: number };
