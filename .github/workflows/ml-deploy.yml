@@ -1,10 +1,9 @@
 name: ML deploy
 
 # Deploys the layout model to Modal. Touches nothing else in the repo.
-# `ml-training` is listed only until the first merge to main; remove it then.
 on:
   push:
-    branches: [main, ml-training]
+    branches: [main]
     paths:
       - 'ml/**'
       - '.github/workflows/ml-deploy.yml'
