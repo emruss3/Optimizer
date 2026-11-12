@@ -4,13 +4,13 @@ ok   the frame is verified against the engine's footprint (Areas in the drawing 
 ok   the drawn units and stalls add up to the scheme schedule
 ok   the height is marked as estimated
 ok   the 3D view is the rendering and it is ready
-ok   the rendering has drawn a picture (598 colours sampled)
+ok   the rendering has drawn a picture (591 colours sampled)
 ok   nothing is selected on first entry to 3D
 ok   the cameras (Street, Top, Fit site, Aerial) each leave a picture
 ok   the 3D view offers four styles and opens in the first
-ok   the farmhouse style redraws the buildings from the same camera (2.3% of the picture changed)
+ok   the farmhouse style redraws the buildings from the same camera (2.4% of the picture changed)
 ok   the modern style redraws the buildings from the same camera (2.8% of the picture changed)
-ok   the heritage style redraws the buildings from the same camera (3.1% of the picture changed)
+ok   the heritage style redraws the buildings from the same camera (3.2% of the picture changed)
 ok   the choice of style is kept on this device
 ok   and the first style comes back as it was
 ok   Present fills the window with the rendering

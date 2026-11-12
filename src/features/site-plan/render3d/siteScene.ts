@@ -494,6 +494,44 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const ring = l.polygon[0];
     if (ring) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), LAWN);
   }
+  // a subdivision's lots: each yard its own shade of lawn, and a board fence round the back of it.
+  // Illustration: the plan draws a lot line, not a fence.
+  if (data.lots.length) {
+    const pads = data.polygons.filter(p => p.building).map(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
+    const paved: Array<[number, number]> = data.polygons.filter(p => !p.building && SITE[p.kind ?? ''] && SITE[p.kind ?? '']?.surface !== 'grass').flatMap(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
+    const middle = (r: Array<[number, number]>): [number, number] => { const n = Math.max(1, r.length); return [r.reduce((a, q) => a + q[0], 0) / n, r.reduce((a, q) => a + q[1], 0) / n]; };
+    const FENCE: RGBA = [156, 132, 104, 255];
+    const built = new Set<string>();
+    data.lots.forEach((lot, i) => {
+      const ring = lot.map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]);
+      const t = 0.94 + ((i * 37) % 13) / 100;
+      put('grass|flat', prism([ring.map(q => [q[0], q[1], 0])], 0.19), [LAWN[0] * t, LAWN[1] * (t + ((i * 11) % 5 - 2) / 100), LAWN[2] * t, 255]);
+      const pad = pads.find(r => r.length >= 3 && pointInPolygon(middle(r)[0], middle(r)[1], [ring]));
+      if (!pad || !paved.length) return;
+      // the house faces the nearest pavement; the fence stands on the lot lines behind the middle of the house
+      const c = middle(pad);
+      let near = paved[0] as [number, number], best = Infinity;
+      for (const q of paved) { const d = (q[0] - c[0]) ** 2 + (q[1] - c[1]) ** 2; if (d < best) { best = d; near = q; } }
+      const fl = Math.hypot(near[0] - c[0], near[1] - c[1]) || 1, fx = (near[0] - c[0]) / fl, fy = (near[1] - c[1]) / fl;
+      for (let k = 0; k < ring.length - 1; k++) {
+        const a = ring[k] as [number, number], b = ring[k + 1] as [number, number];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (len < 1) continue;
+        const parts = Math.max(1, Math.round(len / 2.4)), nx = (-(b[1] - a[1]) / len) * 0.045, ny = ((b[0] - a[0]) / len) * 0.045;
+        for (let j = 0; j < parts; j++) {
+          const p0: [number, number] = [a[0] + ((b[0] - a[0]) * j) / parts, a[1] + ((b[1] - a[1]) * j) / parts];
+          const p1: [number, number] = [a[0] + ((b[0] - a[0]) * (j + 1)) / parts, a[1] + ((b[1] - a[1]) * (j + 1)) / parts];
+          const mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
+          if ((mx - c[0]) * fx + (my - c[1]) * fy > -1.5) continue;
+          if (paved.some(q => (q[0] - mx) ** 2 + (q[1] - my) ** 2 < 9)) continue;
+          const key = `${Math.round(mx * 2)},${Math.round(my * 2)}`;
+          if (built.has(key)) continue;
+          built.add(key);
+          put('wood|solid', prism([[[p0[0] + nx, p0[1] + ny, 0.17], [p1[0] + nx, p1[1] + ny, 0.17], [p1[0] - nx, p1[1] - ny, 0.17], [p0[0] - nx, p0[1] - ny, 0.17]]], 1.75), FENCE);
+        }
+      }
+    });
+  }
   for (const w of data.walks) {
     put('concrete|flat', ribbon(w.path, w.widthM, 0.21), WALK);
     if (w.strip) put('grass|flat', ribbon(w.path, w.widthM / 2, 0.25), LAWN);
@@ -559,7 +597,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     });
   };
   if (kinds.length) {
-    place(kinds, data.trees.map(t => ({ x: t.position[0], y: t.position[1], r: (t.radiusM ?? 2.8) * 1.4 })), 0.1);
+    // no two trees on a street are the same green
+    const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
+    place(kinds, data.trees.map((t, i) => ({ x: t.position[0], y: t.position[1], r: (t.radiusM ?? 2.8) * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
     if (bushes.length) place(bushes, data.shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25);
   } else {
     const crownG = crown();

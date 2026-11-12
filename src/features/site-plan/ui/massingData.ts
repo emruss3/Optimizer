@@ -120,6 +120,8 @@ export function buildMassingData(
   lawn: MassingPolygon[];
   /** Roof-line ring of each building, for the selection outline. */
   roofLines: Array<{ id: string; path: number[][] }>;
+  /** The lots of a subdivision, as rings in local metres. */
+  lots: number[][][];
   /** Scene origin (derived from the plan's own Mercator frame) — feeds the
    *  sun-study light; never a hardcoded city. */
   origin: { latDeg: number; lonDeg: number };
@@ -130,7 +132,7 @@ export function buildMassingData(
   if (drawable.length === 0)
     return {
       polygons: [], extent: 100, groundPaths: [], contextPolygons: [], trees: [],
-      floorLines: [], slabs: [], windows: [], roofs: [], lawn: [], roofLines: [], shrubs: [], walks: [], curbs: [], roads: [], stripes: [], cars: [], aerialAzimuth: -38, toLocal: p => p, origin: { latDeg: 0, lonDeg: 0 },
+      floorLines: [], slabs: [], windows: [], roofs: [], lawn: [], roofLines: [], lots: [], shrubs: [], walks: [], curbs: [], roads: [], stripes: [], cars: [], aerialAzimuth: -38, toLocal: p => p, origin: { latDeg: 0, lonDeg: 0 },
     };
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -341,10 +343,14 @@ export function buildMassingData(
     ? [{ polygon: [ground.parcelRing.map(m)], elevation: 0.06, color: [206, 222, 188, 255], label: 'Site' }]
     : [];
 
+  const lots = elements
+    .filter(e => /^Lot \d+$/.test(e.name ?? '') && (e.geometry?.coordinates?.[0]?.length ?? 0) >= 4)
+    .map(e => (e.geometry.coordinates[0] ?? []).map(m));
+
   const { lonDeg, latDeg } = frame;
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg },
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg },
     aerialAzimuth: clearestAzimuth(
       contextPolygons.filter(c => c.elevation > 1).map(c => {
         const r = c.polygon[0] ?? [];

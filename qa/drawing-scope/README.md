@@ -270,7 +270,9 @@ stands against them, and walls with windows where it ends the row.
 portrait painted from the real tree model's own leaves, carried on crossed
 cards, so thousands cost almost nothing. They stand in groves, not on a grid.
 An existing house is drawn as a house, an existing larger building with
-windows under a parapet.
+windows under a parapet. In a subdivision each yard has its own shade of
+lawn and a board fence stands on the lot lines behind the house. The fence
+is illustration: the plan draws a lot line, not a fence.
 
 **Lighter to draw.**
 
@@ -309,7 +311,11 @@ flat lawns, no people, lights, fences or site furniture, glass with no rooms
 behind it, and no weathering. The aerial is a 7. It is not yet the 9 asked
 for.
 
-Checks: 69 files, 759 tests pass; app type check 2,086, unchanged;
+The townhome engine's homes are 20 ft wide at 26 ft centres: detached narrow
+homes six feet apart. Each is drawn free on all four sides, the mansard
+wrapping round it (`app/app_townhomes_aerial.jpg`).
+
+Checks: 69 files, 762 tests pass; app type check 2,086, unchanged;
 `check-slice.cjs` 57 of 57. Evidence in `slice-4/`: `styles/` (each product
 in each style), `app/` (the app's own views and sheets), `check/`.
 
