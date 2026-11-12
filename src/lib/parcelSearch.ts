@@ -17,7 +17,8 @@ export async function searchParcels(query: string, limit = 10): Promise<ParcelHi
   if (!supabase) throw new Error('the database client is not configured');
   // PostgREST's filter grammar reads commas, parentheses and quotes as syntax,
   // and ilike reads *, % and _ as wildcards: none of them is part of an address
-  const term = query.replace(/[,()"'\\*%_]/g, ' ').replace(/\s+/g, ' ').trim();
+  // An apostrophe stays a one-character match, so O'Brien still finds O'BRIEN.
+  const term = query.replace(/[,()"\\*%_]/g, ' ').replace(/'/g, '_').replace(/\s+/g, ' ').trim();
   if (term.length < 2) return [];
   const digits = term.replace(/[^0-9a-z]/gi, '');
   const filters = [`address.ilike.%${term}%`, `parcelnumb.ilike.%${term}%`];

@@ -17,6 +17,11 @@ describe('searchParcels', () => {
     expect(filter).not.toMatch(/["*()]/);
   });
 
+  it('keeps an apostrophe as a one-character match', async () => {
+    await searchParcels("12 O'Brien Ave");
+    expect(or.mock.calls[0]?.[0]).toContain('address.ilike.%12 O_Brien Ave%');
+  });
+
   it('matches a parcel ID typed with its spaces against the unformatted number', async () => {
     await searchParcels('116 02 0 020.00');
     expect(or.mock.calls[0]?.[0]).toContain('parcelnumb_no_formatting.ilike.%11602002000%');
