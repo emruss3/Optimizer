@@ -237,6 +237,82 @@ planting is stylised, and there are no people, lights or site furniture.
 Checks: 68 files, 706 tests pass; app type check 2,086, unchanged;
 `check-slice.cjs` 42 of 42. Evidence in `slice-3/check/`.
 
+## Slice 4 · buildings in four styles, and a wooded setting
+
+The owner's note on slice 3: the buildings were "bad boxes", the elevations
+should be current, and the reader should be able to flip between a few
+architectural styles. The model has to stand on its own before any photo pass.
+
+**What a style is.** A style changes how the buildings look and nothing else.
+Footprints, positions, story counts and heights are the plan's in every one.
+The switch is on the 3D view and on the sheets, and the choice is kept on the
+device.
+
+| Style | Houses | Row homes | Apartments |
+|---|---|---|---|
+| Urban mansard | brick ground story, the top story in a shingled mansard with boxed dormers; a one-story house is a gabled cottage with a brick wainscot | brick, coloured siding, mansard with a dormer, a balcony over the door, window boxes | brick base, two claddings in stretches, balconies, a mansard story with dormers |
+| Modern farmhouse | white or dark board and batten, steep gables, metal porch roofs on timber posts | a gable to each home, timber in the peak, metal awnings | gabled bays that rise past the roof line |
+| Contemporary | flat roofs, white stucco over charcoal panels, cedar at the entry, wide glass | cedar strip, glass rails, a deck and a stair head on the roof | panels in stretches with raised parapets, glass balconies backed in cedar |
+| Craftsman and brick | lap siding, shingled gables, deep eaves, columns on brick piers, a chimney | brick with stone heads and a cornice, a stoop with a rail | brick with steel windows, piers, a stone band and a cornice |
+
+**What a house now is.** A foundation, walls in a real material, a porch cut
+into the pad (the house keeps to the pad the plan gave it), a front door with
+a sidelight, a garage where a drive comes to the house and none where no
+drive does, windows with frames, glazing bars and sills, a roof with eaves,
+fascias and valleys, a walk to the street, planting beds. A deep pad turns
+its gable to the street; a wide one runs its ridge along it.
+
+**A row home** has two fronts: the end a drive comes to has the garage, the
+other has the front door. Its long sides are party walls where a neighbour
+stands against them, and walls with windows where it ends the row.
+
+**The setting.** The surroundings are wooded out to the haze: each tree is a
+portrait painted from the real tree model's own leaves, carried on crossed
+cards, so thousands cost almost nothing. They stand in groves, not on a grid.
+An existing house is drawn as a house, an existing larger building with
+windows under a parapet.
+
+**Lighter to draw.**
+
+| Model | Triangles before | Triangles now |
+|---|---|---|
+| One shrub | 16,944 | 1,662 |
+| One tree (ash, medium) | 27,040 | 18,012 |
+| One surrounding tree | about 1,200 | 16 |
+
+**Faults found and fixed on the way.**
+
+- After a plan changed while the 3D view was open, the new model was drawn
+  with no sun. A rebuilt model now has its sun and its selection set again.
+  The check catches it: a change of style may alter only a small part of the
+  picture, and the first style must come back as it was.
+- A sheet opened before the 3D view could render trees with no leaves. A
+  still now waits for the tree pictures to arrive.
+- The front walk stopped at the driveway's distance. It runs to the street.
+
+**The photoreal pass** (the Photoreal button and the A-02 toggle) is in this
+slice as plumbing: the function, the client, the labels and the tests. The
+instruction to the image model now names the style and says to keep the
+architecture as drawn. It has not been run against the real image model: the
+gateway key in this environment was refused. It is exercised through a
+stand-in.
+
+**The lab.** `scripts/drawing-scope/style-lab.html` draws a street of houses,
+a row of homes or a pair of apartment buildings through the app's own code,
+close enough to judge an elevation, in about ten seconds:
+`/scripts/drawing-scope/style-lab.html?style=farmhouse&set=houses`.
+
+**Rating, honestly.** Close up, the buildings are a 7 to 8 against "what
+would actually get built": the massing, materials and openings are right for
+each style, and they are not boxes. They are still clean computer models:
+flat lawns, no people, lights, fences or site furniture, glass with no rooms
+behind it, and no weathering. The aerial is a 7. It is not yet the 9 asked
+for.
+
+Checks: 69 files, 759 tests pass; app type check 2,086, unchanged;
+`check-slice.cjs` 57 of 57. Evidence in `slice-4/`: `styles/` (each product
+in each style), `app/` (the app's own views and sheets), `check/`.
+
 ## Not done yet
 
 - Section A–A (sheet A-03) and scheme comparison.
@@ -246,3 +322,9 @@ Checks: 68 files, 706 tests pass; app type check 2,086, unchanged;
 - Label collision handling is on the sheet only; the canvas places building
   tags without it.
 - The plan canvas is no larger than it was.
+- The photoreal pass has not been run against the real image model.
+- Toward a 9: ground materials from photographs, depth behind the glass,
+  fences, lights and site furniture, rear porches and decks, more than five
+  tree habits, terrain.
+- Townhomes are assumed three stories; a house's story count comes from the
+  engine's catalogue plan and is one where there is none.

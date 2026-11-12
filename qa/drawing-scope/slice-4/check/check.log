@@ -1,0 +1,59 @@
+ok   the workspace builds a drawing scene
+ok   the scene carries one building, tagged A
+ok   the frame is verified against the engine's footprint (Areas in the drawing frame match the engine's within 0.1%.)
+ok   the drawn units and stalls add up to the scheme schedule
+ok   the height is marked as estimated
+ok   the 3D view is the rendering and it is ready
+ok   the rendering has drawn a picture (598 colours sampled)
+ok   nothing is selected on first entry to 3D
+ok   the cameras (Street, Top, Fit site, Aerial) each leave a picture
+ok   the 3D view offers four styles and opens in the first
+ok   the farmhouse style redraws the buildings from the same camera (2.3% of the picture changed)
+ok   the modern style redraws the buildings from the same camera (2.8% of the picture changed)
+ok   the heritage style redraws the buildings from the same camera (3.1% of the picture changed)
+ok   the choice of style is kept on this device
+ok   and the first style comes back as it was
+ok   Present fills the window with the rendering
+ok   Escape returns from Present, and the workspace stays open
+ok   Photoreal shows the picture the image service returns
+ok   and labels it an AI impression, not a design
+ok   the request carries the user's session
+ok   only the picture and four fixed words are sent (image,product,stories,style,view)
+ok   the scene is described from fixed lists: apartments, 4, aerial, mansard
+ok   no address or parcel number is in the request
+ok   Back to model returns to the rendering
+ok   3D inspector shows the plan's building id (mfgen-bldg-1)
+ok   3D inspector stories: 4 stories
+ok   3D inspector footprint: 13,561 sf
+ok   3D inspector height: Estimated height 44 ft
+ok   3D inspector says the height is not measured or controlling
+ok   the rendering says its facades, planting and cars are illustrative
+ok   the plan opens on the building selected in 3D
+ok   plan panel: A · 13,561 sf footprint · estimated height 44 ft
+ok   the 3D view opens on the building selected in the plan
+ok   clearing the selection in 3D clears it in the plan
+ok   the sheet is laid over a render of the plan
+ok   the render is on the sheet, under the linework
+ok   sheet A-01 schedule row: ["A","Apartments","4","13,561 sf","est. 44 ft"]
+ok   sheet A-01 draws that building once
+ok   sheet A-01 tags it A
+ok   sheet A-01 carries a site data table
+ok   the slide states no numeric scale
+ok   the 11 x 17 sheet is rendered too
+ok   11 x 17 sheet scale: Scale 1" = 50' at full size (17 × 11 in)
+ok   sheet A-02 carries a rendering of the scheme
+ok   sheet A-02 says what is illustration
+ok   sheet A-02 carries the scheme's figures
+ok   sheet A-02 takes the photoreal picture and says it is an AI impression
+ok   and the model rendering is one click back
+ok   the drawn plan is one click away
+ok   the letter sheet is 11 x 8.5 in
+ok   Escape closes the sheets
+ok   and leaves the workspace open under them
+ok   no error boundary on the page
+ok   no page errors
+ok   with ?drawing=classic no scene is built
+ok   with ?drawing=classic the workspace is the original one
+ok   with ?drawing=classic the 3D view is the original massing
+
+all checks passed
