@@ -411,6 +411,25 @@ Checks: 70 files, 771 tests pass; app type check 2,086, unchanged;
 
 Checks: 71 files, 777 tests pass; app type check 2,086, unchanged.
 
+## Slice 7: entry, export and next steps
+
+- Landing page: what the product does, a real sample parcel and its exported
+  sheet. Customer counts, the accuracy rate, the SOC 2 line, testimonials and
+  the competitor table are removed. `slice-7/landing.png`.
+- Returning users open on a start page: search by address or parcel ID,
+  Resume last plan, recent projects kept in the browser. `slice-7/start-page.png`.
+- Map unavailable: the same search and recent work where the map would be.
+  `slice-7/map-unavailable.png`.
+- One Export menu: Site plan PDF, 3D image, Full exhibit set, Scheme report.
+  It names the parcel, scheme and revision first. `slice-7/export-menu.png`.
+- Street access as a next step: the reason, the frontage on the plan, and
+  what clears it. `slice-7/access-needs-verification.png` (the flag was added
+  to the fixture answer for the capture; no fixture parcel carries it with a
+  frontage line).
+
+Checks: 76 files, 794 tests pass; app type check 2,073 (was 2,086);
+`check-slice.cjs` passes.
+
 ## Not done yet
 
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry
