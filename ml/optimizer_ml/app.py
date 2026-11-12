@@ -17,7 +17,9 @@ import modal
 APP_NAME = "optimizer-layout-model"
 GATE_URL = "https://okxrvetbzpoazrybhcqj.supabase.co/functions/v1/ml-gate"
 VOL = "/vol"
-MAX_TRAIN_MINUTES = 240      # cost guard: one run cannot ask for more GPU time than this
+MAX_TRAIN_MINUTES = 240      # cost guard: one run cannot ask for more training time than this
+TRAIN_GPU = None             # set to "T4" once the Modal account has a payment method (Modal refuses GPU without one)
+TRAIN_CPUS = 16              # cores for a training run while it is on CPU
 MAX_TRIES = 16               # layouts per generate call
 
 app = modal.App(APP_NAME)
@@ -42,14 +44,19 @@ def _read_json(path):
         return json.load(f)
 
 
-@app.function(image=image, gpu="T4", timeout=6 * 3600, volumes={VOL: vol})
+@app.function(image=image, gpu=TRAIN_GPU, cpu=TRAIN_CPUS, memory=16384, timeout=6 * 3600, volumes={VOL: vol})
 def train(run_id: str, dataset: str, minutes: float, cfg: dict):
     """Trains one model version on a dataset the database pushed, scores it, and leaves everything on the volume."""
+    import torch
+
     from . import layout_model as lm
 
+    if not torch.cuda.is_available():
+        torch.set_num_threads(TRAIN_CPUS)
     out = f"{VOL}/runs/{run_id}"
     os.makedirs(out, exist_ok=True)
-    state = {"run_id": run_id, "dataset": dataset, "status": "running", "started": time.time(), "minutes": minutes, "log": []}
+    state = {"run_id": run_id, "dataset": dataset, "status": "running", "started": time.time(), "minutes": minutes,
+             "device": "gpu" if torch.cuda.is_available() else f"cpu x{TRAIN_CPUS}", "log": []}
 
     def log(msg):
         state["log"] = (state["log"] + [str(msg)[:2000]])[-30:]
