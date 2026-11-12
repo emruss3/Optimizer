@@ -336,6 +336,32 @@ Checks: 70 files, 764 tests pass; app type check 2,086, unchanged;
 `check-slice.cjs` 60 of 60. Evidence in `slice-4/`: `styles/` (each product
 in each style), `app/` (the app's own views and sheets), `check/`.
 
+## Slice 5 · trust signals first
+
+The owner's review of the 1710 Meharry Blvd capture, in four parts. This
+slice is the first: the page must not say more than is known.
+
+| What the page said | What it says now |
+|---|---|
+| "Code compliant" beside "context not verified" | "Needs verification · context not verified", amber, not green |
+| "FAR 0.00" and "Coverage 0%" beside 54,244 GSF | "FAR not reported" and "Coverage not reported" |
+| "30 apartments" over 3 + 12 + 10 + 4, with 13 one-beds in the schedule | 13 one-beds in both |
+| Density 16.7 in the schedule and 17.0 on the sheet | one acreage for both |
+
+A failing plan or a parking shortfall still leads the badge: Needs
+verification only replaces a pass. The app does not compute FAR or coverage
+itself. Evidence: `slice-5/trust_meharry.jpg`.
+
+Also in this slice, from the work toward a more real model: seven
+photographed surfaces from Poly Haven (CC0, `public/textures/site`), wall
+lights, downspouts and mailboxes (`slice-5/photographed_surfaces.jpg`).
+
+Still to do from the review: the drawing given most of the screen with label
+collision handling on the live plan; a review view in 3D; the building
+section, scheme comparison and Underwrite on each saved option.
+
+Checks: 70 files, 770 tests pass; app type check 2,086, unchanged.
+
 ## Not done yet
 
 - Section A–A (sheet A-03) and scheme comparison.

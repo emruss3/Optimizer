@@ -3358,6 +3358,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
+          unverified={contextState === 'unavailable' || contextState === 'stale' || contextState === 'compiling' ? contextStateLabel(contextState) : null}
           empty={
             isGenerating || isGeneratingLots
               ? { state: 'generating' }
@@ -3857,7 +3858,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 // the quick massing tabulates its own mix; the solved plan's metrics are not its totals
                 metrics={seedViewOn ? null : metrics}
                 plannerCtx={plannerCtx}
-                acres={parcel.deeded_acres}
+                // the same acres the header and the sheets divide by
+                acres={mappedAcres ?? parcel.deeded_acres}
               />
             )}
             {dockTab === 'schemes' && (
