@@ -2984,20 +2984,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn]);
   // The sheet's picture: the ground it shows, rendered from above from the
   // same model the 3D view draws. Loaded when a sheet first asks for it.
-  const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
+  const sheetModelData = useCallback(async () => {
     if (!scene) throw new Error('no scene');
-    const [{ renderPlanImage }, { buildMassingData }] = await Promise.all([import('./render3d/still'), import('./ui/massingData')]);
-    const data = buildMassingData(displayElements, {
+    const { buildMassingData } = await import('./ui/massingData');
+    return buildMassingData(displayElements, {
       ...(scene.parcel?.polygons[0]?.[0] ? { parcelRing: scene.parcel.polygons[0][0].map(p => scene.frame.fromFeet(p)) } : {}),
       ...(neighbors?.buildings ? { contextBuildings: neighbors.buildings } : {}),
       ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
       ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
       treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
     });
+  }, [scene, displayElements, neighbors]);
+  const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
+    if (!scene) throw new Error('no scene');
+    const [{ renderPlanImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
     const a = data.toLocal(scene.frame.fromFeet([layout.ground.minX, layout.ground.minY]));
     const b = data.toLocal(scene.frame.fromFeet([layout.ground.maxX, layout.ground.maxY]));
     return renderPlanImage({ data, bounds: { minX: a[0] ?? 0, minY: a[1] ?? 0, maxX: b[0] ?? 0, maxY: b[1] ?? 0 }, widthPx });
-  }, [scene, displayElements, neighbors]);
+  }, [scene, sheetModelData]);
+  const renderSheetView = useCallback(async (widthPx: number, heightPx: number): Promise<string> => {
+    const [{ renderAerialImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
+    return renderAerialImage({ data, widthPx, heightPx });
+  }, [sheetModelData]);
   const contextState = resolveContextApplication({
     compiling: plannerLoading,
     blocked: generationBlocked,
@@ -3877,7 +3885,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       </div>
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} />
       )}
       {exportOpen && (
         <ExportReport

@@ -1,4 +1,4 @@
-# Drawing workspace · baseline, slice 1 and slice 2 · 2026-11-11 and 12
+# Drawing workspace · baseline and slices 1 to 3 · 2026-11-11 and 12
 
 Scope: "Parcel Proforma — Enterprise SitePlanner drawing and workspace
 scope", 2026-11-11. This folder holds the baseline of the drawing surfaces on
@@ -220,9 +220,26 @@ An honest mark, by the author: the renders and the sheet are about 7 out of
 clean, lit and legible. They are not photoreal: materials are simple, the
 planting is stylised, and there are no people, lights or site furniture.
 
+## Slice 3 · a rendering sheet and a presentation mode
+
+- **Sheet A-02 Aerial View**: a rendering of the scheme filling the page,
+  over a band with the project, the scheme's figures and a plain statement
+  of what is illustration. Same three sizes, PNG, SVG and print as A-01.
+- **Present**: the rendering fills the window; Escape returns.
+- The aerial camera looks from the diagonal the neighbouring buildings block
+  least (1710 Meharry Blvd had a neighbour standing in front of the site).
+- A light colour grade and vignette after the tone curve; three tree habits.
+- **A fault from slice 1 fixed**: Escape in the sheets closed the whole
+  workspace under them. It now closes the sheets only. The check asserts it.
+- The sheet window paints before its render starts, so the page no longer
+  looks frozen for the few seconds a render takes.
+
+Checks: 68 files, 706 tests pass; app type check 2,086, unchanged;
+`check-slice.cjs` 42 of 42. Evidence in `slice-3/check/`.
+
 ## Not done yet
 
-- Section A–A, scheme comparison and sheets A-02 and A-03.
+- Section A–A (sheet A-03) and scheme comparison.
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry
   Blvd: the west edge, with streets to the east and south). Planting no
   longer follows it; the setback labels on the 2D canvas still do.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { plantTrees, seeded, MAX_TREES } from './landscape';
 import { pointInPolygon, type Pt } from './frame';
-import { renderSitePlanSheet, sheetLayout, stallStripes } from './sheetSvg';
+import { renderSitePlanSheet, renderViewSheet, sheetLayout, stallStripes, viewSheetLayout } from './sheetSvg';
 import { buildDrawingScene } from './buildScene';
 import type { SceneFeature, ScenePolygons } from './types';
 import type { Element } from '../../../engine/types';
@@ -97,6 +97,20 @@ describe('the sheet', () => {
     expect(sheet.svg).toContain('are illustration');
   });
 
+  it('numbers the lots, and steps the surroundings back under a picture', () => {
+    const lots = buildDrawingScene({
+      parcelId: 9, schemeId: 's', parcelGeometry: sq(-20, -20, 300, 200),
+      elements: [el('lot-1', 'other', sq(0, 0, 80, 120), { areaSqFt: 9600 }, 'Lot 1'), el('lot-2', 'other', sq(80, 0, 80, 120), { areaSqFt: 9600 }, 'Lot 2')],
+    })!;
+    const drawn = new DOMParser().parseFromString(renderSitePlanSheet(lots, title, 'slide').svg, 'image/svg+xml');
+    expect([...drawn.querySelectorAll('[data-label="lot"]')].map(n => n.textContent)).toEqual(['1', '2']);
+    expect(drawn.querySelector('[data-role="surroundings"]')).toBeNull();
+    const over = new DOMParser().parseFromString(renderSitePlanSheet(lots, title, 'slide', { href: 'data:image/jpeg;base64,AAAA' }).svg, 'image/svg+xml');
+    expect(over.querySelector('parsererror')).toBeNull();
+    expect(over.querySelector('[data-role="surroundings"]')).not.toBeNull();
+    expect(over.querySelectorAll('[data-label="lot"]')).toHaveLength(2);
+  });
+
   it('states no numeric scale on a slide', () => {
     expect(renderSitePlanSheet(scene, title, 'tabloid').numericScale).toMatch(/^1" = \d+'$/);
     const slide = renderSitePlanSheet(scene, title, 'slide');
@@ -120,4 +134,19 @@ describe('the sheet', () => {
     expect((layout.ground.maxX - layout.ground.minX) * layout.k).toBeCloseTo(layout.draw.w, 6);
     expect((layout.ground.maxY - layout.ground.minY) * layout.k).toBeCloseTo(layout.draw.h, 6);
   });
+
+  it('makes A-02 from a picture, the project, the figures and a plain statement of what it is', () => {
+    const pending = renderViewSheet(scene, title, 'slide', null);
+    expect(pending.svg).toContain('Rendering the view');
+    const sheet = renderViewSheet(scene, title, 'slide', { href: 'data:image/jpeg;base64,AAAA' });
+    const doc = new DOMParser().parseFromString(sheet.svg, 'image/svg+xml');
+    expect(doc.querySelector('parsererror')).toBeNull();
+    const layout = viewSheetLayout('slide');
+    expect(Number(doc.querySelector('image[data-role="rendering"]')?.getAttribute('height'))).toBeCloseTo(layout.image.h, 3);
+    expect(doc.querySelector('[data-role="sheet-number"]')?.textContent).toBe('A-02');
+    expect(doc.querySelector('[data-figure="Density"]')?.textContent).toBe('11.2 per acreDENSITY');
+    expect(doc.querySelector('[data-role="view-note"]')?.textContent).toMatch(/are illustration, not a design/);
+    expect(sheet.svg).toMatch(/width="13.333in" height="7.5in"/);
+  });
 });
+

@@ -4,7 +4,7 @@ import { pointsAlongSegment, type Segment } from '../../../components/site-plann
 import { createGroundFrame } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
-import { MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
+import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
 import { buildArchitecture } from './architecture';
 import { stallStripes } from '../scene/sheetSvg';
 import { seeded } from '../scene/landscape';
@@ -100,6 +100,9 @@ export function buildMassingData(
   stripes: Array<{ path: number[][] }>;
   /** Parked cars in some of those stalls. Illustration. */
   cars: RenderSlab[];
+  /** Where to look from for an aerial view: degrees clockwise from south,
+   *  the diagonal least blocked by the existing buildings. */
+  aerialAzimuth: number;
   /** A projected point (EPSG:3857) in this model's local metres. */
   toLocal: (p: number[]) => number[];
   /** Spandrel rings at every floor line + parapet — the massing reads as a
@@ -125,7 +128,7 @@ export function buildMassingData(
   if (drawable.length === 0)
     return {
       polygons: [], extent: 100, groundPaths: [], contextPolygons: [], trees: [],
-      floorLines: [], slabs: [], windows: [], roofs: [], lawn: [], roofLines: [], shrubs: [], walks: [], curbs: [], roads: [], stripes: [], cars: [], toLocal: p => p, origin: { latDeg: 0, lonDeg: 0 },
+      floorLines: [], slabs: [], windows: [], roofs: [], lawn: [], roofLines: [], shrubs: [], walks: [], curbs: [], roads: [], stripes: [], cars: [], aerialAzimuth: -38, toLocal: p => p, origin: { latDeg: 0, lonDeg: 0 },
     };
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -337,7 +340,16 @@ export function buildMassingData(
   const { lonDeg, latDeg } = frame;
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg } };
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg },
+    aerialAzimuth: clearestAzimuth(
+      contextPolygons.filter(c => c.elevation > 1).map(c => {
+        const r = c.polygon[0] ?? [];
+        const n = Math.max(1, r.length);
+        return [r.reduce((a, p) => a + (p[0] ?? 0), 0) / n, r.reduce((a, p) => a + (p[1] ?? 0), 0) / n, c.elevation] as [number, number, number];
+      }),
+      extent / 2,
+    ),
+  };
 }
 
 /** Points along a ring no more than 4 m apart: a long drive has few corners,

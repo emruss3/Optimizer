@@ -7,6 +7,27 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+
+// The last touch, after the tone curve: a little more contrast and colour,
+// warm lights against cool shadows, and the corners let fall away.
+const GRADE = {
+  uniforms: { tDiffuse: { value: null }, amount: { value: 1 }, vignette: { value: 0.32 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float amount; uniform float vignette; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec3 g = c.rgb;
+      float l = dot(g, vec3(0.2126, 0.7152, 0.0722));
+      g = mix(vec3(l), g, 1.0 + 0.06 * amount);                       // saturation
+      g = mix(g, g * g * (3.0 - 2.0 * g), 0.28 * amount);             // a soft S curve
+      g += (vec3(0.018, 0.008, -0.02) * smoothstep(0.45, 1.0, l) + vec3(-0.012, 0.0, 0.02) * (1.0 - smoothstep(0.0, 0.45, l))) * amount;
+      vec2 d = vUv - 0.5;
+      g *= 1.0 - vignette * smoothstep(0.25, 0.95, dot(d, d) * 2.2);
+      gl_FragColor = vec4(clamp(g, 0.0, 1.0), c.a);
+    }`,
+};
 import type { SiteModel } from './siteScene';
 
 export interface Stage {
@@ -125,6 +146,10 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
       composer.addPass(renderPass);
       composer.addPass(ao);
       composer.addPass(new OutputPass());
+      const grade = new ShaderPass(GRADE);
+      (grade.uniforms.vignette as { value: number }).value = opts.studio ? 0 : 0.2;
+      (grade.uniforms.amount as { value: number }).value = opts.studio ? 0.7 : 1;
+      composer.addPass(grade);
     } catch (err) {
       console.warn('[render] ambient occlusion is not available here; rendering without it.', err);
       composer = null;
