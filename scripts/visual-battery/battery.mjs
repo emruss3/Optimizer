@@ -456,6 +456,12 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
     await page.getByText('Site Planner', { exact: true }).first().click({ timeout: 10000 });
     // Wait for the plan canvas, then let the solve settle.
     await page.waitForSelector('canvas[data-export="site-plan"]', { timeout: 45000 });
+    // The battery reads the inspector and the schedule. They are opened by the keys set above
+    // (src/features/site-plan/ui/workspaceLayout.ts); if those names drift, say so here rather
+    // than quietly read closed panels.
+    const inspector = await page.getByTestId('inspector-toggle').getAttribute('aria-expanded').catch(() => null);
+    const dock = await page.getByTestId('dock').getAttribute('data-open').catch(() => null);
+    if (inspector !== 'true' || dock !== 'true') throw new Error(`the inspector (${inspector}) or the schedule (${dock}) is not open: the battery's keys no longer match workspaceLayout.ts`);
     await page.waitForTimeout(12000);
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_2d.png` });
     // Order-6 item 1: when the refusal card offers the server-verified house,

@@ -87,6 +87,7 @@ import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 import { buildDrawingScene, sceneEvidence, selectionFor, type SelectionCache } from './scene/buildScene';
 import { ExhibitSheets } from './ui/ExhibitSheets';
 import { useArchStyle } from './ui/archStyle';
+import { DOCK_KEY, INSPECTOR_KEY } from './ui/workspaceLayout';
 const Massing3D = React.lazy(() => import('./ui/Massing3D'));
 
 /**
@@ -140,12 +141,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     try { const v = localStorage.getItem(key); return v === 'open' ? true : v === 'closed' ? false : null; } catch { return null; }
   };
   const remember = (key: string, open: boolean) => { try { localStorage.setItem(key, open ? 'open' : 'closed'); } catch { /* the choice holds for this visit */ } };
-  const [leftRailCollapsed, setLeftRailCollapsedState] = useState(() => !(remembered('pp.inspector') ?? false));
+  const [leftRailCollapsed, setLeftRailCollapsedState] = useState(() => !(remembered(INSPECTOR_KEY) ?? false));
   const setLeftRailCollapsed = useCallback((next: boolean | ((c: boolean) => boolean)) => {
-    setLeftRailCollapsedState(c => { const v = typeof next === 'function' ? next(c) : next; remember('pp.inspector', !v); return v; });
+    setLeftRailCollapsedState(c => { const v = typeof next === 'function' ? next(c) : next; remember(INSPECTOR_KEY, !v); return v; });
   }, []);
-  const [dockOpen, setDockOpenState] = useState(() => remembered('pp.dock') ?? false);
-  const setDockOpen = useCallback((open: boolean) => { remember('pp.dock', open); setDockOpenState(open); }, []);
+  const [dockOpen, setDockOpenState] = useState(() => remembered(DOCK_KEY) ?? false);
+  const setDockOpen = useCallback((open: boolean) => { remember(DOCK_KEY, open); setDockOpenState(open); }, []);
   const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results' | 'profile'>('tabulation');
   // The drawing scene path (2026-11-11). `?drawing=classic` turns it off: the
   // plan, the 3D view and the export then draw exactly as they did before it.
@@ -3369,7 +3370,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
-          unverified={contextState === 'unavailable' || contextState === 'stale' || contextState === 'compiling' ? contextStateLabel(contextState) : null}
+          unverified={contextState === 'unavailable' || contextState === 'stale' ? contextStateLabel(contextState) : contextState === 'compiling' ? 'context still compiling' : null}
           empty={
             isGenerating || isGeneratingLots
               ? { state: 'generating' }
