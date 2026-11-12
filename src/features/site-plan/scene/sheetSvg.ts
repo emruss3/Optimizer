@@ -559,3 +559,48 @@ function wrap(s: string, max: number): string[] {
   if (cur) out.push(cur);
   return out;
 }
+
+/** Where the picture sits on the rendering sheet, points. */
+export function viewSheetLayout(size: SheetSize): { widthPt: number; heightPt: number; image: { x: number; y: number; w: number; h: number } } {
+  const { wIn, hIn } = SHEET_SIZES[size];
+  const W = r2(wIn * 72), H = r2(hIn * 72);
+  const M = 0.3 * 72, band = 1.02 * 72;
+  return { widthPt: W, heightPt: H, image: { x: M, y: M, w: W - 2 * M, h: H - 2 * M - band } };
+}
+
+/**
+ * A-02 Aerial View: a rendering of the scheme filling the page, with a band
+ * under it that names the project, gives the scheme's figures and says what
+ * the picture is. Without a picture yet, the frame and the band are drawn and
+ * the picture's place says it is being rendered.
+ */
+export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize, picture: SheetUnderlay | null): { svg: string; widthPt: number; heightPt: number } {
+  const { wIn, hIn } = SHEET_SIZES[size];
+  const { widthPt: W, heightPt: H, image } = viewSheetLayout(size);
+  const M = image.x;
+  const out: string[] = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${wIn}in" height="${hIn}in" viewBox="0 0 ${W} ${H}" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" data-sheet="A-02" data-size="${size}">`);
+  out.push(`<rect width="${W}" height="${H}" fill="#ffffff"/>`);
+  if (picture) out.push(`<image href="${esc(picture.href)}" x="${image.x}" y="${image.y}" width="${image.w}" height="${image.h}" preserveAspectRatio="xMidYMid slice" data-role="rendering"/>`);
+  else out.push(`<rect x="${image.x}" y="${image.y}" width="${image.w}" height="${image.h}" fill="#eef1f3"/><text x="${r2(image.x + image.w / 2)}" y="${r2(image.y + image.h / 2)}" font-size="10" text-anchor="middle" fill="#7a8087">Rendering the view</text>`);
+  out.push(`<rect x="${M}" y="${M}" width="${r2(W - 2 * M)}" height="${r2(H - 2 * M)}" fill="none" stroke="${INK}" stroke-width="1"/>`);
+  const by = image.y + image.h;
+  out.push(`<line x1="${M}" y1="${r2(by)}" x2="${r2(W - M)}" y2="${r2(by)}" stroke="${INK}" stroke-width="1"/>`);
+  const tx = M + 16;
+  out.push(`<text x="${tx}" y="${r2(by + 22)}" font-size="6.2" font-weight="700" letter-spacing="1.1" fill="#7a8087">AERIAL VIEW · CONCEPT</text>`);
+  out.push(`<text x="${tx}" y="${r2(by + 42)}" font-size="16" font-weight="700" fill="${INK}">${esc(title.project)}</text>`);
+  if (title.subtitle) out.push(`<text x="${tx}" y="${r2(by + 54)}" font-size="7.5" fill="#4b5158">${esc(title.subtitle.length > 110 ? title.subtitle.slice(0, 108) + '…' : title.subtitle)}</text>`);
+  // the scheme's figures, from the site data the workspace states
+  const rows = (title.data ?? []).filter(r => r.label !== 'Zoning').slice(0, 4);
+  const colW = Math.min(118, (W * 0.44) / Math.max(1, rows.length));
+  const fx0 = W - M - 150 - rows.length * colW;
+  rows.forEach((r, i) => {
+    const x = fx0 + i * colW;
+    out.push(`<g data-figure="${esc(r.label)}"><text x="${r2(x)}" y="${r2(by + 38)}" font-size="${r.value.length > 14 ? 10 : 14}" font-weight="700" fill="${INK}">${esc(r.value)}</text><text x="${r2(x)}" y="${r2(by + 50)}" font-size="6" font-weight="600" letter-spacing="0.9" fill="#7a8087">${esc(r.label.toUpperCase())}</text></g>`);
+  });
+  out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-02</text>`);
+  out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
+  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the buildings shown in white are illustration, not a design.</text>`);
+  out.push('</svg>');
+  return { svg: out.join('\n'), widthPt: W, heightPt: H };
+}

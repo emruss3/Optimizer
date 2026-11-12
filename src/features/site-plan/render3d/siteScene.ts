@@ -147,9 +147,9 @@ const SITE: Record<string, { surface: Surface; color: RGBA }> = {
   parking: { surface: 'asphalt', color: [140, 140, 142, 255] },
   'parking-bay': { surface: 'asphalt', color: [140, 140, 142, 255] },
   driveway: { surface: 'concrete', color: [206, 202, 192, 255] },
-  greenspace: { surface: 'grass', color: [132, 170, 98, 255] },
+  greenspace: { surface: 'grass', color: [128, 160, 100, 255] },
 };
-const LAWN: RGBA = [158, 186, 118, 255];
+const LAWN: RGBA = [150, 172, 118, 255];
 const WALK: RGBA = [214, 210, 200, 255];
 
 /** Build the model. `data` is what the massing view already computes. */
@@ -172,7 +172,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     for (const c of data.contextPolygons) {
       const ring = c.polygon[0];
       if (!ring) continue;
-      if (c.elevation < 1) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.03), [178, 192, 152, 255]);
+      if (c.elevation < 1) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.03), [170, 184, 142, 255]);
       else put('plain|solid', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), [238, 235, 228, 255]);
     }
   }
@@ -232,11 +232,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const trunkG = new THREE.CylinderGeometry(0.1, 0.17, 1, 7).rotateX(Math.PI / 2).translate(0, 0, 0.5);
     const trunks = new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: 0x5a463a, roughness: 1 }), data.trees.length);
     data.trees.forEach((t, i) => {
-      const R = (t.radiusM ?? 2.8) * 0.82;
-      const trunk = R * 0.95;
+      // three habits from one crown: broad, upright and tall, by position
+      const habit = (i * 7 + Math.round(Math.abs(t.position[0]) * 3)) % 5;
+      const R = (t.radiusM ?? 2.8) * (habit === 4 ? 0.62 : habit === 3 ? 0.74 : 0.84);
+      const tall = habit === 4 ? 1.9 : habit === 3 ? 1.35 : 1.05;
+      const trunk = R * (habit === 4 ? 0.7 : 0.95);
       q.setFromAxisAngle(up, (i * 2.399) % (Math.PI * 2));
-      canopy.setMatrixAt(i, m4.compose(new THREE.Vector3(t.position[0], t.position[1], trunk + R * 0.78), q, new THREE.Vector3(R, R, R * 1.05)));
-      canopy.setColorAt(i, linear(GREENS[i % GREENS.length] ?? [100, 140, 70]));
+      canopy.setMatrixAt(i, m4.compose(new THREE.Vector3(t.position[0], t.position[1], trunk + R * 0.78 * tall), q, new THREE.Vector3(R, R, R * tall)));
+      canopy.setColorAt(i, linear(GREENS[i % GREENS.length] ?? [100, 140, 70]).multiplyScalar(habit === 4 ? 0.78 : 1));
       trunks.setMatrixAt(i, m4.compose(new THREE.Vector3(t.position[0], t.position[1], 0.1), q, new THREE.Vector3(1 + R * 0.12, 1 + R * 0.12, trunk + R * 0.3)));
     });
     canopy.castShadow = trunks.castShadow = true;

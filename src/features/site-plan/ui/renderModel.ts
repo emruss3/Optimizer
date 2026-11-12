@@ -66,3 +66,28 @@ export function groundShadow(ring: number[][], heightM: number, sunDirection: [n
   const hull = convexHull(pts);
   return hull.length >= 3 ? hull.map(([x, y]) => [x, y, 0.22]) : null;
 }
+
+/**
+ * The compass direction to look from for an aerial view, as an angle in
+ * degrees clockwise from south: of the four diagonals, the one with the least
+ * existing building standing between the camera and the site. `blocks` are
+ * the neighbours as [x, y, height] in the model's metres, `extent` its size.
+ */
+export function clearestAzimuth(blocks: Array<[number, number, number]>, extent: number): number {
+  const options = [-38, 52, 142, 232];
+  let best = options[0] as number, bestScore = Infinity;
+  for (const az of options) {
+    const a = (az * Math.PI) / 180;
+    // the camera stands toward (sin a, -cos a) from the middle: x east, y north
+    const cx = Math.sin(a), cy = -Math.cos(a);
+    let score = 0;
+    for (const [x, y, h] of blocks) {
+      const d = Math.hypot(x, y);
+      if (d < extent * 0.25 || d > extent * 1.6) continue;
+      const along = (x * cx + y * cy) / d;
+      if (along > 0.55) score += h * along * (1.6 - d / extent);
+    }
+    if (score < bestScore - 1e-9) { bestScore = score; best = az; }
+  }
+  return best;
+}

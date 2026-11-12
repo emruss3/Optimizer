@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildArchitecture, hashId, surfaceOf, wallsOf } from './architecture';
-import { convexHull, groundShadow } from './renderModel';
+import { clearestAzimuth, convexHull, groundShadow } from './renderModel';
 import { buildingHeight } from '../scene/heights';
 import { METERS_PER_FOOT } from '../../../engine/units';
 
@@ -107,5 +107,17 @@ describe('ground shadows', () => {
 
   it('finds a convex hull', () => {
     expect(convexHull([[0, 0], [2, 0], [1, 0.2], [2, 2], [0, 2], [1, 1]])).toHaveLength(4);
+  });
+});
+
+describe('the aerial camera', () => {
+  it('looks from the diagonal the neighbours block least', () => {
+    // a tall neighbour to the south-west, where the default view stands
+    const a = (-38 * Math.PI) / 180;
+    const sw: [number, number, number] = [Math.sin(a) * 60, -Math.cos(a) * 60, 20];
+    expect(clearestAzimuth([], 80)).toBe(-38);
+    expect(clearestAzimuth([sw], 80)).not.toBe(-38);
+    // far neighbours and ones on the site itself do not count
+    expect(clearestAzimuth([[sw[0] * 4, sw[1] * 4, 20], [1, 1, 20]], 80)).toBe(-38);
   });
 });

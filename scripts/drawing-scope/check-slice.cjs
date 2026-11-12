@@ -95,6 +95,15 @@ const colours = page => page.evaluate(() => {
   await page.locator('[data-testid="camera-iso"]').click();
   await page.waitForTimeout(2000);
   check((await colours(page)) > 60, 'the cameras (Street, Top, Fit site, Aerial) each leave a picture');
+  // the rendering fills the window on request, and Escape gives the workspace back
+  await page.locator('[data-testid="render-present"]').click();
+  await page.waitForTimeout(2500);
+  const full = await view.boundingBox();
+  check(!!full && full.width >= 1430 && full.height >= 890, 'Present fills the window with the rendering');
+  await page.screenshot({ path: path.join(out, 'model_present.png') });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1500);
+  check((await view.count()) === 1 && (await view.getAttribute('data-present').catch(() => null)) === 'false', 'Escape returns from Present, and the workspace stays open');
   await page.locator('[data-testid="scene-select-A"]').click();
   await page.waitForSelector('[data-testid="scene-inspector"]', { timeout: 5000 });
   const field = name => page.locator(`[data-testid="scene-inspector"] [data-field="${name}"]`).first().evaluate(n => n.childNodes[0].textContent.trim());
@@ -129,7 +138,7 @@ const colours = page => page.evaluate(() => {
   const sheet = page.locator('[data-testid="sheet-a01"]');
   const rendered = () => page.waitForSelector('[data-testid="sheet-a01"][data-sheet-style="rendered"]', { timeout: 120000 }).then(() => true).catch(() => false);
   await page.locator('[data-testid="open-sheets"]').click();
-  await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 10000 });
+  await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 60000 });
   check(await rendered(), 'the sheet is laid over a render of the plan');
   check((await sheet.locator('image[data-role="underlay"]').count()) === 1, 'the render is on the sheet, under the linework');
   const row = await sheet.locator(`[data-schedule-row="${b?.id}"]`).evaluate(n => [...n.querySelectorAll('text')].map(t => t.textContent)).catch(() => null);
@@ -149,6 +158,18 @@ const colours = page => page.evaluate(() => {
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(out, 'sheet_A-01_11x17.png') });
   sheets.tabloid = await sheet.innerHTML();
+  // A-02: the aerial view as a sheet
+  await page.locator('[data-testid="sheet-tab-view"]').click();
+  const a02 = page.locator('[data-testid="sheet-a02"]');
+  const viewReady = await page.waitForSelector('[data-testid="sheet-a02"][data-sheet-style="rendered"]', { timeout: 120000 }).then(() => true).catch(() => false);
+  check(viewReady && (await a02.locator('image[data-role="rendering"]').count()) === 1, 'sheet A-02 carries a rendering of the scheme');
+  check(/are illustration, not a design/.test((await a02.locator('[data-role="view-note"]').textContent()) ?? ''), 'sheet A-02 says what is illustration');
+  check((await a02.locator('[data-figure]').count()) >= 3, 'sheet A-02 carries the scheme\'s figures');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: path.join(out, 'sheet_A-02_11x17.png') });
+  sheets.view = await a02.innerHTML();
+  await page.locator('[data-testid="sheet-tab-plan"]').click();
+  await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 60000 });
   await page.locator('[data-testid="sheet-style-drawn"]').click();
   await page.waitForSelector('[data-testid="sheet-a01"][data-sheet-style="drawn"]', { timeout: 5000 });
   check((await sheet.locator('image[data-role="underlay"]').count()) === 0 && (await sheet.locator('[data-role="shadows"]').count()) === 1, 'the drawn plan is one click away');
@@ -160,6 +181,7 @@ const colours = page => page.evaluate(() => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
   check((await page.locator('[data-testid="exhibit-sheets"]').count()) === 0, 'Escape closes the sheets');
+  check((await page.locator('canvas[data-export="site-plan"]').count()) === 1, 'and leaves the workspace open under them');
   check((await page.locator('text=Site Planner Error').count()) === 0, 'no error boundary on the page');
   const real = errors.filter(e => !/maxTextureDimension2D/.test(e));
   check(real.length === 0, `no page errors${real.length ? ': ' + real.join(' | ').slice(0, 300) : ''}`);
@@ -170,8 +192,8 @@ const colours = page => page.evaluate(() => {
 
   // the print set: each sheet as SVG and as a PDF at its page size
   const pctx = await browser.newContext();
-  for (const [key, name, w, h] of [['slide', 'slide_16x9', '13.333in', '7.5in'], ['tabloid', '11x17', '17in', '11in'], ['letter_drawn', 'letter_drawn', '11in', '8.5in']]) {
-    const file = `A-01_site-plan_${name}`;
+  for (const [key, name, w, h] of [['slide', 'A-01_site-plan_slide_16x9', '13.333in', '7.5in'], ['tabloid', 'A-01_site-plan_11x17', '17in', '11in'], ['letter_drawn', 'A-01_site-plan_letter_drawn', '11in', '8.5in'], ['view', 'A-02_aerial-view_11x17', '17in', '11in']]) {
+    const file = name;
     fs.writeFileSync(path.join(out, `${file}.svg`), sheets[key]);
     const p = await pctx.newPage();
     await p.setContent(`<!doctype html><html><head><style>@page{size:${w} ${h};margin:0}html,body{margin:0}svg{display:block;width:${w};height:${h}}</style></head><body>${sheets[key]}</body></html>`);

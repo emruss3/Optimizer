@@ -58,6 +58,14 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
   const canvas = useRef<HTMLCanvasElement>(null);
   const rig = useRef<Rig | null>(null);
   const [ready, setReady] = useState(false);
+  const [present, setPresent] = useState(false);
+  useEffect(() => {
+    if (!present) return;
+    // on the way down, and stopped there: Escape leaves Present, not the workspace
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setPresent(false); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [present]);
   const [sunKey, setSunKey] = useState('mar21');
   const [sunHour, setSunHour] = useState(15.5);
   const fail = useRef(onFail);
@@ -70,6 +78,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     return sunPosition(day, sunHour, data.origin.latDeg);
   }, [sunKey, sunHour, data.origin.latDeg]);
 
+  // the aerial looks from the diagonal the neighbours block least
+  const aerial = useRef(-38);
+  aerial.current = data.aerialAzimuth;
   const frame = useCallback((shot: Shot | 'fit') => {
     const r = rig.current;
     if (!r) return;
@@ -80,7 +91,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       t.set(0, E * 0.05, 0);
       r.camera.position.copy(t).addScaledVector(dir, E * 3.3);
     } else {
-      const [el, az, dist, lift] = shot === 'top' ? [89.2, 0, 3.4, 0] : shot === 'street' ? [5, -52, 1.75, 0.12] : [30, -38, 3.2, 0.05];
+      const [el, az, dist, lift] = shot === 'top' ? [89.2, 0, 3.4, 0] : shot === 'street' ? [5, aerial.current - 14, 1.75, 0.12] : [30, aerial.current, 3.2, 0.05];
       const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
       t.set(0, E * lift, 0);
       r.camera.position.set(t.x + E * dist * Math.cos(e) * Math.sin(a), t.y + E * dist * Math.sin(e), t.z + E * dist * Math.cos(e) * Math.cos(a));
@@ -218,7 +229,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} className="relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]">
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
         <select value={sunKey} onChange={e => setSunKey(e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 bg-white" data-testid="sun-date" aria-label="Date of the sun study">
@@ -234,6 +245,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
         <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="Bring the whole site back into view, keeping the angle">Fit site</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
+        <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
         <button onClick={snapshot} className="px-1.5 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700" title="Save this view as a picture, at twice the screen's resolution" data-testid="massing-snapshot">PNG</button>
       </div>
       {onSelect && tagged.length > 0 && (

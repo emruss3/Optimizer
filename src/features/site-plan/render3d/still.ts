@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { MassingData } from '../ui/massingData';
 import { buildSiteModel } from './siteScene';
 import { createStage } from './stage';
+import { sunPosition } from '../ui/sunPosition';
 
 export interface PlanImageRequest {
   data: MassingData;
@@ -32,6 +33,33 @@ export function renderPlanImage(req: PlanImageRequest): string {
     // light from the north-west, 52 degrees up: the drafting convention
     const alt = (52 * Math.PI) / 180, az = (315 * Math.PI) / 180;
     stage.setSun([Math.sin(az) * Math.cos(alt), Math.cos(az) * Math.cos(alt), Math.sin(alt)]);
+    stage.render(camera);
+    return stage.renderer.domElement.toDataURL('image/jpeg', 0.92);
+  } finally {
+    stage.dispose();
+    model.dispose();
+    stage.renderer.forceContextLoss();
+  }
+}
+
+/**
+ * A picture of the site from the air, for the rendering sheet: the view the
+ * 3D panel opens on, a little lower and closer, on an equinox afternoon.
+ */
+export function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number }): string {
+  const { data } = req;
+  const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
+  const model = buildSiteModel(data);
+  const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true });
+  try {
+    const E = model.extent;
+    const camera = new THREE.PerspectiveCamera(30, widthPx / heightPx, 1.5, E * 40);
+    const el = (25 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180, dist = E * 2.75;
+    camera.position.set(dist * Math.cos(el) * Math.sin(az), E * 0.04 + dist * Math.sin(el), dist * Math.cos(el) * Math.cos(az));
+    camera.lookAt(0, E * 0.04, 0);
+    camera.updateProjectionMatrix();
+    const [dx, dy, dz] = sunPosition(80, 15.5, data.origin.latDeg).direction;
+    stage.setSun([-dx, -dy, -dz]);
     stage.render(camera);
     return stage.renderer.domElement.toDataURL('image/jpeg', 0.92);
   } finally {
