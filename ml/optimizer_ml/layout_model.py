@@ -29,6 +29,7 @@ DEV = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # ---- vocabulary -------------------------------------------------------------------------------------------------
 PAD, BOS, SEP, EOS, STREET, XSTREET, SIDE_L, SIDE_R = range(8)
+XSTUB = SIDE_R                      # format 4 has no lot sides, so this number marks a boundary run beside vacant land (a street may end there)
 Y0, NY, YBIN = 8, 24, 0.05          # yield bucket: lots as a share of (site area / lot module area)
 C0, NC, CBIN = Y0 + NY, 480, 10     # coordinates: 10 ft bins, +-2400 ft from the site centre
 W0, NW, WBIN = C0 + NC, 400, 1      # lot width along the street: 1 ft bins
@@ -60,6 +61,7 @@ CFG = dict(
     frontage_ctx=False,     # format 3: the given context is the engine's own reading of the site's access (the boundary runs
                             # that front a public street, and adjoining street stubs) instead of mapped roads outside the site
     max_ctx_lines=12,       # frontage runs and stubs given, longest first
+    split_stubs=False,      # frontage runs and vacant-land runs are given as two kinds of line (a street may start on the first only)
     turtle=False,           # format 4: each new street is written as a path from a line already on the plan (see street_plan)
     attach_tol=30.0,        # a street end this close to a line counts as on it (mapped streets and plat lines do not meet to the foot)
     attach_far=200.0,       # a street that touches nothing is taken to enter at the boundary when it comes this close to it
@@ -81,7 +83,7 @@ def ctok(v): return C0 + max(0, min(NC - 1, round(v / CBIN) + NC // 2))
 def unc(t): return (t - C0 - NC // 2) * CBIN
 def wtok(v): return W0 + max(1, min(NW - 1, round(v / WBIN)))
 def dtok(v): return D0 + max(1, min(ND - 1, round(v / DBIN)))
-def ytok(v): return Y0 + max(0, min(NY - 1, round(v / YBIN)))
+def ytok(v): return Y0 + NY - 1 if v is None else Y0 + max(0, min(NY - 2, round(v / YBIN)))   # the last bucket means "not known"
 def ftok(v): return F0 + max(0, min(NF - 1, round(v / FBIN)))
 
 
@@ -126,12 +128,15 @@ def simplify_to(g, n, tols=(0, 20, 30, 45, 70, 100, 150)):
     return None
 
 
-def context_lines(geoms, cfg, rw):
-    """Frontage runs and stubs as context roads: joined where they touch, simplified, longest first."""
+def context_lines(geoms, cfg, rw, front=None, kind=None):
+    """Frontage runs and stubs as context roads: joined where they touch, simplified, longest first. Each carries
+    its kind: 'front' (a public street runs along it) or 'stub' (vacant land beside it). front = the frontage lines,
+    to tell the kind of a joined line by what most of it lies on."""
     from shapely.ops import linemerge
     lines = [g for g in geoms if g is not None and not g.is_empty and g.length > 1]
     if not lines:
         return []
+    near_front = unary_union([g for g in (front or []) if g is not None and not g.is_empty]).buffer(3) if front else None
     try:
         merged = linemerge(unary_union(lines))
     except Exception:
@@ -140,8 +145,15 @@ def context_lines(geoms, cfg, rw):
     for g in sorted(lines_of(merged), key=lambda q: -q.length)[:cfg['max_ctx_lines']]:
         c = simplify_to(g.simplify(5), cfg['max_street_pts'])
         if c and len(c) >= 2:
-            out.append({'ctx': True, 'line': c, 'len': LineString(c).length, 'lots': {1: [], -1: []}, 'front': {1: rw / 2, -1: rw / 2}})
+            k = kind or ('front' if near_front is None or g.intersection(near_front).length >= 0.5 * g.length else 'stub')
+            out.append({'ctx': True, 'kind': k, 'line': c, 'len': LineString(c).length, 'lots': {1: [], -1: []}, 'front': {1: rw / 2, -1: rw / 2}})
     return out
+
+
+def access_context(front, stubs, cfg, rw):
+    if cfg.get('split_stubs'):
+        return context_lines(front, cfg, rw, kind='front') + context_lines(stubs, cfg, rw, kind='stub')
+    return context_lines(front + stubs, cfg, rw, front=front)
 
 
 def parse_lines_field(txt):
@@ -333,7 +345,7 @@ def parse_site(p, cfg):
     if cfg.get('frontage_ctx'):
         if len(p) < 14 or not (p[12] or p[13]):
             return 'no_frontage'
-        roads = [r for r in roads if not r['ctx']] + context_lines(parse_lines_field(p[12]) + parse_lines_field(p[13]), cfg, rw)
+        roads = [r for r in roads if not r['ctx']] + access_context(parse_lines_field(p[12]), parse_lines_field(p[13]), cfg, rw)
         if not any(not r['ctx'] for r in roads):
             return 'no_new_street'
     if not roads or not n_fmt:
@@ -363,7 +375,7 @@ def parse_site(p, cfg):
         if len(p) >= 12 and p[10] != '':
             s['yield'], s['clean'] = float(p[10]) / max(1.0, P.area / (w * d)), p[11] == '1'
         else:
-            s['clean'] = None                       # no engine run for this site: the model is told the verdict is unknown
+            s['clean'], s['yield'] = None, None     # no engine run for this site: the model is told verdict and yield are unknown
     if len(encode(s, cfg)) > cfg['ctx']:
         return 'too_long'
     return s
@@ -486,6 +498,17 @@ def turtle_frame(s, th=0.0, mir=False, sc=1.0):
     return b, ctx, plan
 
 
+def ctx_kinds(s):
+    return [r.get('kind', 'front') for r in s['roads'] if r['ctx']]
+
+
+def ctx_tokens(cfg, kind, line):
+    out = road_tokens(True, line)
+    if cfg.get('split_stubs') and kind == 'stub':
+        out[0] = XSTUB
+    return out
+
+
 def turtle_street(line, a0, a1, placed):
     """Tokens of one street and the line a reader of those tokens rebuilds. Each piece is aimed from where the
     rebuilt street has got to at the true next corner, so rounding never builds up along the street."""
@@ -524,8 +547,8 @@ def turtle_encode(s, cfg, th=0.0, mir=False, sc=1.0):
     b, ctx, plan = turtle_frame(s, th, mir, sc)
     seq = prefix_tokens(s, b, s['yield'], cfg, s.get('clean'), sc)
     placed = [LineString(b + [b[0]])]
-    for c in ctx:
-        seq += road_tokens(True, c)
+    for c, k in zip(ctx, ctx_kinds(s)):
+        seq += ctx_tokens(cfg, k, c)
         placed.append(LineString(c))
     rebuilt, m = [], len(placed)
     remap = {j: j for j in range(m)}                 # anchors of streets left out shift down
@@ -553,9 +576,12 @@ def turtle_generate(model, s, cfg, y):
     ring = LineString(b + [b[0]])
     placed = [ring] + [LineString(c) for c in ctx]
     toks = prefix_tokens(s, b, y, cfg, True)
-    for c in ctx:
-        toks += road_tokens(True, c)
+    kinds = ctx_kinds(s)
+    for c, k in zip(ctx, kinds):
+        toks += ctx_tokens(cfg, k, c)
     g = Gen(model, cfg, toks)
+    fronts = [A0 + 1 + i for i, k in enumerate(kinds) if k == 'front']
+    m = len(placed)
     f = (ftok(s['rw'] / 2) - F0) * FBIN
     out = [{'ctx': True, 'line': c, 'len': line_len(c), 'lots': {1: [], -1: []}, 'front': {1: f, -1: f}} for c in ctx]
     n_new = 0
@@ -563,7 +589,8 @@ def turtle_generate(model, s, cfg, y):
         if g.pick([STREET, EOS]) == EOS:
             break
         g.push(STREET)
-        a = g.pick(range(A0, A0 + len(placed)))
+        # a street starts on a public frontage or an earlier street; on the bare boundary only when the site has no frontage on record
+        a = g.pick((fronts + list(range(A0 + m, A0 + len(placed)))) or list(range(A0, A0 + len(placed))))
         g.push(a)
         tx = g.pick(COORDS)
         g.push(tx)
@@ -995,7 +1022,7 @@ def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
     random.seed(0)
     sites, drop = parse_lines(lines, cfg)
     tr, va, dv, ho = split_sites(sites, cfg)
-    ys = sorted(s['yield'] for s in tr if not cfg.get('engine_labels') or s.get('clean')) or sorted(s['yield'] for s in tr)
+    ys = sorted(s['yield'] for s in tr if s['yield'] is not None and (not cfg.get('engine_labels') or s.get('clean'))) or sorted(s['yield'] for s in tr if s['yield'] is not None)
     ytargets = [ys[min(len(ys) - 1, int(p * len(ys)))] for p in cfg['yield_pcts']]
     log(json.dumps({'device': str(DEV), 'sites': len(sites), 'dropped': drop, 'train': len(tr), 'val': len(va), 'dev': len(dv),
                     'holdout': len(ho), 'vocab': V, 'yield_targets': [round(y, 2) for y in ytargets]}))
@@ -1084,7 +1111,8 @@ def site_from_request(d, cfg):
             roads.append({'ctx': True, 'line': c, 'len': LineString(c).length, 'lots': {1: [], -1: []}, 'front': {1: rw / 2, -1: rw / 2}})
     roads = sorted(roads, key=lambda r: -r['len'])[:max(0, cfg['max_roads'] - cfg['max_new_streets'])]
     if cfg.get('frontage_ctx'):
-        roads = context_lines([LineString([(x - ox, y - oy) for x, y in line]) for line in (d.get('frontage') or []) + (d.get('stubs') or []) if len(line) >= 2], cfg, rw)
+        to_lines = lambda key: [LineString([(x - ox, y - oy) for x, y in line]) for line in (d.get(key) or []) if len(line) >= 2]
+        roads = access_context(to_lines('frontage'), to_lines('stubs'), cfg, rw)
     return {'key': d.get('key'), 'split': 'request', 'w': float(d['w']), 'd': float(d['d']), 'rw': rw, 'min_sf': float(d['min_sf']),
             'b': b, 'roads': roads, 'n_fmt': 0, 'n_total': 0, 'area': P.area, 'yield': 0.0, 'origin': (ox, oy)}
 
