@@ -356,11 +356,26 @@ Also in this slice, from the work toward a more real model: seven
 photographed surfaces from Poly Haven (CC0, `public/textures/site`), wall
 lights, downspouts and mailboxes (`slice-5/photographed_surfaces.jpg`).
 
-Still to do from the review: the drawing given most of the screen with label
-collision handling on the live plan; a review view in 3D; the building
-section, scheme comparison and Underwrite on each saved option.
+**The drawing has the screen** (the review's second part). At 1440 × 900 the
+plan was a strip between the parameters and the open tabulation. The
+inspector beside it and the schedule under it now start closed, open on
+request, and the choice is kept on the device.
 
-Checks: 70 files, 770 tests pass; app type check 2,086, unchanged.
+| 1440 × 900 | Plan canvas |
+|---|---|
+| before | a strip about 250 px high beside a 320 px rail |
+| now | 1,344 × 519, 54% of the window |
+
+Labels on the live plan give way by rank, as on the exported sheet: a
+building's tag and caption are set down first each frame, and a unit label,
+stall count, zone name or setback label that would cover one is left out.
+Evidence: `slice-5/plan_1440x900.jpg`.
+
+Still to do from the review: a review view in 3D; the building section,
+scheme comparison and Underwrite on each saved option.
+
+Checks: 70 files, 771 tests pass; app type check 2,086, unchanged;
+`check-slice.cjs` 60 of 60.
 
 ## Not done yet
 

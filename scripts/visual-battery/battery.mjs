@@ -97,6 +97,8 @@ const results = {};
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
 const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+// the workspace opens on the drawing alone; the battery reads the inspector and the schedule, so it opens both
+await ctx.addInitScript(() => { try { localStorage.setItem('pp.inspector', 'open'); localStorage.setItem('pp.dock', 'open'); } catch {} });
 
 /** Judge one parcel's evidence against its expectation. Returns [] when clean. */
 function judge(exp, ev) {
