@@ -15,14 +15,15 @@ export interface PlanImageRequest {
   widthPx: number;
 }
 
-export function renderPlanImage(req: PlanImageRequest): string {
+export async function renderPlanImage(req: PlanImageRequest): Promise<string> {
   const { data, bounds } = req;
   const w = Math.max(1, bounds.maxX - bounds.minX), h = Math.max(1, bounds.maxY - bounds.minY);
   const widthPx = Math.round(Math.min(4096, req.widthPx));
   const heightPx = Math.round((widthPx * h) / w);
-  const model = buildSiteModel(data, { canopyOpacity: 0.9 });
+  const model = buildSiteModel(data, { canopyOpacity: 0.9, clayContext: true });
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, studio: true });
   try {
+    await model.ready;
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
     const camera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 1, 2000);
     // above the middle, looking down, north to the top of the picture
@@ -46,19 +47,20 @@ export function renderPlanImage(req: PlanImageRequest): string {
  * A picture of the site from the air, for the rendering sheet: the view the
  * 3D panel opens on, a little lower and closer, on an equinox afternoon.
  */
-export function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number }): string {
+export async function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number }): Promise<string> {
   const { data } = req;
   const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
   const model = buildSiteModel(data);
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true });
   try {
+    await model.ready;
     const E = model.extent;
     const camera = new THREE.PerspectiveCamera(30, widthPx / heightPx, 1.5, E * 40);
-    const el = (25 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180, dist = E * 2.75;
+    const el = (18 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180, dist = E * 2.5;
     camera.position.set(dist * Math.cos(el) * Math.sin(az), E * 0.04 + dist * Math.sin(el), dist * Math.cos(el) * Math.cos(az));
-    camera.lookAt(0, E * 0.04, 0);
+    camera.lookAt(0, E * 0.46, 0);
     camera.updateProjectionMatrix();
-    const [dx, dy, dz] = sunPosition(80, 15.5, data.origin.latDeg).direction;
+    const [dx, dy, dz] = sunPosition(80, 16.5, data.origin.latDeg).direction;
     stage.setSun([-dx, -dy, -dz]);
     stage.render(camera);
     return stage.renderer.domElement.toDataURL('image/jpeg', 0.92);

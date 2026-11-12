@@ -86,6 +86,7 @@ import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 import { buildDrawingScene, sceneEvidence, selectionFor, type SelectionCache } from './scene/buildScene';
 import { ExhibitSheets } from './ui/ExhibitSheets';
+import { useArchStyle } from './ui/archStyle';
 const Massing3D = React.lazy(() => import('./ui/Massing3D'));
 
 /**
@@ -2984,17 +2985,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn]);
   // The sheet's picture: the ground it shows, rendered from above from the
   // same model the 3D view draws. Loaded when a sheet first asks for it.
+  const archStyle = useArchStyle();
   const sheetModelData = useCallback(async () => {
     if (!scene) throw new Error('no scene');
     const { buildMassingData } = await import('./ui/massingData');
     return buildMassingData(displayElements, {
+      style: archStyle,
       ...(scene.parcel?.polygons[0]?.[0] ? { parcelRing: scene.parcel.polygons[0][0].map(p => scene.frame.fromFeet(p)) } : {}),
       ...(neighbors?.buildings ? { contextBuildings: neighbors.buildings } : {}),
       ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
       ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
       treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
     });
-  }, [scene, displayElements, neighbors]);
+  }, [scene, displayElements, neighbors, archStyle]);
   const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
     if (!scene) throw new Error('no scene');
     const [{ renderPlanImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
@@ -3002,6 +3005,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const b = data.toLocal(scene.frame.fromFeet([layout.ground.maxX, layout.ground.maxY]));
     return renderPlanImage({ data, bounds: { minX: a[0] ?? 0, minY: a[1] ?? 0, maxX: b[0] ?? 0, maxY: b[1] ?? 0 }, widthPx });
   }, [scene, sheetModelData]);
+  // the photoreal pass over the sheet's rendering: the picture goes to the app's own function
+  const paintSheetView = useCallback(async (image: string): Promise<string> => {
+    if (!scene) throw new Error('no scene');
+    const { requestPhotoreal, describeScene } = await import('./render3d/photoreal');
+    return (await requestPhotoreal({ image, view: 'aerial', style: archStyle, ...describeScene(scene) })).image;
+  }, [scene, archStyle]);
   const renderSheetView = useCallback(async (widthPx: number, heightPx: number): Promise<string> => {
     const [{ renderAerialImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
     return renderAerialImage({ data, widthPx, heightPx });
@@ -3885,7 +3894,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       </div>
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} />
       )}
       {exportOpen && (
         <ExportReport

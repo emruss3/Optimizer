@@ -65,8 +65,24 @@ const colours = page => page.evaluate(() => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, recordVideo: { dir: out, size: { width: 1152, height: 720 } } });
   const page = await ctx.newPage();
+  page.setDefaultTimeout(120000);
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
+  // the photoreal pass: a signed-in user, and the app's function stood in for.
+  // The stand-in records what the app sends and returns a small picture.
+  await page.addInitScript(() => {
+    localStorage.setItem('kissy-auth', JSON.stringify({
+      access_token: 'check-session-token', token_type: 'bearer', expires_in: 86400, expires_at: Math.floor(Date.now() / 1000) + 86400,
+      refresh_token: 'check-refresh', user: { id: 'check-user', aud: 'authenticated', role: 'authenticated', email: 'check@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z' },
+    }));
+  });
+  const PAINTED = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0isAAAAFUlEQVR4nGP8z8Dwn4EBB2AcqEoA6oQGAeu1fJkAAAAASUVORK5CYII=';
+  const sent = [];
+  await page.route('**/api/photoreal', async route => {
+    const req = route.request();
+    sent.push({ auth: req.headers().authorization, body: JSON.parse(req.postData() || '{}') });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ image: PAINTED, model: 'stand-in' }) });
+  });
 
   await openPlanner(page);
   const scene = await page.evaluate(() => window.__planEvidence?.scene ?? null);
@@ -95,6 +111,33 @@ const colours = page => page.evaluate(() => {
   await page.locator('[data-testid="camera-iso"]').click();
   await page.waitForTimeout(2000);
   check((await colours(page)) > 60, 'the cameras (Street, Top, Fit site, Aerial) each leave a picture');
+  // the buildings can be shown in four styles: a change redraws them, keeps the camera and the facts, and is remembered
+  const picker = page.locator('[data-testid="arch-style"]');
+  check((await picker.count()) === 1 && (await picker.inputValue()) === 'mansard' && (await picker.locator('option').count()) === 4, 'the 3D view offers four styles and opens in the first');
+  const signature = () => page.evaluate(() => {
+    const c = document.querySelector('[data-testid="massing-3d"] canvas');
+    const t = document.createElement('canvas');
+    t.width = 64; t.height = 40;
+    const x = t.getContext('2d');
+    x.drawImage(c, 0, 0, 64, 40);
+    return Array.from(x.getImageData(0, 0, 64, 40).data).filter((_, i) => i % 4 !== 3).map(v => v >> 4);
+  });
+  const far = (a, b) => a.reduce((n, v, i) => n + (Math.abs(v - b[i]) > 1 ? 1 : 0), 0) / a.length;
+  const asMansard = await signature();
+  for (const style of ['farmhouse', 'modern', 'heritage']) {
+    await picker.selectOption(style);
+    await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(6000);
+    const now = await signature();
+    const moved = far(asMansard, now);
+    check((await picker.inputValue()) === style && moved > 0.004 && moved < 0.25, `the ${style} style redraws the buildings from the same camera (${(moved * 100).toFixed(1)}% of the picture changed)`);
+    await view.screenshot({ path: path.join(out, `model_style_${style}.png`) });
+  }
+  check((await page.evaluate(() => localStorage.getItem('pp.archStyle'))) === 'heritage', 'the choice of style is kept on this device');
+  await picker.selectOption('mansard');
+  await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(5000);
+  check(far(asMansard, await signature()) < 0.02, 'and the first style comes back as it was');
   // the rendering fills the window on request, and Escape gives the workspace back
   await page.locator('[data-testid="render-present"]').click();
   await page.waitForTimeout(2500);
@@ -104,8 +147,21 @@ const colours = page => page.evaluate(() => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1500);
   check((await view.count()) === 1 && (await view.getAttribute('data-present').catch(() => null)) === 'false', 'Escape returns from Present, and the workspace stays open');
+  // the photoreal pass from the 3D view
+  await page.locator('[data-testid="render-photoreal"]').click();
+  await page.waitForSelector('[data-testid="photoreal-image"]', { timeout: 60000 });
+  check((await page.locator('[data-testid="photoreal-image"]').getAttribute('src')) === PAINTED, 'Photoreal shows the picture the image service returns');
+  check(/AI impression/.test((await page.locator('[data-testid="photoreal-note"]').textContent()) ?? ''), 'and labels it an AI impression, not a design');
+  const first = sent[0];
+  check(!!first && first.auth === 'Bearer check-session-token', 'the request carries the user\'s session');
+  check(!!first && Object.keys(first.body).sort().join() === 'image,product,stories,style,view' && /^data:image\/jpeg;base64,/.test(first.body.image), `only the picture and four fixed words are sent (${first ? Object.keys(first.body).sort().join() : 'nothing'})`);
+  check(!!first && first.body.product === 'apartments' && first.body.stories === 4 && first.body.view === 'aerial' && first.body.style === 'mansard', `the scene is described from fixed lists: ${first ? [first.body.product, first.body.stories, first.body.view, first.body.style].join(', ') : ''}`);
+  check(!!first && !/MEHARRY|488278/i.test(JSON.stringify({ ...first.body, image: '' })), 'no address or parcel number is in the request');
+  await page.screenshot({ path: path.join(out, 'photoreal_view.png') });
+  await page.locator('[data-testid="photoreal-back"]').click();
+  check((await page.locator('[data-testid="photoreal-view"]').count()) === 0, 'Back to model returns to the rendering');
   await page.locator('[data-testid="scene-select-A"]').click();
-  await page.waitForSelector('[data-testid="scene-inspector"]', { timeout: 5000 });
+  await page.waitForSelector('[data-testid="scene-inspector"]', { timeout: 90000 });
   const field = name => page.locator(`[data-testid="scene-inspector"] [data-field="${name}"]`).first().evaluate(n => n.childNodes[0].textContent.trim());
   const insp = { id: await field('id'), tag: await field('tag'), floors: await field('floors'), footprint: await field('footprint'), height: await field('height') };
   const heightLabel = await page.locator('[data-testid="scene-inspector"] [data-field="height"]').evaluate(n => n.previousElementSibling.textContent.trim());
@@ -168,6 +224,12 @@ const colours = page => page.evaluate(() => {
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(out, 'sheet_A-02_11x17.png') });
   sheets.view = await a02.innerHTML();
+  // the same pass on the sheet
+  await page.locator('[data-testid="sheet-photoreal"]').click();
+  const paintedSheet = await page.waitForSelector('[data-testid="sheet-a02"][data-sheet-style="photoreal"]', { timeout: 60000 }).then(() => true).catch(() => false);
+  check(paintedSheet && /AI IMPRESSION/.test((await a02.textContent()) ?? ''), 'sheet A-02 takes the photoreal picture and says it is an AI impression');
+  await page.locator('[data-testid="sheet-picture-model"]').click();
+  check((await a02.getAttribute('data-sheet-style')) === 'rendered', 'and the model rendering is one click back');
   await page.locator('[data-testid="sheet-tab-plan"]').click();
   await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 60000 });
   await page.locator('[data-testid="sheet-style-drawn"]').click();

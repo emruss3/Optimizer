@@ -39,6 +39,8 @@ export interface SheetTitle {
 /** A picture of the site from above (render3d/still) to lay the linework over. */
 export interface SheetUnderlay {
   href: string;
+  /** True when an image model painted it: the sheet then says so. */
+  ai?: boolean | undefined;
 }
 
 export interface SheetLayout {
@@ -606,7 +608,7 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   const by = image.y + image.h;
   out.push(`<line x1="${M}" y1="${r2(by)}" x2="${r2(W - M)}" y2="${r2(by)}" stroke="${INK}" stroke-width="1"/>`);
   const tx = M + 16;
-  out.push(`<text x="${tx}" y="${r2(by + 22)}" font-size="6.2" font-weight="700" letter-spacing="1.1" fill="#7a8087">AERIAL VIEW · CONCEPT</text>`);
+  out.push(`<text x="${tx}" y="${r2(by + 22)}" font-size="6.2" font-weight="700" letter-spacing="1.1" fill="#7a8087">${picture?.ai ? 'AERIAL VIEW · AI IMPRESSION' : 'AERIAL VIEW · CONCEPT'}</text>`);
   out.push(`<text x="${tx}" y="${r2(by + 42)}" font-size="16" font-weight="700" fill="${INK}">${esc(title.project)}</text>`);
   if (title.subtitle) out.push(`<text x="${tx}" y="${r2(by + 54)}" font-size="7.5" fill="#4b5158">${esc(title.subtitle.length > 110 ? title.subtitle.slice(0, 108) + '…' : title.subtitle)}</text>`);
   // the scheme's figures, from the site data the workspace states
@@ -619,7 +621,9 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   });
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-02</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
-  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the buildings shown in white are illustration, not a design.</text>`);
+  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">${picture?.ai
+    ? "An AI impression painted over a render of the plan. The layout is the plan's. Materials, planting, sky and surroundings are invented, and a detail may differ from the plan. Not a design."
+    : "Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design."}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H };
 }

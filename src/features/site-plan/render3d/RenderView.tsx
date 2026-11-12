@@ -9,6 +9,9 @@ import { sunPosition, SUN_DATES } from '../ui/sunPosition';
 import { SceneInspector } from '../ui/SceneInspector';
 import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
+import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
+import { useArchStyle } from '../ui/archStyle';
+import { ArchStylePicker } from '../ui/ArchStylePicker';
 
 export interface RenderViewProps {
   elements: Element[];
@@ -41,6 +44,7 @@ interface Rig {
  * illustration, and the view says so.
  */
 export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, neighbors, edgeClassifications, scene, selectedId, onSelect, onFail }) => {
+  const archStyle = useArchStyle();
   const data = useMemo(
     () =>
       buildMassingData(elements, {
@@ -50,14 +54,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
         ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
         frontEdges: (edgeClassifications ?? []).filter(e => e.type === 'front' && e.edge.length >= 2).map(e => [e.edge[0], e.edge[1]] as never),
         treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
+        style: archStyle,
       }),
-    [elements, parcelRing, neighbors, edgeClassifications, scene],
+    [elements, parcelRing, neighbors, edgeClassifications, scene, archStyle],
   );
 
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const rig = useRef<Rig | null>(null);
   const [ready, setReady] = useState(false);
+  // counts the models built: a new one needs its sun and its selection set again
+  const [built, setBuilt] = useState(0);
   const [present, setPresent] = useState(false);
   useEffect(() => {
     if (!present) return;
@@ -67,9 +74,13 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     return () => window.removeEventListener('keydown', onKey, true);
   }, [present]);
   const [sunKey, setSunKey] = useState('mar21');
-  const [sunHour, setSunHour] = useState(15.5);
+  const [sunHour, setSunHour] = useState(16.5);
   const fail = useRef(onFail);
   fail.current = onFail;
+  // where the camera stood, so a change of style redraws the same view of the same plan
+  const revision = useRef(scene.identity.revision);
+  revision.current = scene.identity.revision;
+  const stood = useRef<{ revision: string; position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -91,7 +102,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       t.set(0, E * 0.05, 0);
       r.camera.position.copy(t).addScaledVector(dir, E * 3.3);
     } else {
-      const [el, az, dist, lift] = shot === 'top' ? [89.2, 0, 3.4, 0] : shot === 'street' ? [5, aerial.current - 14, 1.75, 0.12] : [30, aerial.current, 3.2, 0.05];
+      const [el, az, dist, lift] = shot === 'top' ? [89.2, 0, 3.4, 0] : shot === 'street' ? [5, aerial.current - 14, 1.75, 0.12] : [18, aerial.current, 2.5, 0.46];
       const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
       t.set(0, E * lift, 0);
       r.camera.position.set(t.x + E * dist * Math.cos(e) * Math.sin(a), t.y + E * dist * Math.sin(e), t.z + E * dist * Math.cos(e) * Math.cos(a));
@@ -163,8 +174,22 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     cv.addEventListener('pointerdown', onDown);
     cv.addEventListener('pointerup', onUp);
     rig.current = { stage, model, camera, controls, request, highlight: null };
+    const was = stood.current;
+    if (was && was.revision === revision.current) {
+      camera.position.copy(was.position);
+      controls.target.copy(was.target);
+      controls.update();
+    } else {
+      frame('iso');
+    }
     setReady(true);
+    setBuilt(n => n + 1);
+    // leaf and bark textures arrive a moment after the model: draw again when they have
+    const later = [250, 800, 2000, 4000].map(ms => window.setTimeout(request, ms));
+    void model.ready.then(request);
     return () => {
+      later.forEach(t => window.clearTimeout(t));
+      stood.current = { revision: revision.current, position: camera.position.clone(), target: controls.target.clone() };
       setReady(false);
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
@@ -175,9 +200,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       model.dispose();
       rig.current = null;
     };
-  }, [data]);
-
-  useEffect(() => { if (ready) frame('iso'); }, [ready, frame]);
+  }, [data, frame]);
 
   useEffect(() => {
     const r = rig.current;
@@ -186,7 +209,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     // below the horizon the view keeps a low sun rather than going dark
     r.stage.setSun(sun.altitudeDeg > 4 ? [-dx, -dy, -dz] : [-dx, -dy, 0.08]);
     r.request();
-  }, [sun, ready]);
+  }, [sun, ready, built]);
 
   // the selected building: a warm tint over its solid
   useEffect(() => {
@@ -205,7 +228,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       r.highlight = mesh;
     }
     r.request();
-  }, [selectedId, ready]);
+  }, [selectedId, ready, built]);
 
   const snapshot = useCallback(() => {
     const r = rig.current, cv = canvas.current;
@@ -224,6 +247,28 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     r.request();
   }, []);
 
+  // The photoreal pass: this view, repainted as a photograph by an image
+  // model. The picture is sent to the app's own function; nothing else is.
+  const [photo, setPhoto] = useState<{ status: 'idle' | 'working' | 'done' | 'error'; image?: string; model?: string; error?: string }>({ status: 'idle' });
+  const makePhotoreal = useCallback(async () => {
+    const r = rig.current, cv = canvas.current;
+    if (!r || !cv) return;
+    r.stage.render(r.camera);
+    const image = canvasToJpeg(cv);
+    // a camera within 10 degrees of the ground is a street view
+    const off = r.camera.position.clone().sub(r.controls.target);
+    const view = Math.asin(Math.max(-1, Math.min(1, off.y / Math.max(1e-6, off.length())))) < (10 * Math.PI) / 180 ? 'street' : 'aerial';
+    setPhoto({ status: 'working' });
+    try {
+      const out = await requestPhotoreal({ image, view, style: archStyle, ...describeScene(scene) });
+      setPhoto({ status: 'done', image: out.image, model: out.model });
+    } catch (err) {
+      setPhoto({ status: 'error', error: err instanceof Error ? err.message : String(err) });
+    }
+  }, [scene, archStyle]);
+  // a new plan, or the same plan in another style, is a new picture
+  useEffect(() => { setPhoto({ status: 'idle' }); }, [scene.identity.revision, archStyle]);
+
   const tagged = scene.buildings.filter(b => b.tagOnPlan);
   const selected = selectedId ? scene.buildings.find(b => b.id === selectedId) ?? null : null;
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
@@ -237,6 +282,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
         </select>
         <input type="range" min={6} max={19} step={0.5} value={sunHour} onChange={e => setSunHour(Number(e.target.value))} className="w-24" data-testid="sun-hour" aria-label="Hour of the sun study" />
         <span className="tabular-nums w-20">{String(Math.floor(sunHour)).padStart(2, '0')}:{sunHour % 1 ? '30' : '00'} · {Math.round(sun.altitudeDeg)}°</span>
+        <span className="w-px h-4 bg-gray-200" aria-hidden="true" />
+        <ArchStylePicker />
       </div>
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
         <button className={btn} onClick={() => frame('iso')} data-testid="camera-iso">Aerial</button>
@@ -245,6 +292,15 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
         <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="Bring the whole site back into view, keeping the angle">Fit site</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
+        <button
+          className="px-1.5 py-0.5 rounded bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50"
+          onClick={makePhotoreal}
+          disabled={photo.status === 'working'}
+          data-testid="render-photoreal"
+          title="Repaint this view as a photograph. Sends this picture, and only this picture, to an image model."
+        >
+          {photo.status === 'working' ? 'Painting…' : 'Photoreal'}
+        </button>
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
         <button onClick={snapshot} className="px-1.5 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700" title="Save this view as a picture, at twice the screen's resolution" data-testid="massing-snapshot">PNG</button>
       </div>
@@ -269,7 +325,33 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/85 rounded px-2 py-1 pointer-events-none">
         Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative
       </div>
-      {selected && <SceneInspector building={selected} onClose={onSelect ? () => onSelect(null) : undefined} className="absolute right-2 bottom-2" />}
+      {selected && photo.status !== 'done' && <SceneInspector building={selected} onClose={onSelect ? () => onSelect(null) : undefined} className="absolute right-2 bottom-2" />}
+      {photo.status === 'working' && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/35 text-white text-sm" role="status" data-testid="photoreal-working">
+          <span className="bg-slate-900/80 rounded-lg px-4 py-2">Painting the photoreal picture. This takes about a minute.</span>
+        </div>
+      )}
+      {photo.status === 'error' && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-10 max-w-[80%] bg-white rounded-lg shadow-md border border-amber-300 px-3 py-2 text-xs text-amber-900 flex items-center gap-3" role="alert" data-testid="photoreal-error">
+          <span>{photo.error}</span>
+          <button className="text-gray-500 hover:text-gray-900" onClick={() => setPhoto({ status: 'idle' })} aria-label="Dismiss">×</button>
+        </div>
+      )}
+      {photo.status === 'done' && photo.image && (
+        <div className="absolute inset-0 bg-black flex items-center justify-center" data-testid="photoreal-view">
+          <img src={photo.image} alt="Photoreal impression of this view" className="max-w-full max-h-full object-contain" data-testid="photoreal-image" />
+          <div className="absolute bottom-2 left-2 right-2 flex items-end justify-between gap-3">
+            <p className="text-[11px] leading-snug text-white bg-black/60 rounded px-2 py-1 max-w-[70%]" data-testid="photoreal-note">
+              An AI impression of this view. The layout is the plan's. Materials, planting, sky and surroundings are invented by the image model, and a detail may differ from the plan. Not a design.
+            </p>
+            <div className="flex items-center gap-1 text-[11px]">
+              <a href={photo.image} download="photoreal.jpg" className="px-2 py-1 rounded bg-white text-gray-900 hover:bg-gray-100" data-testid="photoreal-download">Download</a>
+              <button className="px-2 py-1 rounded bg-white text-gray-900 hover:bg-gray-100" onClick={makePhotoreal} data-testid="photoreal-again">Try again</button>
+              <button className="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={() => setPhoto({ status: 'idle' })} data-testid="photoreal-back">Back to model</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

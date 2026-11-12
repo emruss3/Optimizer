@@ -73,24 +73,46 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   (u.rayleigh as { value: number }).value = 2.1;
   (u.mieCoefficient as { value: number }).value = 0.003;
   (u.mieDirectionalG as { value: number }).value = 0.8;
-  // What the camera sees of the sky is a painted dome: a soft blue overhead
-  // falling to a pale, warm horizon. The physical sky above only lights the
-  // model; shown through the tone curve it burns out to white.
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(E * 36, 32, 16), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, toneMapped: false, depthWrite: false }));
-  {
-    const p = dome.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const c = new Float32Array(p.count * 3);
-    const zenith = new THREE.Color(0x2f74cf), mid = new THREE.Color(0x86b8ee), horizon = new THREE.Color(0xdcebf5), tmp = new THREE.Color();
-    for (let i = 0; i < p.count; i++) {
-      const t = Math.max(0, p.getY(i) / (E * 36));
-      if (t < 0.22) tmp.copy(horizon).lerp(mid, t / 0.22); else tmp.copy(mid).lerp(zenith, Math.min(1, (t - 0.22) / 0.6));
-      c[i * 3] = tmp.r; c[i * 3 + 1] = tmp.g; c[i * 3 + 2] = tmp.b;
-    }
-    dome.geometry.setAttribute('color', new THREE.BufferAttribute(c, 3));
-  }
+  // What the camera sees of the sky: a dome with a blue that deepens overhead,
+  // a pale haze at the horizon, a warm glow round the sun and drifting cloud.
+  // (The physical sky above only lights the model; shown through the tone
+  // curve it burns out to white.)
+  const skyUniforms = { sunDir: { value: new THREE.Vector3(0.4, 0.5, 0.3) } };
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(E * 36, 48, 24),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false, uniforms: skyUniforms,
+      vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `
+        uniform vec3 sunDir; varying vec3 vDir;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+        float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 6; i++) { s += a * noise(p); p = p * 2.03 + vec2(17.3, 9.1); a *= 0.5; } return s; }
+        void main() {
+          vec3 d = normalize(vDir);
+          float h = max(d.y, 0.0);
+          vec3 zenith = vec3(0.07, 0.22, 0.56), mid = vec3(0.24, 0.46, 0.80), horizon = vec3(0.66, 0.76, 0.84);
+          vec3 sky = mix(horizon, mid, smoothstep(0.0, 0.2, h));
+          sky = mix(sky, zenith, smoothstep(0.16, 0.85, h));
+          float sd = max(dot(d, normalize(sunDir)), 0.0);
+          sky += vec3(1.0, 0.62, 0.3) * (pow(sd, 5.0) * 0.16 + pow(sd, 48.0) * 0.35);
+          vec2 uv = d.xz / (d.y + 0.14);
+          float c = fbm(uv * 1.15 + vec2(3.1, 1.7));
+          float c2 = fbm(uv * 3.3 - vec2(1.3, 4.2));
+          float cover = smoothstep(0.5, 0.74, c * 0.78 + c2 * 0.3) * smoothstep(0.015, 0.11, d.y);
+          float under = smoothstep(0.35, 0.85, fbm(uv * 2.1 + 0.4));
+          vec3 cloud = mix(vec3(0.92, 0.91, 0.89), vec3(0.5, 0.55, 0.63), under * 0.55);
+          cloud += vec3(1.0, 0.72, 0.42) * pow(sd, 3.0) * 0.2;
+          vec3 col = mix(sky, cloud, cover * 0.9);
+          col = mix(col, horizon, smoothstep(0.09, 0.0, d.y) * 0.8);
+          gl_FragColor = vec4(col, 1.0);
+        }`,
+    }),
+  );
   if (!opts.studio) scene.add(dome);
   else scene.background = new THREE.Color(0xe9ebe2);
-  if (!opts.studio) scene.fog = new THREE.Fog(0xdcebf5, E * 7, E * 34);
+  if (!opts.studio) scene.fog = new THREE.Fog(new THREE.Color().setRGB(0.66, 0.76, 0.84), E * 3.5, E * 22);
 
   const hemi = new THREE.HemisphereLight(0xdbe8f7, 0x9a9c86, opts.studio ? 1.0 : 0.85);
   const sun = new THREE.DirectionalLight(0xfff1dd, opts.studio ? 4.2 : 4.6);
@@ -115,6 +137,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
     const d = new THREE.Vector3(toSun[0], toSun[2], -toSun[1]).normalize();
     if (d.y < 0.03) d.y = 0.03;
     (u.sunPosition as { value: THREE.Vector3 }).value.copy(d);
+    skyUniforms.sunDir.value.copy(d);
     sun.position.copy(d).multiplyScalar(E * 6);
     sun.target.position.set(0, 0, 0);
     // a low sun is warmer and weaker
@@ -143,6 +166,9 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
       ao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.4, thickness: 1.6, scale: 1.5, samples: 16, distanceFallOff: 1, screenSpaceRadius: false });
       ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
       ao.blendIntensity = 1;
+      // the pass draws everything as a solid to find where things meet; what is marked as mostly air is left out of that
+      const hide = ao.overrideVisibility.bind(ao);
+      ao.overrideVisibility = () => { hide(); scene.traverse(o => { if (o.userData.noOcclusion) o.visible = false; }); };
       composer.addPass(renderPass);
       composer.addPass(ao);
       composer.addPass(new OutputPass());

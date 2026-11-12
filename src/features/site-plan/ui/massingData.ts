@@ -5,7 +5,7 @@ import { createGroundFrame } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
 import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
-import { buildArchitecture } from './architecture';
+import { buildArchitecture, DEFAULT_STYLE, type ArchStyle } from './architecture';
 import { stallStripes } from '../scene/sheetSvg';
 import { seeded } from '../scene/landscape';
 
@@ -79,6 +79,8 @@ export function buildMassingData(
     treePoints?: Array<{ at: number[]; radiusM: number }>;
     /** Street centre lines of the block (3857). */
     contextRoads?: Array<{ line: { coordinates: number[][] } }>;
+    /** The architectural style the buildings are drawn in. It changes how they look and nothing else. */
+    style?: ArchStyle;
   }
 ): {
   polygons: MassingPolygon[];
@@ -245,22 +247,24 @@ export function buildMassingData(
   const pavement: Array<[number, number]> = drawable
     .filter(el => el.type === 'circulation' || el.type === 'parking-aisle')
     .flatMap(el => densify((el.geometry.coordinates[0] ?? []).map(m)));
+  const style = ground?.style ?? DEFAULT_STYLE;
+  const outlines = buildings.map(el => (el.geometry.coordinates[0] ?? []).map(m));
   const draw = (scale: number) => {
     const slabs: RenderSlab[] = [], windows: RenderWindow[] = [], roofs: RenderWindow[] = [];
     const shrubs: Array<[number, number, number]> = [];
-    for (const el of buildings) {
+    buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
       const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
-      const a = buildArchitecture(el.id, label, rings, buildingUse(el), heightOf(el), pavement, scale);
+      const a = buildArchitecture(el.id, label, rings, buildingUse(el), heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i));
       slabs.push(...a.slabs);
       windows.push(...a.glass);
       roofs.push(...a.flats);
       shrubs.push(...a.shrubs);
-    }
+    });
     return { slabs, windows, roofs, shrubs };
   };
   let model = draw(1);
-  for (let scale = 1.5; model.windows.length + model.roofs.length > MAX_WINDOWS * 3 && scale <= 6; scale *= 1.5) model = draw(scale);
+  for (let scale = 1.5; model.windows.length + model.roofs.length + model.slabs.length > MAX_WINDOWS * 4 && scale <= 6; scale *= 1.5) model = draw(scale);
   const { slabs, windows, roofs, shrubs } = model;
   // walks and curbs follow the plan's own shapes
   const walks: Array<{ path: number[][]; widthM: number; strip: boolean }> = [];
