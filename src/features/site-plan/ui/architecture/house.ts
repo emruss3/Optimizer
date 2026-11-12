@@ -95,7 +95,11 @@ export function reachOf(w: Wall, pavement: V2[], s: number, except: [number, num
 /** A step at a door and a walk from it to the pavement. */
 export function approach(k: Kit, w: Wall, s: number, toPavement: number | null, from = 0.06): void {
   k.box(w, s - 0.85, s + 0.85, from, from + 0.36, 0, FOUND * 0.55, PORCH);
-  if (toPavement != null && toPavement > 2.4) k.box(w, s - 0.6, s + 0.6, from + 0.36, Math.min(toPavement + 0.3, 14), 0, 0.2, WALK);
+  if (toPavement != null && toPavement > 2.4) {
+    k.box(w, s - 0.6, s + 0.6, from + 0.36, Math.min(toPavement + 0.3, 14), 0, 0.2, WALK);
+    // a mailbox where the walk meets the road
+    if (toPavement < 13) k.mailbox(w, s + 1.0, toPavement - 0.7);
+  }
 }
 
 /**
@@ -179,6 +183,9 @@ function gabled({ k, f, W, D, lv, p, style, garage: wanted, reach }: Lot): void 
   const sd = s0 + bay / 2;
   const side = bay >= 2.5 ? 0.34 : 0;
   k.door(main.front, sd - side / 2, 0.95, FOUND + 0.05, 2.05, { frame: p.frame, leaf: p.door, lite: true, sidelight: side, transom: upper });
+  k.lamp(main.front, sd - side / 2 - 0.75, FOUND + 2.0);
+  k.downspout(main.right, 0.12, FOUND, zT - 0.05, p.trim);
+  k.downspout(main.back, 0.12, FOUND, zT - 0.05, p.trim);
   const panesOf = (i: number) => (i === 0 ? 1 : bay >= 3.3 ? 3 : bay >= 2.3 ? 2 : 1);
   for (let i = 1; i < bays; i++) k.windows(main.front, s0 + bay * (i + 0.5), panesOf(i), 0.82, FOUND + 0.7, FOUND + 2.1, spec(p, true));
   for (let st = 1; st < n; st++) {
@@ -191,6 +198,7 @@ function gabled({ k, f, W, D, lv, p, style, garage: wanted, reach }: Lot): void 
     if (garage) {
       const gw = garage === 2 ? 4.9 : Math.min(2.75, wb - 0.9);
       k.garage(fw, wb / 2 - gw / 2, wb / 2 + gw / 2, 0.04, 2.15, { frame: p.trim, leaf: p.garage, lites: p.garageLites });
+      for (const s of [wb / 2 - gw / 2 - 0.3, wb / 2 + gw / 2 + 0.3]) if (s > 0.15 && s < wb - 0.15) k.lamp(fw, s, 2.05);
       if (style !== 'heritage') {
         k.box(fw, wb / 2 - gw / 2 - 0.25, wb / 2 + gw / 2 + 0.25, 0, 0.6, 2.42, 0.07, p.roof2);
         for (const s of [wb / 2 - gw / 2 - 0.12, wb / 2 + gw / 2 + 0.12]) k.box(fw, s - 0.05, s + 0.05, 0, 0.5, 2.3, 0.12, p.post);
@@ -262,6 +270,7 @@ function mansard({ k, f, W, D, lv, p, garage, reach }: Lot): void {
     else if (c.kind === 'door') {
       doorAt = c.s;
       k.door(fw, c.s, 0.95, FOUND + 0.05, 2.1, { frame: p.frame, leaf: p.door, lite: true, transom: true });
+      k.lamp(fw, c.s - 0.8, FOUND + 2.0);
       // a balcony over the door on a taller house, a flat canopy on a two-story one
       if (n >= 3) k.balcony(fw, c.s - 1.35, c.s + 1.35, 1.15, z1 + 0.04, { slab: p.trim, rail: p.railKind, railMat: p.rail });
       else k.box(fw, c.s - 0.95, c.s + 0.95, 0, 0.85, FOUND + 2.72, 0.08, p.roof2);
