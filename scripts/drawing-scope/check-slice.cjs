@@ -22,7 +22,7 @@ const check = (ok, what) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if
 async function openPlanner(page, query = '') {
   await page.goto('http://localhost:5199/' + query, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(2500);
-  const trial = page.getByText('Start Free Trial').first();
+  const trial = page.locator('[data-testid="landing-start"]').first();
   if (await trial.isVisible().catch(() => false)) { await trial.click(); await page.waitForTimeout(2500); }
   const skip = page.getByText('Skip Tour').first();
   if (await skip.isVisible().catch(() => false)) { await skip.click(); await page.waitForTimeout(800); }

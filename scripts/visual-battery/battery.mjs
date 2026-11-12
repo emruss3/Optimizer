@@ -437,7 +437,7 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
     await page.goto('http://localhost:5199/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2500);
     // Past the landing page into the app shell.
-    const trial = page.getByText('Start Free Trial').first();
+    const trial = page.locator('[data-testid="landing-start"]').first();
     if (await trial.isVisible().catch(() => false)) {
       await trial.click();
       await page.waitForTimeout(2500);

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import MapUnavailable from './MapUnavailable';
 import { MAPBOX_TOKEN, MAP_STYLE, PARCELS_TILE_URL, NASHVILLE_CENTER } from '../lib/mapbox';
 import mapboxgl from 'mapbox-gl';
 import { useActiveProject } from '../store/project';
@@ -414,18 +415,7 @@ const MapView = React.memo(function MapView({
   }, []);
 
   if (!MAPBOX_TOKEN) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-gray-100">
-        <div className="text-center p-8">
-          <h3 className="text-lg font-semibold text-gray-800 mb-2">
-            Mapbox Token Required
-          </h3>
-          <p className="text-gray-600">
-            Please add your Mapbox API key to the .env file
-          </p>
-        </div>
-      </div>
-    );
+    return <MapUnavailable devHint="No map token is set. Add VITE_MAPBOX_TOKEN to the environment." />;
   }
 
   if (containerError) {
@@ -444,18 +434,7 @@ const MapView = React.memo(function MapView({
   }
 
   if (mapError === 'invalid-token') {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-red-50">
-        <div className="text-center p-8 max-w-md">
-          <h3 className="text-lg font-semibold text-red-800 mb-2">
-            Invalid Mapbox Token
-          </h3>
-          <p className="text-red-700 mb-4">
-            Your Mapbox access token is invalid or expired.
-          </p>
-        </div>
-      </div>
-    );
+    return <MapUnavailable devHint="The map token was rejected. Check VITE_MAPBOX_TOKEN." />;
   }
 
   return (
