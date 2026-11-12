@@ -11,6 +11,7 @@ import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
+import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 
 export interface RenderViewProps {
@@ -29,6 +30,8 @@ export interface RenderViewProps {
 type Shot = 'iso' | 'top' | 'street';
 
 interface Rig {
+  /** Set once the sun has been placed for this model: nothing is drawn before it. */
+  lit: boolean;
   stage: Stage;
   model: SiteModel;
   camera: THREE.PerspectiveCamera;
@@ -45,6 +48,7 @@ interface Rig {
  */
 export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, neighbors, edgeClassifications, scene, selectedId, onSelect, onFail }) => {
   const archStyle = useArchStyle();
+  const quality = useMemo(() => renderQuality(), []);
   const data = useMemo(
     () =>
       buildMassingData(elements, {
@@ -125,9 +129,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     const el = host.current, cv = canvas.current;
     if (!el || !cv) return;
     let model: SiteModel, stage: Stage;
+    const light = quality === 'light';
     try {
-      model = buildSiteModel(data);
-      stage = createStage(cv, model, { width: Math.max(2, el.clientWidth), height: Math.max(2, el.clientHeight), preserve: true });
+      model = buildSiteModel(data, { light });
+      stage = createStage(cv, model, { width: Math.max(2, el.clientWidth), height: Math.max(2, el.clientHeight), preserve: true, light });
     } catch (err) {
       fail.current(err instanceof Error ? err : new Error(String(err)));
       return;
@@ -141,11 +146,16 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     controls.minDistance = 8;
     controls.maxDistance = E * 12;
     let raf = 0;
+    let frames = 0;
     const draw = () => {
       raf = 0;
+      // a frame before the sun is placed would be drawn in the dark and thrown away
+      if (!rig.current?.lit) return;
       controls.update();
       try {
+        const t = performance.now();
         stage.render(camera);
+        if (frames++ < 3 && (window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] frame ${frames}: ${Math.round(performance.now() - t)} ms`);
       } catch (err) {
         fail.current(err instanceof Error ? err : new Error(String(err)));
       }
@@ -173,7 +183,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     };
     cv.addEventListener('pointerdown', onDown);
     cv.addEventListener('pointerup', onUp);
-    rig.current = { stage, model, camera, controls, request, highlight: null };
+    rig.current = { lit: false, stage, model, camera, controls, request, highlight: null };
     const was = stood.current;
     if (was && was.revision === revision.current) {
       camera.position.copy(was.position);
@@ -184,11 +194,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     }
     setReady(true);
     setBuilt(n => n + 1);
-    // leaf and bark textures arrive a moment after the model: draw again when they have
-    const later = [250, 800, 2000, 4000].map(ms => window.setTimeout(request, ms));
+    // leaf and bark pictures arrive a moment after the model: draw again when they have
     void model.ready.then(request);
     return () => {
-      later.forEach(t => window.clearTimeout(t));
       stood.current = { revision: revision.current, position: camera.position.clone(), target: controls.target.clone() };
       setReady(false);
       if (raf) cancelAnimationFrame(raf);
@@ -200,7 +208,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame]);
+  }, [data, frame, quality]);
 
   useEffect(() => {
     const r = rig.current;
@@ -208,6 +216,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     const [dx, dy, dz] = sun.direction;
     // below the horizon the view keeps a low sun rather than going dark
     r.stage.setSun(sun.altitudeDeg > 4 ? [-dx, -dy, -dz] : [-dx, -dy, 0.08]);
+    r.lit = true;
     r.request();
   }, [sun, ready, built]);
 
@@ -274,7 +283,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
         <select value={sunKey} onChange={e => setSunKey(e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 bg-white" data-testid="sun-date" aria-label="Date of the sun study">
@@ -323,7 +332,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
         </div>
       )}
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/85 rounded px-2 py-1 pointer-events-none">
-        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative
+        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
       </div>
       {selected && photo.status !== 'done' && <SceneInspector building={selected} onClose={onSelect ? () => onSelect(null) : undefined} className="absolute right-2 bottom-2" />}
       {photo.status === 'working' && (

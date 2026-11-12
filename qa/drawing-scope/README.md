@@ -292,6 +292,23 @@ is illustration: the plan draws a lot line, not a fence.
   still now waits for the tree pictures to arrive.
 - The front walk stopped at the driveway's distance. It runs to the street.
 
+**A device with no graphics acceleration** (a remote desktop, a virtual
+machine, the CI runner) took 40 seconds to open the 3D view on the largest
+plans, and CI's fixture gate timed out on two of them. The view now draws one
+frame on opening instead of three or four, draws far neighbours plainly, and
+on such a device chooses a lighter picture of the same plan and says so.
+
+| 535 Main St, software rendering | Seconds to open |
+|---|---|
+| main | 8.0 |
+| this slice before the fix | 40 |
+| this slice, full picture forced | 17.7 |
+| this slice, lighter picture | 8.4 |
+
+**The photo function is closed by default.** Only accounts listed in
+`PHOTOREAL_ALLOWED_EMAILS` may call it; with no list nobody may. What the
+image service says on failure stays in the function's log.
+
 **The photoreal pass** (the Photoreal button and the A-02 toggle) is in this
 slice as plumbing: the function, the client, the labels and the tests. The
 instruction to the image model now names the style and says to keep the
@@ -315,8 +332,8 @@ The townhome engine's homes are 20 ft wide at 26 ft centres: detached narrow
 homes six feet apart. Each is drawn free on all four sides, the mansard
 wrapping round it (`app/app_townhomes_aerial.jpg`).
 
-Checks: 69 files, 762 tests pass; app type check 2,086, unchanged;
-`check-slice.cjs` 57 of 57. Evidence in `slice-4/`: `styles/` (each product
+Checks: 70 files, 764 tests pass; app type check 2,086, unchanged;
+`check-slice.cjs` 60 of 60. Evidence in `slice-4/`: `styles/` (each product
 in each style), `app/` (the app's own views and sheets), `check/`.
 
 ## Not done yet

@@ -6,6 +6,7 @@ import type { MassingData } from '../ui/massingData';
 import { buildSiteModel } from './siteScene';
 import { createStage } from './stage';
 import { sunPosition } from '../ui/sunPosition';
+import { renderQuality } from './quality';
 
 export interface PlanImageRequest {
   data: MassingData;
@@ -20,8 +21,9 @@ export async function renderPlanImage(req: PlanImageRequest): Promise<string> {
   const w = Math.max(1, bounds.maxX - bounds.minX), h = Math.max(1, bounds.maxY - bounds.minY);
   const widthPx = Math.round(Math.min(4096, req.widthPx));
   const heightPx = Math.round((widthPx * h) / w);
-  const model = buildSiteModel(data, { canopyOpacity: 0.9, clayContext: true });
-  const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, studio: true });
+  const light = renderQuality() === 'light';
+  const model = buildSiteModel(data, { canopyOpacity: 0.9, clayContext: true, light });
+  const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, studio: true, light });
   try {
     await model.ready;
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
@@ -50,8 +52,9 @@ export async function renderPlanImage(req: PlanImageRequest): Promise<string> {
 export async function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number }): Promise<string> {
   const { data } = req;
   const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
-  const model = buildSiteModel(data);
-  const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true });
+  const light = renderQuality() === 'light';
+  const model = buildSiteModel(data, { light });
+  const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, light });
   try {
     await model.ready;
     const E = model.extent;

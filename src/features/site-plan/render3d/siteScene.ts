@@ -134,6 +134,7 @@ function portrait(form: TreeForm): { picture: THREE.DataTexture; painted: Promis
   const paint = () => {
     const img = leafOf.map?.image as HTMLImageElement | undefined;
     if (!img) return;
+    const started = performance.now();
     // the leaf picture in four strengths of light, in the tree's own green
     const tint = leafOf.color;
     const shades = [0.62, 0.86, 1.1, 1.36].map(k => {
@@ -197,6 +198,7 @@ function portrait(form: TreeForm): { picture: THREE.DataTexture; painted: Promis
       }
     }
     texture.needsUpdate = true;
+    if ((window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] portrait of ${leaves.length} leaves painted in ${Math.round(performance.now() - started)} ms`);
   };
   return { picture: texture, painted: arrived(leafOf.map).then(ok => { if (ok) paint(); }) };
 }
@@ -241,6 +243,9 @@ export interface SiteModelOptions {
   /** Show the existing buildings as plain white solids on a bare ground: for
    *  a plan seen from above, where the surroundings must not compete. */
   clayContext?: boolean;
+  /** A lighter model of the same plan, for a device that draws on its processor
+   *  (render3d/quality): the site's trees as painted cards, no shrubs, plain neighbours. */
+  light?: boolean;
 }
 
 /** The style the existing houses round a site are drawn in: ordinary, and not the scheme's own. */
@@ -423,6 +428,9 @@ const WALK: RGBA = [214, 210, 200, 255];
 
 /** Build the model. `data` is what the massing view already computes. */
 export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): SiteModel {
+  const debug = typeof window !== 'undefined' && !!(window as unknown as { __renderDebug?: boolean }).__renderDebug;
+  const t0 = debug ? performance.now() : 0;
+  const lap = (what: string) => { if (debug) console.info(`[time] model: ${what} at ${Math.round(performance.now() - t0)} ms`); };
   const surfaces = new Surfaces();
   const root = new THREE.Group();
   root.rotation.x = -Math.PI / 2;          // z up in the model, y up on the stage
@@ -439,6 +447,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const reach = Math.max(1600, data.extent * 16);
   put('plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
   const neighbours: Array<{ ring: number[][]; minX: number; minY: number; maxX: number; maxY: number }> = [];
+  // how far from the middle of the site a neighbour is still drawn with its windows and roof
+  const detailReach = Math.max(110, data.extent * 0.95);
+  const FAR_WALLS: RGBA[] = [[206, 196, 176, 255], [186, 180, 170, 255], [150, 104, 88, 255], [198, 192, 184, 255], [164, 170, 172, 255], [214, 206, 188, 255]];
   if (!opts.noContext) {
     const streets: Array<[number, number]> = data.roads.flatMap(r => r.path.map(p => [p[0] ?? 0, p[1] ?? 0] as [number, number]));
     data.contextPolygons.forEach((c, n) => {
@@ -458,6 +469,15 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       neighbours.push({ ring: flat, minX, minY, maxX, maxY });
       if (!real) {
         put('plain|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), [238, 235, 228, 255]);
+        return;
+      }
+      // far from the site, and everywhere on a device that draws on its processor, a neighbour
+      // is its footprint at its height under a dark roof
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      if (opts.light || Math.max(Math.abs(cx), Math.abs(cy)) > detailReach) {
+        const wall = FAR_WALLS[hashId(`existing-${n}`) % FAR_WALLS.length] ?? [196, 190, 182, 255];
+        put(`${wall[0] === 150 ? 'brick' : 'siding'}|solid`, prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), wall);
+        put('shingle|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, c.elevation])], 0.4), [84, 82, 84, 255]);
         return;
       }
       // the public record gives a footprint and a story count. A small
@@ -551,6 +571,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const w of data.windows) put('glass|sheet', plane(w.polygon), w.color);
   for (const c of data.cars) put(c.elevation > 0.6 ? 'paint|solid' : 'glass|solid', prism(c.polygon, c.elevation), c.color);
 
+  lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
   for (const [key, list] of bins) {
     const [kind, mode] = key.split('|') as [string, string];
     const merged = mergeGeometries(list, false);
@@ -567,12 +588,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     root.add(mesh);
   }
 
+  lap('parts merged');
   // planting: a few grown trees (ez-tree), each placed many times, turned and
   // sized to the canopy the scene gives it. If none can be grown, the lobed
   // crown stands in.
   const opacity = opts.canopyOpacity ?? 1;
   const kinds = ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
-  const bushes = ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
+  const cardsOnly = !!opts.light && typeof document !== 'undefined';
+  const bushes = cardsOnly ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
   // the leaves and bark are pictures that arrive after the trees are grown
   const waits: Array<Promise<unknown>> = [...kinds, ...bushes].flatMap(t => [arrived((t.leaf as THREE.MeshStandardMaterial).map), arrived((t.bark as THREE.MeshStandardMaterial).map)]);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
@@ -596,7 +619,36 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       root.add(wood, leaves);
     });
   };
-  if (kinds.length) {
+  // Trees as painted cards: portraits of the grown trees on crossed quads. The surroundings are
+  // planted this way everywhere, and the site's own trees too on a device that draws on its processor.
+  let sat: Array<{ form: TreeForm; picture: THREE.DataTexture }> | null = null;
+  const sitters = () => (sat ??= kinds.flatMap(form => { const made = portrait(form); if (made) waits.push(made.painted); return made ? [{ form, picture: made.picture }] : []; }));
+  // cards are lit as flat ground is, which under a low sun is less than a crown catches: the tints make up for it
+  const TINTS: Array<readonly number[]> = [[255, 255, 255], [214, 236, 204], [232, 232, 200], [196, 226, 196], [236, 244, 216], [204, 222, 190], [182, 214, 182]].map(c => c.map(v => v * 1.12));
+  const plant = (spots: Array<[number, number, number]>, name: string, shadows: boolean) => {
+    const all = sitters();
+    all.forEach(({ form, picture }, k) => {
+      const mine = spots.filter((_, i) => i % all.length === k);
+      if (!mine.length) return;
+      const mesh = new THREE.InstancedMesh(cards(form), new THREE.MeshLambertMaterial({ map: picture, alphaTest: 0.5 }), mine.length);
+      mine.forEach(([x, y, r], i) => {
+        const sc = ((r * 1.25) / form.radius) * (0.9 + ((i * 37) % 21) / 100);
+        q.setFromAxisAngle(up, (i * 2.399 + k) % (Math.PI * 2));
+        mesh.setMatrixAt(i, m4.compose(new THREE.Vector3(x, y, 0.02), q, new THREE.Vector3(sc, sc, sc * (0.92 + ((i * 13) % 17) / 100))));
+        mesh.setColorAt(i, bright((i * 31) % 100 < 2 ? [300, 250, 170] : TINTS[(i * 7) % TINTS.length] ?? [280, 280, 280]));
+      });
+      mesh.castShadow = shadows;
+      mesh.receiveShadow = false;
+      if (shadows) mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: picture, alphaTest: 0.5 });
+      // a card is mostly air: the occlusion pass, which would read it as a wall, leaves it out
+      mesh.userData.noOcclusion = true;
+      mesh.name = name;
+      root.add(mesh);
+    });
+  };
+  if (kinds.length && cardsOnly && sitters().length) {
+    plant(data.trees.map(t => [t.position[0], t.position[1], (t.radiusM ?? 2.8) * 1.12]), 'site-trees', true);
+  } else if (kinds.length) {
     // no two trees on a street are the same green
     const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
     place(kinds, data.trees.map((t, i) => ({ x: t.position[0], y: t.position[1], r: (t.radiusM ?? 2.8) * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
@@ -708,31 +760,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     };
     // the surrounding trees are portraits of the site's own, on crossed cards; where a portrait
     // cannot be painted (no leaf picture), lumpy crowns stand in
-    const nearby = scatter(0, half * 4, 12, 0.62, 4500), beyond = scatter(half * 4, half * 13, 22, 0.7, 11000);
-    const sitters = kinds.flatMap(form => { const made = portrait(form); if (made) waits.push(made.painted); return made ? [{ form, picture: made.picture }] : []; });
-    if (sitters.length) {
-      // cards are lit as flat ground is, which under a low sun is less than a crown catches: the tints make up for it
-      const TINTS: Array<readonly number[]> = [[255, 255, 255], [214, 236, 204], [232, 232, 200], [196, 226, 196], [236, 244, 216], [204, 222, 190], [182, 214, 182]].map(c => c.map(v => v * 1.12));
-      const plant = (spots: Array<[number, number, number]>, name: string, shadows: boolean) => {
-        sitters.forEach(({ form, picture }, k) => {
-          const mine = spots.filter((_, i) => i % sitters.length === k);
-          if (!mine.length) return;
-          const mesh = new THREE.InstancedMesh(cards(form), new THREE.MeshLambertMaterial({ map: picture, alphaTest: 0.5 }), mine.length);
-          mine.forEach(([x, y, r], i) => {
-            const sc = ((r * 1.25) / form.radius) * (0.9 + ((i * 37) % 21) / 100);
-            qq.setFromAxisAngle(up, (i * 2.399 + k) % (Math.PI * 2));
-            mesh.setMatrixAt(i, mm.compose(new THREE.Vector3(x, y, 0.02), qq, new THREE.Vector3(sc, sc, sc * (0.92 + ((i * 13) % 17) / 100))));
-            mesh.setColorAt(i, bright((i * 31) % 100 < 2 ? [300, 250, 170] : TINTS[(i * 7) % TINTS.length] ?? [280, 280, 280]));
-          });
-          mesh.castShadow = shadows;
-          mesh.receiveShadow = false;
-          if (shadows) mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: picture, alphaTest: 0.5 });
-          // a card is mostly air: the occlusion pass, which would read it as a wall, leaves it out
-          mesh.userData.noOcclusion = true;
-          mesh.name = name;
-          root.add(mesh);
-        });
-      };
+    const nearby = scatter(0, half * 4, 12, 0.62, opts.light ? 2200 : 4500), beyond = scatter(half * 4, half * 13, 22, 0.7, opts.light ? 5000 : 11000);
+    if (sitters().length) {
       plant(nearby, 'surrounding-trees', true);
       plant(beyond, 'far-trees', false);
     } else {
@@ -741,6 +770,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     }
   }
 
+  lap('trees planted');
   // picking: one unseen solid a building
   const pickGroup = new THREE.Group();
   pickGroup.visible = false;
@@ -762,6 +792,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   }
   root.add(pickGroup);
   root.updateMatrixWorld(true);
+  lap('done');
 
   return {
     root,

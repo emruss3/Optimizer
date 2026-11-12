@@ -50,6 +50,8 @@ export interface StageOptions {
   studio?: boolean;
   /** Ambient occlusion. On unless the device cannot. */
   occlusion?: boolean;
+  /** A lighter stage for a device that draws on its processor: a smaller shadow map and no ambient occlusion. */
+  light?: boolean;
 }
 
 export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteModel, opts: StageOptions): Stage {
@@ -117,7 +119,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   const hemi = new THREE.HemisphereLight(0xdbe8f7, 0x9a9c86, opts.studio ? 1.0 : 0.85);
   const sun = new THREE.DirectionalLight(0xfff1dd, opts.studio ? 4.2 : 4.6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.mapSize.set(opts.light ? 2048 : 4096, opts.light ? 2048 : 4096);
   const span = E * 1.9;
   const cam = sun.shadow.camera;
   cam.left = -span; cam.right = span; cam.top = span; cam.bottom = -span;
@@ -133,6 +135,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   let env: THREE.WebGLRenderTarget | null = null;
   const skyOnly = new THREE.Scene();
   const setSun = (toSun: [number, number, number]) => {
+    const started = performance.now();
     // model (x east, y north, z up) to stage (x east, y up, z south)
     const d = new THREE.Vector3(toSun[0], toSun[2], -toSun[1]).normalize();
     if (d.y < 0.03) d.y = 0.03;
@@ -149,6 +152,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
     env = pmrem.fromScene(skyOnly, 0.02);
     scene.environment = env.texture;
     scene.environmentIntensity = opts.studio ? 0.55 : 0.7;
+    if ((window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] sun and sky light set in ${Math.round(performance.now() - started)} ms`);
   };
 
   let composer: EffectComposer | null = null;
@@ -156,7 +160,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   let ao: GTAOPass | null = null;
   const sized = () => renderer.getDrawingBufferSize(new THREE.Vector2());
   const build = (camera: THREE.Camera) => {
-    if (opts.occlusion === false) return;
+    if (opts.occlusion === false || opts.light) return;
     try {
       const px = sized();
       const target = new THREE.WebGLRenderTarget(px.x, px.y, { samples: 4, type: THREE.HalfFloatType });
@@ -192,7 +196,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
       composer?.setSize(px.x / renderer.getPixelRatio(), px.y / renderer.getPixelRatio());
     },
     render(camera) {
-      if (!composer && opts.occlusion !== false && !renderPass) build(camera);
+      if (!composer && opts.occlusion !== false && !opts.light && !renderPass) build(camera);
       if (composer && renderPass && ao) {
         renderPass.camera = camera;
         ao.camera = camera;

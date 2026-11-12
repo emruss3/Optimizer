@@ -64,6 +64,8 @@ const colours = page => page.evaluate(() => {
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, recordVideo: { dir: out, size: { width: 1152, height: 720 } } });
+  // this machine draws on its processor, where the app would choose its lighter picture: the main run asks for the full one
+  await ctx.addInitScript(() => { window.__renderQuality = 'full'; });
   const page = await ctx.newPage();
   page.setDefaultTimeout(120000);
   const errors = [];
@@ -266,6 +268,19 @@ const colours = page => page.evaluate(() => {
 
   // the original path is still there
   const cctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // left to itself on a machine with no graphics acceleration, the view draws its lighter picture and says so
+  const lpage = await cctx.newPage();
+  await openPlanner(lpage);
+  const lightMs = await to3d(lpage);
+  const lview = lpage.locator('[data-testid="massing-3d"]');
+  const software = await lpage.evaluate(() => { const gl = document.createElement('canvas').getContext('webgl'); const i = gl && gl.getExtension('WEBGL_debug_renderer_info'); return /swiftshader|llvmpipe|software/i.test(i ? String(gl.getParameter(i.UNMASKED_RENDERER_WEBGL)) : ''); });
+  if (software) {
+    check((await lview.getAttribute('data-quality')) === 'light', 'on a machine with no graphics acceleration the 3D view chooses its lighter picture');
+    check(/drawn simply/.test((await lview.textContent()) ?? ''), 'and says it is drawn simply');
+    check((await lpage.evaluate(() => { const c = document.querySelector('[data-testid="massing-3d"] canvas'); const k = document.createElement('canvas'); k.width = 96; k.height = 60; const x = k.getContext('2d'); x.drawImage(c, 0, 0, 96, 60); const d = x.getImageData(0, 0, 96, 60).data; const seen = new Set(); for (let i = 0; i < d.length; i += 4) seen.add(`${d[i] >> 3},${d[i + 1] >> 3},${d[i + 2] >> 3}`); return seen.size; })) > 60, `the lighter picture is drawn (ready ${Math.round(lightMs / 100) / 10} s after the click)`);
+    await lview.screenshot({ path: path.join(out, 'model_light.png') });
+  }
+  await lpage.close();
   const cpage = await cctx.newPage();
   await openPlanner(cpage, '?drawing=classic');
   check((await cpage.evaluate(() => window.__planEvidence?.scene ?? null)) === null, 'with ?drawing=classic no scene is built');

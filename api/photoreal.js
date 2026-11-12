@@ -3,7 +3,11 @@
 // keeping the layout, and returns the result.
 //
 // - Only a signed-in user of the app may call it (their Supabase session is
-//   checked on every call).
+//   checked on every call), and only if their account is on the list in
+//   PHOTOREAL_ALLOWED_EMAILS. With no list nobody may: reaching the image
+//   service costs money, and turning it on must not open that spend to anyone
+//   who can sign up. `*` in the list allows every signed-in user, for a
+//   deployment whose sign-ups are closed.
 // - The prompt is written here, not by the caller: the caller chooses a view
 //   and a kind of building from short fixed lists and nothing else.
 // - Only the picture is sent to the model. No address, parcel id or owner.
@@ -64,7 +68,7 @@ export function parseImage(dataUrl) {
 
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 
-/** The signed-in user's id, or null. */
+/** The signed-in user (id and email), or null. */
 async function userOf(request, env, fetchImpl) {
   const auth = request.headers.get('authorization') ?? '';
   const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
@@ -74,10 +78,15 @@ async function userOf(request, env, fetchImpl) {
     const r = await fetchImpl(`${url.replace(/\/$/, '')}/auth/v1/user`, { headers: { authorization: auth, apikey: anon } });
     if (!r.ok) return null;
     const u = await r.json();
-    return typeof u?.id === 'string' ? u.id : null;
+    return typeof u?.id === 'string' ? { id: u.id, email: typeof u.email === 'string' ? u.email : '' } : null;
   } catch {
     return null;
   }
+}
+
+/** The accounts that may use the image service: lower-case emails, or `*` for every signed-in user. */
+export function allowedAccounts(env) {
+  return String(env.PHOTOREAL_ALLOWED_EMAILS ?? '').split(',').map(a => a.trim().toLowerCase()).filter(Boolean);
 }
 
 const asDataUrl = b64 => `data:image/${b64.startsWith('/9j/') ? 'jpeg' : b64.startsWith('UklGR') ? 'webp' : 'png'};base64,${b64}`;
@@ -122,6 +131,9 @@ export async function handle(request, env = process.env, fetchImpl = fetch) {
   if (request.method !== 'POST') return json(405, { error: 'POST only' });
   const user = await userOf(request, env, fetchImpl);
   if (!user) return json(401, { error: 'Sign in to make a photoreal picture.' });
+  const allowed = allowedAccounts(env);
+  if (!allowed.length) return json(503, { error: 'Photoreal pictures are not turned on for this deployment.' });
+  if (!allowed.includes('*') && !allowed.includes(user.email.toLowerCase())) return json(403, { error: 'Photoreal pictures are not turned on for this account.' });
   const token = env.AI_GATEWAY_API_KEY || request.headers.get('x-vercel-oidc-token') || env.VERCEL_OIDC_TOKEN;
   if (!token) return json(503, { error: 'The image service is not set up for this deployment.' });
   let body;
@@ -137,7 +149,9 @@ export async function handle(request, env = process.env, fetchImpl = fetch) {
     const picture = await repaint({ model, prompt: buildPrompt(body), image, token, fetchImpl });
     return json(200, { image: picture, model });
   } catch (err) {
-    return json(502, { error: `The image model could not make the picture: ${String(err?.message ?? err).slice(0, 240)}` });
+    // what the model's service said stays in the function's log; the caller is told only that it failed
+    console.error('[photoreal] the image model failed:', String(err?.message ?? err).slice(0, 500));
+    return json(502, { error: 'The image model could not make the picture. Try again in a minute.' });
   }
 }
 

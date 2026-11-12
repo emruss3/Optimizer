@@ -265,9 +265,13 @@ export function buildMassingData(
     });
     return { slabs, windows, roofs, shrubs };
   };
+  const debug = typeof window !== 'undefined' && !!(window as unknown as { __renderDebug?: boolean }).__renderDebug;
+  const t0 = debug ? performance.now() : 0;
   let model = draw(1);
+  if (debug) console.info(`[time] buildings drawn once in ${Math.round(performance.now() - t0)} ms: ${model.slabs.length} solids, ${model.roofs.length} flats, ${model.windows.length} panes, ${buildings.length} buildings`);
   for (let scale = 1.5; model.windows.length + model.roofs.length + model.slabs.length > MAX_WINDOWS * 4 && scale <= 6; scale *= 1.5) model = draw(scale);
   const { slabs, windows, roofs, shrubs } = model;
+  if (debug) console.info(`[time] buildings settled at ${Math.round(performance.now() - t0)} ms: ${slabs.length} solids, ${roofs.length} flats, ${windows.length} panes`);
   // walks and curbs follow the plan's own shapes
   const walks: Array<{ path: number[][]; widthM: number; strip: boolean }> = [];
   const curbs: Array<{ path: number[][] }> = [];

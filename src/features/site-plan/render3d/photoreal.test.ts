@@ -13,6 +13,7 @@ interface Fn {
   handle(request: Request, env?: Record<string, string | undefined>, fetchImpl?: typeof fetch): Promise<Response>;
   buildPrompt(o?: { view?: string; product?: string; stories?: number; style?: string }): string;
   parseImage(s: unknown): { mime: string; ext: string; bytes: Uint8Array } | null;
+  allowedAccounts(env: Record<string, string | undefined>): string[];
   DEFAULT_MODEL: string;
   MAX_IMAGE_BYTES: number;
 }
@@ -20,17 +21,17 @@ const path = '../../../../api/photoreal.js';
 const load = async (): Promise<Fn> => (await import(/* @vite-ignore */ path)) as Fn;
 
 const PICTURE = `data:image/jpeg;base64,${Buffer.from(new Uint8Array(4000).fill(7)).toString('base64')}`;
-const ENV = { VITE_SUPABASE_URL: 'https://db.example', VITE_SUPABASE_ANON_KEY: 'anon', AI_GATEWAY_API_KEY: 'gateway-key' };
+const ENV = { VITE_SUPABASE_URL: 'https://db.example', VITE_SUPABASE_ANON_KEY: 'anon', AI_GATEWAY_API_KEY: 'gateway-key', PHOTOREAL_ALLOWED_EMAILS: 'owner@example.com, partner@example.com' };
 const post = (body: unknown, headers: Record<string, string> = { authorization: 'Bearer user-token' }) =>
   new Request('https://app.example/api/photoreal', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
 /** A stand-in for the network: Supabase says who the user is, the gateway returns a picture. */
-function network(opts: { user?: boolean; gateway?: (url: string, init: RequestInit) => Response } = {}) {
+function network(opts: { user?: boolean; email?: string; gateway?: (url: string, init: RequestInit) => Response } = {}) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const impl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init: init ?? {} });
-    if (url.includes('/auth/v1/user')) return opts.user === false ? new Response('{}', { status: 401 }) : Response.json({ id: 'user-1' });
+    if (url.includes('/auth/v1/user')) return opts.user === false ? new Response('{}', { status: 401 }) : Response.json({ id: 'user-1', email: opts.email ?? 'Owner@Example.com' });
     return opts.gateway ? opts.gateway(url, init ?? {}) : Response.json({ data: [{ b64_json: '/9j/AAAA' }] });
   }) as typeof fetch;
   return { impl, calls };
@@ -46,6 +47,26 @@ describe('the photoreal function', () => {
     // no call reached the image model
     expect(out.calls.some(c => c.url.includes('ai-gateway'))).toBe(false);
     expect((await fn.handle(new Request('https://app.example/api/photoreal'), ENV, network().impl)).status).toBe(405);
+  });
+
+  it('serves only the accounts on the list, and nobody when there is no list', async () => {
+    const fn = await load();
+    // a signed-in user who is not on the list: refused, and the image model is never called
+    const stranger = network({ email: 'someone@elsewhere.example' });
+    const refused = await fn.handle(post({ image: PICTURE }), ENV, stranger.impl);
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).error).toBe('Photoreal pictures are not turned on for this account.');
+    expect(stranger.calls.some(c => c.url.includes('ai-gateway'))).toBe(false);
+    // no list: closed, even with a key in place
+    const closed = network();
+    const off = await fn.handle(post({ image: PICTURE }), { ...ENV, PHOTOREAL_ALLOWED_EMAILS: undefined }, closed.impl);
+    expect(off.status).toBe(503);
+    expect(closed.calls.some(c => c.url.includes('ai-gateway'))).toBe(false);
+    expect((await fn.handle(post({ image: PICTURE }), { ...ENV, PHOTOREAL_ALLOWED_EMAILS: ' , ' }, network().impl)).status).toBe(503);
+    // the list is read without regard to case or spaces; a star opens it to every signed-in user
+    expect((await fn.handle(post({ image: PICTURE }), ENV, network({ email: 'PARTNER@example.com' }).impl)).status).toBe(200);
+    expect((await fn.handle(post({ image: PICTURE }), { ...ENV, PHOTOREAL_ALLOWED_EMAILS: '*' }, network({ email: 'someone@elsewhere.example' }).impl)).status).toBe(200);
+    expect(fn.allowedAccounts({ PHOTOREAL_ALLOWED_EMAILS: ' A@b.c ,d@E.f' })).toEqual(['a@b.c', 'd@e.f']);
   });
 
   it('says so when the deployment has no way to reach the image service', async () => {
@@ -111,13 +132,21 @@ describe('the photoreal function', () => {
     expect(sent.messages[0].content[1].image_url.url).toBe(PICTURE);
   });
 
-  it('reports a model failure in words, without the key', async () => {
+  it('reports a model failure in plain words: what the model said stays in the log', async () => {
     const fn = await load();
-    const r = await fn.handle(post({ image: PICTURE }), ENV, network({ gateway: () => Response.json({ error: { message: 'insufficient credits' } }, { status: 402 }) }).impl);
-    expect(r.status).toBe(502);
-    const body = await r.json();
-    expect(body.error).toContain('insufficient credits');
-    expect(JSON.stringify(body)).not.toContain('gateway-key');
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { logged.push(args.join(' ')); });
+    try {
+      const r = await fn.handle(post({ image: PICTURE }), ENV, network({ gateway: () => Response.json({ error: { message: 'insufficient credits on team acme-internal' } }, { status: 402 }) }).impl);
+      expect(r.status).toBe(502);
+      const body = await r.json();
+      expect(body.error).toBe('The image model could not make the picture. Try again in a minute.');
+      expect(JSON.stringify(body)).not.toMatch(/insufficient|acme|gateway-key/);
+      expect(logged.join(' ')).toContain('insufficient credits');
+      expect(logged.join(' ')).not.toContain('gateway-key');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
