@@ -49,6 +49,7 @@ CFG = dict(
     strict_width=True,      # model lots must be at least the module width (the engine's standard lot)
     inner_margin_row=0.5,   # a street counts as on the site when it is at least this many right-of-way widths inside the outline
     min_street_ft=30.0,     # shorter pieces of street are not kept
+    existing_inside_share=0.5,   # a mapped street with less than this share of its length inside the site is an existing road
     min_band_depth=20.0, min_lot_w=10.0,   # numerical guards: thinner pieces are not lots
     match_min=50,           # a recorded lot is used when at least this % of it matched its street band
     reach_tol=3.0,          # a kept lot must still reach its street to within this many feet
@@ -236,16 +237,14 @@ def parse_site(p, cfg):
             continue
         sc = ln.length / float(tl) if float(tl or 0) > 0 else 1.0     # lot positions were measured on the unsimplified street
         parts = []
-        for ctx, geom in ((False, ln.intersection(inner)), (True, ln.difference(inner))):
-            for g in lines_of(geom):
-                if g.length < cfg['min_street_ft']:
-                    continue
-                c = simplify_to(g, cfg['max_street_pts'])
-                if c is None:
-                    return 'street_points'
-                if ln.project(Point(c[0])) > ln.project(Point(c[-1])):
-                    c.reverse()
-                parts.append({'ctx': ctx, 'line': c, 'g': LineString(c), 'lots': {1: [], -1: []}, 'f': {1: [], -1: []}})
+        if ln.length >= cfg['min_street_ft']:
+            # a mapped street that lies mostly outside the site is an existing road (given to the model); one that lies
+            # mostly inside is a street of the subdivision (the model must write it, entrance included)
+            ctx = ln.intersection(inner).length < cfg['existing_inside_share'] * ln.length
+            c = simplify_to(ln, cfg['max_street_pts'])
+            if c is None:
+                return 'street_points'
+            parts.append({'ctx': ctx, 'line': c, 'g': LineString(c), 'lots': {1: [], -1: []}, 'f': {1: [], -1: []}})
         for side, c, cd, f, area, match in raw.get(k, []):
             if not parts or match < cfg['match_min']:
                 continue
@@ -680,10 +679,12 @@ def site_from_request(d, cfg):
     for line in d.get('roads') or []:
         if len(line) < 2:
             continue
-        for g in lines_of(LineString([(x - ox, y - oy) for x, y in line]).difference(inner)):
-            c = simplify_to(g, cfg['max_street_pts']) if g.length >= cfg['min_street_ft'] else None
-            if c:
-                roads.append({'ctx': True, 'line': c, 'len': LineString(c).length, 'lots': {1: [], -1: []}, 'front': {1: rw / 2, -1: rw / 2}})
+        g = LineString([(x - ox, y - oy) for x, y in line])
+        if g.length < cfg['min_street_ft'] or g.intersection(inner).length >= cfg['existing_inside_share'] * g.length:
+            continue                              # too short, or a street inside the site (not an existing road)
+        c = simplify_to(g, cfg['max_street_pts'])
+        if c:
+            roads.append({'ctx': True, 'line': c, 'len': LineString(c).length, 'lots': {1: [], -1: []}, 'front': {1: rw / 2, -1: rw / 2}})
     roads = sorted(roads, key=lambda r: -r['len'])[:max(0, cfg['max_roads'] - cfg['max_new_streets'])]
     return {'key': d.get('key'), 'split': 'request', 'w': float(d['w']), 'd': float(d['d']), 'rw': rw, 'min_sf': float(d['min_sf']),
             'b': b, 'roads': roads, 'n_fmt': 0, 'n_total': 0, 'area': P.area, 'yield': 0.0, 'origin': (ox, oy)}
