@@ -83,6 +83,7 @@ import { PlanBasisDisclosure, type BasisTone } from './ui/PlanBasisDisclosure';
 import { mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
+import ExportMenu from './ui/ExportMenu';
 import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -156,6 +157,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     try { return new URLSearchParams(window.location.search).get('drawing') === 'classic'; } catch { return false; }
   }, []);
   const [sheetsOpen, setSheetsOpen] = useState(false);
+  // which sheet the Export menu opened, and whether it asked for the whole set
+  const [sheetsAsk, setSheetsAsk] = useState<{ initial: 'plan' | 'view' | 'section'; printSet: boolean }>({ initial: 'plan', printSet: false });
   const [sceneSelection, setSceneSelection] = useState<SelectionCache | null>(null);
   // Exit artifact (P1-5): print-ready scheme report with a plan snapshot.
   const [exportOpen, setExportOpen] = useState(false);
@@ -2994,6 +2997,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? prev
       : { key: sceneKey, ids }));
   }, [sceneKey]);
+  // what the Export menu and the sheets call the scheme on screen
+  const exportSchemeName = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Current plan (not a saved option)';
   const sheetsTitle = useMemo(() => {
     // the site data table: the scheme's own figures, as the header states them
     const acres = mappedAcres ?? (typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null);
@@ -3469,37 +3474,40 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             </button>
           )}
         </div>
-        <button
-          onClick={openExport}
-          disabled={!metrics || draftMode || !!compileBlocked}
-          title={
+        <ExportMenu
+          address={parcel.address ?? parcelIdStr}
+          schemeName={exportSchemeName}
+          revision={scene?.identity.revision ?? null}
+          blocked={
             !metrics
               ? 'Generate a plan first'
               : draftMode || compileBlocked
-                ? 'Reports are only produced from context-verified plans'
-                : 'Print-ready scheme report with plan, tabulation, and solver receipts'
+                ? 'Exports are only produced from context-verified plans'
+                : null
           }
-          className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Export
-        </button>
-        {!classicDrawing && (
-          <button
-            data-testid="open-sheets"
-            onClick={() => setSheetsOpen(true)}
-            disabled={!scene || draftMode || !!compileBlocked}
-            title={
-              !scene
-                ? 'Nothing is drawn on the sheet yet'
-                : draftMode || compileBlocked
-                  ? 'Sheets are only produced from context-verified plans'
-                  : 'Exhibit sheets as vector drawings at page size: A-01 Site Plan'
-            }
-            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Sheets
-          </button>
-        )}
+          choices={[
+            ...(!classicDrawing
+              ? [
+                  { key: 'site-plan' as const, blocked: scene ? null : 'Nothing is drawn on the sheet yet', run: () => { setSheetsAsk({ initial: 'plan', printSet: false }); setSheetsOpen(true); } },
+                  {
+                    key: '3d-image' as const,
+                    blocked: scene ? null : 'Nothing is drawn on the sheet yet',
+                    run: () => {
+                      // in the 3D view: the view as it is turned now. Otherwise the aerial sheet.
+                      if (viewMode === '3d') {
+                        window.dispatchEvent(new CustomEvent('pp:save-3d-image', { detail: { fileName: `3d-view_${parcelIdStr}_rev-${scene?.identity.revision ?? 'draft'}.png` } }));
+                      } else {
+                        setSheetsAsk({ initial: 'view', printSet: false });
+                        setSheetsOpen(true);
+                      }
+                    },
+                  },
+                  { key: 'set' as const, blocked: scene ? null : 'Nothing is drawn on the sheet yet', run: () => { setSheetsAsk({ initial: 'plan', printSet: true }); setSheetsOpen(true); } },
+                ]
+              : []),
+            { key: 'report' as const, run: openExport },
+          ]}
+        />
         </div>
       </div>
 
@@ -3941,7 +3949,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} />
       )}
       {exportOpen && (
         <ExportReport

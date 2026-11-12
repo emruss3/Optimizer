@@ -211,6 +211,7 @@ const colours = page => page.evaluate(() => {
   // the sheet: a slide first, laid over a render of the plan
   const sheet = page.locator('[data-testid="sheet-a01"]');
   const rendered = () => page.waitForSelector('[data-testid="sheet-a01"][data-sheet-style="rendered"]', { timeout: 120000 }).then(() => true).catch(() => false);
+  await page.locator('[data-testid="export-menu"]').click();
   await page.locator('[data-testid="open-sheets"]').click();
   await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 60000 });
   check(await rendered(), 'the sheet is laid over a render of the plan');

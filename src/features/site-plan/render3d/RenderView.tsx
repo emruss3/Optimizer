@@ -252,7 +252,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     r.request();
   }, [selectedId, ready, built]);
 
-  const snapshot = useCallback(() => {
+  const snapshot = useCallback((fileName?: string) => {
     const r = rig.current, cv = canvas.current;
     if (!r || !cv) return;
     // twice the screen's pixels for the saved picture, then back
@@ -262,12 +262,18 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     r.stage.render(r.camera);
     const a = document.createElement('a');
     a.href = cv.toDataURL('image/png');
-    a.download = 'rendering.png';
+    a.download = fileName || 'rendering.png';
     a.click();
     r.stage.renderer.setPixelRatio(before);
     r.stage.setSize(cv.clientWidth, cv.clientHeight);
     r.request();
   }, []);
+  // The Export menu asks for the view as it is turned now.
+  useEffect(() => {
+    const save = (e: Event) => snapshot((e as CustomEvent<{ fileName?: string }>).detail?.fileName);
+    window.addEventListener('pp:save-3d-image', save);
+    return () => window.removeEventListener('pp:save-3d-image', save);
+  }, [snapshot]);
 
   // The photoreal pass: this view, repainted as a photograph by an image
   // model. The picture is sent to the app's own function; nothing else is.
@@ -333,7 +339,6 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
           {photo.status === 'working' ? 'Painting…' : 'Photoreal'}
         </button>
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
-        <button onClick={snapshot} className="px-1.5 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700" title="Save this view as a picture, at twice the screen's resolution" data-testid="massing-snapshot">PNG</button>
       </div>
       {onSelect && tagged.length > 0 && (
         <div className="absolute top-11 right-2 flex flex-wrap justify-end items-center gap-1 max-w-[50%] bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm" role="group" aria-label="Buildings">

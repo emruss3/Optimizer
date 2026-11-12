@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArchStylePicker } from './ArchStylePicker';
 import type { DrawingScene } from '../scene/types';
 import {
@@ -33,8 +33,14 @@ export const ExhibitSheets: React.FC<{
   photoreal?: ((image: string) => Promise<string>) | undefined;
   /** The architectural style the pictures are rendered in: a change of it is a new picture. */
   look?: string | undefined;
-}> = ({ scene, title, onClose, renderUnderlay, renderView, photoreal, look }) => {
-  const [which, setWhich] = useState<Which>('plan');
+  /** The sheet to open on. */
+  initial?: Which | undefined;
+  /** The name the scheme goes by in the app, shown with its revision. */
+  schemeName?: string | undefined;
+  /** Open, then print every sheet as one set. */
+  printSetOnOpen?: boolean | undefined;
+}> = ({ scene, title, onClose, renderUnderlay, renderView, photoreal, look, initial, schemeName, printSetOnOpen }) => {
+  const [which, setWhich] = useState<Which>(initial ?? 'plan');
   const [size, setSize] = useState<SheetSize>('slide');
   const [style, setStyle] = useState<'rendered' | 'drawn'>(renderUnderlay ? 'rendered' : 'drawn');
   const [underlay, setUnderlay] = useState<{ key: string; href: string } | null>(null);
@@ -99,7 +105,7 @@ export const ExhibitSheets: React.FC<{
   const sheet = which === 'plan' ? planSheet : which === 'view' ? viewSheet : sectionSheet;
   const number = which === 'plan' ? 'A-01' : which === 'view' ? 'A-02' : 'A-03';
   const name = which === 'plan' ? 'site-plan' : which === 'view' ? 'aerial-view' : 'section';
-  const fileName = `${number}_${name}_${scene.identity.parcelId}_${size}.svg`;
+  const fileName = `${number}_${name}_${scene.identity.parcelId}_rev-${scene.identity.revision}_${size}.svg`;
 
   const download = useCallback(() => {
     const url = URL.createObjectURL(new Blob([sheet.svg], { type: 'image/svg+xml' }));
@@ -141,19 +147,57 @@ export const ExhibitSheets: React.FC<{
     img.src = url;
   }, [sheet.svg, sheet.widthPt, sheet.heightPt, fileName]);
 
-  const print = useCallback(() => {
+  const printSheets = useCallback((svgs: string[], docTitle: string) => {
     const { wIn, hIn } = SHEET_SIZES[size];
     const frame = document.createElement('iframe');
     frame.setAttribute('aria-hidden', 'true');
     frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
-    frame.srcdoc = `<!doctype html><html><head><title>${number}</title><style>@page{size:${wIn}in ${hIn}in;margin:0}html,body{margin:0}svg{display:block;width:${wIn}in;height:${hIn}in}</style></head><body>${sheet.svg}</body></html>`;
+    frame.srcdoc = `<!doctype html><html><head><title>${docTitle}</title><style>@page{size:${wIn}in ${hIn}in;margin:0}html,body{margin:0}svg{display:block;width:${wIn}in;height:${hIn}in;break-after:page}svg:last-child{break-after:auto}</style></head><body>${svgs.join('')}</body></html>`;
     frame.onload = () => {
       frame.contentWindow?.focus();
       frame.contentWindow?.print();
       setTimeout(() => frame.remove(), 60_000);
     };
     document.body.appendChild(frame);
-  }, [sheet.svg, size, number]);
+  }, [size]);
+  const print = useCallback(() => printSheets([sheet.svg], number), [printSheets, sheet.svg, number]);
+
+  // Every sheet in one print job. The aerial view is rendered first if it has
+  // not been looked at yet; if it cannot be, the set goes out without it.
+  const [setBusy, setSetBusy] = useState(false);
+  const [setNote, setSetNote] = useState<string | null>(null);
+  const printSet = useCallback(async () => {
+    setSetBusy(true);
+    setSetNote(null);
+    try {
+      let aerial = viewPicture;
+      if (!aerial && renderView && !viewFailed) {
+        const { image } = viewSheetLayout(size);
+        try {
+          const href = await renderView(Math.round((image.w / 72) * 200), Math.round((image.h / 72) * 200));
+          setView({ key, href });
+          aerial = { href };
+        } catch (err) {
+          console.warn('[sheet] the view could not be rendered for the set.', err);
+        }
+      }
+      const svgs = [planSheet.svg];
+      if (aerial) svgs.push(renderViewSheet(scene, title, size, aerial).svg);
+      if (scene.buildings.length > 0) svgs.push(sectionSheet.svg);
+      if (renderView && !aerial) setSetNote('The aerial view could not be rendered. The set was sent without sheet A-02.');
+      printSheets(svgs, `Exhibit set ${scene.identity.parcelId} rev ${scene.identity.revision}`);
+    } finally {
+      setSetBusy(false);
+    }
+  }, [viewPicture, renderView, viewFailed, size, key, planSheet.svg, scene, title, sectionSheet.svg, printSheets]);
+  const setAsked = useRef(false);
+  useEffect(() => {
+    if (!printSetOnOpen || setAsked.current) return;
+    // wait for the rendered plan so the set carries the same sheet the screen shows
+    if (style === 'rendered' && renderUnderlay && !picture) return;
+    setAsked.current = true;
+    void printSet();
+  }, [printSetOnOpen, style, renderUnderlay, picture, printSet]);
 
   const seg = (on: boolean, first: boolean) => `px-2.5 py-1 ${on ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${first ? '' : 'border-l border-gray-200'}`;
   const scaleNote = which === 'section' ? 'Schematic section · graphic scale' : which === 'view'
@@ -168,7 +212,12 @@ export const ExhibitSheets: React.FC<{
           {renderView && <button type="button" aria-pressed={which === 'view'} onClick={() => setWhich('view')} data-testid="sheet-tab-view" className={seg(which === 'view', false)}>A-02 Aerial View</button>}
           {scene.buildings.length > 0 && <button type="button" aria-pressed={which === 'section'} onClick={() => setWhich('section')} data-testid="sheet-tab-section" className={seg(which === 'section', false)}>A-03 Section</button>}
         </div>
+        <span className="text-gray-700 text-xs" data-testid="sheet-identity">
+          {schemeName ? `${schemeName} · ` : ''}rev <span className="font-mono">{scene.identity.revision}</span>
+        </span>
         <span className="text-gray-500 text-xs" data-testid="sheet-scale">{scaleNote}</span>
+        {setBusy && <span className="text-xs text-blue-700">Preparing the set…</span>}
+        {setNote && <span className="text-xs text-amber-700" data-testid="sheet-set-note">{setNote}</span>}
         {rendering && <span className="text-xs text-blue-700" data-testid="sheet-rendering">Rendering…</span>}
         {which === 'view' && viewFailed && <span className="text-xs text-amber-700">This device could not render the view.</span>}
         {which === 'view' && painting && <span className="text-xs text-blue-700" data-testid="sheet-painting">Painting the photoreal picture, about a minute…</span>}
@@ -203,6 +252,7 @@ export const ExhibitSheets: React.FC<{
           </div>
           <button type="button" onClick={downloadPng} disabled={pngBusy} data-testid="sheet-download-png" title="A picture of the sheet at 200 dpi, for a slide" className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">Download PNG</button>
           <button type="button" onClick={download} data-testid="sheet-download" className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Download SVG</button>
+          <button type="button" onClick={() => { void printSet(); }} disabled={setBusy} data-testid="sheet-print-set" title="Every sheet in one PDF" className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">Print set</button>
           <button type="button" onClick={print} data-testid="sheet-print" className="px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Print</button>
           <button type="button" onClick={onClose} aria-label="Close sheets" className="px-2 py-1 text-gray-500 hover:text-gray-900">Close</button>
         </div>
