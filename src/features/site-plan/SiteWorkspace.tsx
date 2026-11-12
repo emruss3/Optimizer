@@ -84,6 +84,9 @@ import { PlanBasisDisclosure, type BasisTone } from './ui/PlanBasisDisclosure';
 import { mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
+import ExportMenu from './ui/ExportMenu';
+import AccessCard from './ui/AccessCard';
+import { accessFinding } from './api/accessFinding';
 import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -157,6 +160,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     try { return new URLSearchParams(window.location.search).get('drawing') === 'classic'; } catch { return false; }
   }, []);
   const [sheetsOpen, setSheetsOpen] = useState(false);
+  // which sheet the Export menu opened, and whether it asked for the whole set
+  const [sheetsAsk, setSheetsAsk] = useState<{ initial: 'plan' | 'view' | 'section'; printSet: boolean }>({ initial: 'plan', printSet: false });
   const [sceneSelection, setSceneSelection] = useState<SelectionCache | null>(null);
   // Exit artifact (P1-5): print-ready scheme report with a plan snapshot.
   const [exportOpen, setExportOpen] = useState(false);
@@ -3053,6 +3058,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? prev
       : { key: sceneKey, ids }));
   }, [sceneKey]);
+  // what the Export menu and the sheets call the scheme on screen
+  const exportSchemeName = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Current plan (not a saved option)';
   const sheetsTitle = useMemo(() => {
     // the site data table: the scheme's own figures, as the header states them
     const acres = mappedAcres ?? (typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null);
@@ -3144,6 +3151,24 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // 2026-09-04 (Eric: "random parking, with no road to get to it"): does a
   // drive reach the curb, and does one touch every bay?
   const mfAccess = useMemo(() => mfAccessSummary(displayElements, parcelRing3857), [displayElements, parcelRing3857]);
+  // Street access as a finding with a next step: the reason, the frontage it concerns, what clears it.
+  const access = useMemo(
+    () => accessFinding({
+      frontage,
+      engineAccess,
+      flags: [...(planLineage?.flags ?? []), ...(plannerCtx?.solver_brief.geometry.front_edge_is_placeholder ? ['frontage_geometry_is_placeholder_until_road_edge_upgrade'] : [])],
+      drives: displayElements.some(e => e.id.startsWith('mfgen-')) ? mfAccess : null,
+    }),
+    [frontage, engineAccess, planLineage?.flags, plannerCtx, displayElements, mfAccess],
+  );
+  const [showFrontage, setShowFrontage] = useState(false);
+  const canvasAnnotations = useMemo(() => {
+    const line = access?.frontageLine;
+    if (!showFrontage || !line || line.length < 2) return sheetAnnotations;
+    const mid = line[Math.floor(line.length / 2)] ?? line[0]!;
+    const prev = line[Math.floor(line.length / 2) - 1] ?? line[0]!;
+    return [...sheetAnnotations, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
+  }, [sheetAnnotations, access, showFrontage]);
 
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation
@@ -3528,37 +3553,40 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             </button>
           )}
         </div>
-        <button
-          onClick={openExport}
-          disabled={!metrics || draftMode || !!compileBlocked}
-          title={
+        <ExportMenu
+          address={parcel.address ?? parcelIdStr}
+          schemeName={exportSchemeName}
+          revision={scene?.identity.revision ?? null}
+          blocked={
             !metrics
               ? 'Generate a plan first'
               : draftMode || compileBlocked
-                ? 'Reports are only produced from context-verified plans'
-                : 'Print-ready scheme report with plan, tabulation, and solver receipts'
+                ? 'Exports are only produced from context-verified plans'
+                : null
           }
-          className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Export
-        </button>
-        {!classicDrawing && (
-          <button
-            data-testid="open-sheets"
-            onClick={() => setSheetsOpen(true)}
-            disabled={!scene || draftMode || !!compileBlocked}
-            title={
-              !scene
-                ? 'Nothing is drawn on the sheet yet'
-                : draftMode || compileBlocked
-                  ? 'Sheets are only produced from context-verified plans'
-                  : 'Exhibit sheets as vector drawings at page size: A-01 Site Plan'
-            }
-            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Sheets
-          </button>
-        )}
+          choices={[
+            ...(!classicDrawing
+              ? [
+                  { key: 'site-plan' as const, blocked: scene ? null : 'Nothing is drawn on the sheet yet', run: () => { setSheetsAsk({ initial: 'plan', printSet: false }); setSheetsOpen(true); } },
+                  {
+                    key: '3d-image' as const,
+                    blocked: scene ? null : 'Nothing is drawn on the sheet yet',
+                    run: () => {
+                      // in the 3D view: the view as it is turned now. Otherwise the aerial sheet.
+                      if (viewMode === '3d') {
+                        window.dispatchEvent(new CustomEvent('pp:save-3d-image', { detail: { fileName: `3d-view_${parcelIdStr}_rev-${scene?.identity.revision ?? 'draft'}.png` } }));
+                      } else {
+                        setSheetsAsk({ initial: 'view', printSet: false });
+                        setSheetsOpen(true);
+                      }
+                    },
+                  },
+                  { key: 'set' as const, blocked: scene ? null : 'Nothing is drawn on the sheet yet', run: () => { setSheetsAsk({ initial: 'plan', printSet: true }); setSheetsOpen(true); } },
+                ]
+              : []),
+            { key: 'report' as const, run: openExport },
+          ]}
+        />
         </div>
       </div>
 
@@ -3759,12 +3787,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             {leftRailCollapsed && <span>Inspector</span>}
           </button>
-          {accessNote && !draftMode && (
-            <div
-              className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-orange-50 border border-orange-300 text-orange-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm"
-              data-testid="landlocked-banner" data-access-type={engineAccess?.type ?? 'frontage-layer'} title={accessNote.detail ?? undefined}
-            >
-              {accessNote.text}
+          {access && !draftMode && (accessNote || access.state === 'needs_verification') && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20" data-testid="landlocked-banner" data-access-type={engineAccess?.type ?? 'frontage-layer'} title={accessNote?.detail ?? undefined}>
+              <AccessCard finding={accessNote ? { ...access, headline: accessNote.text } : access} highlighted={showFrontage} onHighlight={setShowFrontage} />
             </div>
           )}
           {draftMode && (
@@ -3823,7 +3848,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 suppressCurbCut={noStreetAccess}
                 neighbors={neighbors}
                 topo={showTopo ? topoCanvas : null}
-                annotations={sheetAnnotations}
+                annotations={canvasAnnotations}
                 sheet={sheetTitle}
                 scene={scene}
                 initialSelectedIds={sceneSelectedIds}
@@ -4001,7 +4026,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} />
       )}
       {exportOpen && (
         <ExportReport

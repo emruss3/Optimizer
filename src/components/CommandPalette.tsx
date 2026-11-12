@@ -6,6 +6,7 @@ import {
   Clock, Star, Zap
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { searchParcels } from '../lib/parcelSearch';
 
 interface CommandItem {
   id: string;
@@ -211,21 +212,8 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
       
       // Search parcels using pg_trgm similarity
       if (supabase) {
-        // PostgREST's filter grammar reads commas and parentheses as syntax
-        const term = searchQuery.replace(/[,()]/g, ' ').trim();
-        // An APN typed with its spaces or dashes ("116 02 0 020.00") never
-        // matched the stored number; the unformatted column takes the digits
-        // (the cohort retest: exact APN search empty for 4727 Post Rd).
-        const digits = term.replace(/[^0-9a-z]/gi, '');
-        const filters = [`address.ilike.%${term}%`, `parcelnumb.ilike.%${term}%`];
-        if (digits.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${digits}%`);
-        const { data: parcels, error } = await supabase
-          .from('parcels')
-          .select('ogc_fid, parcelnumb, address, zoning, landval')
-          .or(filters.join(','))
-          .limit(10);
+        const parcels = (await searchParcels(searchQuery)).map(h => ({ ogc_fid: h.ogcFid, parcelnumb: h.parcelNumber, address: h.address, zoning: h.zoning }));
         if (stale()) return;
-        if (error) throw new Error(error.message ?? String(error));
 
         if (parcels) {
           parcels.forEach(parcel => {

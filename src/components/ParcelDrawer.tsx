@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   MapPin, 
@@ -21,6 +21,7 @@ import FullAnalysisModal from './FullAnalysisModal';
 import MultiParcelAnalysis from './MultiParcelAnalysis';
 import SitePlanDesigner from './SitePlanDesigner';
 import { useParcelDetail } from '../hooks/useParcelDetail';
+import { recordRecent } from '../lib/recentWork';
 
 interface ParcelDrawerProps {
   parcel: SelectedParcel;
@@ -29,9 +30,11 @@ interface ParcelDrawerProps {
   onAddToProject?: (parcel: SelectedParcel) => void;
   hasActiveProject?: boolean;
   onCreateProjectFromParcel?: (parcel: SelectedParcel) => void;
+  /** Go straight to this parcel's plan (Resume last plan, the sample). */
+  openPlanner?: boolean;
 }
 
-const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose, onAddToProject, hasActiveProject, onCreateProjectFromParcel }: ParcelDrawerProps) {
+const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose, onAddToProject, hasActiveProject, onCreateProjectFromParcel, openPlanner }: ParcelDrawerProps) {
   const [showFullAnalysis, setShowFullAnalysis] = useState(false);
   const [showMultiParcelAnalysis, setShowMultiParcelAnalysis] = useState(false);
   const [showSitePlanner, setShowSitePlanner] = useState(false);
@@ -40,6 +43,16 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
   // Hydrate the full parcel record (geometry + zoning constraints) for the
   // planner; the drawer's map-click payload can be thin.
   const { parcelDetail } = useParcelDetail(showSitePlanner ? parcel?.ogc_fid : null);
+
+  const parcelId = parcel?.ogc_fid != null ? String(parcel.ogc_fid) : null;
+  useEffect(() => {
+    if (isOpen && parcelId && openPlanner) setShowSitePlanner(true);
+  }, [isOpen, parcelId, openPlanner]);
+  // remember that this parcel has a plan, for Resume last plan
+  useEffect(() => {
+    if (showSitePlanner && parcelId) recordRecent({ ogcFid: parcelId, address: parcel?.address ?? null, zoning: parcel?.zoning ?? null, planned: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSitePlanner, parcelId]);
 
   if (!isOpen || !parcel) return null;
 

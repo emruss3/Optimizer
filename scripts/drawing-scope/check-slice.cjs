@@ -22,7 +22,7 @@ const check = (ok, what) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}`); if
 async function openPlanner(page, query = '') {
   await page.goto('http://localhost:5199/' + query, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(2500);
-  const trial = page.getByText('Start Free Trial').first();
+  const trial = page.locator('[data-testid="landing-start"]').first();
   if (await trial.isVisible().catch(() => false)) { await trial.click(); await page.waitForTimeout(2500); }
   const skip = page.getByText('Skip Tour').first();
   if (await skip.isVisible().catch(() => false)) { await skip.click(); await page.waitForTimeout(800); }
@@ -211,6 +211,7 @@ const colours = page => page.evaluate(() => {
   // the sheet: a slide first, laid over a render of the plan
   const sheet = page.locator('[data-testid="sheet-a01"]');
   const rendered = () => page.waitForSelector('[data-testid="sheet-a01"][data-sheet-style="rendered"]', { timeout: 120000 }).then(() => true).catch(() => false);
+  await page.locator('[data-testid="export-menu"]').click();
   await page.locator('[data-testid="open-sheets"]').click();
   await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 60000 });
   check(await rendered(), 'the sheet is laid over a render of the plan');

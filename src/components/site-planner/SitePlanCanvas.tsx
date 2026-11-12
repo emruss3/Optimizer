@@ -1690,6 +1690,27 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     for (const a of annotations) {
       if (a.minZoom != null && zoom < a.minZoom) continue;
       const angle = a.angle ?? 0;
+      if (a.kind === 'highlight') {
+        // an edge a finding is about (the street frontage): a wide band under a solid line
+        const line = a.line ?? [];
+        if (line.length >= 2) {
+          const trace = () => {
+            ctx.beginPath();
+            line.forEach((p, i) => (i ? ctx.lineTo(p[0] ?? 0, p[1] ?? 0) : ctx.moveTo(p[0] ?? 0, p[1] ?? 0)));
+            ctx.stroke();
+          };
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = 'rgba(234, 88, 12, 0.28)';
+          ctx.lineWidth = 12 / zoom;
+          trace();
+          ctx.strokeStyle = '#EA580C';
+          ctx.lineWidth = 3 / zoom;
+          trace();
+        }
+        if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10.5, weight: 700, fill: '#9A3412', pill: 'rgba(255,247,237,0.96)' });
+        continue;
+      }
       if (a.kind === 'station') {
         const nx = -Math.sin(angle);
         const ny = Math.cos(angle);

@@ -6,6 +6,10 @@ import { useState } from 'react';
 import { Parcel, supabase } from './lib/supabase';
 import Header from './components/Header';
 import LandingPage from './components/LandingPage';
+import StartPage from './components/StartPage';
+import { hasVisited, markVisited, recordRecent } from './lib/recentWork';
+import { openParcel } from './lib/parcelSearch';
+import { SAMPLE_PARCEL } from './lib/sampleParcel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { UserOnboarding } from './components/UserOnboarding';
 import { LoadingCard, AnalysisLoading, Toast } from './components/LoadingStates';
@@ -58,7 +62,11 @@ function preloadMapOnIdle() {
 function App() {
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [showLandingPage, setShowLandingPage] = useState(true);
+  // First visit: the marketing page. After that: straight to work.
+  const [showLandingPage, setShowLandingPage] = useState(() => !hasVisited());
+  const [showStart, setShowStart] = useState(() => hasVisited());
+  // A parcel opened from "Resume last plan" goes straight to its plan.
+  const [plannerOnOpen, setPlannerOnOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showUnifiedWorkspace, setShowUnifiedWorkspace] = useState(false);
   const [showProjectWorkflow, setShowProjectWorkflow] = useState(false);
@@ -113,6 +121,10 @@ function App() {
     }
     
     // Show parcel details (active projects are handled in Map component)
+    recordRecent({ ogcFid: validId, address: parcel.address ?? null, zoning: (parcel as { zoning?: string | null }).zoning ?? null });
+    setPlannerOnOpen(false);
+    setShowStart(false);
+    setShowLandingPage(false);
     setSelectedParcel(parcel);
     setIsDrawerOpen(true);
   };
@@ -124,10 +136,15 @@ function App() {
   handleParcelClickRef.current = handleParcelClick;
   React.useEffect(() => {
     const handleOpenParcelDrawer = async (event: CustomEvent) => {
-      const detail = event.detail as Partial<Parcel> | null;
-      if (!detail || detail.ogc_fid == null) return;
+      const raw = event.detail as (Partial<Parcel> & { openPlanner?: boolean }) | null;
+      if (!raw || raw.ogc_fid == null) return;
+      const { openPlanner, ...detail } = raw;
+      const straightToPlan = () => setPlannerOnOpen(!!openPlanner);
+      setShowStart(false);
+      setShowLandingPage(false);
       if (detail.geometry) {
         handleParcelClickRef.current(detail as Parcel);
+        straightToPlan();
         return;
       }
       // An id without geometry (the test harness, a deep link): fetch the
@@ -141,13 +158,16 @@ function App() {
         const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
         if (row?.geometry) {
           handleParcelClickRef.current({ ...row, ...detail, geometry: row.geometry, ogc_fid: String(row.ogc_fid ?? detail.ogc_fid) } as unknown as Parcel);
+          straightToPlan();
           return;
         }
       } catch (e) {
         console.warn('openParcelDrawer: could not fetch the parcel row, opening on the id', e);
       }
+      recordRecent({ ogcFid: String(detail.ogc_fid), address: detail.address ?? null });
       setSelectedParcel(detail as Parcel);
       setIsDrawerOpen(true);
+      straightToPlan();
     };
     const listener = (event: Event) => { void handleOpenParcelDrawer(event as CustomEvent); };
     document.addEventListener('openParcelDrawer', listener);
@@ -186,9 +206,11 @@ function App() {
     setShowUnifiedProjectWorkflow(true);
   };
 
+  /** The demo is a real parcel with a finished plan: open it. */
   const handleViewDemo = () => {
-    // For now, just hide landing page - in real app would show demo
+    markVisited();
     setShowLandingPage(false);
+    openParcel(SAMPLE_PARCEL, true);
   };
 
   const showToast = (type: 'success' | 'error' | 'warning' | 'info', title: string, message?: string) => {
@@ -201,6 +223,7 @@ function App() {
   };
 
   const handleGetStarted = () => {
+    markVisited();
     setShowLandingPage(false);
     setShowOnboarding(true);
   };
@@ -283,6 +306,10 @@ function App() {
     );
   }
 
+  if (showStart && !activeProjectId && !isDrawerOpen) {
+    return <StartPage onBrowseMap={() => setShowStart(false)} onAbout={() => { setShowStart(false); setShowLandingPage(true); }} />;
+  }
+
   return (
     <React.Suspense fallback={<div className="h-screen flex items-center justify-center text-sm text-gray-500">Loading workspace…</div>}>
     <ErrorBoundary>
@@ -355,6 +382,7 @@ function App() {
         parcel={selectedParcel}
         isOpen={isDrawerOpen}
         onClose={handleCloseDrawer}
+        openPlanner={plannerOnOpen}
         onAddToProject={handleAddToProject}
         hasActiveProject={!!project}
         onCreateProjectFromParcel={handleCreateProjectFromParcel}
