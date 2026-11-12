@@ -50,6 +50,11 @@ CFG = dict(
     module_round_ft=5, min_area_module_share=0.95,   # as training.fn_ai_site_opts
     engine_labels=False,    # format 2: the yield bucket is the engine's lot count on the built streets, with its code-clean verdict
     lots=True,              # False = streets only: the model writes the new streets and the engine cuts every lot
+    frontage_ctx=False,     # format 3: the given context is the engine's own reading of the site's access (the boundary runs
+                            # that front a public street, and adjoining street stubs) instead of mapped roads outside the site
+    max_ctx_lines=12,       # frontage runs and stubs given, longest first
+    connect=False,          # generation: every new street starts on the frontage, a stub or an earlier street
+    connect_end_ft=40.0,    # generation: a street end this close to another line is closed onto it
     scale_aug=0.0,          # training only: each example is also shown a little larger or smaller (0.15 = up to 15% either way)
     strict_width=True,      # model lots must be at least the module width (the engine's standard lot)
     inner_margin_row=0.5,   # a street counts as on the site when it is at least this many right-of-way widths inside the outline
@@ -108,6 +113,33 @@ def simplify_to(g, n, tols=(0, 20, 30, 45, 70, 100, 150)):
         if len(pts) <= n:
             return pts
     return None
+
+
+def context_lines(geoms, cfg, rw):
+    """Frontage runs and stubs as context roads: joined where they touch, simplified, longest first."""
+    from shapely.ops import linemerge
+    lines = [g for g in geoms if g is not None and not g.is_empty and g.length > 1]
+    if not lines:
+        return []
+    try:
+        merged = linemerge(unary_union(lines))
+    except Exception:
+        merged = unary_union(lines)
+    out = []
+    for g in sorted(lines_of(merged), key=lambda q: -q.length)[:cfg['max_ctx_lines']]:
+        c = simplify_to(g.simplify(5), cfg['max_street_pts'])
+        if c and len(c) >= 2:
+            out.append({'ctx': True, 'line': c, 'len': LineString(c).length, 'lots': {1: [], -1: []}, 'front': {1: rw / 2, -1: rw / 2}})
+    return out
+
+
+def parse_lines_field(txt):
+    out = []
+    for part in (txt or '').split(';'):
+        pts = [tuple(map(float, q.split())) for q in part.split(',') if q.strip()]
+        if len(pts) >= 2:
+            out.append(LineString(pts))
+    return out
 
 
 def canon(s, th=0.0, mir=False, sc=1.0):
@@ -284,6 +316,12 @@ def parse_site(p, cfg):
                 med = lambda v: sorted(v)[len(v) // 2] if v else rw / 2
                 roads.append({'ctx': q['ctx'], 'line': q['line'], 'len': q['g'].length,
                               'lots': {sd: sorted(q['lots'][sd]) for sd in (1, -1)}, 'front': {sd: med(q['f'][sd]) for sd in (1, -1)}})
+    if cfg.get('frontage_ctx'):
+        if len(p) < 14 or not (p[12] or p[13]):
+            return 'no_frontage'
+        roads = [r for r in roads if not r['ctx']] + context_lines(parse_lines_field(p[12]) + parse_lines_field(p[13]), cfg, rw)
+        if not any(not r['ctx'] for r in roads):
+            return 'no_new_street'
     if not roads or not n_fmt:
         return 'no_lots'
     if len(roads) > cfg['max_roads']:
@@ -311,7 +349,7 @@ def parse_lines(lines, cfg):
     sites, drop = [], {}
     for line in lines:
         p = line.strip().split('|')
-        if len(p) not in (10, 12) or not p[6] or not p[7] or not p[8]:
+        if len(p) not in (10, 12, 14) or not p[6] or not p[7] or not p[8]:
             if line.strip():
                 drop['fields'] = drop.get('fields', 0) + 1
             continue
@@ -491,6 +529,8 @@ def generate(model, s, cfg, y, new_streets=None):
                     line.append((unc(t), unc(yy)))
             if len(line) < 2:
                 break
+            if cfg.get('connect'):
+                line = attach(line, [LineString(r['line']) for r in out if len(r['line']) >= 2], cfg)
             out.append(road(False, line))
     elif new_streets is None:
         n_new = 0
@@ -516,6 +556,21 @@ def generate(model, s, cfg, y, new_streets=None):
             n_new += 1
             sides(road(False, line))
     return out
+
+
+def attach(line, others, cfg):
+    """A new street starts on the nearest line already there (frontage, stub or earlier street), and an end that
+    comes close to another line is closed onto it. Points are added at the ends only; the street is not re-routed."""
+    if not others:
+        return line
+    for end in (0, -1):
+        p = Point(line[end])
+        near = min(others, key=lambda q: q.distance(p))
+        d = near.distance(p)
+        if d > 0.5 and (end == 0 or d <= cfg['connect_end_ft']):
+            q = near.interpolate(near.project(p))
+            line = [(q.x, q.y)] + line if end == 0 else line + [(q.x, q.y)]
+    return line
 
 
 def pack(s, cfg, roads, P):
@@ -759,6 +814,8 @@ def site_from_request(d, cfg):
         if c:
             roads.append({'ctx': True, 'line': c, 'len': LineString(c).length, 'lots': {1: [], -1: []}, 'front': {1: rw / 2, -1: rw / 2}})
     roads = sorted(roads, key=lambda r: -r['len'])[:max(0, cfg['max_roads'] - cfg['max_new_streets'])]
+    if cfg.get('frontage_ctx'):
+        roads = context_lines([LineString([(x - ox, y - oy) for x, y in line]) for line in (d.get('frontage') or []) + (d.get('stubs') or []) if len(line) >= 2], cfg, rw)
     return {'key': d.get('key'), 'split': 'request', 'w': float(d['w']), 'd': float(d['d']), 'rw': rw, 'min_sf': float(d['min_sf']),
             'b': b, 'roads': roads, 'n_fmt': 0, 'n_total': 0, 'area': P.area, 'yield': 0.0, 'origin': (ox, oy)}
 
