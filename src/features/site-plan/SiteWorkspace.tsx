@@ -81,7 +81,9 @@ import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, contextStateLabel, type PlanLineage } from './ui/ContextLineage';
 import { PlanBasisDisclosure, type BasisTone } from './ui/PlanBasisDisclosure';
 import { mfAccessSummary } from './api/mfAccess';
-import SchemesRail from './ui/SchemesRail';
+import SchemesRail, { schemeNames } from './ui/SchemesRail';
+import SchemeCompare from './ui/SchemeCompare';
+import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 import { buildDrawingScene, sceneEvidence, selectionFor, type SelectionCache } from './scene/buildScene';
@@ -2715,6 +2717,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       });
   }, [runServerMfPlan]);
 
+  /** Underwrite a saved scheme: put it on the sheet if it is not there
+   *  already, then open its pro forma. The figures follow the sheet. */
+  const handleUnderwriteCandidate = useCallback((c: MfCandidate) => {
+    if (c.id !== activeCandidateId) handleViewCandidate(c);
+    setDockTab('results');
+    setDockOpen(true);
+  }, [activeCandidateId, handleViewCandidate, setDockOpen]);
+
+  const [comparing, setComparing] = useState<MfCandidate[] | null>(null);
+  const loadCompareDrawing = useCallback(
+    (c: MfCandidate) => (contextOgcFid == null ? Promise.resolve(null) : loadSchemeDrawing(contextOgcFid, c)),
+    [contextOgcFid],
+  );
+
   /** Explicit "Regenerate with current context": a NEW candidate descended
    *  from the saved one, planned on the ACTIVE snapshot. The saved scheme
    *  itself is never silently rewritten. */
@@ -3887,6 +3903,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 activeContextId={plannerCtx?.context_id ?? null}
                 onRegenerateWithCurrentContext={handleRegenerateCandidate}
                 maxGsf={maxBuildout?.max_gsf ?? null}
+                onUnderwrite={handleUnderwriteCandidate}
+                onCompare={setComparing}
               />
             )}
             {dockTab === 'flags' && (
@@ -3911,6 +3929,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
         </div>
       </div>
+      {comparing && parcelRing3857 && (
+        <SchemeCompare
+          schemes={comparing.map(c => ({ candidate: c, name: schemeNames(mfCandidates).get(c.id) ?? 'Scheme' }))}
+          parcelRing={parcelRing3857}
+          load={loadCompareDrawing}
+          activeId={activeCandidateId}
+          onView={handleViewCandidate}
+          onUnderwrite={handleUnderwriteCandidate}
+          onClose={() => setComparing(null)}
+        />
+      )}
       {sheetsOpen && scene && (
         <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} />
       )}

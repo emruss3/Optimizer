@@ -394,9 +394,25 @@ Underwrite on each saved option.
 Checks: 70 files, 771 tests pass; app type check 2,086, unchanged;
 `check-slice.cjs` 65 of 65.
 
+## Slice 6: the decision workflow
+
+- Sheet A-03, Section A–A: a schematic cut through the first tagged building,
+  with property lines, stacked levels and an estimated height. The sheet says
+  the ground is drawn level and heights are estimates from story counts.
+  `slice-6/a03-section-1710-meharry.png`.
+- Compare schemes: tick two or three saved schemes in the Schemes tab. Each is
+  drawn in one frame fitted to the parcel, so the scale is shared. Figures are
+  the ones stored with each scheme, with differences against the first.
+  `slice-6/compare-schemes.png` (the fixture store holds one drawing per
+  parcel, so the three drawings in the capture are the same plan).
+- Underwrite this scheme: on every saved scheme and in the comparison. It puts
+  the scheme on the sheet and opens its pro forma.
+- Saved schemes are named Option 1, Option 2 and so on, oldest first.
+
+Checks: 71 files, 777 tests pass; app type check 2,086, unchanged.
+
 ## Not done yet
 
-- Section A–A (sheet A-03) and scheme comparison.
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry
   Blvd: the west edge, with streets to the east and south). Planting no
   longer follows it; the setback labels on the 2D canvas still do.
