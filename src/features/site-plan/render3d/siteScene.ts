@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MassingData } from '../ui/massingData';
-import type { RenderSlab, RGBA, Surface } from '../ui/renderModel';
+import { convexHull, type RenderSlab, type RGBA, type Surface } from '../ui/renderModel';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
@@ -21,6 +21,8 @@ export interface SiteModel {
   pick: THREE.Mesh[];
   /** Half the size of the plan, metres: what the lights and cameras frame. */
   extent: number;
+  /** The parcel a camera should centre on and fit: its middle (x east, y north) and the radius that holds all of it, metres. */
+  focus: { x: number; y: number; radius: number };
   surfaces: Surfaces;
   /** Settles when the pictures the trees are made of have arrived (or after a few seconds without them): a still waits for it. */
   ready: Promise<void>;
@@ -243,6 +245,10 @@ export interface SiteModelOptions {
   /** Show the existing buildings as plain white solids on a bare ground: for
    *  a plan seen from above, where the surroundings must not compete. */
   clayContext?: boolean;
+  /** The plan for review, not for show: the proposal in its materials, the neighbours as plain
+   *  white solids, no trees to hide it, and the parcel line, the buildable envelope and the
+   *  access drawn on the ground. */
+  review?: boolean;
   /** A lighter model of the same plan, for a device that draws on its processor
    *  (render3d/quality): the site's trees as painted cards, no shrubs, plain neighbours. */
   light?: boolean;
@@ -443,9 +449,18 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   };
 
   // ground: a wide plate that runs out into the haze, then the neighbourhood on it
-  const real = !opts.clayContext;
+  const real = !opts.clayContext && !opts.review;
   const reach = Math.max(1600, data.extent * 16);
   put('plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
+  // Public streets. The record gives the neighbouring parcels, and often no street lines: what lies
+  // between parcels is right of way. A road-coloured plate under them shows it, so the streets read
+  // even where no line was sent. Where lines were sent they are drawn over it.
+  if (!opts.noContext) {
+    const corners: Array<[number, number]> = [];
+    for (const c of data.contextPolygons) if (c.elevation < 1) for (const p of c.polygon[0] ?? []) corners.push([p[0] ?? 0, p[1] ?? 0]);
+    const hull = corners.length >= 3 ? convexHull(corners) : [];
+    if (hull.length >= 3) put(opts.review || opts.clayContext ? 'plain|flat' : 'asphalt|flat', plane(hull.map(p => [p[0], p[1], -0.005])), opts.review || opts.clayContext ? [176, 178, 180, 255] : [120, 120, 122, 255]);
+  }
   const neighbours: Array<{ ring: number[][]; minX: number; minY: number; maxX: number; maxY: number }> = [];
   // how far from the middle of the site a neighbour is still drawn with its windows and roof
   const detailReach = Math.max(110, data.extent * 0.95);
@@ -512,11 +527,12 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // the site
   for (const l of data.lawn) {
     const ring = l.polygon[0];
-    if (ring) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), LAWN);
+    // in review the parcel is lighter than the land round it, so there is no doubt which one it is
+    if (ring) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), opts.review ? [214, 224, 170, 255] : LAWN);
   }
   // a subdivision's lots: each yard its own shade of lawn, and a board fence round the back of it.
   // Illustration: the plan draws a lot line, not a fence.
-  if (data.lots.length) {
+  if (data.lots.length && !opts.review) {
     const pads = data.polygons.filter(p => p.building).map(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
     const paved: Array<[number, number]> = data.polygons.filter(p => !p.building && SITE[p.kind ?? ''] && SITE[p.kind ?? '']?.surface !== 'grass').flatMap(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
     const middle = (r: Array<[number, number]>): [number, number] => { const n = Math.max(1, r.length); return [r.reduce((a, q) => a + q[0], 0) / n, r.reduce((a, q) => a + q[1], 0) / n]; };
@@ -562,7 +578,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (!m) continue;
     put(`${m.surface}|flat`, prism(p.polygon.map(r => r.map(q => [q[0] ?? 0, q[1] ?? 0, 0])), m.surface === 'grass' ? 0.27 : 0.3), m.color);
   }
-  for (const c of data.curbs) put('concrete|flat', ribbon(c.path, 0.2, 0.36), [226, 223, 214, 255]);
+  // in review the edges of the streets and drives are drawn in amber: the access is what is being checked
+  for (const c of data.curbs) put(opts.review ? 'plain|flat' : 'concrete|flat', ribbon(c.path, opts.review ? 0.45 : 0.2, 0.36), opts.review ? [234, 138, 30, 255] : [226, 223, 214, 255]);
+  // and the parcel line and the buildable envelope are drawn on the ground
+  if (opts.review) for (const g of data.groundPaths) put('plain|flat', ribbon(g.path, Math.max(0.5, g.widthM * 1.1), 0.42), g.color);
   for (const s of data.stripes) put('plain|flat', ribbon(s.path, 0.12, 0.33), [244, 244, 240, 255]);
 
   // buildings: walls and roofs in their materials, glass apart
@@ -657,7 +676,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       root.add(mesh);
     });
   };
-  if (kinds.length && cardsOnly && sitters().length) {
+  if (opts.review) {
+    // no planting in review: nothing stands between the reader and the proposal
+  } else if (kinds.length && cardsOnly && sitters().length) {
     plant(data.trees.map(t => [t.position[0], t.position[1], (t.radiusM ?? 2.8) * 1.12]), 'site-trees', true);
   } else if (kinds.length) {
     // no two trees on a street are the same green
@@ -782,6 +803,11 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   }
 
   lap('trees planted');
+  // what a camera centres on: the parcel, or the plan where no parcel is known
+  const outline = (data.lawn[0]?.polygon[0] ?? []).map(p => [p[0] ?? 0, p[1] ?? 0] as [number, number]);
+  const held = outline.length >= 3 ? outline : [[-data.extent / 2, -data.extent / 2], [data.extent / 2, data.extent / 2]] as Array<[number, number]>;
+  const fx = (Math.min(...held.map(p => p[0])) + Math.max(...held.map(p => p[0]))) / 2, fy = (Math.min(...held.map(p => p[1])) + Math.max(...held.map(p => p[1]))) / 2;
+  const focus = { x: fx, y: fy, radius: Math.max(15, ...held.map(p => Math.hypot(p[0] - fx, p[1] - fy))) };
   // picking: one unseen solid a building
   const pickGroup = new THREE.Group();
   pickGroup.visible = false;
@@ -809,6 +835,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     root,
     pick,
     extent: Math.max(20, data.extent / 2),
+    focus,
     surfaces,
     ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),
     dispose() {

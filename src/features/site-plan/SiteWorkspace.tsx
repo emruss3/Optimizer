@@ -3677,7 +3677,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             onClick={() => setLeftRailCollapsed(c => !c)}
             title={leftRailCollapsed ? 'Show the inspector: layout, context and parameters' : 'Hide the inspector and give the drawing the room'}
             data-testid="inspector-toggle" aria-expanded={!leftRailCollapsed}
-            className="absolute top-5 left-44 z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white/95 border border-gray-200 text-xs font-medium text-gray-600 hover:text-gray-900 shadow-sm"
+            className={`absolute ${viewMode === '3d' ? 'top-12 left-2' : 'top-5 left-44'} z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white/95 border border-gray-200 text-xs font-medium text-gray-600 hover:text-gray-900 shadow-sm`}
           >
             {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             {leftRailCollapsed && <span>Inspector</span>}

@@ -59,9 +59,12 @@ export async function renderAerialImage(req: { data: MassingData; widthPx: numbe
     await model.ready;
     const E = model.extent;
     const camera = new THREE.PerspectiveCamera(30, widthPx / heightPx, 1.5, E * 40);
-    const el = (18 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180, dist = E * 2.5;
-    camera.position.set(dist * Math.cos(el) * Math.sin(az), E * 0.04 + dist * Math.sin(el), dist * Math.cos(el) * Math.cos(az));
-    camera.lookAt(0, E * 0.46, 0);
+    // centred on the parcel, far enough back to hold all of it, with a band of sky above
+    const { x, y, radius } = model.focus;
+    const el = (20 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180;
+    const dist = (radius * 1.25) / Math.sin((30 * Math.PI) / 360 * Math.min(1, widthPx / heightPx));
+    camera.position.set(x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), -y + dist * Math.cos(el) * Math.cos(az));
+    camera.lookAt(x, radius * 0.3, -y);
     camera.updateProjectionMatrix();
     const [dx, dy, dz] = sunPosition(80, 16.5, data.origin.latDeg).direction;
     stage.setSun([-dx, -dy, -dz]);

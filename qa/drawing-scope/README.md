@@ -371,11 +371,28 @@ building's tag and caption are set down first each frame, and a unit label,
 stall count, zone name or setback label that would cover one is left out.
 Evidence: `slice-5/plan_1440x900.jpg`.
 
-Still to do from the review: a review view in 3D; the building section,
-scheme comparison and Underwrite on each saved option.
+**A review view in 3D** (the review's third part). The 3D view opens in
+Review: the proposal in its materials, the existing buildings as plain white
+solids, no planting in the way, the parcel line, the buildable envelope and
+the access drawn on the ground, with a legend. Rendering is one click away
+and Present always shows it.
+
+From the owner's notes on the 3D view the same day:
+
+- Every camera centres on the parcel and stands far enough back to hold all
+  of it. The bottom of the parcel was cut off before.
+- In Review the parcel is lighter than the land round it and outlined.
+- Public streets show even where the record sends no street lines: what lies
+  between the neighbouring parcels is right of way, and a road-coloured plate
+  under them shows it. 13 of the 19 fixture parcels had no street lines.
+
+Evidence: `slice-5/review_apartments.jpg`, `slice-5/review_neighborhood.jpg`.
+
+Still to do from the review: the building section, scheme comparison and
+Underwrite on each saved option.
 
 Checks: 70 files, 771 tests pass; app type check 2,086, unchanged;
-`check-slice.cjs` 60 of 60.
+`check-slice.cjs` 65 of 65.
 
 ## Not done yet
 
