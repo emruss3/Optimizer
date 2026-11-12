@@ -69,6 +69,8 @@ CFG = dict(
     stay_inside=False,      # generation, format 4: a street's first piece heads into the site, and every piece is cut where it first leaves it
     enter_probe_ft=20.0,    # how far along its first piece a street must already be inside the site
     end_on_within_ft=None,  # generation, format 4: a street may end on a line only when it has come this close to it (None = any line)
+    min_street_cover=None,  # generation, format 4: the layout is not finished until its new streets reach this share of
+                            # site area / (two lot depths + right-of-way); built layouts: 0.50 at the 10th percentile, 0.71 at the 25th, 0.90 median
     attach_tol=30.0,        # a street end this close to a line counts as on it (mapped streets and plat lines do not meet to the foot)
     attach_far=200.0,       # a street that touches nothing is taken to enter at the boundary when it comes this close to it
     max_segments=14,        # straight pieces per street
@@ -621,9 +623,10 @@ def turtle_generate(model, s, cfg, y, view=0):
     m = len(placed)
     f = (ftok(s['rw'] / 2) - F0) * FBIN
     out = [{'ctx': True, 'line': c, 'len': line_len(c), 'lots': {1: [], -1: []}, 'front': {1: f, -1: f}} for c in ctx]
-    n_new = 0
+    n_new, total = 0, 0.0
+    need = (cfg.get('min_street_cover') or 0.0) * P.area / (2 * s['d'] + s['rw'])
     while n_new < cfg['max_new_streets'] and len(placed) < NA and g.room(12):
-        if g.pick([STREET, EOS]) == EOS:
+        if total >= need and g.pick([STREET, EOS]) == EOS:      # below the cover asked for, the layout goes on
             break
         g.push(STREET)
         # a street starts on a public frontage or an earlier street; on the bare boundary only when the site has no frontage on record
@@ -688,6 +691,7 @@ def turtle_generate(model, s, cfg, y, view=0):
         placed.append(LineString(dec))
         out.append({'ctx': False, 'line': dec, 'len': line_len(dec), 'lots': {1: [], -1: []}, 'front': {1: f, -1: f}})
         n_new += 1
+        total += line_len(dec)
     if th or mir:
         for r in out:
             r['line'] = [xf_inv(q, th, mir) for q in r['line']]
