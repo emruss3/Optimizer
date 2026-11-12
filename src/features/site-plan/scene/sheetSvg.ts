@@ -303,7 +303,11 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     for (const f of scene.features) {
       out.push(`<path d="${path(f.polygons)}" fill="none" ${LINE[f.styleRole] ?? 'stroke="none"'} fill-rule="evenodd" data-role="${f.styleRole}" data-feature-id="${esc(f.id)}"/>`);
     }
-    if (scene.parcel) out.push(`<path d="${path(scene.parcel.polygons)}" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="3.2"/>`);
+    if (scene.parcel) {
+      // the surroundings step back a little, so the site is what the eye lands on
+      out.push(`<path d="M${draw.x} ${draw.y}h${draw.w}v${draw.h}h${-draw.w}Z${path(scene.parcel.polygons)}" fill="#ffffff" fill-opacity="0.3" fill-rule="evenodd" data-role="surroundings"/>`);
+      out.push(`<path d="${path(scene.parcel.polygons)}" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="3.2"/>`);
+    }
   }
   if (scene.envelope) out.push(`<path d="${path(scene.envelope.polygons)}" fill="none" stroke="${lined ? '#ffffff' : '#5b6168'}" stroke-width="${lined ? 0.8 : 0.6}" stroke-dasharray="4 3" data-role="envelope"/>`);
   if (scene.parcel) out.push(`<path d="${path(scene.parcel.polygons)}" fill="none" fill-rule="evenodd" stroke="${INK}" stroke-width="1.6" stroke-dasharray="16 3 3 3 3 3" data-role="parcel"/>`);
@@ -336,6 +340,16 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     const s = `${f.stalls} stalls`;
     cands.push({ id: `park:${f.id}`, priority: LABEL_PRIORITY.parkingCount, x, y, w: s.length * 3.4 + 8, h: 11 });
     text.set(`park:${f.id}`, { lines: [s], kind: 'parking', size: 6.5 });
+  }
+  // lot numbers: a plan of lots is read by them
+  for (const f of scene.features) {
+    const m = f.role === 'lot' ? /^Lot (\d+)$/.exec(f.name) : null;
+    const c = m ? centre(f.polygons) : null;
+    if (!m || !c) continue;
+    const [x, y] = P(c);
+    const s = m[1] ?? '';
+    cands.push({ id: `lot:${f.id}`, priority: LABEL_PRIORITY.dimension, x, y, w: s.length * 3.6 + 3, h: 7.5 });
+    text.set(`lot:${f.id}`, { lines: [s], kind: 'lot', size: 6 });
   }
   const seenRoad = new Set<string>();
   for (const road of scene.context.roads) {
@@ -374,6 +388,11 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
       // over a picture the name is white with a dark edge; on the drawn plan, a quiet grey
       const ink = lined ? 'fill="#ffffff" stroke="#1f2328" stroke-opacity="0.55" stroke-width="1.6" paint-order="stroke"' : 'fill="#8a8578"';
       out.push(`<g data-label="street"><text x="${l.x}" y="${r2(l.y + 2.2)}" transform="rotate(${r2(t.angle ?? 0)} ${l.x} ${l.y})" font-size="${lined ? t.size + 0.8 : t.size}" font-weight="600" letter-spacing="0.8" text-anchor="middle" ${ink}>${esc(t.lines[0] ?? '')}</text></g>`);
+      continue;
+    }
+    if (t.kind === 'lot') {
+      const ink = lined ? 'fill="#ffffff" stroke="#1f2328" stroke-opacity="0.6" stroke-width="1.5" paint-order="stroke"' : `fill="${INK}"`;
+      out.push(`<text x="${l.x}" y="${r2(l.y + 2.1)}" font-size="${t.size}" font-weight="700" text-anchor="middle" ${ink} data-label="lot">${esc(t.lines[0] ?? '')}</text>`);
       continue;
     }
     out.push(`<g data-label="${t.kind}"><rect x="${r2(l.x - l.w / 2)}" y="${r2(l.y - l.h / 2)}" width="${r2(l.w)}" height="${r2(l.h)}" rx="2.5" fill="#ffffff" fill-opacity="0.94"/>`);

@@ -97,6 +97,20 @@ describe('the sheet', () => {
     expect(sheet.svg).toContain('are illustration');
   });
 
+  it('numbers the lots, and steps the surroundings back under a picture', () => {
+    const lots = buildDrawingScene({
+      parcelId: 9, schemeId: 's', parcelGeometry: sq(-20, -20, 300, 200),
+      elements: [el('lot-1', 'other', sq(0, 0, 80, 120), { areaSqFt: 9600 }, 'Lot 1'), el('lot-2', 'other', sq(80, 0, 80, 120), { areaSqFt: 9600 }, 'Lot 2')],
+    })!;
+    const drawn = new DOMParser().parseFromString(renderSitePlanSheet(lots, title, 'slide').svg, 'image/svg+xml');
+    expect([...drawn.querySelectorAll('[data-label="lot"]')].map(n => n.textContent)).toEqual(['1', '2']);
+    expect(drawn.querySelector('[data-role="surroundings"]')).toBeNull();
+    const over = new DOMParser().parseFromString(renderSitePlanSheet(lots, title, 'slide', { href: 'data:image/jpeg;base64,AAAA' }).svg, 'image/svg+xml');
+    expect(over.querySelector('parsererror')).toBeNull();
+    expect(over.querySelector('[data-role="surroundings"]')).not.toBeNull();
+    expect(over.querySelectorAll('[data-label="lot"]')).toHaveLength(2);
+  });
+
   it('states no numeric scale on a slide', () => {
     expect(renderSitePlanSheet(scene, title, 'tabloid').numericScale).toMatch(/^1" = \d+'$/);
     const slide = renderSitePlanSheet(scene, title, 'slide');
