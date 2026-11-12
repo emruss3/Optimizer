@@ -37,7 +37,14 @@ G0, NG, GBIN = D0 + ND, 240, 5      # gap before a lot along the street: 5 ft bi
 F0, NF, FBIN = G0 + NG, 24, 5       # distance from the street line to the front of its lots: 5 ft bins
 V1 = F0 + NF                        # vocabulary of format 1 (no engine labels)
 CLEAN_Y, CLEAN_N, CLEAN_U = V1, V1 + 1, V1 + 2   # the engine's verdict on the built streets: code-clean, not, unknown
-V = V1 + 3
+V2 = V1 + 3                         # vocabulary of format 2
+# format 4, streets as paths: where the street starts (which line already on the plan), then turn and length for each
+# straight piece, then how it ends (free, or on another line)
+A0, NA = V2, 40                     # anchor: 0 = the site boundary, then the given roads, then the new streets in order
+T0, NT, TBIN = A0 + NA, 72, 5.0     # turn from the anchor line's direction (first piece) or the previous piece: 5 degree bins
+L0, NL, LBIN = T0 + NT, 200, 10.0   # length of a straight piece: 10 ft bins
+END_FREE, END_ON = L0 + NL, L0 + NL + 1
+V = END_ON + 1
 
 # Settings. Model and training sizes are choices for this run. The lot standard is the one the rule engine is
 # replayed with (module width and depth from the plat, minimum area = the smaller of the plat's small-lot area and
@@ -53,6 +60,10 @@ CFG = dict(
     frontage_ctx=False,     # format 3: the given context is the engine's own reading of the site's access (the boundary runs
                             # that front a public street, and adjoining street stubs) instead of mapped roads outside the site
     max_ctx_lines=12,       # frontage runs and stubs given, longest first
+    turtle=False,           # format 4: each new street is written as a path from a line already on the plan (see street_plan)
+    attach_tol=30.0,        # a street end this close to a line counts as on it (mapped streets and plat lines do not meet to the foot)
+    attach_far=200.0,       # a street that touches nothing is taken to enter at the boundary when it comes this close to it
+    max_segments=14,        # straight pieces per street
     connect=False,          # generation: every new street starts on the frontage, a stub or an earlier street
     connect_end_ft=40.0,    # generation: a street end this close to another line is closed onto it
     scale_aug=0.0,          # training only: each example is also shown a little larger or smaller (0.15 = up to 15% either way)
@@ -193,6 +204,8 @@ def road_tokens(ctx, line):
 
 
 def encode(s, cfg, th=0.0, mir=False, sc=1.0):
+    if cfg.get('turtle'):
+        return turtle_encode(s, cfg, th, mir, sc)[0]
     b, roads = canon(s, th, mir, sc)
     seq = prefix_tokens(s, b, s['yield'], cfg, s.get('clean'), sc)
     for r in roads:
@@ -267,6 +280,7 @@ def parse_site(p, cfg):
         return 'outline_points'
     if max(math.hypot(*pt) for pt in b) > CBIN * (NC // 2 - 5):
         return 'too_large'
+    P_s = poly_of(b)                              # the outline as the model sees it
     rw = float(p[4] or 50)
     raw = {}
     for q in p[8].split(';'):
@@ -324,6 +338,15 @@ def parse_site(p, cfg):
             return 'no_new_street'
     if not roads or not n_fmt:
         return 'no_lots'
+    plan, dropped_ft = None, 0.0
+    if cfg.get('turtle'):
+        ctx_roads = [r for r in roads if r['ctx']][:NA - 1 - cfg['max_new_streets']]
+        plan, dropped_ft = street_plan(P_s, [r['line'] for r in ctx_roads], [r['line'] for r in roads if not r['ctx']], cfg)
+        plan = plan[:cfg['max_new_streets']]
+        if not plan:
+            return 'no_new_street'
+        roads = ctx_roads + [{'ctx': False, 'line': it['line'], 'len': LineString(it['line']).length, 'lots': {1: [], -1: []},
+                              'front': {1: rw / 2, -1: rw / 2}} for it in plan]
     if len(roads) > cfg['max_roads']:
         return 'roads'
     w, d = float(p[2] or 0), float(p[3] or 0)
@@ -333,7 +356,8 @@ def parse_site(p, cfg):
     w, d = round(w / mr) * mr, round(d / mr) * mr
     amin = float(p[5] or 0) or cfg['min_area_module_share'] * w * d
     s = {'split': p[0], 'key': p[1], 'w': w, 'd': d, 'rw': rw, 'min_sf': round(min(amin, cfg['min_area_module_share'] * w * d)),
-         'b': b, 'roads': roads, 'n_fmt': n_fmt, 'n_total': int(p[9] or n_all), 'area': P.area, 'radius': max(math.hypot(*pt) for pt in b)}
+         'b': b, 'roads': roads, 'n_fmt': n_fmt, 'n_total': int(p[9] or n_all), 'area': P.area, 'radius': max(math.hypot(*pt) for pt in b),
+         'plan': plan, 'dropped_ft': dropped_ft}
     s['yield'] = n_fmt / max(1.0, P.area / (w * d))
     if cfg.get('engine_labels'):
         if len(p) >= 12 and p[10] != '':
@@ -364,6 +388,249 @@ def parse_lines(lines, cfg):
         else:
             sites.append(s)
     return sites, drop
+
+
+# ---- streets as paths from an anchor ----------------------------------------------------------------------------
+def street_plan(P, ctx, new, cfg):
+    """The order in which a layout's streets can be drawn so that each starts on something already there.
+    Lines already there: the site boundary (anchor 0), the given roads (1..m), then each street as it is placed.
+    A street is cut to the site; it is placed when one of its ends lies on a line already there (a road or street
+    before the bare boundary), starting from that end; a street that only crosses a placed line is split there;
+    a street that touches nothing is taken to enter at the nearest boundary point, or left out when too far.
+    Returns the placed streets as {'line', 'a0' (start anchor), 'a1' (end anchor or None)} and the length left out."""
+    from shapely.ops import nearest_points
+    tol = cfg['attach_tol']
+    ring = LineString(list(P.exterior.coords))
+    placed = [ring] + [LineString(c) for c in ctx]
+    site = P.buffer(2)
+    todo = []
+    for ln in new:
+        try:
+            pieces = lines_of(LineString(ln).intersection(site))
+        except Exception:
+            pieces = []
+        todo += [list(g.coords) for g in pieces if g.length >= cfg['min_street_ft']]
+    items, dropped, guard = [], 0.0, 0
+
+    def nearest(pt):
+        best = None
+        for j, l in enumerate(placed):
+            d = l.distance(pt)
+            if d <= tol and (best is None or (j == 0, d) < best[0]):
+                best = ((j == 0, d), j)
+        return None if best is None else best[1]
+
+    while todo and guard < 300:
+        guard += 1
+        cands = []
+        for i, u in enumerate(todo):
+            a0, a1 = nearest(Point(u[0])), nearest(Point(u[-1]))
+            if a0 is None and a1 is None:
+                continue
+            if a0 is None or (a1 is not None and a1 > 0 and a0 == 0):
+                u, a0, a1 = u[::-1], a1, a0
+            cands.append((LineString(u).length, i, u, a0, a1))
+        if cands:
+            _, i, u, a0, a1 = max(cands, key=lambda c: c[0])
+            todo.pop(i)
+            items.append({'line': u, 'a0': a0, 'a1': a1})
+            placed.append(LineString(u))
+            continue
+        done = False
+        for i, u in enumerate(todo):                 # split a street where it crosses or touches a placed road or street
+            lu = LineString(u)
+            for j in range(1, len(placed)):
+                if lu.distance(placed[j]) <= tol / 2:
+                    t = lu.project(nearest_points(lu, placed[j])[0])
+                    if cfg['min_street_ft'] < t < lu.length - cfg['min_street_ft']:
+                        todo.pop(i)
+                        todo += [list(substring(lu, 0, t).coords)[::-1], list(substring(lu, t, lu.length).coords)]
+                        done = True
+                        break
+            if done:
+                break
+        if done:
+            continue
+        best = None                                  # nothing touches: the end nearest the boundary is taken as the way in
+        for i, u in enumerate(todo):
+            for v in (u, u[::-1]):
+                d = ring.distance(Point(v[0]))
+                if best is None or d < best[0]:
+                    best = (d, i, v)
+        if best is not None and best[0] <= cfg['attach_far']:
+            _, i, v = best
+            todo.pop(i)
+            items.append({'line': v, 'a0': 0, 'a1': nearest(Point(v[-1]))})
+            placed.append(LineString(v))
+        else:
+            dropped += sum(LineString(u).length for u in todo)
+            todo = []
+    return items, dropped
+
+
+def tangent(line, t):
+    a, b = line.interpolate(max(0.0, t - 1.0)), line.interpolate(min(line.length, t + 1.0))
+    return math.atan2(b.y - a.y, b.x - a.x)
+
+
+def turtle_frame(s, th=0.0, mir=False, sc=1.0):
+    """Outline (counter-clockwise from its top point), given roads and planned streets in one frame."""
+    f = lambda pt: xf((pt[0] * sc, pt[1] * sc), th, mir)
+    b = [f(p) for p in s['b']]
+    if signed_area(b) < 0:
+        b.reverse()
+    i0 = max(range(len(b)), key=lambda i: (b[i][1], -b[i][0]))
+    b = b[i0:] + b[:i0]
+    ctx = [[f(p) for p in r['line']] for r in s['roads'] if r['ctx']]
+    plan = [dict(it, line=[f(p) for p in it['line']]) for it in (s.get('plan') or [])]
+    return b, ctx, plan
+
+
+def turtle_street(line, a0, a1, placed):
+    """Tokens of one street and the line a reader of those tokens rebuilds. Each piece is aimed from where the
+    rebuilt street has got to at the true next corner, so rounding never builds up along the street."""
+    A = placed[a0]
+    t = A.project(Point(unc(ctok(line[0][0])), unc(ctok(line[0][1]))))
+    st = A.interpolate(t)
+    cur, head = (st.x, st.y), tangent(A, t)
+    toks, dec = [STREET, A0 + a0, ctok(line[0][0]), ctok(line[0][1])], [cur]
+    for v in line[1:]:
+        dx, dy = v[0] - cur[0], v[1] - cur[1]
+        dist = math.hypot(dx, dy)
+        if dist < LBIN / 2:
+            continue
+        k = round(((math.degrees(math.atan2(dy, dx) - head) + 180) % 360 - 180) / TBIN)
+        k = -NT // 2 if k == NT // 2 else k
+        head += math.radians(k * TBIN)
+        n = max(1, min(NL - 1, round(dist / LBIN)))
+        cur = (cur[0] + n * LBIN * math.cos(head), cur[1] + n * LBIN * math.sin(head))
+        toks += [T0 + k + NT // 2, L0 + n]
+        dec.append(cur)
+    if len(dec) < 2:
+        return None, None
+    if a1 is not None:
+        q = placed[a1].interpolate(placed[a1].project(Point(dec[-1])))
+        dec[-1] = (q.x, q.y)
+        toks += [END_ON, A0 + a1]
+    else:
+        toks.append(END_FREE)
+    if LineString(dec).length < 1:
+        return None, None
+    return toks, dec
+
+
+def turtle_encode(s, cfg, th=0.0, mir=False, sc=1.0):
+    """Tokens of a site in format 4, and the streets a reader of the tokens rebuilds."""
+    b, ctx, plan = turtle_frame(s, th, mir, sc)
+    seq = prefix_tokens(s, b, s['yield'], cfg, s.get('clean'), sc)
+    placed = [LineString(b + [b[0]])]
+    for c in ctx:
+        seq += road_tokens(True, c)
+        placed.append(LineString(c))
+    rebuilt, m = [], len(placed)
+    remap = {j: j for j in range(m)}                 # anchors of streets left out shift down
+    for i, it in enumerate(plan):
+        a0, a1 = remap.get(it['a0']), remap.get(it['a1']) if it['a1'] is not None else None
+        if a0 is None:
+            continue
+        toks, dec = turtle_street(it['line'], a0, a1, placed)
+        if toks is None:
+            continue
+        seq += toks
+        remap[m + i] = len(placed)
+        placed.append(LineString(dec))
+        rebuilt.append((it['line'], dec))
+    seq.append(EOS)
+    return seq, rebuilt
+
+
+@torch.no_grad()
+def turtle_generate(model, s, cfg, y):
+    """One layout in format 4: every street the model writes starts on a line already on the plan."""
+    b, ctx, _ = turtle_frame(s)
+    P = poly_of(b)
+    inside = P.buffer(5)
+    ring = LineString(b + [b[0]])
+    placed = [ring] + [LineString(c) for c in ctx]
+    toks = prefix_tokens(s, b, y, cfg, True)
+    for c in ctx:
+        toks += road_tokens(True, c)
+    g = Gen(model, cfg, toks)
+    f = (ftok(s['rw'] / 2) - F0) * FBIN
+    out = [{'ctx': True, 'line': c, 'len': line_len(c), 'lots': {1: [], -1: []}, 'front': {1: f, -1: f}} for c in ctx]
+    n_new = 0
+    while n_new < cfg['max_new_streets'] and len(placed) < NA and g.room(12):
+        if g.pick([STREET, EOS]) == EOS:
+            break
+        g.push(STREET)
+        a = g.pick(range(A0, A0 + len(placed)))
+        g.push(a)
+        tx = g.pick(COORDS)
+        g.push(tx)
+        ty = g.pick(COORDS)
+        g.push(ty)
+        A = placed[a - A0]
+        t = A.project(Point(unc(tx), unc(ty)))
+        st = A.interpolate(t)
+        cur, head, dec = (st.x, st.y), tangent(A, t), [(st.x, st.y)]
+        while True:
+            full = len(dec) > cfg['max_segments'] or not g.room(6)
+            opts = ([] if full else list(range(T0, T0 + NT))) + ([END_FREE, END_ON] if len(dec) >= 2 else [])
+            if not opts:
+                break
+            tk = g.pick(opts)
+            if tk == END_FREE:
+                g.push(tk)
+                break
+            if tk == END_ON:
+                g.push(tk)
+                a1 = g.pick(range(A0, A0 + len(placed)))
+                g.push(a1)
+                q = placed[a1 - A0].interpolate(placed[a1 - A0].project(Point(dec[-1])))
+                dec[-1] = (q.x, q.y)
+                break
+            g.push(tk)
+            lt = g.pick(range(L0 + 1, L0 + NL))
+            g.push(lt)
+            head += math.radians((tk - T0 - NT // 2) * TBIN)
+            prev = cur
+            cur = (cur[0] + (lt - L0) * LBIN * math.cos(head), cur[1] + (lt - L0) * LBIN * math.sin(head))
+            if not inside.contains(Point(cur)):      # a street ends where it leaves the site
+                hit = LineString([prev, cur]).intersection(ring)
+                pts = [q for q in getattr(hit, 'geoms', [hit]) if q.geom_type == 'Point'] if not hit.is_empty else []
+                if pts:
+                    q = min(pts, key=lambda q: q.distance(Point(prev)))
+                    cur = (q.x, q.y)
+                dec.append(cur)
+                if g.room(2):
+                    g.push([END_ON, A0])
+                break
+            dec.append(cur)
+        dec = [dec[i] for i in range(len(dec)) if i == 0 or math.dist(dec[i], dec[i - 1]) > 0.5]
+        if len(dec) < 2:
+            break
+        placed.append(LineString(dec))
+        out.append({'ctx': False, 'line': dec, 'len': line_len(dec), 'lots': {1: [], -1: []}, 'front': {1: f, -1: f}})
+        n_new += 1
+    return out
+
+
+def turtle_roundtrip(sites, cfg):
+    """How much of the built street length the format reproduces: share rebuilt within 20 ft, and share left out."""
+    tot = ok = left = 0.0
+    for s in sites:
+        _, rebuilt = turtle_encode(s, cfg)
+        left += s.get('dropped_ft') or 0.0
+        placed = sum(LineString(it['line']).length for it in s['plan'])
+        got = 0.0
+        for true, dec in rebuilt:
+            L = LineString(true).length
+            got += L
+            if LineString(true).hausdorff_distance(LineString(dec)) <= 20:
+                ok += L
+        left += placed - got
+        tot += placed + (s.get('dropped_ft') or 0.0)
+    return {'street_ft': round(tot), 'rebuilt_within_20ft': round(ok / max(1.0, tot), 3), 'left_out': round(left / max(1.0, tot), 3)}
 
 
 # ---- model ------------------------------------------------------------------------------------------------------
@@ -482,6 +749,8 @@ def gen_side(g, L, stop, min_w):
 def generate(model, s, cfg, y, new_streets=None):
     """One layout for site s. Existing roads are given. new_streets = lines to use for the new streets (the model
     then writes only the lots); None = the model writes the new streets too. Returns roads as decode() does."""
+    if cfg.get('turtle'):
+        return turtle_generate(model, s, cfg, y)
     b, roads = canon(s)
     P = poly_of(b)
     min_w = s['w'] if cfg['strict_width'] else 0.0
@@ -672,7 +941,7 @@ def evaluate(model, sites, cfg, ytargets, per_site=False):
         b, roads = canon(s)
         P = poly_of(b)
         r = {'key': s['key'], 'built': s['n_total'], 'in_format': s['n_fmt']}
-        ref = decode(encode(s, cfg))
+        ref = decode(encode(s, cfg)) if not cfg.get('turtle') else roads
         r['ref_area'] = safe(lambda: resolve(s, b, ref, cfg, 0.0)[0])
         r['ref_strict'] = safe(lambda: resolve(s, b, ref, cfg, s['w'])[0])
         r['packed'] = safe(lambda: resolve(s, b, pack(s, cfg, roads, P), cfg, s['w'])[0])
