@@ -108,4 +108,5 @@ draw();
 // textures arrive a frame late: draw again, then say so
 let n = 0;
 const again = () => { draw(); if (++n < 4) setTimeout(again, 250); else (window as unknown as { __labReady: boolean }).__labReady = true; };
-setTimeout(again, 250);
+// the photographed surfaces and the tree pictures arrive after the model: wait for them, then draw
+void model.ready.then(() => setTimeout(again, 250));

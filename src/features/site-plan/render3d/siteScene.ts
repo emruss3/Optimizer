@@ -579,7 +579,18 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (!merged) continue;
     let material = kind === 'glass' ? surfaces.glass() : kind === 'paint' ? surfaces.paint() : surfaces.get(kind as Surface);
     const see = kind === 'railing' || kind === 'glassrail';
-    if (mode === 'sheet' && !see) { material = material.clone(); material.side = THREE.DoubleSide; }
+    if (mode === 'sheet' && !see) {
+      const single = material as THREE.MeshStandardMaterial, both = material.clone() as THREE.MeshStandardMaterial;
+      both.side = THREE.DoubleSide;
+      material = both;
+      // the two-sided copy takes the photographed surface when the one it was copied from does
+      void Promise.all(surfaces.pending).then(() => {
+        if (both.map === single.map) return;
+        both.map = single.map; both.bumpMap = single.bumpMap; both.normalMap = single.normalMap;
+        if (single.normalScale) both.normalScale = single.normalScale.clone();
+        both.needsUpdate = true;
+      });
+    }
     const mesh = new THREE.Mesh(merged, material);
     mesh.castShadow = !see && (mode === 'solid' || mode === 'sheet');
     if (see) mesh.renderOrder = 2;
@@ -799,7 +810,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     pick,
     extent: Math.max(20, data.extent / 2),
     surfaces,
-    ready: Promise.all(waits).then(() => undefined),
+    ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),
     dispose() {
       root.traverse(o => {
         const mesh = o as THREE.Mesh;
