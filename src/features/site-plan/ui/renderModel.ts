@@ -4,7 +4,22 @@
 export type RGBA = [number, number, number, number];
 
 /** What a surface is made of, for a renderer that draws materials. */
-export type Surface = 'siding' | 'brick' | 'shingle' | 'plaster' | 'concrete' | 'asphalt' | 'grass' | 'plain';
+export type Surface =
+  | 'siding'     // horizontal lap boards
+  | 'batten'     // vertical board and batten
+  | 'brick'
+  | 'shingle'    // roof shingles, and shingled walls
+  | 'metal'      // standing-seam metal roofing
+  | 'wood'       // cedar and other boarding
+  | 'plaster'    // stucco
+  | 'panel'      // fibre-cement panels with joints
+  | 'concrete'
+  | 'asphalt'
+  | 'grass'
+  | 'railing'    // a balustrade of thin bars: see-through between them
+  | 'glassrail'  // a glass balustrade
+  | 'water'
+  | 'plain';
 
 export interface RenderSlab {
   /** The plan element's id. */
@@ -15,18 +30,22 @@ export interface RenderSlab {
   /** Height of the slab above its base, metres. */
   elevation: number;
   color: RGBA;
+  /** What it is made of. Without one, a renderer treats it as plain. */
+  surface?: Surface;
   part: 'base' | 'body' | 'parapet' | 'detail';
   label: string;
 }
 
 export interface RenderWindow {
   id: string;
-  /** One vertical quad, [x, y, z] in local metres. */
+  /** One flat polygon in space, [x, y, z] in local metres. */
   polygon: number[][];
   color: RGBA;
+  /** What it is made of. Without one, a renderer treats it as plain. */
+  surface?: Surface;
 }
 
-/** No more window and trim panels than three times this in one model; bays widen to stay under it. */
+/** No more parts than four times this in one model: bays widen, and then openings are drawn plainly, to stay under it. */
 export const MAX_WINDOWS = 9000;
 
 /** Convex hull of points (Andrew's monotone chain), counter-clockwise. */
