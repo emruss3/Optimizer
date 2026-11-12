@@ -35,10 +35,11 @@ import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/Sub
 import {
   fetchSfV1Plan, fetchSfV1Site, fetchPadFill, fetchBfeContour, earthworkHasFlood,
   sfV1ToElements, sfV1Route, isOverride, withoutPattern,
+  fetchSfV1DeepSearch, deepSearchOpt, deepWinnerPrecedent,
   fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
   parcelHoles3857, lotsOnParcelHoles, chooseAutoBest, candidateOpt, RM_COMPETITION_TH_BUDGET_MS,
   accessBanner, isNoStreetAccess,
-  type HoleOverlap, type SfV1AutoBest,
+  type HoleOverlap, type SfV1AutoBest, type SfV1DeepProgress,
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
@@ -265,6 +266,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sfV1CandidatesRef = useRef<SfV1CandidatesResponse | null>(null);
   const sfV1DefaultRespRef = useRef<SfV1Response | null>(null);
   const competitionSeqRef = useRef(0);
+  // The deep search (engine g41): keeps looking after the plan is on the sheet and swaps in a plan with more lots.
+  const [sfV1Deep, setSfV1Deep] = useState<SfV1DeepProgress | null>(null);
+  useEffect(() => { setSfV1Deep(null); }, [contextOgcFid]);
   // Every massing call carries a run number; a response that comes back
   // after a newer call started, or after the parcel changed, is discarded
   // (the scope's P0.1: a delayed response from an old parcel or scheme cannot
@@ -1606,12 +1610,67 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // lots; the default stays only when it draws strictly more.
       const auto = chooseAutoBest(r.data, sfV1DefaultRespRef.current);
       const seedDrawn = elementsRef.current.some(e => e.id.startsWith('sfseed-'));
+      let sheetLots = sfV1DefaultRespRef.current?.lots ?? 0;
       if (auto && r.data.best && sfV1ShownRef.current === 'loop' && !seedDrawn && renderSfV1Ref.current) {
         setSfV1AutoBest(auto);
         void renderSfV1Ref.current(r.data.best, opt, auto.requested);
+        sheetLots = Math.max(sheetLots, r.data.best.lots ?? 0);
       }
+      // under the fill scenario every run is the heavy one, so the search waits to be asked (as the comparison does)
+      if (!opt.flood) void runDeepSearch(fid, opt, seq, sheetLots);
     });
   }, []);
+
+  /** The deep search: after the comparison, the engine keeps trying layouts
+   *  (its patterns, street layouts adapted from built subdivisions, varied
+   *  settings) a few seconds per call. A plan with more lots and no code
+   *  failure replaces the one on the sheet, unless the user has since chosen
+   *  a plan themselves. A newer ask (competitionSeqRef) ends the loop. */
+  const runDeepSearch = async (fid: number, opt: SfV1Options, seq: number, sheetLots0: number): Promise<void> => {
+    const live = () => seq === competitionSeqRef.current;
+    const shownAtStart = sfV1ShownRef.current;
+    let sheetLots = sheetLots0;
+    let searchId: string | null = null;
+    let onSheet = false;
+    let precedentFrom: string | null = null;
+    let failures = 0;
+    let skipNext = false;
+    let last: SfV1DeepProgress = { done: false, triesDone: 0, triesTotal: 0, baselineLots: null, bestLots: null, onSheet: false, precedentFrom: null, stopped: false };
+    setSfV1Deep(last);
+    // the reply carries tries_total; the cap only stops a loop that makes no progress
+    for (let call = 0; call < 200; call += 1) {
+      const first = searchId == null;
+      const res = await fetchSfV1DeepSearch(fid, first ? deepSearchOpt(opt) : (skipNext ? { skip_try: 'true' } : {}), searchId);
+      if (!live()) return;
+      skipNext = false;
+      const d = res.data;
+      if (!d || d.error) {
+        failures += 1;
+        if (first || failures >= 3) { last = { ...last, stopped: true }; setSfV1Deep(last); return; }
+        skipNext = res.timedOut;
+        continue;
+      }
+      failures = 0;
+      searchId = d.search_id ?? searchId;
+      const userChose = sfV1ShownRef.current !== shownAtStart && sfV1ShownRef.current !== 'deep search';
+      const seedDrawn = elementsRef.current.some(e => e.id.startsWith('sfseed-'));
+      if (d.plan && (d.best_try ?? 0) > 0 && (d.best_lots ?? 0) > sheetLots && !userChose && !seedDrawn && renderSfV1Ref.current) {
+        await renderSfV1Ref.current(d.plan, opt, 'deep search');
+        if (!live()) return;
+        sheetLots = d.best_lots ?? sheetLots;
+        onSheet = true;
+        precedentFrom = deepWinnerPrecedent(d);
+      }
+      last = {
+        done: !!d.done, triesDone: d.tries_done ?? last.triesDone, triesTotal: d.tries_total ?? last.triesTotal,
+        baselineLots: sheetLots0, bestLots: onSheet ? sheetLots : (d.best_lots ?? null), onSheet, precedentFrom, stopped: false,
+      };
+      setSfV1Deep(last);
+      if (d.done) return;
+      if (!searchId) { last = { ...last, stopped: true }; setSfV1Deep(last); return; }
+    }
+    setSfV1Deep({ ...last, stopped: true });
+  };
 
   /**
    * Brief Phase 2: market-grounded SF lot fit, appended to the plan.
@@ -3615,6 +3674,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               houseDrawn={displayElements.some(e => e.id.startsWith('sfseed-'))}
               houseError={sfSeedError}
               competition={isRmLayout ? null : sfV1Competition}
+              deepSearch={isRmLayout ? null : sfV1Deep}
               shownRequested={sfV1Shown}
               onViewCandidate={(r: string) => { void handleViewSfV1Candidate(r); }}
               onRetryCompetition={handleRunCompetition}
