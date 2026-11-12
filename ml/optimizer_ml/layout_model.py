@@ -35,7 +35,9 @@ W0, NW, WBIN = C0 + NC, 400, 1      # lot width along the street: 1 ft bins
 D0, ND, DBIN = W0 + NW, 120, 5      # lot depth: 5 ft bins
 G0, NG, GBIN = D0 + ND, 240, 5      # gap before a lot along the street: 5 ft bins
 F0, NF, FBIN = G0 + NG, 24, 5       # distance from the street line to the front of its lots: 5 ft bins
-V = F0 + NF
+V1 = F0 + NF                        # vocabulary of format 1 (no engine labels)
+CLEAN_Y, CLEAN_N, CLEAN_U = V1, V1 + 1, V1 + 2   # the engine's verdict on the built streets: code-clean, not, unknown
+V = V1 + 3
 
 # Settings. Model and training sizes are choices for this run. The lot standard is the one the rule engine is
 # replayed with (module width and depth from the plat, minimum area = the smaller of the plat's small-lot area and
@@ -46,6 +48,7 @@ CFG = dict(
     batch=12, lr=3e-4, weight_decay=0.05, warmup=100, val_sites=100, eval_every=100,
     temp=0.8, topk=20, tries=4, yield_pcts=[0.75, 0.9, 0.95, 0.99],
     module_round_ft=5, min_area_module_share=0.95,   # as training.fn_ai_site_opts
+    engine_labels=False,    # format 2: the yield bucket is the engine's lot count on the built streets, with its code-clean verdict
     strict_width=True,      # model lots must be at least the module width (the engine's standard lot)
     inner_margin_row=0.5,   # a street counts as on the site when it is at least this many right-of-way widths inside the outline
     min_street_ft=30.0,     # shorter pieces of street are not kept
@@ -131,8 +134,11 @@ def canon(s, th=0.0, mir=False):
 
 
 # ---- encoding ---------------------------------------------------------------------------------------------------
-def prefix_tokens(s, b, y):
-    seq = [BOS, ytok(y), wtok(s['w']), dtok(s['d'])]
+def prefix_tokens(s, b, y, cfg=None, clean=None):
+    seq = [BOS]
+    if cfg and cfg.get('engine_labels'):
+        seq.append(CLEAN_U if clean is None else CLEAN_Y if clean else CLEAN_N)
+    seq += [ytok(y), wtok(s['w']), dtok(s['d'])]
     for x, yy in b:
         seq += [ctok(x), ctok(yy)]
     seq.append(SEP)
@@ -148,7 +154,7 @@ def road_tokens(ctx, line):
 
 def encode(s, cfg, th=0.0, mir=False):
     b, roads = canon(s, th, mir)
-    seq = prefix_tokens(s, b, s['yield'])
+    seq = prefix_tokens(s, b, s['yield'], cfg, s.get('clean'))
     for r in roads:
         seq += road_tokens(r['ctx'], r['line'])
         for side, tok in ((1, SIDE_L), (-1, SIDE_R)):
@@ -280,6 +286,11 @@ def parse_site(p, cfg):
     s = {'split': p[0], 'key': p[1], 'w': w, 'd': d, 'rw': rw, 'min_sf': round(min(amin, cfg['min_area_module_share'] * w * d)),
          'b': b, 'roads': roads, 'n_fmt': n_fmt, 'n_total': int(p[9] or n_all), 'area': P.area}
     s['yield'] = n_fmt / max(1.0, P.area / (w * d))
+    if cfg.get('engine_labels'):
+        if len(p) >= 12 and p[10] != '':
+            s['yield'], s['clean'] = float(p[10]) / max(1.0, P.area / (w * d)), p[11] == '1'
+        else:
+            s['clean'] = None                       # no engine run for this site: the model is told the verdict is unknown
     if len(encode(s, cfg)) > cfg['ctx']:
         return 'too_long'
     return s
@@ -289,7 +300,7 @@ def parse_lines(lines, cfg):
     sites, drop = [], {}
     for line in lines:
         p = line.strip().split('|')
-        if len(p) != 10 or not p[6] or not p[7] or not p[8]:
+        if len(p) not in (10, 12) or not p[6] or not p[7] or not p[8]:
             if line.strip():
                 drop['fields'] = drop.get('fields', 0) + 1
             continue
@@ -338,12 +349,12 @@ class Block(nn.Module):
 class LayoutModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        d = cfg['d_model']
-        self.tok = nn.Embedding(V, d)
+        d, v = cfg['d_model'], cfg.get('vocab', V)
+        self.tok = nn.Embedding(v, d)
         self.pos = nn.Embedding(cfg['ctx'], d)
         self.blocks = nn.ModuleList([Block(d, cfg['heads'], cfg['dropout']) for _ in range(cfg['layers'])])
         self.ln = nn.LayerNorm(d)
-        self.head = nn.Linear(d, V, bias=False)
+        self.head = nn.Linear(d, v, bias=False)
 
     def forward(self, idx, caches=None, pos0=0):
         T = idx.shape[1]
@@ -360,7 +371,7 @@ def loss_of(model, seqs):
         x[i, :len(q)] = torch.tensor(q)
     x = x.to(DEV)
     lg = model(x[:, :-1])
-    return F.cross_entropy(lg.reshape(-1, V), x[:, 1:].reshape(-1), ignore_index=PAD)
+    return F.cross_entropy(lg.reshape(-1, lg.shape[-1]), x[:, 1:].reshape(-1), ignore_index=PAD)
 
 
 # ---- generation -------------------------------------------------------------------------------------------------
@@ -425,7 +436,7 @@ def generate(model, s, cfg, y, new_streets=None):
     b, roads = canon(s)
     P = poly_of(b)
     min_w = s['w'] if cfg['strict_width'] else 0.0
-    g = Gen(model, cfg, prefix_tokens(s, b, y))
+    g = Gen(model, cfg, prefix_tokens(s, b, y, cfg, True))
     out = []
 
     def sides(r):
@@ -599,11 +610,12 @@ def split_sites(sites, cfg):
 
 def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
     cfg = dict(CFG, **(cfg or {}))
+    cfg['vocab'] = V
     torch.manual_seed(0)
     random.seed(0)
     sites, drop = parse_lines(lines, cfg)
     tr, va, dv, ho = split_sites(sites, cfg)
-    ys = sorted(s['yield'] for s in tr)
+    ys = sorted(s['yield'] for s in tr if not cfg.get('engine_labels') or s.get('clean')) or sorted(s['yield'] for s in tr)
     ytargets = [ys[min(len(ys) - 1, int(p * len(ys)))] for p in cfg['yield_pcts']]
     log(json.dumps({'device': str(DEV), 'sites': len(sites), 'dropped': drop, 'train': len(tr), 'val': len(va), 'dev': len(dv),
                     'holdout': len(ho), 'vocab': V, 'yield_targets': [round(y, 2) for y in ytargets]}))
@@ -700,6 +712,10 @@ def roads_to_json(roads, s):
 
 def load_model(path):
     ck = torch.load(path, map_location=DEV)
+    ck['cfg'] = dict(CFG, **ck['cfg'])               # settings added after the checkpoint was written take their defaults
+    ck['cfg'].setdefault('vocab', ck.get('vocab', V1))
+    if 'vocab' in ck:
+        ck['cfg']['vocab'] = ck['vocab']
     model = LayoutModel(ck['cfg']).to(DEV)
     model.load_state_dict(ck['state'])
     model.eval()
