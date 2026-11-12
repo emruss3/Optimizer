@@ -10,3 +10,5 @@ and this folder can go.
 | `t3/` | The same with the streets-only loss and standard site views; 2,500 steps | 2026-11-12, 26 minutes on two CPU cores | Development sites: 1,047. Held-out not run |
 
 Load with `layout_model.load_model(path)`. Each file carries its own settings.
+
+Service redeployed 2026-11-12 after the Modal workspace was re-enabled.
