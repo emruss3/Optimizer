@@ -12,6 +12,20 @@ import type { EdgeClassification } from '../../engine/setbacks';
 import type { ParcelTopoView } from '../../features/site-plan/api/parcelTopo';
 import type { SheetAnnotation, SheetTitleBlock } from '../../features/site-plan/api/sheetAnnotations';
 
+// Labels give way by rank, as they do on the exported sheet (scene/labels): a building's tag and
+// caption are set down first each frame, and a unit label, a stall count, a zone name or a setback
+// label that would cover one of them is left out. Boxes are in the plan's own coordinates.
+interface LabelBox { x: number; y: number; w: number; h: number }
+const frameLabels: LabelBox[] = [];
+const labelHits = (b: LabelBox): boolean => frameLabels.some(k => Math.abs(b.x - k.x) * 2 < b.w + k.w && Math.abs(b.y - k.y) * 2 < b.h + k.h);
+/** True when a label may be drawn at this box; it then holds the place. */
+const claimLabel = (x: number, y: number, w: number, h: number): boolean => {
+  const box = { x, y, w, h };
+  if (labelHits(box)) return false;
+  frameLabels.push(box);
+  return true;
+};
+
 const NO_ANNOTATIONS: SheetAnnotation[] = [];
 
 /** Fold an angle (radians) into (-π/2, π/2] so text along it reads upright. */
@@ -916,6 +930,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
             // measureText is in world units here (font size is world-scaled)
             if (ctx.measureText(u.label).width > (maxX - minX) * 0.9) continue;
             if (fontSize * 1.2 > (maxY - minY)) continue;
+            if (!claimLabel(u.center[0], u.center[1], ctx.measureText(u.label).width, fontSize * 1.3)) continue;
             ctx.save();
             ctx.translate(u.center[0], u.center[1]);
             ctx.scale(1, -1);
@@ -1001,6 +1016,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     cx /= n; cy /= n;
     // Only when the zone is big enough on screen to deserve a name
     if (Math.max(maxX - minX, maxY - minY) * zoom < 80) return;
+    if (!claimLabel(cx, cy, (text.length * 6.4) / zoom, 15 / zoom)) return;
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -1146,6 +1162,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const text = ctx.measureText(full).width * zoom + 10 <= roomPx ? full : `P · ${stalls}`;
     const w = ctx.measureText(text).width + 8 / zoom;
     const h = fontSize * 1.5;
+    if (!claimLabel(cx, cy, w, h)) { ctx.restore(); return; }
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.beginPath();
     ctx.roundRect(-w / 2, -h / 2, w, h, 2 / zoom);
@@ -1248,6 +1265,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       ctx.textBaseline = 'middle';
       const text = `${edge.type[0].toUpperCase()} ${setbackFt}′`;
       const w = ctx.measureText(text).width + 6 / zoom;
+      if (!claimLabel(midX, midY, w, fontSize * 1.6)) { ctx.restore(); continue; }
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.fillRect(-w / 2, -fontSize * 0.8, w, fontSize * 1.6);
       ctx.fillStyle = EDGE_COLORS[edge.type] ?? '#64748B';
@@ -1823,6 +1841,31 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     ctx.fillStyle = '#F9FAFB';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Labels: a new frame starts with the building tags and their captions set down, so what is
+    // drawn after gives way to them.
+    frameLabels.length = 0;
+    if (scene) {
+      const z = viewport.zoom;
+      for (const b of scene.buildings) {
+        if (!b.tagOnPlan) continue;
+        const ring = elements.find(e => e.id === b.id)?.geometry?.coordinates?.[0];
+        if (!ring || ring.length < 4) continue;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of ring) { minX = Math.min(minX, p[0] ?? NaN); maxX = Math.max(maxX, p[0] ?? NaN); minY = Math.min(minY, p[1] ?? NaN); maxY = Math.max(maxY, p[1] ?? NaN); }
+        const sw = (maxX - minX) * z, sh = (maxY - minY) * z;
+        if (!(Math.max(sw, sh) >= 26)) continue;
+        const [px, py] = scene.frame.fromFeet(b.labelPoint);
+        const r = 10 / z;
+        frameLabels.push({ x: px, y: py, w: r * 2.4, h: r * 2.4 });
+        if (sw >= 110 && sh >= 60) {
+          const lines = b.display.planLines;
+          const w = (Math.max(...lines.map(t => t.length)) * 6.1 + 14) / z, h = (13 * lines.length + 8) / z;
+          // the caption hangs below the tag: lower on the screen is lower in the plan's own y
+          frameLabels.push({ x: px, y: py - r - 4 / z - h / 2, w, h });
+        }
+      }
+    }
 
     // Apply view transformations
     ctx.save();

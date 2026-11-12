@@ -336,6 +336,64 @@ Checks: 70 files, 764 tests pass; app type check 2,086, unchanged;
 `check-slice.cjs` 60 of 60. Evidence in `slice-4/`: `styles/` (each product
 in each style), `app/` (the app's own views and sheets), `check/`.
 
+## Slice 5 · trust signals first
+
+The owner's review of the 1710 Meharry Blvd capture, in four parts. This
+slice is the first: the page must not say more than is known.
+
+| What the page said | What it says now |
+|---|---|
+| "Code compliant" beside "context not verified" | "Needs verification · context not verified", amber, not green |
+| "FAR 0.00" and "Coverage 0%" beside 54,244 GSF | "FAR not reported" and "Coverage not reported" |
+| "30 apartments" over 3 + 12 + 10 + 4, with 13 one-beds in the schedule | 13 one-beds in both |
+| Density 16.7 in the schedule and 17.0 on the sheet | one acreage for both |
+
+A failing plan or a parking shortfall still leads the badge: Needs
+verification only replaces a pass. The app does not compute FAR or coverage
+itself. Evidence: `slice-5/trust_meharry.jpg`.
+
+Also in this slice, from the work toward a more real model: seven
+photographed surfaces from Poly Haven (CC0, `public/textures/site`), wall
+lights, downspouts and mailboxes (`slice-5/photographed_surfaces.jpg`).
+
+**The drawing has the screen** (the review's second part). At 1440 × 900 the
+plan was a strip between the parameters and the open tabulation. The
+inspector beside it and the schedule under it now start closed, open on
+request, and the choice is kept on the device.
+
+| 1440 × 900 | Plan canvas |
+|---|---|
+| before | a strip about 250 px high beside a 320 px rail |
+| now | 1,344 × 519, 54% of the window |
+
+Labels on the live plan give way by rank, as on the exported sheet: a
+building's tag and caption are set down first each frame, and a unit label,
+stall count, zone name or setback label that would cover one is left out.
+Evidence: `slice-5/plan_1440x900.jpg`.
+
+**A review view in 3D** (the review's third part). The 3D view opens in
+Review: the proposal in its materials, the existing buildings as plain white
+solids, no planting in the way, the parcel line, the buildable envelope and
+the access drawn on the ground, with a legend. Rendering is one click away
+and Present always shows it.
+
+From the owner's notes on the 3D view the same day:
+
+- Every camera centres on the parcel and stands far enough back to hold all
+  of it. The bottom of the parcel was cut off before.
+- In Review the parcel is lighter than the land round it and outlined.
+- Public streets show even where the record sends no street lines: what lies
+  between the neighbouring parcels is right of way, and a road-coloured plate
+  under them shows it. 13 of the 19 fixture parcels had no street lines.
+
+Evidence: `slice-5/review_apartments.jpg`, `slice-5/review_neighborhood.jpg`.
+
+Still to do from the review: the building section, scheme comparison and
+Underwrite on each saved option.
+
+Checks: 70 files, 771 tests pass; app type check 2,086, unchanged;
+`check-slice.cjs` 65 of 65.
+
 ## Not done yet
 
 - Section A–A (sheet A-03) and scheme comparison.

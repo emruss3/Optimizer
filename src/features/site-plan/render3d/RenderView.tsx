@@ -21,6 +21,8 @@ export interface RenderViewProps {
   neighbors?: import('../api/neighbors').PlannerNeighbors | null | undefined;
   edgeClassifications?: EdgeClassification[] | undefined;
   scene: DrawingScene;
+  /** The buildable envelope, EPSG:3857: drawn on the ground in the review view. */
+  envelopeRing?: number[][] | undefined;
   selectedId?: string | null | undefined;
   onSelect?: ((id: string | null) => void) | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
@@ -32,6 +34,8 @@ type Shot = 'iso' | 'top' | 'street';
 interface Rig {
   /** Set once the sun has been placed for this model: nothing is drawn before it. */
   lit: boolean;
+  /** The model is the review view's. */
+  review: boolean;
   stage: Stage;
   model: SiteModel;
   camera: THREE.PerspectiveCamera;
@@ -46,13 +50,17 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, neighbors, edgeClassifications, scene, selectedId, onSelect, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, onFail }) => {
+  // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
+  // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
+  const [look, setLook] = useState<'review' | 'rendering'>('review');
   const archStyle = useArchStyle();
   const quality = useMemo(() => renderQuality(), []);
   const data = useMemo(
     () =>
       buildMassingData(elements, {
         ...(parcelRing ? { parcelRing } : {}),
+        ...(envelopeRing ? { envelopeRing } : {}),
         ...(neighbors?.buildings ? { contextBuildings: neighbors.buildings } : {}),
         ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
         ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
@@ -99,17 +107,21 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
   const frame = useCallback((shot: Shot | 'fit') => {
     const r = rig.current;
     if (!r) return;
-    const E = r.model.extent;
+    // every camera centres on the parcel and stands far enough back to hold all of it:
+    // the radius that holds the parcel, seen through half the lens's angle, with room to spare
+    const { x, y, radius } = r.model.focus;
+    const fits = (radius * 1.2) / Math.sin((r.camera.fov * Math.PI) / 360 * Math.min(1, r.camera.aspect));
     const t = r.controls.target;
     if (shot === 'fit') {
       const dir = r.camera.position.clone().sub(t).normalize();
-      t.set(0, E * 0.05, 0);
-      r.camera.position.copy(t).addScaledVector(dir, E * 3.3);
+      t.set(x, radius * 0.06, -y);
+      r.camera.position.copy(t).addScaledVector(dir, fits);
     } else {
-      const [el, az, dist, lift] = shot === 'top' ? [89.2, 0, 3.4, 0] : shot === 'street' ? [5, aerial.current - 14, 1.75, 0.12] : [18, aerial.current, 2.5, 0.46];
+      const review = r.review;
+      const [el, az, dist] = shot === 'top' ? [89.2, 0, fits] : shot === 'street' ? [6, aerial.current - 14, fits * 0.62] : [review ? 32 : 22, aerial.current, fits];
       const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
-      t.set(0, E * lift, 0);
-      r.camera.position.set(t.x + E * dist * Math.cos(e) * Math.sin(a), t.y + E * dist * Math.sin(e), t.z + E * dist * Math.cos(e) * Math.cos(a));
+      t.set(x, radius * 0.06, -y);
+      r.camera.position.set(t.x + dist * Math.cos(e) * Math.sin(a), t.y + dist * Math.sin(e), t.z + dist * Math.cos(e) * Math.cos(a));
     }
     r.controls.update();
     r.request();
@@ -131,8 +143,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     let model: SiteModel, stage: Stage;
     const light = quality === 'light';
     try {
-      model = buildSiteModel(data, { light });
-      stage = createStage(cv, model, { width: Math.max(2, el.clientWidth), height: Math.max(2, el.clientHeight), preserve: true, light });
+      const review = look === 'review' && !present;
+      model = buildSiteModel(data, { light, review });
+      stage = createStage(cv, model, { width: Math.max(2, el.clientWidth), height: Math.max(2, el.clientHeight), preserve: true, light, studio: review });
     } catch (err) {
       fail.current(err instanceof Error ? err : new Error(String(err)));
       return;
@@ -183,7 +196,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
     };
     cv.addEventListener('pointerdown', onDown);
     cv.addEventListener('pointerup', onUp);
-    rig.current = { lit: false, stage, model, camera, controls, request, highlight: null };
+    rig.current = { lit: false, review: look === 'review' && !present, stage, model, camera, controls, request, highlight: null };
     const was = stood.current;
     if (was && was.revision === revision.current) {
       camera.position.copy(was.position);
@@ -208,7 +221,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, quality]);
+  }, [data, frame, quality, look, present]);
 
   useEffect(() => {
     const r = rig.current;
@@ -283,7 +296,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
         <select value={sunKey} onChange={e => setSunKey(e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 bg-white" data-testid="sun-date" aria-label="Date of the sun study">
@@ -295,6 +308,15 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
         <ArchStylePicker />
       </div>
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
+        <div className="inline-flex rounded border border-gray-200 overflow-hidden mr-1" role="group" aria-label="View">
+          {(['review', 'rendering'] as const).map(k => (
+            <button key={k} type="button" aria-pressed={look === k} onClick={() => setLook(k)} data-testid={`look-${k}`}
+              title={k === 'review' ? 'For reading the plan: the proposal stands out; the parcel, the envelope and the access are marked' : 'For showing the plan: materials, planting and the neighbourhood'}
+              className={`px-1.5 py-0.5 ${look === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+              {k === 'review' ? 'Review' : 'Rendering'}
+            </button>
+          ))}
+        </div>
         <button className={btn} onClick={() => frame('iso')} data-testid="camera-iso">Aerial</button>
         <button className={btn} onClick={() => frame('top')} data-testid="camera-top">Top</button>
         <button className={btn} onClick={() => frame('street')} data-testid="camera-street">Street</button>
@@ -334,6 +356,15 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, ne
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/85 rounded px-2 py-1 pointer-events-none">
         Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
       </div>
+      {look === 'review' && !present && (
+        <div className="absolute bottom-9 left-2 flex items-center gap-3 text-[11px] text-gray-700 bg-white/90 rounded px-2 py-1 pointer-events-none" data-testid="review-legend">
+          <span className="flex items-center gap-1"><i className="inline-block w-3 h-2 rounded-sm bg-slate-400" />Proposal, in its materials</span>
+          <span className="flex items-center gap-1"><i className="inline-block w-3 h-2 rounded-sm bg-white border border-gray-300" />Existing</span>
+          <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-slate-600" />Parcel</span>
+          {envelopeRing && <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-blue-600" />Buildable envelope</span>}
+          <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-amber-500" />Access</span>
+        </div>
+      )}
       {selected && photo.status !== 'done' && <SceneInspector building={selected} onClose={onSelect ? () => onSelect(null) : undefined} className="absolute right-2 bottom-2" />}
       {photo.status === 'working' && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/35 text-white text-sm" role="status" data-testid="photoreal-working">

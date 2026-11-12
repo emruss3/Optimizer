@@ -71,7 +71,14 @@ const KpiStrip: React.FC<{
    * Brick Church Pike, 2026-11-09: "Server plan failed" under "Generating plan…").
    */
   empty?: { state: 'generating' | 'failed' | 'blocked' | 'none'; reason?: string | null };
-}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty }) => {
+  /**
+   * What the plan's basis has not established, in a few words ("context not
+   * verified"), or null when it stands. A plan whose own checks pass still
+   * needs verification while this is set: the badge says so and is not green
+   * (1710 Meharry Blvd: "Code compliant" beside "context not verified").
+   */
+  unverified?: string | null;
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty, unverified = null }) => {
   if (!metrics) {
     const state = empty?.state ?? 'generating';
     const text = state === 'generating'
@@ -255,6 +262,15 @@ const KpiStrip: React.FC<{
         >
           <XCircle className="w-3.5 h-3.5" />
           Conditional · {metrics.conditional}
+        </div>
+      ) : unverified && compliant && !parkingShort ? (
+        <div
+          data-testid="kpi-needs-verification"
+          title={`The plan's own checks pass${constrained ? ` (constrained: ${clampReasons.join(', ')})` : ''}, and its basis is not established: ${unverified}. Not a finding of code compliance.`}
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Needs verification · {unverified}
         </div>
       ) : (
       <div

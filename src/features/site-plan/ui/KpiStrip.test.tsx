@@ -215,3 +215,29 @@ describe('KpiStrip — every check passes and most of the land is not planned (0
   });
 });
 
+
+describe('KpiStrip: a plan whose basis is not established (1710 Meharry Blvd, 2026-11-12)', () => {
+  it('reads Needs verification, not Code compliant, while the context is not verified', () => {
+    const { rerender } = render(<KpiStrip metrics={base} investment={null} unverified="context not verified" />);
+    expect(screen.getByTestId('kpi-needs-verification').textContent).toContain('Needs verification · context not verified');
+    expect(screen.queryByText('Code compliant')).toBeNull();
+    // with the basis established the same plan reads compliant
+    rerender(<KpiStrip metrics={base} investment={null} unverified={null} />);
+    expect(screen.getByText('Code compliant')).toBeTruthy();
+    expect(screen.queryByTestId('kpi-needs-verification')).toBeNull();
+  });
+
+  it('does not soften a failing plan or a parking shortfall into Needs verification', () => {
+    const { rerender } = render(<KpiStrip metrics={{ ...base, zoningCompliant: false, violations: ['height'] } as SiteMetrics} investment={null} unverified="context not verified" />);
+    expect(screen.getByText('1 issue')).toBeTruthy();
+    rerender(<KpiStrip metrics={{ ...base, stallsProvided: 85, stallsRequired: 92 } as SiteMetrics} investment={null} unverified="context not verified" />);
+    expect(screen.getByText(/Parking shortfall · 85 of 92 stalls/)).toBeTruthy();
+    expect(screen.queryByTestId('kpi-needs-verification')).toBeNull();
+  });
+
+  it('shows no FAR or coverage figure the engine did not report', () => {
+    render(<KpiStrip metrics={{ ...base, achievedFAR: 0, siteCoveragePct: 0 } as SiteMetrics} investment={null} />);
+    expect(screen.queryByText('FAR')).toBeNull();
+    expect(screen.queryByText('Coverage')).toBeNull();
+  });
+});

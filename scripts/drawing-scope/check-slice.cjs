@@ -103,6 +103,22 @@ const colours = page => page.evaluate(() => {
   const seen = await colours(page);
   check(seen > 60, `the rendering has drawn a picture (${seen} colours sampled)`);
   check((await page.locator('[data-testid="scene-inspector"]').count()) === 0, 'nothing is selected on first entry to 3D');
+  // the 3D view opens for review: the proposal in its materials, the neighbours plain, the parcel and the access marked
+  check((await view.getAttribute('data-look')) === 'review' && (await page.locator('[data-testid="review-legend"]').count()) === 1, 'the 3D view opens in the review view, with its legend');
+  check(/Parcel/.test((await page.locator('[data-testid="review-legend"]').textContent()) ?? '') && /Access/.test((await page.locator('[data-testid="review-legend"]').textContent()) ?? ''), 'the legend names the parcel line and the access');
+  await view.screenshot({ path: path.join(out, 'model_review.png') });
+  // Present shows the rendering, whichever view was chosen, and gives the review back
+  await page.locator('[data-testid="render-present"]').click();
+  await page.waitForSelector('[data-testid="massing-3d"][data-look="rendering"]', { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(5000);
+  check((await view.getAttribute('data-look')) === 'rendering' && (await colours(page)) > 60, 'Present shows the rendering');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(4000);
+  check((await view.getAttribute('data-look')) === 'review', 'and Escape returns to the review view');
+  // the rest of this run reads the rendering
+  await page.locator('[data-testid="look-rendering"]').click();
+  await page.waitForTimeout(6000);
+  check((await view.getAttribute('data-look')) === 'rendering' && (await page.locator('[data-testid="review-legend"]').count()) === 0, 'Rendering is one click away');
   await view.screenshot({ path: path.join(out, 'model_aerial.png') });
   await page.locator('[data-testid="camera-street"]').click();
   await page.waitForTimeout(3000);

@@ -120,6 +120,8 @@ export interface Architecture {
 const FLOWERS: Mat[] = [mat(196, 52, 60), mat(214, 92, 120), mat(236, 190, 70), mat(240, 240, 236)];
 const PLANTER = mat(52, 50, 48);
 const MULCH = mat(98, 76, 58);
+const LAMP_DARK = mat(36, 36, 40);
+const LAMP_GLOW = mat(255, 232, 176);
 
 export class Kit {
   slabs: RenderSlab[] = [];
@@ -252,6 +254,27 @@ export class Kit {
     this.rail({ a: on(w, s1 - 0.04, 0), t: w.n, n: w.t, len: depth }, 0, depth - 0.04, 0, z, o.rail, o.railMat);
   }
 
+  /** A wall light: a dark bracket and a warm lamp under it. */
+  lamp(w: Wall, s: number, z: number, d = 0): void {
+    if (this.lite) return;
+    this.box(w, s - 0.07, s + 0.07, d, d + 0.16, z, 0.05, LAMP_DARK);
+    this.box(w, s - 0.05, s + 0.05, d + 0.04, d + 0.14, z - 0.2, 0.2, LAMP_GLOW);
+  }
+
+  /** A downspout from the eave to the ground, with a gutter's outlet at its head. */
+  downspout(w: Wall, s: number, z0: number, z1: number, m: Mat, d = 0): void {
+    if (this.lite || z1 - z0 < 1) return;
+    this.box(w, s - 0.04, s + 0.04, d, d + 0.08, z0, z1 - z0, m);
+    this.box(w, s - 0.07, s + 0.07, d, d + 0.12, z1 - 0.12, 0.12, m);
+  }
+
+  /** A mailbox on a post, at the roadside. */
+  mailbox(w: Wall, s: number, d: number): void {
+    if (this.lite) return;
+    this.box(w, s - 0.05, s + 0.05, d - 0.05, d + 0.05, 0.15, 1.0, LAMP_DARK);
+    this.box(w, s - 0.11, s + 0.11, d - 0.24, d + 0.24, 1.15, 0.24, LAMP_DARK);
+  }
+
   /** A row of shrubs at the foot of a wall, from s0 to s1. */
   hedge(w: Wall, s0: number, s1: number, d: number, every: number): void {
     let k = 0;
@@ -280,7 +303,7 @@ export class Kit {
       if (OE > 0) for (const d of [d0 - OE, d1 + OE]) this.flat([f.p3(s0 - OR, d, zL - F), f.p3(s1 + OR, d, zL - F), f.p3(s1 + OR, d, zL + 0.02), f.p3(s0 - OR, d, zL + 0.02)], o.fascia);
       [s0, s1].forEach((s, i) => {
         const so = i === 0 ? s - OR : s + OR;
-        if (OR > 0) {
+        if (OR > 0 && ends[i]) {
           this.flat([f.p3(so, d0 - OE, zL - F), f.p3(so, d0 - OE, zL), f.p3(so, dm, zR), f.p3(so, dm, zR - F)], o.fascia);
           this.flat([f.p3(so, d1 + OE, zL - F), f.p3(so, d1 + OE, zL), f.p3(so, dm, zR), f.p3(so, dm, zR - F)], o.fascia);
         }
@@ -294,7 +317,7 @@ export class Kit {
     if (OE > 0) for (const s of [s0 - OE, s1 + OE]) this.flat([f.p3(s, d0 - OR, zL - F), f.p3(s, d1 + OR, zL - F), f.p3(s, d1 + OR, zL + 0.02), f.p3(s, d0 - OR, zL + 0.02)], o.fascia);
     [d0, d1].forEach((d, i) => {
       const dd = i === 0 ? d - OR : d + OR;
-      if (OR > 0) {
+      if (OR > 0 && ends[i]) {
         this.flat([f.p3(s0 - OE, dd, zL - F), f.p3(s0 - OE, dd, zL), f.p3(sm, dd, zR), f.p3(sm, dd, zR - F)], o.fascia);
         this.flat([f.p3(s1 + OE, dd, zL - F), f.p3(s1 + OE, dd, zL), f.p3(sm, dd, zR), f.p3(sm, dd, zR - F)], o.fascia);
       }

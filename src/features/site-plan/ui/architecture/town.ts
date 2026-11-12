@@ -32,6 +32,7 @@ function entry(r: Row, o: { leaf: Mat; frame: Mat; win: WindowSpec; sidelight?: 
   const doorS = W >= 5 ? 1.2 : W / 2, d = o.d ?? 0;
   const toPavement = r.reach(doorS);
   k.door(f.w, doorS, 0.95, SLAB + 0.05, 2.1, { frame: o.frame, leaf: o.leaf, lite: true, sidelight: o.sidelight ?? 0, transom: o.transom ?? true }, d);
+  k.lamp(f.w, doorS + 0.75, SLAB + 2.0, d);
   if (W >= 5) k.windows(f.w, (doorS + 1.0 + W - 0.55) / 2, W >= 5.6 ? 2 : 1, 0.85, SLAB + 0.8, SLAB + 2.15, o.win, d);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 0, 1.0, 0, SLAB, PORCH);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 1.0, 1.32, 0, SLAB * 0.5, PORCH);

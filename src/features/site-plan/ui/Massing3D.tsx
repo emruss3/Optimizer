@@ -679,6 +679,7 @@ const Massing3D: React.FC<Massing3DProps> = props => {
       <RenderView
         elements={props.elements}
         parcelRing={ringIn3857(props.parcelGeometry)}
+        envelopeRing={props.envelope?.coordinates?.[0]}
         neighbors={props.neighbors}
         edgeClassifications={props.edgeClassifications}
         scene={props.scene}

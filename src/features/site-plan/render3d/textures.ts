@@ -228,10 +228,41 @@ const DRAW: Record<Drawn, () => Tile> = {
   },
 };
 
+// Surfaces that have a photograph (public/textures/site, from Poly Haven, CC0), and the metres one tile covers.
+const PHOTOS: Record<string, number> = { brick: 1.7, asphalt: 3.2, grass: 5.5, plaster: 2.6, shingle: 2.2, concrete: 2.8, wood: 2.2 };
+
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
 export class Surfaces {
   private made = new Map<string, THREE.Material>();
   private tiles = new Map<string, Tile>();
+  private photos: THREE.Texture[] = [];
+  /** Settles as each photographed surface arrives and replaces the drawn one: a still waits for all of them. */
+  pending: Array<Promise<void>> = [];
+
+  /** Put the photograph of a surface, and its normal map, in place of the drawn pattern once they have loaded. */
+  private photograph(kind: string, m: THREE.MeshStandardMaterial): void {
+    const size = PHOTOS[kind];
+    if (!size || typeof document === 'undefined') return;
+    const loader = new THREE.TextureLoader();
+    const one = (file: string, colour: boolean) => new Promise<THREE.Texture | null>(resolve => {
+      loader.load(`/textures/site/${file}`, t => {
+        t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(1 / size, 1 / size);
+        t.anisotropy = 8;
+        if (colour) t.colorSpace = THREE.SRGBColorSpace;
+        this.photos.push(t);
+        resolve(t);
+      }, undefined, () => resolve(null));
+    });
+    this.pending.push(Promise.all([one(`${kind}.jpg`, true), one(`${kind}_n.jpg`, false)]).then(([map, normal]) => {
+      if (!map || !normal) return;       // the drawn pattern stays
+      m.map = map;
+      m.bumpMap = null;
+      m.normalMap = normal;
+      m.normalScale = new THREE.Vector2(0.9, 0.9);
+      m.needsUpdate = true;
+    }));
+  }
 
   /** A matte, textured surface whose colour comes from the mesh's vertex colours. */
   get(kind: Surface): THREE.Material {
@@ -255,7 +286,9 @@ export class Surfaces {
     } else {
       const t = DRAW[kind]();
       this.tiles.set(kind, t);
-      m = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: t.bumpScale, roughness: t.roughness, metalness: t.metalness ?? 0 });
+      const drawn = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: t.bumpScale, roughness: t.roughness, metalness: t.metalness ?? 0 });
+      this.photograph(kind, drawn);
+      m = drawn;
     }
     this.made.set(kind, m);
     return m;
@@ -320,6 +353,8 @@ export class Surfaces {
   dispose(): void {
     for (const m of this.made.values()) m.dispose();
     for (const t of this.tiles.values()) { t.map.dispose(); if (t.bump !== t.map) t.bump.dispose(); }
+    for (const t of this.photos) t.dispose();
+    this.photos = [];
     this.made.clear();
     this.tiles.clear();
   }
