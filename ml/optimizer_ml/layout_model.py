@@ -63,6 +63,7 @@ CFG = dict(
     max_ctx_lines=12,       # frontage runs and stubs given, longest first
     split_stubs=False,      # frontage runs and vacant-land runs are given as two kinds of line (a street may start on the first only)
     turtle=False,           # format 4: each new street is written as a path from a line already on the plan (see street_plan)
+    patience=None,          # stop training when the validation loss has not improved for this many checks in a row (None = run the full time)
     plan_loss=False,        # train on the plan's tokens only: the site and its context are given, the model never writes them
     canon_frame=False,      # the site is shown long side across (four views: turned half round, mirrored) instead of at any angle
     frame_jitter_deg=8.0,   # training only: each view is turned by up to this much
@@ -1113,6 +1114,7 @@ def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
     best = val_loss()
     save()                                           # a checkpoint always exists, however short the run
     t0, step, hist = time.time(), 0, []
+    stale = 0
     while time.time() - t0 < minutes * 60:
         model.train()
         batch = []
@@ -1141,6 +1143,12 @@ def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
             if vl < best:
                 best = vl
                 save()
+                stale = 0
+            else:
+                stale += 1
+                if cfg.get('patience') and stale >= cfg['patience']:
+                    log('stopped early: the validation loss has not improved for %d checks' % stale)
+                    break
     vl = val_loss()
     if vl < best:
         best = vl

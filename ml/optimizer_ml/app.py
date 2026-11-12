@@ -159,6 +159,16 @@ def api():
         call = train.spawn(run_id, dataset, minutes, body.get("cfg") or {})
         return {"run_id": run_id, "dataset": dataset, "minutes": minutes, "call_id": call.object_id}
 
+    @web.post("/stop")
+    def train_stop(body: dict = Body(...), x_ml_nonce: str = Header(None)):
+        """Stops a training run by the call id that /train returned. The run keeps the best state it had saved."""
+        gate(x_ml_nonce, "train")
+        call_id = str(body.get("call_id") or "")
+        if not call_id.startswith("fc-"):
+            raise HTTPException(status_code=400, detail="call_id is required")
+        modal.FunctionCall.from_id(call_id).cancel()
+        return {"stopped": call_id}
+
     @web.post("/status")
     def status(body: dict = Body(...), x_ml_nonce: str = Header(None)):
         gate(x_ml_nonce, "status")
