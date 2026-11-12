@@ -63,6 +63,12 @@ CFG = dict(
     max_ctx_lines=12,       # frontage runs and stubs given, longest first
     split_stubs=False,      # frontage runs and vacant-land runs are given as two kinds of line (a street may start on the first only)
     turtle=False,           # format 4: each new street is written as a path from a line already on the plan (see street_plan)
+    plan_loss=False,        # train on the plan's tokens only: the site and its context are given, the model never writes them
+    canon_frame=False,      # the site is shown long side across (four views: turned half round, mirrored) instead of at any angle
+    frame_jitter_deg=8.0,   # training only: each view is turned by up to this much
+    stay_inside=False,      # generation, format 4: a street's first piece heads into the site, and every piece is cut where it first leaves it
+    enter_probe_ft=20.0,    # how far along its first piece a street must already be inside the site
+    end_on_within_ft=None,  # generation, format 4: a street may end on a line only when it has come this close to it (None = any line)
     attach_tol=30.0,        # a street end this close to a line counts as on it (mapped streets and plat lines do not meet to the foot)
     attach_far=200.0,       # a street that touches nothing is taken to enter at the boundary when it comes this close to it
     max_segments=14,        # straight pieces per street
@@ -102,6 +108,35 @@ def xf(pt, th, mir):
         x = -x
     c, s = math.cos(th), math.sin(th)
     return x * c - y * s, x * s + y * c
+
+
+def xf_inv(pt, th, mir):
+    x, y = pt
+    c, s = math.cos(-th), math.sin(-th)
+    x, y = x * c - y * s, x * s + y * c
+    return (-x if mir else x), y
+
+
+def frame_angle(s):
+    """Direction of the long side of the smallest rectangle around the site's outline (radians)."""
+    if 'th0' not in s:
+        try:
+            c = list(Polygon(s['b']).minimum_rotated_rectangle.exterior.coords)
+            e1, e2 = (c[1][0] - c[0][0], c[1][1] - c[0][1]), (c[2][0] - c[1][0], c[2][1] - c[1][1])
+            e = e1 if math.hypot(*e1) >= math.hypot(*e2) else e2
+            s['th0'] = math.atan2(e[1], e[0])
+        except Exception:
+            s['th0'] = 0.0
+    return s['th0']
+
+
+def view_of(s, cfg, view=0, jitter=0.0):
+    """Rotation and mirror of one of the four standard views of a site (canon_frame); otherwise the site as given."""
+    if not cfg.get('canon_frame'):
+        return 0.0, False
+    mir = view % 4 >= 2
+    th0 = frame_angle(s)
+    return (th0 if mir else -th0) + (math.pi if view % 2 else 0.0) + jitter, mir
 
 
 def poly_of(b):
@@ -568,9 +603,11 @@ def turtle_encode(s, cfg, th=0.0, mir=False, sc=1.0):
 
 
 @torch.no_grad()
-def turtle_generate(model, s, cfg, y):
-    """One layout in format 4: every street the model writes starts on a line already on the plan."""
-    b, ctx, _ = turtle_frame(s)
+def turtle_generate(model, s, cfg, y, view=0):
+    """One layout in format 4: every street the model writes starts on a line already on the plan. With canon_frame
+    the model sees the site in one of its four standard views; the layout comes back in the site's own frame."""
+    th, mir = view_of(s, cfg, view)
+    b, ctx, _ = turtle_frame(s, th, mir)
     P = poly_of(b)
     inside = P.buffer(5)
     ring = LineString(b + [b[0]])
@@ -602,7 +639,15 @@ def turtle_generate(model, s, cfg, y):
         cur, head, dec = (st.x, st.y), tangent(A, t), [(st.x, st.y)]
         while True:
             full = len(dec) > cfg['max_segments'] or not g.room(6)
-            opts = ([] if full else list(range(T0, T0 + NT))) + ([END_FREE, END_ON] if len(dec) >= 2 else [])
+            turns = [] if full else list(range(T0, T0 + NT))
+            if turns and len(dec) == 1 and cfg.get('stay_inside'):       # the first piece heads into the site
+                pr = cfg['enter_probe_ft']
+                turns = [tk for tk in turns if P.contains(Point(cur[0] + pr * math.cos(head + math.radians((tk - T0 - NT // 2) * TBIN)),
+                                                                cur[1] + pr * math.sin(head + math.radians((tk - T0 - NT // 2) * TBIN))))] or turns
+            near = list(range(len(placed)))
+            if cfg.get('end_on_within_ft') is not None and len(dec) >= 2:
+                near = [j for j, l in enumerate(placed) if l.distance(Point(cur)) <= cfg['end_on_within_ft']]
+            opts = turns + ([END_FREE] + ([END_ON] if near else []) if len(dec) >= 2 else [])
             if not opts:
                 break
             tk = g.pick(opts)
@@ -611,7 +656,7 @@ def turtle_generate(model, s, cfg, y):
                 break
             if tk == END_ON:
                 g.push(tk)
-                a1 = g.pick(range(A0, A0 + len(placed)))
+                a1 = g.pick([A0 + j for j in near])
                 g.push(a1)
                 q = placed[a1 - A0].interpolate(placed[a1 - A0].project(Point(dec[-1])))
                 dec[-1] = (q.x, q.y)
@@ -622,12 +667,16 @@ def turtle_generate(model, s, cfg, y):
             head += math.radians((tk - T0 - NT // 2) * TBIN)
             prev = cur
             cur = (cur[0] + (lt - L0) * LBIN * math.cos(head), cur[1] + (lt - L0) * LBIN * math.sin(head))
-            if not inside.contains(Point(cur)):      # a street ends where it leaves the site
+            if not inside.contains(LineString([prev, cur]) if cfg.get('stay_inside') else Point(cur)):      # a street ends where it leaves the site
                 hit = LineString([prev, cur]).intersection(ring)
                 pts = [q for q in getattr(hit, 'geoms', [hit]) if q.geom_type == 'Point'] if not hit.is_empty else []
+                if cfg.get('stay_inside'):           # the first crossing past the start (a street that starts on the boundary touches it there)
+                    pts = [q for q in pts if q.distance(Point(prev)) > 1.0]
                 if pts:
                     q = min(pts, key=lambda q: q.distance(Point(prev)))
                     cur = (q.x, q.y)
+                elif cfg.get('stay_inside'):
+                    cur = prev
                 dec.append(cur)
                 if g.room(2):
                     g.push([END_ON, A0])
@@ -639,6 +688,9 @@ def turtle_generate(model, s, cfg, y):
         placed.append(LineString(dec))
         out.append({'ctx': False, 'line': dec, 'len': line_len(dec), 'lots': {1: [], -1: []}, 'front': {1: f, -1: f}})
         n_new += 1
+    if th or mir:
+        for r in out:
+            r['line'] = [xf_inv(q, th, mir) for q in r['line']]
     return out
 
 
@@ -707,14 +759,27 @@ class LayoutModel(nn.Module):
         return self.head(self.ln(x))
 
 
-def loss_of(model, seqs):
+def plan_start(q, cfg):
+    """Index of the first token the model writes. Format 4: the first new street (or the end mark of a plan with
+    none); other formats: whatever follows the site's outline."""
+    for i, t in enumerate(q):
+        if (t == STREET or t == EOS) if cfg.get('turtle') else t == SEP:
+            return i if cfg.get('turtle') else i + 1
+    return len(q)
+
+
+def loss_of(model, seqs, cfg=None):
     T = max(len(q) for q in seqs)
     x = torch.full((len(seqs), T), PAD, dtype=torch.long)
     for i, q in enumerate(seqs):
         x[i, :len(q)] = torch.tensor(q)
-    x = x.to(DEV)
+    tgt = x[:, 1:].clone()
+    if cfg and cfg.get('plan_loss'):
+        for i, q in enumerate(seqs):
+            tgt[i, :max(0, plan_start(q, cfg) - 1)] = PAD
+    x, tgt = x.to(DEV), tgt.to(DEV)
     lg = model(x[:, :-1])
-    return F.cross_entropy(lg.reshape(-1, lg.shape[-1]), x[:, 1:].reshape(-1), ignore_index=PAD)
+    return F.cross_entropy(lg.reshape(-1, lg.shape[-1]), tgt.reshape(-1), ignore_index=PAD)
 
 
 # ---- generation -------------------------------------------------------------------------------------------------
@@ -773,11 +838,11 @@ def gen_side(g, L, stop, min_w):
 
 
 @torch.no_grad()
-def generate(model, s, cfg, y, new_streets=None):
+def generate(model, s, cfg, y, new_streets=None, view=0):
     """One layout for site s. Existing roads are given. new_streets = lines to use for the new streets (the model
     then writes only the lots); None = the model writes the new streets too. Returns roads as decode() does."""
     if cfg.get('turtle'):
-        return turtle_generate(model, s, cfg, y)
+        return turtle_generate(model, s, cfg, y, view)
     b, roads = canon(s)
     P = poly_of(b)
     min_w = s['w'] if cfg['strict_width'] else 0.0
@@ -979,7 +1044,7 @@ def evaluate(model, sites, cfg, ytargets, per_site=False):
             r['model_lots'] = safe(lambda: resolve(s, b, generate(model, s, cfg, yy, [q['line'] for q in roads if not q['ctx']]), cfg, mw)[0]) if cfg.get('lots', True) else 0
             tries, packed = [], []
             for t in range(cfg['tries']):
-                roads_t = safe(lambda: generate(model, s, cfg, ytargets[t % len(ytargets)])) or []
+                roads_t = safe(lambda: generate(model, s, cfg, ytargets[t % len(ytargets)], None, t)) or []
                 tries.append(safe(lambda: resolve(s, b, roads_t, cfg, mw)[0]))
                 packed.append(safe(lambda: resolve(s, b, pack(s, cfg, roads_t, P), cfg, s['w'])[0]))      # the model's streets, lots packed by rule
             r['model_all_1'], r['model_all_best'] = tries[0], max(tries)
@@ -1029,12 +1094,13 @@ def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
     model = LayoutModel(cfg).to(DEV)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg['lr'], weight_decay=cfg['weight_decay'])
     path = os.path.join(out_dir, 'layout_model_v1.pt')
-    val_seqs = [encode(s, cfg) for s in va]
+    val_seqs = [encode(s, cfg, *view_of(s, cfg)) for s in va]
 
-    def val_loss():
+    def val_loss(plan_only=False):
         model.eval()
+        c = dict(cfg, plan_loss=True) if plan_only else cfg
         with torch.no_grad():
-            parts = [float(loss_of(model, val_seqs[i:i + 16])) for i in range(0, len(val_seqs), 16)]
+            parts = [float(loss_of(model, val_seqs[i:i + 16], c)) for i in range(0, len(val_seqs), 16)]
         return sum(parts) / max(1, len(parts))
 
     def save():
@@ -1049,12 +1115,15 @@ def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
         for _ in range(cfg['batch']):
             ex = random.choice(tr)
             hi = min(1 + cfg['scale_aug'], CBIN * (NC // 2 - 5) / max(1.0, ex['radius']))
-            batch.append(encode(ex, cfg, random.uniform(0, 2 * math.pi), random.random() < 0.5,
-                                random.uniform(min(1 - cfg['scale_aug'], hi), hi) if cfg['scale_aug'] > 0 else 1.0))
+            if cfg.get('canon_frame'):
+                th, mir = view_of(ex, cfg, random.randrange(4), math.radians(random.uniform(-cfg['frame_jitter_deg'], cfg['frame_jitter_deg'])))
+            else:
+                th, mir = random.uniform(0, 2 * math.pi), random.random() < 0.5
+            batch.append(encode(ex, cfg, th, mir, random.uniform(min(1 - cfg['scale_aug'], hi), hi) if cfg['scale_aug'] > 0 else 1.0))
         frac = (time.time() - t0) / (minutes * 60)
         for gr in opt.param_groups:
             gr['lr'] = cfg['lr'] * min(1.0, (step + 1) / cfg['warmup']) * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * frac)))
-        loss = loss_of(model, [q[:cfg['ctx']] for q in batch])
+        loss = loss_of(model, [q[:cfg['ctx']] for q in batch], cfg)
         opt.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -1062,7 +1131,8 @@ def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
         step += 1
         if step % cfg['eval_every'] == 0:
             vl = val_loss()
-            hist.append({'step': step, 'min': round((time.time() - t0) / 60, 1), 'train': round(float(loss.detach()), 3), 'val': round(vl, 3)})
+            hist.append({'step': step, 'min': round((time.time() - t0) / 60, 1), 'train': round(float(loss.detach()), 3), 'val': round(vl, 3),
+                         'val_plan': round(vl if cfg.get('plan_loss') else val_loss(True), 3)})      # val_plan: the plan's tokens only, comparable between runs
             log(json.dumps(hist[-1]))
             if vl < best:
                 best = vl
