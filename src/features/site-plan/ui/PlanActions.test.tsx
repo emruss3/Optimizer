@@ -57,8 +57,8 @@ describe('PlanActions', () => {
   it('reports a save that worked and one that did not', () => {
     const { rerender } = render(<PlanActions {...base} justSaved="Option 3, Nov 12, 3:41 PM" />);
     expect(screen.getByTestId('plan-saved-state').textContent).toBe('Saved as Option 3, Nov 12, 3:41 PM');
-    rerender(<PlanActions {...base} saveFailed="Option 3" />);
-    expect(screen.getByRole('alert').textContent).toMatch(/Could not save/);
+    rerender(<PlanActions {...base} saveFailed="Saving plans requires signing in." />);
+    expect(screen.getByRole('alert').textContent).toBe('Not saved. Saving plans requires signing in.');
   });
 
   it('shows what the last action changed', () => {

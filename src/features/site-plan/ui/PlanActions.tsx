@@ -51,7 +51,7 @@ const PlanActions: React.FC<{
   savedAs: string | null;
   /** Set after Save version: the name it was saved under. */
   justSaved: string | null;
-  /** Set when Save version did not go through: the name it tried. */
+  /** Set when Save version did not go through: the reason. */
   saveFailed?: string | null;
   locked: number;
   free: number;
@@ -89,7 +89,7 @@ const PlanActions: React.FC<{
           Save version
         </button>
         <span className="px-1.5 text-[11px] text-gray-500" data-testid="plan-saved-state">
-          {saveFailed ? <span className="text-red-700" role="alert">Could not save. Check the connection and try again.</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? `On the sheet: ${savedAs}` : 'Not a saved option'}
+          {saveFailed ? <span className="text-red-700" role="alert">Not saved. {saveFailed}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? `On the sheet: ${savedAs}` : 'Not a saved option'}
         </span>
         <button
           type="button" onClick={() => setLocksOpen(o => !o)} aria-expanded={locksOpen} data-testid="plan-locks"
@@ -114,7 +114,7 @@ const PlanActions: React.FC<{
           {locked > 0 && (
             <button type="button" onClick={() => { setLocksOpen(false); onUnlockAll(); }} disabled={busy} data-testid="plan-unlock-all" className={`${btn} border-gray-200 bg-white text-gray-800 hover:bg-gray-50`}>
               <Unlock className="w-3.5 h-3.5" />
-              Unlock all and recalculate
+              Unlock all (saves a new option)
             </button>
           )}
         </div>

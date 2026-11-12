@@ -525,9 +525,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const option = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Plan';
     const name = `${option}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
     savePlanToDb({ parcel_id: parcelIdStr, name, config, elements, metrics, violations, investment: investmentAnalysis })
-      .then(saved => setVersionSaved({ name, ok: !!saved }))
+      .then(saved => {
+        setVersionSaved({ name, ok: !!saved });
+        // only a save that happened is a save in the feedback stream
+        if (saved) void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_saved', activeCandidateId, { name, kind: 'saved_version' });
+      })
       .catch(() => setVersionSaved({ name, ok: false }));
-    void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_saved', activeCandidateId, { name });
   }, [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis, activeCandidateId, mfCandidates]);
 
   const handleLoadPlan = useCallback(
@@ -665,6 +668,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     candidateId?: string | null;
     /** What the user did, for the note that says what changed. */
     action?: string;
+    /** A replay: the figures this plan had when the user last saw it. */
+    expected?: PlanSummary;
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     serverRejectRef.current = null;
@@ -857,12 +862,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         seed: opts.seed,
         pins: resp.pins ?? [],
         product: effectiveProduct,
-        contextId: opts.contextId,
+        // the context this plan was actually solved under, so a replay uses the same one
+        contextId: opts.contextId !== undefined ? opts.contextId : (effectiveContextId ?? undefined),
         candidateId: resp.candidate_id ?? opts.candidateId ?? (step ? null : before?.candidateId ?? null),
         summary,
       };
       setLockCounts({ locked: lockedNow, free: buildingsNow.length - lockedNow });
-      setPlanChange(before && opts.action ? { action: opts.action, before: before.summary, after: summary } : null);
+      setVersionSaved(null);
+      // A replay is a fresh solve. If it does not match what the user saw, say so.
+      const e = opts.expected;
+      const redrawn = !!e && (e.units !== summary.units || e.stalls !== summary.stalls || e.gsf !== summary.gsf || e.buildings !== summary.buildings);
+      setPlanChange(
+        redrawn && e
+          ? { action: `${opts.action ?? 'Replay'} redrew this plan and it differs from the one you saw`, before: e, after: summary }
+          : before && opts.action ? { action: opts.action, before: before.summary, after: summary } : null,
+      );
     }
     const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
@@ -1399,15 +1413,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [setPlanOutput, trackBuildings]);
 
   /** Put a server plan back on the sheet from its identity. Nothing is saved. */
-  const restoreServerPlan = useCallback((state: ServerPlanState, action: string) => {
-    if (mfRegenInFlightRef.current) return;
+  const restoreServerPlan = useCallback((state: ServerPlanState, action: string): Promise<boolean> => {
+    if (mfRegenInFlightRef.current) return Promise.resolve(false);
     mfRegenInFlightRef.current = true;
     setIsGenerating(true);
     if (productRef.current !== state.product) {
       productRef.current = state.product;
       setProduct(state.product);
     }
-    runServerMfPlan({
+    return runServerMfPlan({
       seed: state.seed,
       pins: state.pins,
       persist: false,
@@ -1415,10 +1429,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       product: state.product,
       fromHistory: true,
       candidateId: state.candidateId,
+      expected: state.summary,
       action,
     })
-      .then(ok => { if (ok) setActiveCandidateId(state.candidateId); })
-      .catch(() => undefined)
+      .then(ok => { if (ok) setActiveCandidateId(state.candidateId); return ok; })
+      .catch(() => false)
       .finally(() => {
         mfRegenInFlightRef.current = false;
         setIsGenerating(false);
@@ -1431,32 +1446,35 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? { kind: 'server', state: serverStateRef.current }
       : { kind: 'local', buildings: structuredClone(currentBuildingsRef.current) }
   ), []);
-  const applyHistoryEntry = useCallback((entry: HistoryEntry, action: string) => {
-    if (entry.kind === 'server') {
-      restoreServerPlan(entry.state, action);
-    } else {
-      if (planModeRef.current === 'mf-server') planModeRef.current = 'mf';
-      void applyBuildingSet(entry.buildings);
-    }
+  const applyHistoryEntry = useCallback((entry: HistoryEntry, action: string): Promise<boolean> => {
+    if (entry.kind === 'server') return restoreServerPlan(entry.state, action);
+    if (planModeRef.current === 'mf-server') planModeRef.current = 'mf';
+    return applyBuildingSet(entry.buildings).then(() => true);
   }, [restoreServerPlan, applyBuildingSet]);
 
-  const undo = useCallback(() => {
+  /** One step back or forward. The stacks move only once the plan is back on
+   *  the sheet: a replay that fails leaves the plan and the history as they were. */
+  const stepHistory = useCallback((from: React.MutableRefObject<HistoryEntry[]>, to: React.MutableRefObject<HistoryEntry[]>, action: string) => {
     if (mfRegenInFlightRef.current) return;
-    const prev = pastRef.current.pop();
-    if (!prev) return;
-    futureRef.current.push(snapshotNow());
-    setHistoryVersion(v => v + 1);
-    applyHistoryEntry(prev, 'Undo');
+    const target = from.current[from.current.length - 1];
+    if (!target) return;
+    const here = snapshotNow();
+    void applyHistoryEntry(target, action).then(ok => {
+      if (ok) {
+        from.current.pop();
+        to.current.push(here);
+        setHistoryVersion(v => v + 1);
+      } else {
+        setViolations(v => [...v, {
+          code: 'history-replay',
+          message: `${action} did not go through: ${serverFailCauseRef.current ?? 'the plan could not be redrawn.'} The current plan is unchanged.`,
+          severity: 'warning',
+        }]);
+      }
+    });
   }, [snapshotNow, applyHistoryEntry]);
-
-  const redo = useCallback(() => {
-    if (mfRegenInFlightRef.current) return;
-    const next = futureRef.current.pop();
-    if (!next) return;
-    pastRef.current.push(snapshotNow());
-    setHistoryVersion(v => v + 1);
-    applyHistoryEntry(next, 'Redo');
-  }, [snapshotNow, applyHistoryEntry]);
+  const undo = useCallback(() => stepHistory(pastRef, futureRef, 'Undo'), [stepHistory]);
+  const redo = useCallback(() => stepHistory(futureRef, pastRef, 'Redo'), [stepHistory]);
 
   /** Recalculate this design: the same option and the same locked buildings,
    *  run again. No new saved option, no history step. */
@@ -2477,6 +2495,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       futureRef.current = [];
       setHistoryVersion(v => v + 1);
       setPlanChange(null);
+      setVersionSaved(null);
       setLockCounts({ locked: 0, free: 0 });
       productRef.current = 'apartments';
       setProduct('apartments');
@@ -3961,7 +3980,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 onSaveVersion={handleSaveVersion}
                 savedAs={(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || null}
                 justSaved={versionSaved?.ok ? versionSaved.name : null}
-                saveFailed={versionSaved && !versionSaved.ok ? versionSaved.name : null}
+                saveFailed={versionSaved && !versionSaved.ok ? (savedPlansError ?? 'The save did not go through. Check the connection and try again.') : null}
                 locked={lockCounts.locked}
                 free={lockCounts.free}
                 onUnlockAll={handleUnlockAll}
