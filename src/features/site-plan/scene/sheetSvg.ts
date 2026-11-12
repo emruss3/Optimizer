@@ -39,6 +39,8 @@ export interface SheetTitle {
 /** A picture of the site from above (render3d/still) to lay the linework over. */
 export interface SheetUnderlay {
   href: string;
+  /** True when an image model painted it: the sheet then says so. */
+  ai?: boolean | undefined;
 }
 
 export interface SheetLayout {
@@ -606,7 +608,7 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   const by = image.y + image.h;
   out.push(`<line x1="${M}" y1="${r2(by)}" x2="${r2(W - M)}" y2="${r2(by)}" stroke="${INK}" stroke-width="1"/>`);
   const tx = M + 16;
-  out.push(`<text x="${tx}" y="${r2(by + 22)}" font-size="6.2" font-weight="700" letter-spacing="1.1" fill="#7a8087">AERIAL VIEW · CONCEPT</text>`);
+  out.push(`<text x="${tx}" y="${r2(by + 22)}" font-size="6.2" font-weight="700" letter-spacing="1.1" fill="#7a8087">${picture?.ai ? 'AERIAL VIEW · AI IMPRESSION' : 'AERIAL VIEW · CONCEPT'}</text>`);
   out.push(`<text x="${tx}" y="${r2(by + 42)}" font-size="16" font-weight="700" fill="${INK}">${esc(title.project)}</text>`);
   if (title.subtitle) out.push(`<text x="${tx}" y="${r2(by + 54)}" font-size="7.5" fill="#4b5158">${esc(title.subtitle.length > 110 ? title.subtitle.slice(0, 108) + '…' : title.subtitle)}</text>`);
   // the scheme's figures, from the site data the workspace states
@@ -619,7 +621,110 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   });
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-02</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
-  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the buildings shown in white are illustration, not a design.</text>`);
+  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">${picture?.ai
+    ? "An AI impression painted over a render of the plan. The layout is the plan's. Materials, planting, sky and surroundings are invented, and a detail may differ from the plan. Not a design."
+    : "Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design."}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H };
+}
+
+/** Where a line through `at` along `dir` crosses a ring: distances along the line, in the ring's units, sorted. */
+export function crossings(ring: ArrayLike<ArrayLike<number>>, at: Pt, dir: Pt): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    if (!a || !b) continue;
+    const ax = (a[0] ?? 0) - at[0], ay = (a[1] ?? 0) - at[1], bx = (b[0] ?? 0) - at[0], by = (b[1] ?? 0) - at[1];
+    // signed distance of each end from the line, and where the edge crosses it
+    const da = ax * -dir[1] + ay * dir[0], db = bx * -dir[1] + by * dir[0];
+    if ((da > 0) === (db > 0) || da === db) continue;
+    const k = da / (da - db);
+    out.push((ax + (bx - ax) * k) * dir[0] + (ay + (by - ay) * k) * dir[1]);
+  }
+  return out.sort((p, q) => p - q);
+}
+
+/**
+ * A-03 Section A–A: a cut across the first tagged building, at right angles to
+ * its longest wall, from property line to property line. Every building the
+ * cut passes through is drawn as its stories at the scene's heights. The
+ * ground is drawn level: the plan carries no grade. Heights are the scene's
+ * (estimated from story counts unless the plan reports one); no horizontal
+ * distance is stated, and the sheet carries a graphic scale only.
+ */
+export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize): { svg: string; widthPt: number; heightPt: number; drawn: number } {
+  const { wIn, hIn } = SHEET_SIZES[size];
+  const { widthPt: W, heightPt: H, image } = viewSheetLayout(size);
+  const M = image.x;
+  const out: string[] = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${wIn}in" height="${hIn}in" viewBox="0 0 ${W} ${H}" font-family="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif" data-sheet="A-03" data-scene-key="${esc(scene.identity.key)}" data-revision="${esc(scene.identity.revision)}">`);
+  out.push(`<rect width="${W}" height="${H}" fill="#ffffff"/>`);
+  out.push(`<rect x="${M}" y="${M}" width="${r2(W - 2 * M)}" height="${r2(H - 2 * M)}" fill="none" stroke="${INK}" stroke-width="1"/>`);
+  const by = image.y + image.h;
+  out.push(`<line x1="${M}" y1="${r2(by)}" x2="${r2(W - M)}" y2="${r2(by)}" stroke="${INK}" stroke-width="1"/>`);
+
+  const subject = scene.buildings.find(b => b.tagOnPlan) ?? scene.buildings[0];
+  const ring = subject?.polygons[0]?.[0];
+  let drawn = 0;
+  if (subject && ring && ring.length >= 3) {
+    // the cut runs at right angles to the building's longest wall, through its label point
+    let long: Pt = [1, 0], best = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      if (!a || !b) continue;
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len > best) { best = len; long = [(b[0] - a[0]) / len, (b[1] - a[1]) / len]; }
+    }
+    const dir: Pt = [-long[1], long[0]], at = subject.labelPoint;
+    const lot = scene.parcel?.polygons[0]?.[0];
+    const lotCuts = lot ? crossings(lot, at, dir) : [];
+    const before = lotCuts.filter(t => t < 0), after = lotCuts.filter(t => t > 0);
+    const cuts = scene.buildings.map(b => ({ b, hits: crossings(b.polygons[0]?.[0] ?? [], at, dir) })).filter(c => c.hits.length >= 2);
+    const lo = Math.min(before.length ? (before[before.length - 1] as number) : Infinity, ...cuts.flatMap(c => c.hits)) - 12;
+    const hi = Math.max(after.length ? (after[0] as number) : -Infinity, ...cuts.flatMap(c => c.hits)) + 12;
+    const tallest = Math.max(10, ...cuts.map(c => c.b.height.aboveGradeFt));
+    // one scale both ways: a true section
+    const k = Math.min((image.w - 120) / (hi - lo), (image.h - 110) / (tallest + 16));
+    const x = (t: number) => r2(image.x + image.w / 2 + (t - (lo + hi) / 2) * k);
+    const ground = image.y + image.h - 56;
+    const y = (ft: number) => r2(ground - ft * k);
+    out.push(`<g data-role="section" data-building="${esc(subject.id)}">`);
+    out.push(`<rect x="${x(lo)}" y="${r2(ground)}" width="${r2((hi - lo) * k)}" height="14" fill="#e9e6df"/><line x1="${x(lo)}" y1="${r2(ground)}" x2="${x(hi)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="1.2" data-role="ground"/>`);
+    for (const t of [before[before.length - 1], after[0]]) {
+      if (t == null) continue;
+      out.push(`<g data-role="property-line"><line x1="${x(t)}" y1="${y(tallest + 8)}" x2="${x(t)}" y2="${r2(ground + 14)}" stroke="${INK}" stroke-width="0.9" stroke-dasharray="7 2.5 1.5 2.5"/><text x="${x(t)}" y="${r2(y(tallest + 8) - 4)}" font-size="6" text-anchor="middle" fill="#4b5158">Property line</text></g>`);
+    }
+    for (const { b, hits } of cuts) {
+      const a = hits[0] as number, z = hits[hits.length - 1] as number;
+      const levels = b.height.levelsFt;
+      levels.forEach((top, i) => {
+        const base = i === 0 ? 0 : (levels[i - 1] as number);
+        out.push(`<rect x="${x(a)}" y="${y(top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="${i % 2 ? '#f4f1ea' : '#ebe7de'}" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}"/>`);
+        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y((top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">Level ${i + 1}</text>`);
+      });
+      const top = b.height.aboveGradeFt, dx = x(z) + 12;
+      out.push(`<g data-role="height" data-building="${esc(b.id)}"><line x1="${dx}" y1="${r2(ground)}" x2="${dx}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${r2(ground)}" x2="${r2(dx + 3)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${y(top)}" x2="${r2(dx + 3)}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/>`
+        + `<text x="${r2(dx + 6)}" y="${r2((ground + y(top)) / 2 + 2.4)}" font-size="6.6" fill="${INK}">${esc(`${b.height.basis === 'estimated' ? 'est. ' : ''}${Math.round(top)} ft`)}</text></g>`);
+      out.push(`<text x="${r2((x(a) + x(z)) / 2)}" y="${r2(y(top) - 6)}" font-size="8" font-weight="700" text-anchor="middle" fill="${INK}">${esc(`${b.display.title} · ${levels.length} ${levels.length === 1 ? 'story' : 'stories'}`)}</text>`);
+      drawn++;
+    }
+    // a graphic scale: the section states no horizontal distance in figures
+    const bar = [100, 50, 20, 10].find(ft => ft * k <= image.w * 0.22) ?? 10;
+    const sx = image.x + 18, sy = ground + 36;
+    out.push(`<g data-role="scale-bar"><rect x="${r2(sx)}" y="${r2(sy)}" width="${r2((bar / 2) * k)}" height="3" fill="${INK}"/><rect x="${r2(sx + (bar / 2) * k)}" y="${r2(sy)}" width="${r2((bar / 2) * k)}" height="3" fill="#fff" stroke="${INK}" stroke-width="0.6"/><text x="${r2(sx)}" y="${r2(sy - 3)}" font-size="5.6" fill="#4b5158">0</text><text x="${r2(sx + bar * k)}" y="${r2(sy - 3)}" font-size="5.6" text-anchor="middle" fill="#4b5158">${bar} ft</text></g>`);
+    out.push('</g>');
+  } else {
+    out.push(`<text x="${r2(W / 2)}" y="${r2(image.y + image.h / 2)}" font-size="10" text-anchor="middle" fill="#7a8087">No building on this plan to cut a section through.</text>`);
+  }
+  const tx = M + 16;
+  out.push(`<text x="${tx}" y="${r2(by + 22)}" font-size="6.2" font-weight="700" letter-spacing="1.1" fill="#7a8087">SECTION A–A · CONCEPT</text>`);
+  out.push(`<text x="${tx}" y="${r2(by + 42)}" font-size="16" font-weight="700" fill="${INK}">${esc(title.project)}</text>`);
+  if (title.subtitle) out.push(`<text x="${tx}" y="${r2(by + 54)}" font-size="7.5" fill="#4b5158">${esc(title.subtitle.length > 110 ? title.subtitle.slice(0, 108) + '…' : title.subtitle)}</text>`);
+  out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-03</text>`);
+  out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
+  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="section-note">${esc(subject?.height.basis === 'reported'
+    ? 'Schematic. The ground is drawn level: the plan carries no grade. Roofs and parapets are not drawn. Graphic scale only.'
+    : 'Schematic. The ground is drawn level: the plan carries no grade. Heights are estimated from story counts and are not measured or controlling. Roofs and parapets are not drawn. Graphic scale only.')}</text>`);
+  out.push('</svg>');
+  return { svg: out.join('\n'), widthPt: W, heightPt: H, drawn };
 }

@@ -73,3 +73,33 @@ describe('SchemesRail (saved candidates keep their context identity)', () => {
     expect(onRegen).toHaveBeenCalledWith(older);
   });
 });
+
+describe('SchemesRail (decide between saved schemes)', () => {
+  const three = [
+    cand({ id: 'c', contextId: 'ctx', createdAt: '2026-07-14T14:00:00Z' }),
+    cand({ id: 'b', contextId: 'ctx', createdAt: '2026-07-14T13:00:00Z' }),
+    cand({ id: 'a', contextId: 'ctx', createdAt: '2026-07-14T12:00:00Z' }),
+  ];
+
+  it('names schemes oldest first and offers Underwrite on each', () => {
+    const onUnderwrite = vi.fn();
+    render(<SchemesRail candidates={three} activeId={null} onView={() => undefined} onUnderwrite={onUnderwrite} />);
+    expect(screen.getByText('Option 1')).toBeTruthy();
+    expect(screen.getByText('Option 3')).toBeTruthy();
+    expect(screen.getAllByText('Underwrite this scheme')).toHaveLength(3);
+    fireEvent.click(screen.getByTestId('scheme-underwrite-a'));
+    expect(onUnderwrite).toHaveBeenCalledWith(three[2]);
+  });
+
+  it('compares only once two schemes are ticked', () => {
+    const onCompare = vi.fn();
+    render(<SchemesRail candidates={three} activeId={null} onView={() => undefined} onCompare={onCompare} />);
+    const go = screen.getByTestId('schemes-compare') as HTMLButtonElement;
+    expect(go.disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('scheme-pick-a'));
+    expect(go.disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('scheme-pick-c'));
+    fireEvent.click(go);
+    expect(onCompare).toHaveBeenCalledWith([three[0], three[2]]);
+  });
+});

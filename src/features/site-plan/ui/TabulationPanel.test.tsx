@@ -79,3 +79,23 @@ describe('TabulationPanel — the requirement column is honest about what it kno
     expect(screen.getByText(/provided count needs verification/)).toBeTruthy();
   });
 });
+
+describe('TabulationPanel: a missing figure is not a zero (1710 Meharry Blvd, 2026-11-12)', () => {
+  const bar = {
+    id: 'b1', type: 'building', name: 'Building A', geometry: sq(0), metadata: meta,
+    properties: { use: 'residential', floors: 4, unitMix: [{ type: '1br', count: 30, avgSqft: 750, rentPerMonth: 0, parkingRatio: 1 }] },
+  } as unknown as Element;
+
+  it('says not reported where the engine gave no FAR or coverage', () => {
+    render(<TabulationPanel elements={[bar]} metrics={{ totalUnits: 30, totalBuiltSF: 54244, achievedFAR: 0, siteCoveragePct: 0 } as SiteMetrics} plannerCtx={null} />);
+    expect(screen.getByTestId('tab-far').textContent).toBe('FAR not reported');
+    expect(screen.getByTestId('tab-coverage').textContent).toBe('Coverage not reported');
+    expect(screen.queryByText('0.00')).toBeNull();
+  });
+
+  it('shows the figures when the engine reports them', () => {
+    render(<TabulationPanel elements={[bar]} metrics={{ totalUnits: 30, totalBuiltSF: 54244, achievedFAR: 0.7, siteCoveragePct: 18 } as SiteMetrics} plannerCtx={null} />);
+    expect(screen.getByTestId('tab-far').textContent).toBe('FAR 0.70');
+    expect(screen.getByTestId('tab-coverage').textContent).toBe('Coverage 18%');
+  });
+});

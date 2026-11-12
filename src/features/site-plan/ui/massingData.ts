@@ -5,7 +5,7 @@ import { createGroundFrame } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
 import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
-import { buildArchitecture } from './architecture';
+import { buildArchitecture, DEFAULT_STYLE, type ArchStyle } from './architecture';
 import { stallStripes } from '../scene/sheetSvg';
 import { seeded } from '../scene/landscape';
 
@@ -79,6 +79,8 @@ export function buildMassingData(
     treePoints?: Array<{ at: number[]; radiusM: number }>;
     /** Street centre lines of the block (3857). */
     contextRoads?: Array<{ line: { coordinates: number[][] } }>;
+    /** The architectural style the buildings are drawn in. It changes how they look and nothing else. */
+    style?: ArchStyle;
   }
 ): {
   polygons: MassingPolygon[];
@@ -118,6 +120,8 @@ export function buildMassingData(
   lawn: MassingPolygon[];
   /** Roof-line ring of each building, for the selection outline. */
   roofLines: Array<{ id: string; path: number[][] }>;
+  /** The lots of a subdivision, as rings in local metres. */
+  lots: number[][][];
   /** Scene origin (derived from the plan's own Mercator frame) — feeds the
    *  sun-study light; never a hardcoded city. */
   origin: { latDeg: number; lonDeg: number };
@@ -128,7 +132,7 @@ export function buildMassingData(
   if (drawable.length === 0)
     return {
       polygons: [], extent: 100, groundPaths: [], contextPolygons: [], trees: [],
-      floorLines: [], slabs: [], windows: [], roofs: [], lawn: [], roofLines: [], shrubs: [], walks: [], curbs: [], roads: [], stripes: [], cars: [], aerialAzimuth: -38, toLocal: p => p, origin: { latDeg: 0, lonDeg: 0 },
+      floorLines: [], slabs: [], windows: [], roofs: [], lawn: [], roofLines: [], lots: [], shrubs: [], walks: [], curbs: [], roads: [], stripes: [], cars: [], aerialAzimuth: -38, toLocal: p => p, origin: { latDeg: 0, lonDeg: 0 },
     };
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -245,23 +249,29 @@ export function buildMassingData(
   const pavement: Array<[number, number]> = drawable
     .filter(el => el.type === 'circulation' || el.type === 'parking-aisle')
     .flatMap(el => densify((el.geometry.coordinates[0] ?? []).map(m)));
+  const style = ground?.style ?? DEFAULT_STYLE;
+  const outlines = buildings.map(el => (el.geometry.coordinates[0] ?? []).map(m));
   const draw = (scale: number) => {
     const slabs: RenderSlab[] = [], windows: RenderWindow[] = [], roofs: RenderWindow[] = [];
     const shrubs: Array<[number, number, number]> = [];
-    for (const el of buildings) {
+    buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
       const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
-      const a = buildArchitecture(el.id, label, rings, buildingUse(el), heightOf(el), pavement, scale);
+      const a = buildArchitecture(el.id, label, rings, buildingUse(el), heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i));
       slabs.push(...a.slabs);
       windows.push(...a.glass);
       roofs.push(...a.flats);
       shrubs.push(...a.shrubs);
-    }
+    });
     return { slabs, windows, roofs, shrubs };
   };
+  const debug = typeof window !== 'undefined' && !!(window as unknown as { __renderDebug?: boolean }).__renderDebug;
+  const t0 = debug ? performance.now() : 0;
   let model = draw(1);
-  for (let scale = 1.5; model.windows.length + model.roofs.length > MAX_WINDOWS * 3 && scale <= 6; scale *= 1.5) model = draw(scale);
+  if (debug) console.info(`[time] buildings drawn once in ${Math.round(performance.now() - t0)} ms: ${model.slabs.length} solids, ${model.roofs.length} flats, ${model.windows.length} panes, ${buildings.length} buildings`);
+  for (let scale = 1.5; model.windows.length + model.roofs.length + model.slabs.length > MAX_WINDOWS * 4 && scale <= 6; scale *= 1.5) model = draw(scale);
   const { slabs, windows, roofs, shrubs } = model;
+  if (debug) console.info(`[time] buildings settled at ${Math.round(performance.now() - t0)} ms: ${slabs.length} solids, ${roofs.length} flats, ${windows.length} panes`);
   // walks and curbs follow the plan's own shapes
   const walks: Array<{ path: number[][]; widthM: number; strip: boolean }> = [];
   const curbs: Array<{ path: number[][] }> = [];
@@ -337,10 +347,14 @@ export function buildMassingData(
     ? [{ polygon: [ground.parcelRing.map(m)], elevation: 0.06, color: [206, 222, 188, 255], label: 'Site' }]
     : [];
 
+  const lots = elements
+    .filter(e => /^Lot \d+$/.test(e.name ?? '') && (e.geometry?.coordinates?.[0]?.length ?? 0) >= 4)
+    .map(e => (e.geometry.coordinates[0] ?? []).map(m));
+
   const { lonDeg, latDeg } = frame;
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg },
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg },
     aerialAzimuth: clearestAzimuth(
       contextPolygons.filter(c => c.elevation > 1).map(c => {
         const r = c.polygon[0] ?? [];

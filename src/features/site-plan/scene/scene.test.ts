@@ -13,6 +13,7 @@ import {
   pointInPolygon, polygonArea, renderSitePlanSheet, sceneEvidence, sceneRevision, selectionFor, LABEL_PRIORITY,
   STORY_ASSUMPTIONS, type Pt,
 } from './index';
+import { crossings, renderSectionSheet } from './sheetSvg';
 
 // The engine draws in EPSG:2274 (Tennessee state plane, feet): a true ground
 // frame. The app reprojects that to EPSG:3857 for the canvas. These tests take
@@ -145,6 +146,27 @@ describe('scene from the saved multifamily plan (488278, 1710 Meharry Blvd)', ()
     parcelId: 488278, schemeId: 'mf:test', elements, parcelGeometry: meharryParcel,
     schedule: { units: meharry.metrics?.units as number, stalls: meharry.metrics?.stalls as number },
   })!;
+
+  it('cuts a section through the building: its stories at the scene heights, between the property lines', () => {
+    const sheet = renderSectionSheet(scene, { project: '1710 MEHARRY BLVD', subtitle: 'RM20', date: '2026-11-12', notes: [] }, 'slide');
+    expect(sheet.drawn).toBe(1);
+    expect(sheet.svg).toContain('data-sheet="A-03"');
+    // four levels, the scene's estimated height, and both property lines
+    expect((sheet.svg.match(/data-level="/g) ?? []).length).toBe(4);
+    expect(sheet.svg).toContain('est. 44 ft');
+    expect((sheet.svg.match(/data-role="property-line"/g) ?? []).length).toBe(2);
+    // a section states no horizontal distance: only the graphic scale carries feet across
+    expect(sheet.svg).toContain('data-role="scale-bar"');
+    expect(sheet.svg).toContain('Heights are estimated from story counts');
+    expect(sheet.svg).toContain(`rev ${scene.identity.revision}`);
+  });
+
+  it('finds where a line crosses a ring', () => {
+    const square = [[0, 0], [10, 0], [10, 10], [0, 10]];
+    expect(crossings(square, [5, 5], [1, 0])).toEqual([-5, 5]);
+    expect(crossings(square, [5, 5], [0, 1])).toEqual([-5, 5]);
+    expect(crossings(square, [50, 5], [0, 1])).toEqual([]);
+  });
 
   it('carries one building with the plan’s id, stories and footprint', () => {
     expect(scene.buildings).toHaveLength(1);

@@ -97,3 +97,16 @@ describe('builtSummary — the legacy lot generator\'s pads are lots, not apartm
     expect(builtSummary({ totalUnits: 3 } as unknown as SiteMetrics, pads)).toBeNull();
   });
 });
+
+describe('the sentence and the schedule count the same homes (1710 Meharry Blvd, 2026-11-12)', () => {
+  it('puts a home the buildings\' rounding dropped into the largest type, as the schedule does', () => {
+    const short: Element = { ...building, id: 'mfgen-bldg-9', properties: { ...building.properties, unitMix: [
+      { type: 'studio', count: 3, avgSqft: 550 }, { type: '1br', count: 12, avgSqft: 700 },
+      { type: '2br', count: 10, avgSqft: 1100 }, { type: '3br', count: 4, avgSqft: 1600 },
+    ] } } as Element;
+    const s = builtSummary({ totalUnits: 30, totalBuiltSF: 54244 } as SiteMetrics, [short]);
+    expect(s?.detail).toContain('3 studios, 13 one-beds, 10 two-beds, 4 three-beds');
+    // with the counts in agreement nothing moves
+    expect(builtSummary({ totalUnits: 29, totalBuiltSF: 54244 } as SiteMetrics, [short])?.detail).toContain('12 one-beds');
+  });
+});

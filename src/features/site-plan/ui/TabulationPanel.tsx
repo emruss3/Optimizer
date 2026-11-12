@@ -207,8 +207,15 @@ const TabulationPanel: React.FC<{
             Efficiency <b>{efficiency.toFixed(0)}%</b>
           </span>
         )}
-        <span>FAR <b>{(metrics?.achievedFAR ?? 0).toFixed(2)}</b></span>
-        <span>Coverage <b>{(metrics?.siteCoveragePct ?? 0).toFixed(0)}%</b></span>
+        {/* A zero here is a figure the engine did not report, not a measured zero: a plan
+            with floor area cannot have no floor area ratio (1710 Meharry Blvd: "FAR 0.00"
+            and "Coverage 0%" beside 54,244 sf). The app does not measure them itself. */}
+        <span data-testid="tab-far" title={(metrics?.achievedFAR ?? 0) > 0 ? undefined : 'The engine that drew this plan did not report a floor area ratio.'}>
+          FAR <b>{(metrics?.achievedFAR ?? 0) > 0 ? (metrics?.achievedFAR ?? 0).toFixed(2) : 'not reported'}</b>
+        </span>
+        <span data-testid="tab-coverage" title={(metrics?.siteCoveragePct ?? 0) > 0 ? undefined : 'The engine that drew this plan did not report building coverage.'}>
+          Coverage <b>{(metrics?.siteCoveragePct ?? 0) > 0 ? `${(metrics?.siteCoveragePct ?? 0).toFixed(0)}%` : 'not reported'}</b>
+        </span>
         {duAc != null && <span>Density <b>{duAc.toFixed(1)} DU/ac</b></span>}
         <span
           title={

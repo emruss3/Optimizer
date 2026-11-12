@@ -100,3 +100,37 @@ describe('buildMassingData', () => {
     expect(origin.latDeg).toBeLessThan(37);
   });
 });
+
+describe('what the rendered view is given', () => {
+  const building = el('b1', 'building', square(X, Y, 30), 3);
+
+  it('draws the buildings in the style asked for, and in the first style when none is', () => {
+    const surfaces = (style?: 'mansard' | 'farmhouse' | 'modern' | 'heritage') => {
+      const d = buildMassingData([building], style ? { style } : undefined);
+      return new Set([...d.slabs, ...d.roofs].map(p => p.surface ?? 'plain'));
+    };
+    expect(surfaces()).toEqual(surfaces('mansard'));
+    expect(surfaces('farmhouse').has('batten')).toBe(true);
+    expect(surfaces('farmhouse').has('metal')).toBe(true);
+    expect(surfaces('modern').has('glassrail')).toBe(true);
+    expect(surfaces('mansard').has('shingle')).toBe(true);
+  });
+
+  it('keeps the same footprints and heights whatever the style', () => {
+    const tops = (style: 'mansard' | 'modern') => {
+      const d = buildMassingData([building], { style });
+      return [d.polygons.map(p => p.elevation), d.roofLines.map(r => r.path.map(p => p.map(v => Math.round(v * 1000))))];
+    };
+    expect(tops('modern')).toEqual(tops('mansard'));
+  });
+
+  it('passes on the lots of a subdivision, in the same local metres as the buildings', () => {
+    const lot: Element = { ...el('lot', 'other', square(X - 10, Y - 10, 50)), name: 'Lot 7' };
+    const d = buildMassingData([building, lot]);
+    expect(d.lots).toHaveLength(1);
+    const xs = (d.lots[0] ?? []).map(p => p[0] ?? 0), bx = (d.polygons[0]?.polygon[0] ?? []).map(p => p[0] ?? 0);
+    // the lot is 50 projected metres wide and the building 30: the same scale carries both
+    expect((Math.max(...xs) - Math.min(...xs)) / (Math.max(...bx) - Math.min(...bx))).toBeCloseTo(50 / 30, 6);
+    expect(buildMassingData([building]).lots).toHaveLength(0);
+  });
+});

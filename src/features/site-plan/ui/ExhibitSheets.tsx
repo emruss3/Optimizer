@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArchStylePicker } from './ArchStylePicker';
 import type { DrawingScene } from '../scene/types';
 import {
-  renderSitePlanSheet, renderViewSheet, sheetLayout, viewSheetLayout, SHEET_SIZES,
+  renderSectionSheet, renderSitePlanSheet, renderViewSheet, sheetLayout, viewSheetLayout, SHEET_SIZES,
   type SheetLayout, type SheetSize, type SheetTitle,
 } from '../scene/sheetSvg';
 
-type Which = 'plan' | 'view';
+type Which = 'plan' | 'view' | 'section';
 
 /** Resolves after the browser has painted what was just put on screen: a
  *  render holds the page for a few seconds and must not start before that. */
@@ -28,7 +29,11 @@ export const ExhibitSheets: React.FC<{
   renderUnderlay?: ((layout: SheetLayout, widthPx: number) => Promise<string>) | undefined;
   /** Renders the scheme from the air at the given size, for A-02. */
   renderView?: ((widthPx: number, heightPx: number) => Promise<string>) | undefined;
-}> = ({ scene, title, onClose, renderUnderlay, renderView }) => {
+  /** Repaints a rendering as a photograph (the photoreal pass), for A-02. */
+  photoreal?: ((image: string) => Promise<string>) | undefined;
+  /** The architectural style the pictures are rendered in: a change of it is a new picture. */
+  look?: string | undefined;
+}> = ({ scene, title, onClose, renderUnderlay, renderView, photoreal, look }) => {
   const [which, setWhich] = useState<Which>('plan');
   const [size, setSize] = useState<SheetSize>('slide');
   const [style, setStyle] = useState<'rendered' | 'drawn'>(renderUnderlay ? 'rendered' : 'drawn');
@@ -36,7 +41,11 @@ export const ExhibitSheets: React.FC<{
   const [view, setView] = useState<{ key: string; href: string } | null>(null);
   const [rendering, setRendering] = useState(false);
   const [viewFailed, setViewFailed] = useState(false);
-  const key = `${scene.identity.key}|${scene.identity.revision}|${size}`;
+  const [painted2, setPainted2] = useState<{ key: string; href: string } | null>(null);
+  const [painting, setPainting] = useState(false);
+  const [paintError, setPaintError] = useState<string | null>(null);
+  const [showPainted, setShowPainted] = useState(true);
+  const key = `${scene.identity.key}|${scene.identity.revision}|${size}|${look ?? ''}`;
 
   useEffect(() => {
     if (which !== 'plan' || style !== 'rendered' || !renderUnderlay || underlay?.key === key) return;
@@ -74,11 +83,22 @@ export const ExhibitSheets: React.FC<{
 
   const picture = style === 'rendered' && underlay?.key === key ? { href: underlay.href } : null;
   const planSheet = useMemo(() => renderSitePlanSheet(scene, title, size, picture), [scene, title, size, picture]);
-  const viewPicture = view?.key === key ? { href: view.href } : null;
+  const rendering2 = view?.key === key ? view.href : null;
+  const viewPicture = painted2?.key === key && showPainted ? { href: painted2.href, ai: true } : rendering2 ? { href: rendering2 } : null;
+  const paint = useCallback(() => {
+    if (!photoreal || !rendering2) return;
+    setPainting(true);
+    setPaintError(null);
+    photoreal(rendering2)
+      .then(href => { setPainted2({ key, href }); setShowPainted(true); })
+      .catch(err => setPaintError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setPainting(false));
+  }, [photoreal, rendering2, key]);
   const viewSheet = useMemo(() => renderViewSheet(scene, title, size, viewPicture), [scene, title, size, viewPicture]);
-  const sheet = which === 'plan' ? planSheet : viewSheet;
-  const number = which === 'plan' ? 'A-01' : 'A-02';
-  const name = which === 'plan' ? 'site-plan' : 'aerial-view';
+  const sectionSheet = useMemo(() => renderSectionSheet(scene, title, size), [scene, title, size]);
+  const sheet = which === 'plan' ? planSheet : which === 'view' ? viewSheet : sectionSheet;
+  const number = which === 'plan' ? 'A-01' : which === 'view' ? 'A-02' : 'A-03';
+  const name = which === 'plan' ? 'site-plan' : which === 'view' ? 'aerial-view' : 'section';
   const fileName = `${number}_${name}_${scene.identity.parcelId}_${size}.svg`;
 
   const download = useCallback(() => {
@@ -136,7 +156,7 @@ export const ExhibitSheets: React.FC<{
   }, [sheet.svg, size, number]);
 
   const seg = (on: boolean, first: boolean) => `px-2.5 py-1 ${on ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${first ? '' : 'border-l border-gray-200'}`;
-  const scaleNote = which === 'view'
+  const scaleNote = which === 'section' ? 'Schematic section · graphic scale' : which === 'view'
     ? 'A rendering: not to scale'
     : planSheet.numericScale ? `Scale ${planSheet.numericScale} at full size` : size === 'slide' ? 'Slide, 16:9 · graphic scale' : 'Graphic scale only';
 
@@ -146,11 +166,15 @@ export const ExhibitSheets: React.FC<{
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs font-medium" role="group" aria-label="Sheet">
           <button type="button" aria-pressed={which === 'plan'} onClick={() => setWhich('plan')} data-testid="sheet-tab-plan" className={seg(which === 'plan', true)}>A-01 Site Plan</button>
           {renderView && <button type="button" aria-pressed={which === 'view'} onClick={() => setWhich('view')} data-testid="sheet-tab-view" className={seg(which === 'view', false)}>A-02 Aerial View</button>}
+          {scene.buildings.length > 0 && <button type="button" aria-pressed={which === 'section'} onClick={() => setWhich('section')} data-testid="sheet-tab-section" className={seg(which === 'section', false)}>A-03 Section</button>}
         </div>
         <span className="text-gray-500 text-xs" data-testid="sheet-scale">{scaleNote}</span>
         {rendering && <span className="text-xs text-blue-700" data-testid="sheet-rendering">Rendering…</span>}
         {which === 'view' && viewFailed && <span className="text-xs text-amber-700">This device could not render the view.</span>}
+        {which === 'view' && painting && <span className="text-xs text-blue-700" data-testid="sheet-painting">Painting the photoreal picture, about a minute…</span>}
+        {which === 'view' && paintError && <span className="text-xs text-amber-700" data-testid="sheet-paint-error">{paintError}</span>}
         <div className="ml-auto flex items-center gap-3">
+          {look && (which === 'view' || style === 'rendered') && <ArchStylePicker className="inline-flex items-center gap-1 text-xs" />}
           {which === 'plan' && renderUnderlay && (
             <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs" role="group" aria-label="Plan style">
               {(['rendered', 'drawn'] as const).map((k, i) => (
@@ -159,6 +183,16 @@ export const ExhibitSheets: React.FC<{
                 </button>
               ))}
             </div>
+          )}
+          {which === 'view' && photoreal && rendering2 && (
+            painted2?.key === key ? (
+              <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs" role="group" aria-label="Picture">
+                <button type="button" aria-pressed={showPainted} onClick={() => setShowPainted(true)} data-testid="sheet-picture-photoreal" className={seg(showPainted, true)}>Photoreal</button>
+                <button type="button" aria-pressed={!showPainted} onClick={() => setShowPainted(false)} data-testid="sheet-picture-model" className={seg(!showPainted, false)}>Model</button>
+              </div>
+            ) : (
+              <button type="button" onClick={paint} disabled={painting} data-testid="sheet-photoreal" title="Repaint the rendering as a photograph. Sends the picture, and only the picture, to an image model." className="px-3 py-1 rounded-lg bg-gray-900 text-white text-xs hover:bg-gray-700 disabled:opacity-50">Photoreal</button>
+            )
           )}
           <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs" role="group" aria-label="Page size">
             {(['slide', 'tabloid', 'letter'] as SheetSize[]).map((k, i) => (
@@ -177,7 +211,7 @@ export const ExhibitSheets: React.FC<{
         <div
           data-testid={which === 'plan' ? 'sheet-a01' : 'sheet-a02'}
           data-sheet-size={size}
-          data-sheet-style={which === 'plan' ? (picture ? 'rendered' : 'drawn') : viewPicture ? 'rendered' : 'pending'}
+          data-sheet-style={which === 'section' ? 'drawn' : which === 'plan' ? (picture ? 'rendered' : 'drawn') : viewPicture ? (viewPicture.ai ? 'photoreal' : 'rendered') : 'pending'}
           className="bg-white shadow-xl w-full [&>svg]:block [&>svg]:w-full [&>svg]:h-auto"
           style={{ maxWidth: `min(100%, calc((100vh - 110px) * ${SHEET_SIZES[size].wIn / SHEET_SIZES[size].hIn}))` }}
           // the sheet is generated here from the scene, with every text escaped

@@ -81,11 +81,15 @@ import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, contextStateLabel, type PlanLineage } from './ui/ContextLineage';
 import { PlanBasisDisclosure, type BasisTone } from './ui/PlanBasisDisclosure';
 import { mfAccessSummary } from './api/mfAccess';
-import SchemesRail from './ui/SchemesRail';
+import SchemesRail, { schemeNames } from './ui/SchemesRail';
+import SchemeCompare from './ui/SchemeCompare';
+import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
 import { buildDrawingScene, sceneEvidence, selectionFor, type SelectionCache } from './scene/buildScene';
 import { ExhibitSheets } from './ui/ExhibitSheets';
+import { useArchStyle } from './ui/archStyle';
+import { DOCK_KEY, INSPECTOR_KEY } from './ui/workspaceLayout';
 const Massing3D = React.lazy(() => import('./ui/Massing3D'));
 
 /**
@@ -133,7 +137,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [violations, setViolations] = useState<FeasibilityViolation[]>([]);
   // Workspace shell (3b): the canvas is the workspace — parameters live in a
   // collapsible left rail, reporting in tabs docked under the canvas.
-  const [leftRailCollapsed, setLeftRailCollapsed] = useState(false);
+  // The drawing has the screen. The inspector beside it and the schedule under it start closed
+  // and open on request; the choice is kept on the device.
+  const remembered = (key: string): boolean | null => {
+    try { const v = localStorage.getItem(key); return v === 'open' ? true : v === 'closed' ? false : null; } catch { return null; }
+  };
+  const remember = (key: string, open: boolean) => { try { localStorage.setItem(key, open ? 'open' : 'closed'); } catch { /* the choice holds for this visit */ } };
+  const [leftRailCollapsed, setLeftRailCollapsedState] = useState(() => !(remembered(INSPECTOR_KEY) ?? false));
+  const setLeftRailCollapsed = useCallback((next: boolean | ((c: boolean) => boolean)) => {
+    setLeftRailCollapsedState(c => { const v = typeof next === 'function' ? next(c) : next; remember(INSPECTOR_KEY, !v); return v; });
+  }, []);
+  const [dockOpen, setDockOpenState] = useState(() => remembered(DOCK_KEY) ?? false);
+  const setDockOpen = useCallback((open: boolean) => { remember(DOCK_KEY, open); setDockOpenState(open); }, []);
   const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results' | 'profile'>('tabulation');
   // The drawing scene path (2026-11-11). `?drawing=classic` turns it off: the
   // plan, the 3D view and the export then draw exactly as they did before it.
@@ -157,7 +172,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // An ERROR-severity violation is never something to hunt for in a tab —
   // surface the Flags dock the moment one lands.
   useEffect(() => {
-    if (violations.some(v => v.severity === 'error')) setDockTab('flags');
+    if (violations.some(v => v.severity === 'error')) { setDockTab('flags'); setDockOpenState(true); }
   }, [violations]);
 
   // ── Design-context engine (brief Phase 1) ────────────────────────────────
@@ -2702,6 +2717,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       });
   }, [runServerMfPlan]);
 
+  /** Underwrite a saved scheme: put it on the sheet if it is not there
+   *  already, then open its pro forma. The figures follow the sheet. */
+  const handleUnderwriteCandidate = useCallback((c: MfCandidate) => {
+    if (c.id !== activeCandidateId) handleViewCandidate(c);
+    setDockTab('results');
+    setDockOpen(true);
+  }, [activeCandidateId, handleViewCandidate, setDockOpen]);
+
+  const [comparing, setComparing] = useState<MfCandidate[] | null>(null);
+  const loadCompareDrawing = useCallback(
+    (c: MfCandidate) => (contextOgcFid == null ? Promise.resolve(null) : loadSchemeDrawing(contextOgcFid, c)),
+    [contextOgcFid],
+  );
+
   /** Explicit "Regenerate with current context": a NEW candidate descended
    *  from the saved one, planned on the ACTIVE snapshot. The saved scheme
    *  itself is never silently rewritten. */
@@ -2984,17 +3013,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn]);
   // The sheet's picture: the ground it shows, rendered from above from the
   // same model the 3D view draws. Loaded when a sheet first asks for it.
+  const archStyle = useArchStyle();
   const sheetModelData = useCallback(async () => {
     if (!scene) throw new Error('no scene');
     const { buildMassingData } = await import('./ui/massingData');
     return buildMassingData(displayElements, {
+      style: archStyle,
       ...(scene.parcel?.polygons[0]?.[0] ? { parcelRing: scene.parcel.polygons[0][0].map(p => scene.frame.fromFeet(p)) } : {}),
       ...(neighbors?.buildings ? { contextBuildings: neighbors.buildings } : {}),
       ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
       ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
       treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
     });
-  }, [scene, displayElements, neighbors]);
+  }, [scene, displayElements, neighbors, archStyle]);
   const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
     if (!scene) throw new Error('no scene');
     const [{ renderPlanImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
@@ -3002,6 +3033,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const b = data.toLocal(scene.frame.fromFeet([layout.ground.maxX, layout.ground.maxY]));
     return renderPlanImage({ data, bounds: { minX: a[0] ?? 0, minY: a[1] ?? 0, maxX: b[0] ?? 0, maxY: b[1] ?? 0 }, widthPx });
   }, [scene, sheetModelData]);
+  // the photoreal pass over the sheet's rendering: the picture goes to the app's own function
+  const paintSheetView = useCallback(async (image: string): Promise<string> => {
+    if (!scene) throw new Error('no scene');
+    const { requestPhotoreal, describeScene } = await import('./render3d/photoreal');
+    return (await requestPhotoreal({ image, view: 'aerial', style: archStyle, ...describeScene(scene) })).image;
+  }, [scene, archStyle]);
   const renderSheetView = useCallback(async (widthPx: number, heightPx: number): Promise<string> => {
     const [{ renderAerialImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
     return renderAerialImage({ data, widthPx, heightPx });
@@ -3349,6 +3386,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
+          unverified={contextState === 'unavailable' || contextState === 'stale' ? contextStateLabel(contextState) : contextState === 'compiling' ? 'context still compiling' : null}
           empty={
             isGenerating || isGeneratingLots
               ? { state: 'generating' }
@@ -3654,10 +3692,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <button
             type="button"
             onClick={() => setLeftRailCollapsed(c => !c)}
-            title={leftRailCollapsed ? 'Show parameters' : 'Hide parameters — maximize the canvas'}
-            className="absolute top-2 left-2 z-20 p-1.5 rounded-md bg-white/90 border border-gray-200 text-gray-500 hover:text-gray-800 shadow-sm"
+            title={leftRailCollapsed ? 'Show the inspector: layout, context and parameters' : 'Hide the inspector and give the drawing the room'}
+            data-testid="inspector-toggle" aria-expanded={!leftRailCollapsed}
+            className={`absolute ${viewMode === '3d' ? 'top-12 left-2' : 'top-5 left-44'} z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white/95 border border-gray-200 text-xs font-medium text-gray-600 hover:text-gray-900 shadow-sm`}
           >
             {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            {leftRailCollapsed && <span>Inspector</span>}
           </button>
           {accessNote && !draftMode && (
             <div
@@ -3803,7 +3843,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
 
         {/* Docked reporting tabs (3b) — tabulation | schemes | flags | results */}
-        <div className="mt-3 flex-shrink-0 bg-white border border-gray-200 rounded-lg flex flex-col max-h-72">
+        <div data-testid="dock" data-open={dockOpen ? 'true' : 'false'} className="mt-3 flex-shrink-0 bg-white border border-gray-200 rounded-lg flex flex-col max-h-72">
           <div className="flex items-center border-b border-gray-100 flex-shrink-0">
             {([
               { key: 'tabulation', label: 'Tabulation', badge: null, alert: false },
@@ -3821,9 +3861,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               <button
                 key={t.key}
                 data-testid={`dock-tab-${t.key}`}
-                onClick={() => setDockTab(t.key)}
+                aria-expanded={dockOpen && dockTab === t.key}
+                // a tab opens its panel; the open tab, pressed again, closes it and gives the drawing the room
+                onClick={() => { if (dockOpen && dockTab === t.key) setDockOpen(false); else { setDockTab(t.key); setDockOpen(true); } }}
                 className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px flex items-center gap-1.5 ${
-                  dockTab === t.key
+                  dockOpen && dockTab === t.key
                     ? 'border-blue-600 text-blue-700'
                     : 'border-transparent text-gray-500 hover:text-gray-800'
                 }`}
@@ -3841,14 +3883,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               </button>
             ))}
           </div>
-          <div className="min-h-0 overflow-y-auto">
+          <div className={dockOpen ? 'min-h-0 overflow-y-auto' : 'hidden'}>
             {dockTab === 'tabulation' && (
               <TabulationPanel
                 elements={displayElements}
                 // the quick massing tabulates its own mix; the solved plan's metrics are not its totals
                 metrics={seedViewOn ? null : metrics}
                 plannerCtx={plannerCtx}
-                acres={parcel.deeded_acres}
+                // the same acres the header and the sheets divide by
+                acres={mappedAcres ?? parcel.deeded_acres}
               />
             )}
             {dockTab === 'schemes' && (
@@ -3860,6 +3903,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 activeContextId={plannerCtx?.context_id ?? null}
                 onRegenerateWithCurrentContext={handleRegenerateCandidate}
                 maxGsf={maxBuildout?.max_gsf ?? null}
+                onUnderwrite={handleUnderwriteCandidate}
+                onCompare={setComparing}
               />
             )}
             {dockTab === 'flags' && (
@@ -3884,8 +3929,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
         </div>
       </div>
+      {comparing && parcelRing3857 && (
+        <SchemeCompare
+          schemes={comparing.map(c => ({ candidate: c, name: schemeNames(mfCandidates).get(c.id) ?? 'Scheme' }))}
+          parcelRing={parcelRing3857}
+          load={loadCompareDrawing}
+          activeId={activeCandidateId}
+          onView={handleViewCandidate}
+          onUnderwrite={handleUnderwriteCandidate}
+          onClose={() => setComparing(null)}
+        />
+      )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} />
       )}
       {exportOpen && (
         <ExportReport

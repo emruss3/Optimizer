@@ -1,9 +1,19 @@
-import React from 'react';
-import { GitBranch, Pin, History, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { GitBranch, Pin, History, RefreshCw, Calculator, Columns } from 'lucide-react';
 import type { MfCandidate } from '../api/generateMfPlan';
 
 const n = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null;
+
+/** The name each saved scheme goes by: Option 1 is the oldest. The list
+ *  arrives newest first. */
+export function schemeNames(candidates: MfCandidate[]): Map<string, string> {
+  const names = new Map<string, string>();
+  candidates.forEach((c, i) => names.set(c.id, `Option ${candidates.length - i}`));
+  return names;
+}
+
+const MAX_COMPARE = 3;
 
 /**
  * A1 schemes rail: every generation persists a candidate — this makes the
@@ -23,11 +33,51 @@ const SchemesRail: React.FC<{
   onRegenerateWithCurrentContext?: (c: MfCandidate) => void;
   /** Lot's legal max GSF (fn_max_buildout) — enables the utilization chip */
   maxGsf?: number | null;
-}> = ({ candidates, activeId, onView, busy, activeContextId, onRegenerateWithCurrentContext, maxGsf = null }) => {
+  /** Open this scheme's pro forma. */
+  onUnderwrite?: (c: MfCandidate) => void;
+  /** Open the picked schemes side by side at one scale. */
+  onCompare?: (picked: MfCandidate[]) => void;
+}> = ({ candidates, activeId, onView, busy, activeContextId, onRegenerateWithCurrentContext, maxGsf = null, onUnderwrite, onCompare }) => {
+  const [picked, setPicked] = useState<string[]>([]);
+  const names = schemeNames(candidates);
+  const pickedNow = picked.filter(id => candidates.some(c => c.id === id));
+  const toggle = (id: string) =>
+    setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : p.length >= MAX_COMPARE ? p : [...p, id]));
   // Pre-context schemes (no stored context id) are STALE noise next to
   // current ones — collapse them under a disclosure instead of deleting.
   const current = candidates.filter(c => c.contextId != null);
   const stale = candidates.filter(c => c.contextId == null);
+
+  /** What every saved scheme offers, current or not. */
+  const actions = (c: MfCandidate) =>
+    (onUnderwrite || onCompare) ? (
+      <div className="px-2 pb-1.5 -mt-0.5 flex items-center gap-3 text-[10px]">
+        {onCompare && (
+          <label className="inline-flex items-center gap-1 text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid={`scheme-pick-${c.id}`}
+              checked={pickedNow.includes(c.id)}
+              disabled={!pickedNow.includes(c.id) && pickedNow.length >= MAX_COMPARE}
+              onChange={() => toggle(c.id)}
+              className="w-3 h-3"
+            />
+            Compare
+          </label>
+        )}
+        {onUnderwrite && (
+          <button
+            data-testid={`scheme-underwrite-${c.id}`}
+            onClick={() => onUnderwrite(c)}
+            disabled={busy}
+            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+          >
+            <Calculator className="w-2.5 h-2.5" />
+            Underwrite this scheme
+          </button>
+        )}
+      </div>
+    ) : null;
 
   /** Short generator tag: which engine/version produced the scheme. */
   const genTag = (v: string | null | undefined): string | null => {
@@ -48,7 +98,21 @@ const SchemesRail: React.FC<{
     <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-semibold text-gray-900">Schemes</h3>
-        <span className="text-[10px] text-gray-400">{candidates.length} saved</span>
+        <span className="flex items-center gap-2">
+          {onCompare && (
+            <button
+              data-testid="schemes-compare"
+              disabled={pickedNow.length < 2}
+              onClick={() => onCompare(candidates.filter(c => pickedNow.includes(c.id)))}
+              title={pickedNow.length < 2 ? 'Tick two or three schemes to compare them at the same scale' : 'Compare the ticked schemes side by side'}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-gray-300 text-[11px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              <Columns className="w-3 h-3" />
+              Compare{pickedNow.length > 0 ? ` ${pickedNow.length}` : ''}
+            </button>
+          )}
+          <span className="text-[10px] text-gray-400">{candidates.length} saved</span>
+        </span>
       </div>
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {current.map(c => {
@@ -82,6 +146,7 @@ const SchemesRail: React.FC<{
                 disabled={busy}
                 className="w-full text-left px-2 py-1.5 flex items-center gap-2 disabled:opacity-50"
               >
+                <span className="font-medium text-gray-900 flex-shrink-0">{names.get(c.id)}</span>
                 <span className="font-mono text-[10px] text-gray-400 flex-shrink-0">{time}</span>
                 {isTownhome && (
                   <span
@@ -143,6 +208,7 @@ const SchemesRail: React.FC<{
                   {c.parentId && <GitBranch className="w-3 h-3" aria-label="Variation of an earlier scheme" />}
                 </span>
               </button>
+              {actions(c)}
               {olderContext && onRegenerateWithCurrentContext && (
                 <button
                   onClick={() => onRegenerateWithCurrentContext(c)}
@@ -163,18 +229,21 @@ const SchemesRail: React.FC<{
             </summary>
             <div className="mt-1 space-y-0.5">
               {stale.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => onView(c)}
-                  disabled={busy}
-                  className="w-full text-left px-2 py-1 rounded border border-gray-100 hover:border-gray-300 flex items-center gap-2 disabled:opacity-50"
-                >
-                  <span className="font-mono text-[10px] text-gray-400">
-                    {c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                  </span>
-                  <span className="tabular-nums">{n(c.metrics.units_est) ?? '—'} u</span>
-                  <span className="ml-auto text-[9px] uppercase tracking-wide text-gray-400">stale</span>
-                </button>
+                <div key={c.id} className={`rounded border ${c.id === activeId ? 'border-blue-400 bg-blue-50' : 'border-gray-100 hover:border-gray-300'}`}>
+                  <button
+                    onClick={() => onView(c)}
+                    disabled={busy}
+                    className="w-full text-left px-2 py-1 flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <span className="font-medium text-gray-900">{names.get(c.id)}</span>
+                    <span className="font-mono text-[10px] text-gray-400">
+                      {c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
+                    <span className="tabular-nums">{n(c.metrics.units_est) ?? '—'} u</span>
+                    <span className="ml-auto text-[9px] uppercase tracking-wide text-gray-400">stale</span>
+                  </button>
+                  {actions(c)}
+                </div>
               ))}
             </div>
           </details>

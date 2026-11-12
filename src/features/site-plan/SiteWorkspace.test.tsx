@@ -290,6 +290,9 @@ function serverResp(contextId: string): MfPlanResponse {
 }
 
 beforeEach(() => {
+  // the workspace opens on the drawing alone; these tests read the inspector and the schedule, so they open both
+  localStorage.setItem('pp.inspector', 'open');
+  localStorage.setItem('pp.dock', 'open');
   vi.clearAllMocks();
   permittedUsesMock.mockResolvedValue(['multi_family', 'single_family']);
   genV2Mock.mockImplementation(async (_fid, ctxId) => serverResp(ctxId));
@@ -843,5 +846,25 @@ describe('SiteWorkspace: the by-right generator raising an error is shown as one
     expect(err.textContent).toContain('The by-right generator failed on this parcel: division by zero');
     expect(genSfMock).not.toHaveBeenCalled();
     expect(genV2Mock).not.toHaveBeenCalled();
+  });
+});
+
+describe('SiteWorkspace: the drawing has the screen (the owner, 2026-11-12)', () => {
+  it('opens with the inspector and the schedule closed, and remembers when they are opened', async () => {
+    localStorage.removeItem('pp.inspector');
+    localStorage.removeItem('pp.dock');
+    render(<SiteWorkspace parcel={PARCEL} />);
+    const toggle = await screen.findByTestId('inspector-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('dock').getAttribute('data-open')).toBe('false');
+    fireEvent.click(toggle);
+    expect(screen.getByTestId('inspector-toggle').getAttribute('aria-expanded')).toBe('true');
+    expect(localStorage.getItem('pp.inspector')).toBe('open');
+    // a tab opens its panel; pressed again, it closes it
+    fireEvent.click(screen.getByTestId('dock-tab-tabulation'));
+    expect(screen.getByTestId('dock').getAttribute('data-open')).toBe('true');
+    expect(localStorage.getItem('pp.dock')).toBe('open');
+    fireEvent.click(screen.getByTestId('dock-tab-tabulation'));
+    expect(screen.getByTestId('dock').getAttribute('data-open')).toBe('false');
   });
 });

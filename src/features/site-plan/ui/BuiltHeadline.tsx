@@ -97,7 +97,18 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
       byType.set(row.type, (byType.get(row.type) ?? 0) + Math.round(row.count!));
     }
   }
+  // The buildings' mixes are rounded one building at a time and can fall a home short of the
+  // plan's own count. The schedule below the plan puts the difference in the largest type; the
+  // sentence does the same, so the two cannot disagree (1710 Meharry Blvd: "30 apartments" over
+  // 3 + 12 + 10 + 4, and 13 one-beds in the schedule).
+  const planned = Math.round(metrics?.totalUnits ?? 0);
+  const summed = [...byType.values()].reduce((a, v) => a + v, 0);
+  if (planned > 0 && summed > 0 && planned !== summed) {
+    const largest = [...byType.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (largest) byType.set(largest[0], Math.max(0, largest[1] + planned - summed));
+  }
   const mix = [...byType.entries()]
+    .filter(([, count]) => count > 0)
     .sort((a, b) => MIX_ORDER.indexOf(a[0]) - MIX_ORDER.indexOf(b[0]))
     .map(([type, count]) => {
       const words = MIX_WORDS[type] ?? [type, type];

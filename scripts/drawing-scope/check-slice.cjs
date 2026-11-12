@@ -64,9 +64,27 @@ const colours = page => page.evaluate(() => {
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, recordVideo: { dir: out, size: { width: 1152, height: 720 } } });
+  // this machine draws on its processor, where the app would choose its lighter picture: the main run asks for the full one
+  await ctx.addInitScript(() => { window.__renderQuality = 'full'; });
   const page = await ctx.newPage();
+  page.setDefaultTimeout(120000);
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
+  // the photoreal pass: a signed-in user, and the app's function stood in for.
+  // The stand-in records what the app sends and returns a small picture.
+  await page.addInitScript(() => {
+    localStorage.setItem('kissy-auth', JSON.stringify({
+      access_token: 'check-session-token', token_type: 'bearer', expires_in: 86400, expires_at: Math.floor(Date.now() / 1000) + 86400,
+      refresh_token: 'check-refresh', user: { id: 'check-user', aud: 'authenticated', role: 'authenticated', email: 'check@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z' },
+    }));
+  });
+  const PAINTED = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0isAAAAFUlEQVR4nGP8z8Dwn4EBB2AcqEoA6oQGAeu1fJkAAAAASUVORK5CYII=';
+  const sent = [];
+  await page.route('**/api/photoreal', async route => {
+    const req = route.request();
+    sent.push({ auth: req.headers().authorization, body: JSON.parse(req.postData() || '{}') });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ image: PAINTED, model: 'stand-in' }) });
+  });
 
   await openPlanner(page);
   const scene = await page.evaluate(() => window.__planEvidence?.scene ?? null);
@@ -85,6 +103,22 @@ const colours = page => page.evaluate(() => {
   const seen = await colours(page);
   check(seen > 60, `the rendering has drawn a picture (${seen} colours sampled)`);
   check((await page.locator('[data-testid="scene-inspector"]').count()) === 0, 'nothing is selected on first entry to 3D');
+  // the 3D view opens for review: the proposal in its materials, the neighbours plain, the parcel and the access marked
+  check((await view.getAttribute('data-look')) === 'review' && (await page.locator('[data-testid="review-legend"]').count()) === 1, 'the 3D view opens in the review view, with its legend');
+  check(/Parcel/.test((await page.locator('[data-testid="review-legend"]').textContent()) ?? '') && /Access/.test((await page.locator('[data-testid="review-legend"]').textContent()) ?? ''), 'the legend names the parcel line and the access');
+  await view.screenshot({ path: path.join(out, 'model_review.png') });
+  // Present shows the rendering, whichever view was chosen, and gives the review back
+  await page.locator('[data-testid="render-present"]').click();
+  await page.waitForSelector('[data-testid="massing-3d"][data-look="rendering"]', { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(5000);
+  check((await view.getAttribute('data-look')) === 'rendering' && (await colours(page)) > 60, 'Present shows the rendering');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(4000);
+  check((await view.getAttribute('data-look')) === 'review', 'and Escape returns to the review view');
+  // the rest of this run reads the rendering
+  await page.locator('[data-testid="look-rendering"]').click();
+  await page.waitForTimeout(6000);
+  check((await view.getAttribute('data-look')) === 'rendering' && (await page.locator('[data-testid="review-legend"]').count()) === 0, 'Rendering is one click away');
   await view.screenshot({ path: path.join(out, 'model_aerial.png') });
   await page.locator('[data-testid="camera-street"]').click();
   await page.waitForTimeout(3000);
@@ -95,6 +129,33 @@ const colours = page => page.evaluate(() => {
   await page.locator('[data-testid="camera-iso"]').click();
   await page.waitForTimeout(2000);
   check((await colours(page)) > 60, 'the cameras (Street, Top, Fit site, Aerial) each leave a picture');
+  // the buildings can be shown in four styles: a change redraws them, keeps the camera and the facts, and is remembered
+  const picker = page.locator('[data-testid="arch-style"]');
+  check((await picker.count()) === 1 && (await picker.inputValue()) === 'mansard' && (await picker.locator('option').count()) === 4, 'the 3D view offers four styles and opens in the first');
+  const signature = () => page.evaluate(() => {
+    const c = document.querySelector('[data-testid="massing-3d"] canvas');
+    const t = document.createElement('canvas');
+    t.width = 64; t.height = 40;
+    const x = t.getContext('2d');
+    x.drawImage(c, 0, 0, 64, 40);
+    return Array.from(x.getImageData(0, 0, 64, 40).data).filter((_, i) => i % 4 !== 3).map(v => v >> 4);
+  });
+  const far = (a, b) => a.reduce((n, v, i) => n + (Math.abs(v - b[i]) > 1 ? 1 : 0), 0) / a.length;
+  const asMansard = await signature();
+  for (const style of ['farmhouse', 'modern', 'heritage']) {
+    await picker.selectOption(style);
+    await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(6000);
+    const now = await signature();
+    const moved = far(asMansard, now);
+    check((await picker.inputValue()) === style && moved > 0.004 && moved < 0.25, `the ${style} style redraws the buildings from the same camera (${(moved * 100).toFixed(1)}% of the picture changed)`);
+    await view.screenshot({ path: path.join(out, `model_style_${style}.png`) });
+  }
+  check((await page.evaluate(() => localStorage.getItem('pp.archStyle'))) === 'heritage', 'the choice of style is kept on this device');
+  await picker.selectOption('mansard');
+  await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(5000);
+  check(far(asMansard, await signature()) < 0.02, 'and the first style comes back as it was');
   // the rendering fills the window on request, and Escape gives the workspace back
   await page.locator('[data-testid="render-present"]').click();
   await page.waitForTimeout(2500);
@@ -104,8 +165,21 @@ const colours = page => page.evaluate(() => {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1500);
   check((await view.count()) === 1 && (await view.getAttribute('data-present').catch(() => null)) === 'false', 'Escape returns from Present, and the workspace stays open');
+  // the photoreal pass from the 3D view
+  await page.locator('[data-testid="render-photoreal"]').click();
+  await page.waitForSelector('[data-testid="photoreal-image"]', { timeout: 60000 });
+  check((await page.locator('[data-testid="photoreal-image"]').getAttribute('src')) === PAINTED, 'Photoreal shows the picture the image service returns');
+  check(/AI impression/.test((await page.locator('[data-testid="photoreal-note"]').textContent()) ?? ''), 'and labels it an AI impression, not a design');
+  const first = sent[0];
+  check(!!first && first.auth === 'Bearer check-session-token', 'the request carries the user\'s session');
+  check(!!first && Object.keys(first.body).sort().join() === 'image,product,stories,style,view' && /^data:image\/jpeg;base64,/.test(first.body.image), `only the picture and four fixed words are sent (${first ? Object.keys(first.body).sort().join() : 'nothing'})`);
+  check(!!first && first.body.product === 'apartments' && first.body.stories === 4 && first.body.view === 'aerial' && first.body.style === 'mansard', `the scene is described from fixed lists: ${first ? [first.body.product, first.body.stories, first.body.view, first.body.style].join(', ') : ''}`);
+  check(!!first && !/MEHARRY|488278/i.test(JSON.stringify({ ...first.body, image: '' })), 'no address or parcel number is in the request');
+  await page.screenshot({ path: path.join(out, 'photoreal_view.png') });
+  await page.locator('[data-testid="photoreal-back"]').click();
+  check((await page.locator('[data-testid="photoreal-view"]').count()) === 0, 'Back to model returns to the rendering');
   await page.locator('[data-testid="scene-select-A"]').click();
-  await page.waitForSelector('[data-testid="scene-inspector"]', { timeout: 5000 });
+  await page.waitForSelector('[data-testid="scene-inspector"]', { timeout: 90000 });
   const field = name => page.locator(`[data-testid="scene-inspector"] [data-field="${name}"]`).first().evaluate(n => n.childNodes[0].textContent.trim());
   const insp = { id: await field('id'), tag: await field('tag'), floors: await field('floors'), footprint: await field('footprint'), height: await field('height') };
   const heightLabel = await page.locator('[data-testid="scene-inspector"] [data-field="height"]').evaluate(n => n.previousElementSibling.textContent.trim());
@@ -168,6 +242,12 @@ const colours = page => page.evaluate(() => {
   await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(out, 'sheet_A-02_11x17.png') });
   sheets.view = await a02.innerHTML();
+  // the same pass on the sheet
+  await page.locator('[data-testid="sheet-photoreal"]').click();
+  const paintedSheet = await page.waitForSelector('[data-testid="sheet-a02"][data-sheet-style="photoreal"]', { timeout: 60000 }).then(() => true).catch(() => false);
+  check(paintedSheet && /AI IMPRESSION/.test((await a02.textContent()) ?? ''), 'sheet A-02 takes the photoreal picture and says it is an AI impression');
+  await page.locator('[data-testid="sheet-picture-model"]').click();
+  check((await a02.getAttribute('data-sheet-style')) === 'rendered', 'and the model rendering is one click back');
   await page.locator('[data-testid="sheet-tab-plan"]').click();
   await page.waitForSelector('[data-testid="sheet-a01"] svg', { timeout: 60000 });
   await page.locator('[data-testid="sheet-style-drawn"]').click();
@@ -204,6 +284,19 @@ const colours = page => page.evaluate(() => {
 
   // the original path is still there
   const cctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // left to itself on a machine with no graphics acceleration, the view draws its lighter picture and says so
+  const lpage = await cctx.newPage();
+  await openPlanner(lpage);
+  const lightMs = await to3d(lpage);
+  const lview = lpage.locator('[data-testid="massing-3d"]');
+  const software = await lpage.evaluate(() => { const gl = document.createElement('canvas').getContext('webgl'); const i = gl && gl.getExtension('WEBGL_debug_renderer_info'); return /swiftshader|llvmpipe|software/i.test(i ? String(gl.getParameter(i.UNMASKED_RENDERER_WEBGL)) : ''); });
+  if (software) {
+    check((await lview.getAttribute('data-quality')) === 'light', 'on a machine with no graphics acceleration the 3D view chooses its lighter picture');
+    check(/drawn simply/.test((await lview.textContent()) ?? ''), 'and says it is drawn simply');
+    check((await lpage.evaluate(() => { const c = document.querySelector('[data-testid="massing-3d"] canvas'); const k = document.createElement('canvas'); k.width = 96; k.height = 60; const x = k.getContext('2d'); x.drawImage(c, 0, 0, 96, 60); const d = x.getImageData(0, 0, 96, 60).data; const seen = new Set(); for (let i = 0; i < d.length; i += 4) seen.add(`${d[i] >> 3},${d[i + 1] >> 3},${d[i + 2] >> 3}`); return seen.size; })) > 60, `the lighter picture is drawn (ready ${Math.round(lightMs / 100) / 10} s after the click)`);
+    await lview.screenshot({ path: path.join(out, 'model_light.png') });
+  }
+  await lpage.close();
   const cpage = await cctx.newPage();
   await openPlanner(cpage, '?drawing=classic');
   check((await cpage.evaluate(() => window.__planEvidence?.scene ?? null)) === null, 'with ?drawing=classic no scene is built');

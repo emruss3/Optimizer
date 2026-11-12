@@ -13,6 +13,7 @@ import { normalizeToPolygon } from '../../../engine/geometry';
 import type { DrawingScene } from '../scene/types';
 import { SceneInspector } from './SceneInspector';
 import { RenderView } from '../render3d/RenderView';
+import { useArchStyle } from './archStyle';
 
 const ORBIT_VIEW = new OrbitView({ orbitAxis: 'Z' });
 
@@ -87,9 +88,11 @@ const DeckMassing: React.FC<Massing3DProps> = ({ elements, parcelGeometry, envel
     window.addEventListener('error', onWindowError);
     return () => window.removeEventListener('error', onWindowError);
   }, []);
+  const archStyle = useArchStyle();
   const { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, shrubs, walks, curbs, roads, stripes, cars, origin } = useMemo(
     () =>
       buildMassingData(elements, {
+        style: archStyle,
         parcelRing: ringIn3857(parcelGeometry),
         envelopeRing: envelope?.coordinates?.[0],
         contextBuildings: neighbors?.buildings,
@@ -100,7 +103,7 @@ const DeckMassing: React.FC<Massing3DProps> = ({ elements, parcelGeometry, envel
           .map(e => [e.edge[0], e.edge[1]] as [number[], number[]]),
         ...(scene ? { treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })) } : {}),
       }),
-    [elements, parcelGeometry, envelope, neighbors, edgeClassifications, scene]
+    [elements, parcelGeometry, envelope, neighbors, edgeClassifications, scene, archStyle]
   );
 
   const [viewState, setViewState] = useState<Record<string, unknown> | null>(null);
@@ -676,6 +679,7 @@ const Massing3D: React.FC<Massing3DProps> = props => {
       <RenderView
         elements={props.elements}
         parcelRing={ringIn3857(props.parcelGeometry)}
+        envelopeRing={props.envelope?.coordinates?.[0]}
         neighbors={props.neighbors}
         edgeClassifications={props.edgeClassifications}
         scene={props.scene}

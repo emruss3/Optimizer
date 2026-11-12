@@ -237,12 +237,191 @@ planting is stylised, and there are no people, lights or site furniture.
 Checks: 68 files, 706 tests pass; app type check 2,086, unchanged;
 `check-slice.cjs` 42 of 42. Evidence in `slice-3/check/`.
 
+## Slice 4 · buildings in four styles, and a wooded setting
+
+The owner's note on slice 3: the buildings were "bad boxes", the elevations
+should be current, and the reader should be able to flip between a few
+architectural styles. The model has to stand on its own before any photo pass.
+
+**What a style is.** A style changes how the buildings look and nothing else.
+Footprints, positions, story counts and heights are the plan's in every one.
+The switch is on the 3D view and on the sheets, and the choice is kept on the
+device.
+
+| Style | Houses | Row homes | Apartments |
+|---|---|---|---|
+| Urban mansard | brick ground story, the top story in a shingled mansard with boxed dormers; a one-story house is a gabled cottage with a brick wainscot | brick, coloured siding, mansard with a dormer, a balcony over the door, window boxes | brick base, two claddings in stretches, balconies, a mansard story with dormers |
+| Modern farmhouse | white or dark board and batten, steep gables, metal porch roofs on timber posts | a gable to each home, timber in the peak, metal awnings | gabled bays that rise past the roof line |
+| Contemporary | flat roofs, white stucco over charcoal panels, cedar at the entry, wide glass | cedar strip, glass rails, a deck and a stair head on the roof | panels in stretches with raised parapets, glass balconies backed in cedar |
+| Craftsman and brick | lap siding, shingled gables, deep eaves, columns on brick piers, a chimney | brick with stone heads and a cornice, a stoop with a rail | brick with steel windows, piers, a stone band and a cornice |
+
+**What a house now is.** A foundation, walls in a real material, a porch cut
+into the pad (the house keeps to the pad the plan gave it), a front door with
+a sidelight, a garage where a drive comes to the house and none where no
+drive does, windows with frames, glazing bars and sills, a roof with eaves,
+fascias and valleys, a walk to the street, planting beds. A deep pad turns
+its gable to the street; a wide one runs its ridge along it.
+
+**A row home** has two fronts: the end a drive comes to has the garage, the
+other has the front door. Its long sides are party walls where a neighbour
+stands against them, and walls with windows where it ends the row.
+
+**The setting.** The surroundings are wooded out to the haze: each tree is a
+portrait painted from the real tree model's own leaves, carried on crossed
+cards, so thousands cost almost nothing. They stand in groves, not on a grid.
+An existing house is drawn as a house, an existing larger building with
+windows under a parapet. In a subdivision each yard has its own shade of
+lawn and a board fence stands on the lot lines behind the house. The fence
+is illustration: the plan draws a lot line, not a fence.
+
+**Lighter to draw.**
+
+| Model | Triangles before | Triangles now |
+|---|---|---|
+| One shrub | 16,944 | 1,662 |
+| One tree (ash, medium) | 27,040 | 18,012 |
+| One surrounding tree | about 1,200 | 16 |
+
+**Faults found and fixed on the way.**
+
+- After a plan changed while the 3D view was open, the new model was drawn
+  with no sun. A rebuilt model now has its sun and its selection set again.
+  The check catches it: a change of style may alter only a small part of the
+  picture, and the first style must come back as it was.
+- A sheet opened before the 3D view could render trees with no leaves. A
+  still now waits for the tree pictures to arrive.
+- The front walk stopped at the driveway's distance. It runs to the street.
+
+**A device with no graphics acceleration** (a remote desktop, a virtual
+machine, the CI runner) took 40 seconds to open the 3D view on the largest
+plans, and CI's fixture gate timed out on two of them. The view now draws one
+frame on opening instead of three or four, draws far neighbours plainly, and
+on such a device chooses a lighter picture of the same plan and says so.
+
+| 535 Main St, software rendering | Seconds to open |
+|---|---|
+| main | 8.0 |
+| this slice before the fix | 40 |
+| this slice, full picture forced | 17.7 |
+| this slice, lighter picture | 8.4 |
+
+**The photo function is closed by default.** Only accounts listed in
+`PHOTOREAL_ALLOWED_EMAILS` may call it; with no list nobody may. What the
+image service says on failure stays in the function's log.
+
+**The photoreal pass** (the Photoreal button and the A-02 toggle) is in this
+slice as plumbing: the function, the client, the labels and the tests. The
+instruction to the image model now names the style and says to keep the
+architecture as drawn. It has not been run against the real image model: the
+gateway key in this environment was refused. It is exercised through a
+stand-in.
+
+**The lab.** `scripts/drawing-scope/style-lab.html` draws a street of houses,
+a row of homes or a pair of apartment buildings through the app's own code,
+close enough to judge an elevation, in about ten seconds:
+`/scripts/drawing-scope/style-lab.html?style=farmhouse&set=houses`.
+
+**Rating, honestly.** Close up, the buildings are a 7 to 8 against "what
+would actually get built": the massing, materials and openings are right for
+each style, and they are not boxes. They are still clean computer models:
+flat lawns, no people, lights, fences or site furniture, glass with no rooms
+behind it, and no weathering. The aerial is a 7. It is not yet the 9 asked
+for.
+
+The townhome engine's homes are 20 ft wide at 26 ft centres: detached narrow
+homes six feet apart. Each is drawn free on all four sides, the mansard
+wrapping round it (`app/app_townhomes_aerial.jpg`).
+
+Checks: 70 files, 764 tests pass; app type check 2,086, unchanged;
+`check-slice.cjs` 60 of 60. Evidence in `slice-4/`: `styles/` (each product
+in each style), `app/` (the app's own views and sheets), `check/`.
+
+## Slice 5 · trust signals first
+
+The owner's review of the 1710 Meharry Blvd capture, in four parts. This
+slice is the first: the page must not say more than is known.
+
+| What the page said | What it says now |
+|---|---|
+| "Code compliant" beside "context not verified" | "Needs verification · context not verified", amber, not green |
+| "FAR 0.00" and "Coverage 0%" beside 54,244 GSF | "FAR not reported" and "Coverage not reported" |
+| "30 apartments" over 3 + 12 + 10 + 4, with 13 one-beds in the schedule | 13 one-beds in both |
+| Density 16.7 in the schedule and 17.0 on the sheet | one acreage for both |
+
+A failing plan or a parking shortfall still leads the badge: Needs
+verification only replaces a pass. The app does not compute FAR or coverage
+itself. Evidence: `slice-5/trust_meharry.jpg`.
+
+Also in this slice, from the work toward a more real model: seven
+photographed surfaces from Poly Haven (CC0, `public/textures/site`), wall
+lights, downspouts and mailboxes (`slice-5/photographed_surfaces.jpg`).
+
+**The drawing has the screen** (the review's second part). At 1440 × 900 the
+plan was a strip between the parameters and the open tabulation. The
+inspector beside it and the schedule under it now start closed, open on
+request, and the choice is kept on the device.
+
+| 1440 × 900 | Plan canvas |
+|---|---|
+| before | a strip about 250 px high beside a 320 px rail |
+| now | 1,344 × 519, 54% of the window |
+
+Labels on the live plan give way by rank, as on the exported sheet: a
+building's tag and caption are set down first each frame, and a unit label,
+stall count, zone name or setback label that would cover one is left out.
+Evidence: `slice-5/plan_1440x900.jpg`.
+
+**A review view in 3D** (the review's third part). The 3D view opens in
+Review: the proposal in its materials, the existing buildings as plain white
+solids, no planting in the way, the parcel line, the buildable envelope and
+the access drawn on the ground, with a legend. Rendering is one click away
+and Present always shows it.
+
+From the owner's notes on the 3D view the same day:
+
+- Every camera centres on the parcel and stands far enough back to hold all
+  of it. The bottom of the parcel was cut off before.
+- In Review the parcel is lighter than the land round it and outlined.
+- Public streets show even where the record sends no street lines: what lies
+  between the neighbouring parcels is right of way, and a road-coloured plate
+  under them shows it. 13 of the 19 fixture parcels had no street lines.
+
+Evidence: `slice-5/review_apartments.jpg`, `slice-5/review_neighborhood.jpg`.
+
+Still to do from the review: the building section, scheme comparison and
+Underwrite on each saved option.
+
+Checks: 70 files, 771 tests pass; app type check 2,086, unchanged;
+`check-slice.cjs` 65 of 65.
+
+## Slice 6: the decision workflow
+
+- Sheet A-03, Section A–A: a schematic cut through the first tagged building,
+  with property lines, stacked levels and an estimated height. The sheet says
+  the ground is drawn level and heights are estimates from story counts.
+  `slice-6/a03-section-1710-meharry.png`.
+- Compare schemes: tick two or three saved schemes in the Schemes tab. Each is
+  drawn in one frame fitted to the parcel, so the scale is shared. Figures are
+  the ones stored with each scheme, with differences against the first.
+  `slice-6/compare-schemes.png` (the fixture store holds one drawing per
+  parcel, so the three drawings in the capture are the same plan).
+- Underwrite this scheme: on every saved scheme and in the comparison. It puts
+  the scheme on the sheet and opens its pro forma.
+- Saved schemes are named Option 1, Option 2 and so on, oldest first.
+
+Checks: 71 files, 777 tests pass; app type check 2,086, unchanged.
+
 ## Not done yet
 
-- Section A–A (sheet A-03) and scheme comparison.
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry
   Blvd: the west edge, with streets to the east and south). Planting no
   longer follows it; the setback labels on the 2D canvas still do.
 - Label collision handling is on the sheet only; the canvas places building
   tags without it.
 - The plan canvas is no larger than it was.
+- The photoreal pass has not been run against the real image model.
+- Toward a 9: ground materials from photographs, depth behind the glass,
+  fences, lights and site furniture, rear porches and decks, more than five
+  tree habits, terrain.
+- Townhomes are assumed three stories; a house's story count comes from the
+  engine's catalogue plan and is one where there is none.
