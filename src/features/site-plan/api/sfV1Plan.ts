@@ -1771,3 +1771,104 @@ export function edgeClassSentence(edges: SfV1EdgeClass[]): string | null {
   if (!edges.some(e => e.kind === 'street')) parts.push('no mapped street contact');
   return parts.join(' · ');
 }
+
+/* ── Deep search (engine g41, 2026-11-12) ────────────────────────────────────
+ * `fn_sf_v1_deep_search(ogc_fid, opt, search_id)` keeps looking after the
+ * quick plan is on the sheet: the engine's own patterns, street layouts
+ * adapted from built subdivisions (fitted to the code first), and
+ * varied-settings plans. Each call does a few seconds of engine work and
+ * reports progress; a call that carries `plan` found a better plan (or the
+ * search finished). Lot count with no code failure decides. Nothing here is
+ * called AI: a plan is AI-generated only when the winning try's pattern is
+ * `model`, and no model is live. Contract: claude/engine-reply-2026-11-11-deep-search.md.
+ */
+export interface SfV1DeepTry {
+  try?: number | null;
+  pattern?: string | null;
+  lots?: number | null;
+  code_clean?: boolean | null;
+  better?: boolean | null;
+  skipped?: string | null;
+  precedent_from?: string | null;
+  [k: string]: unknown;
+}
+
+export interface SfV1DeepResponse {
+  search_id?: string | null;
+  done?: boolean | null;
+  tries_done?: number | null;
+  tries_total?: number | null;
+  baseline_lots?: number | null;
+  best_lots?: number | null;
+  gain_lots?: number | null;
+  best_try?: number | null;
+  tries?: SfV1DeepTry[] | null;
+  plan?: SfV1Response | null;
+  error?: string | null;
+  [k: string]: unknown;
+}
+
+/** What the panel shows while the search runs and when it ends. */
+export interface SfV1DeepProgress {
+  done: boolean;
+  triesDone: number;
+  triesTotal: number;
+  baselineLots: number | null;
+  bestLots: number | null;
+  /** the plan on the sheet came from the search */
+  onSheet: boolean;
+  /** the built subdivision the winning street layout was adapted from, when it was one */
+  precedentFrom: string | null;
+  /** the search stopped early (service unreachable or repeated time-outs) */
+  stopped: boolean;
+}
+
+/** One deep-search call. `timedOut` tells the caller to send `skip_try` next. */
+export async function fetchSfV1DeepSearch(
+  ogcFid: number, opt: SfV1Options | Record<string, unknown>, searchId: string | null,
+): Promise<{ data: SfV1DeepResponse | null; timedOut: boolean }> {
+  try {
+    if (!supabase) return { data: null, timedOut: false };
+    const { data, error } = await supabase.rpc('fn_sf_v1_deep_search', {
+      p_ogc_fid: ogcFid, p_opt: opt, p_search_id: searchId,
+    });
+    if (error) {
+      const code = String((error as { code?: unknown }).code ?? '');
+      const msg = String(error.message ?? '');
+      // a cancelled statement (57014) or a gateway time-out: the try in hand ran too long
+      const timedOut = code.startsWith('57') || /time.?out|timed out|504/i.test(msg);
+      console.warn('[sfV1Plan] deep search call failed:', msg || error);
+      return { data: null, timedOut };
+    }
+    return { data: (data as SfV1DeepResponse) ?? null, timedOut: false };
+  } catch (err) {
+    console.warn('[sfV1Plan] deep search call threw:', err);
+    return { data: null, timedOut: true };
+  }
+}
+
+/** The first deep-search call carries the same options the plan call does. */
+export function deepSearchOpt(opt: SfV1Options | null | undefined): Record<string, unknown> {
+  return cleanOpt(opt);
+}
+
+/** The built subdivision behind the winning try, if the winner was a precedent. */
+export function deepWinnerPrecedent(r: SfV1DeepResponse): string | null {
+  const best = r.best_try ?? 0;
+  if (!best) return null;
+  const t = (r.tries ?? []).find(x => x.try === best);
+  return t && t.pattern === 'precedent' && t.precedent_from ? String(t.precedent_from) : null;
+}
+
+/** One plain line for the panel. */
+export function deepSearchLine(p: SfV1DeepProgress): string {
+  if (!p.done && !p.stopped) {
+    return p.triesTotal > 0 ? `Trying layout ${Math.min(p.triesDone + 1, p.triesTotal)} of ${p.triesTotal}…` : 'Looking for a better layout…';
+  }
+  const checked = p.triesDone > 0 ? `Checked ${p.triesDone} layout${p.triesDone === 1 ? '' : 's'}.` : 'The search could not run.';
+  if (p.onSheet && p.bestLots != null && p.baselineLots != null && p.bestLots > p.baselineLots) {
+    const from = p.precedentFrom ? ` Street layout adapted from ${p.precedentFrom}, a built subdivision.` : '';
+    return `${checked} Found ${p.bestLots} lots, up from ${p.baselineLots}.${from}`;
+  }
+  return p.stopped ? `${checked} The search stopped early; the plan on the sheet stands.` : `${checked} The plan on the sheet was the best.`;
+}

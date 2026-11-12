@@ -6,8 +6,8 @@
  * answer the user asks for here, and the result is labelled as one.
  */
 import { useState } from 'react';
-import type { HoleOverlap, SfV1AutoBest, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, autoBestSentence, edgeClassSentence, isOverride, isRemainderNote, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
+import type { HoleOverlap, SfV1AutoBest, SfV1DeepProgress, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
+import { FILL_BANDS, deepSearchLine, autoBestSentence, edgeClassSentence, isOverride, isRemainderNote, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
 
 /** What the by-right generator does not evaluate, named beside its passing checks (the scope's P0.2). */
 export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
@@ -118,8 +118,10 @@ function TestRow({ t }: { t: SfV1Test }) {
 export function SfV1Panel({
   summary, override, onOverride, busy, onDrawHouse, houseDrawn, houseError,
   competition, shownRequested, onViewCandidate, onRetryCompetition, terrain, site,
-  autoBest, holeOverlap, frontageLandlocked,
+  autoBest, holeOverlap, frontageLandlocked, deepSearch,
 }: {
+  /** the deep search that keeps looking after the quick plan is drawn (fn_sf_v1_deep_search) */
+  deepSearch?: SfV1DeepProgress | null;
   summary: SfV1Summary;
   override: SfV1Options;
   /** absent on multifamily land (the layout choice): the overrides re-run the by-right lot fit, which routes there to the townhome engine */
@@ -445,6 +447,12 @@ export function SfV1Panel({
         <ul data-testid="sfv1-notes" className="mt-2 space-y-0.5 text-[11px] text-amber-800">
           {otherNotes.map((n, i) => <li key={i}>⚠ {n}</li>)}
         </ul>
+      )}
+
+      {deepSearch && (
+        <p className="mt-2 text-xs text-slate-600" data-testid="sfv1-deep-search" aria-live="polite">
+          {deepSearchLine(deepSearch)}
+        </p>
       )}
 
       {competition && (
