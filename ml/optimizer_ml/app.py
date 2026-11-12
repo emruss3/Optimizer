@@ -192,12 +192,22 @@ def api():
         P = lm.poly_of(b)
         layouts = []
         for t in range(max(1, min(int(body.get("tries") or 4), MAX_TRIES))):
-            roads = lm.generate(model, s, cfg, yt[t % len(yt)])
-            layouts.append({"kind": "model streets and lots", "roads": lm.roads_to_json(roads, s),
-                            "lots_estimate": lm.resolve(s, b, roads, cfg, s["w"] if cfg["strict_width"] else 0.0)[0]})
+            try:
+                roads = lm.generate(model, s, cfg, yt[t % len(yt)])
+            except Exception:
+                continue
+
+            def estimate(rd, width):               # an estimate only: the engine decides what counts
+                try:
+                    return lm.resolve(s, b, rd, cfg, width)[0]
+                except Exception:
+                    return None
+
+            layouts.append({"kind": "model streets and lots" if cfg.get("lots", True) else "model streets", "roads": lm.roads_to_json(roads, s),
+                            "lots_estimate": estimate(roads, s["w"] if cfg["strict_width"] else 0.0) if cfg.get("lots", True) else None})
             packed = lm.pack(s, cfg, roads, P)
             layouts.append({"kind": "model streets, module lots", "roads": lm.roads_to_json(packed, s),
-                            "lots_estimate": lm.resolve(s, b, packed, cfg, s["w"])[0]})
+                            "lots_estimate": estimate(packed, s["w"])})
         return {"model_version": run_id, "seconds": round(time.time() - t0, 1), "layouts": layouts}
 
     return web

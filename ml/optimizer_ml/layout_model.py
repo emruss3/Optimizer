@@ -49,6 +49,8 @@ CFG = dict(
     temp=0.8, topk=20, tries=4, yield_pcts=[0.75, 0.9, 0.95, 0.99],
     module_round_ft=5, min_area_module_share=0.95,   # as training.fn_ai_site_opts
     engine_labels=False,    # format 2: the yield bucket is the engine's lot count on the built streets, with its code-clean verdict
+    lots=True,              # False = streets only: the model writes the new streets and the engine cuts every lot
+    scale_aug=0.0,          # training only: each example is also shown a little larger or smaller (0.15 = up to 15% either way)
     strict_width=True,      # model lots must be at least the module width (the engine's standard lot)
     inner_margin_row=0.5,   # a street counts as on the site when it is at least this many right-of-way widths inside the outline
     min_street_ft=30.0,     # shorter pieces of street are not kept
@@ -108,9 +110,15 @@ def simplify_to(g, n, tols=(0, 20, 30, 45, 70, 100, 150)):
     return None
 
 
-def canon(s, th=0.0, mir=False):
+def canon(s, th=0.0, mir=False, sc=1.0):
     """The site in a standard form: outline counter-clockwise from its top point; existing roads first, then new
-    streets, longest first; each line runs from its upper end; lots keyed by side (1 = left of the line's direction)."""
+    streets, longest first; each line runs from its upper end; lots keyed by side (1 = left of the line's direction).
+    sc scales every length (training only)."""
+    if sc != 1.0:
+        s = dict(s, b=[(x * sc, y * sc) for x, y in s['b']],
+                 roads=[dict(r, line=[(x * sc, y * sc) for x, y in r['line']], len=r['len'] * sc,
+                             lots={sd: [(a * sc, bb * sc, dep * sc) for a, bb, dep in r['lots'][sd]] for sd in (1, -1)},
+                             front={sd: r['front'][sd] * sc for sd in (1, -1)}) for r in s['roads']])
     b = [xf(p, th, mir) for p in s['b']]
     if signed_area(b) < 0:
         b.reverse()
@@ -134,11 +142,11 @@ def canon(s, th=0.0, mir=False):
 
 
 # ---- encoding ---------------------------------------------------------------------------------------------------
-def prefix_tokens(s, b, y, cfg=None, clean=None):
+def prefix_tokens(s, b, y, cfg=None, clean=None, sc=1.0):
     seq = [BOS]
     if cfg and cfg.get('engine_labels'):
         seq.append(CLEAN_U if clean is None else CLEAN_Y if clean else CLEAN_N)
-    seq += [ytok(y), wtok(s['w']), dtok(s['d'])]
+    seq += [ytok(y), wtok(s['w'] * sc), dtok(s['d'] * sc)]
     for x, yy in b:
         seq += [ctok(x), ctok(yy)]
     seq.append(SEP)
@@ -152,11 +160,13 @@ def road_tokens(ctx, line):
     return out
 
 
-def encode(s, cfg, th=0.0, mir=False):
-    b, roads = canon(s, th, mir)
-    seq = prefix_tokens(s, b, s['yield'], cfg, s.get('clean'))
+def encode(s, cfg, th=0.0, mir=False, sc=1.0):
+    b, roads = canon(s, th, mir, sc)
+    seq = prefix_tokens(s, b, s['yield'], cfg, s.get('clean'), sc)
     for r in roads:
         seq += road_tokens(r['ctx'], r['line'])
+        if not cfg.get('lots', True):
+            continue                                 # streets only
         for side, tok in ((1, SIDE_L), (-1, SIDE_R)):
             seq += [tok, ftok(r['front'][side])]
             pos = 0.0                               # where the previous lot ends once decoded: rounding cannot build up
@@ -180,7 +190,8 @@ def decode(seq):
         r = {'ctx': seq[i] == XSTREET, 'line': [], 'lots': {1: [], -1: []}, 'front': {1: 0.0, -1: 0.0}}
         i += 1
         while i + 1 < len(seq) and C0 <= seq[i] < C0 + NC and C0 <= seq[i + 1] < C0 + NC:
-            r['line'].append((unc(seq[i]), unc(seq[i + 1])))
+            if not r['line'] or r['line'][-1] != (unc(seq[i]), unc(seq[i + 1])):
+                r['line'].append((unc(seq[i]), unc(seq[i + 1])))
             i += 2
         for side, tok in ((1, SIDE_L), (-1, SIDE_R)):
             if i + 1 < len(seq) and seq[i] == tok and F0 <= seq[i + 1] < F0 + NF:
@@ -284,7 +295,7 @@ def parse_site(p, cfg):
     w, d = round(w / mr) * mr, round(d / mr) * mr
     amin = float(p[5] or 0) or cfg['min_area_module_share'] * w * d
     s = {'split': p[0], 'key': p[1], 'w': w, 'd': d, 'rw': rw, 'min_sf': round(min(amin, cfg['min_area_module_share'] * w * d)),
-         'b': b, 'roads': roads, 'n_fmt': n_fmt, 'n_total': int(p[9] or n_all), 'area': P.area}
+         'b': b, 'roads': roads, 'n_fmt': n_fmt, 'n_total': int(p[9] or n_all), 'area': P.area, 'radius': max(math.hypot(*pt) for pt in b)}
     s['yield'] = n_fmt / max(1.0, P.area / (w * d))
     if cfg.get('engine_labels'):
         if len(p) >= 12 and p[10] != '':
@@ -452,13 +463,36 @@ def generate(model, s, cfg, y, new_streets=None):
         return {'ctx': ctx, 'line': line, 'len': line_len(line), 'lots': {1: [], -1: []}, 'front': {1: f, -1: f}}
 
     given = [(True, r['line']) for r in roads if r['ctx']] + [(False, l) for l in (new_streets or [])]
+    with_lots = cfg.get('lots', True)
     for ctx, line in given:
         toks = road_tokens(ctx, line)
         if not g.room(len(toks) + 6):
             break
         g.push(toks)
-        sides(road(ctx, line))
-    if new_streets is None:
+        if with_lots:
+            sides(road(ctx, line))
+        else:
+            out.append(road(ctx, line))
+    if new_streets is None and not with_lots:
+        # streets only: STREET, points, then the next STREET or the end
+        while len([r for r in out if not r['ctx']]) < cfg['max_new_streets'] and g.room(8):
+            if g.pick([STREET, EOS]) == EOS:
+                break
+            g.push(STREET)
+            line = []
+            while len(line) < cfg['max_street_pts'] and g.room(6):
+                t = g.pick(list(COORDS) + ([STREET, EOS] if len(line) >= 2 else []))
+                if t in (STREET, EOS):
+                    break
+                g.push(t)
+                yy = g.pick(COORDS)
+                g.push(yy)
+                if not line or line[-1] != (unc(t), unc(yy)):
+                    line.append((unc(t), unc(yy)))
+            if len(line) < 2:
+                break
+            out.append(road(False, line))
+    elif new_streets is None:
         n_new = 0
         while n_new < cfg['max_new_streets'] and g.room(14):
             if g.pick([STREET, EOS]) == EOS:
@@ -475,7 +509,8 @@ def generate(model, s, cfg, y, new_streets=None):
                 g.push(t)
                 yy = g.pick(COORDS)
                 g.push(yy)
-                line.append((unc(t), unc(yy)))
+                if not line or line[-1] != (unc(t), unc(yy)):      # a repeated point adds nothing and breaks the geometry library
+                    line.append((unc(t), unc(yy)))
             if len(line) < 2:
                 break
             n_new += 1
@@ -504,6 +539,7 @@ def resolve(s, b, roads, cfg, min_w):
     if P.is_empty:
         return 0, 0
     lines = [LineString(r['line']) if len(r['line']) >= 2 else None for r in roads]
+    lines = [l if l is not None and l.length > 1 else None for l in lines]
     tol = s['rw']
     anchored = {i for i, r in enumerate(roads) if r['ctx'] and lines[i] is not None}
     if not anchored:                               # no existing road on record: a street reaching the edge is taken as the way in
@@ -520,14 +556,25 @@ def resolve(s, b, roads, cfg, min_w):
         if not r['ctx'] and lines[i] is not None:
             for sd in (1, -1):
                 if r['front'][sd] > 0.5:
-                    row.append(lines[i].buffer(sd * r['front'][sd], single_sided=True, cap_style='flat'))
-    build = P.difference(unary_union(row)) if row else P
+                    try:
+                        row.append(lines[i].buffer(sd * r['front'][sd], single_sided=True, cap_style='flat').buffer(0))
+                    except Exception:
+                        row.append(lines[i].buffer(r['front'][sd]))      # a two-sided strip when the one-sided one cannot be built
+    try:
+        build = P.difference(unary_union(row)) if row else P
+    except Exception:
+        build = P
+        for q in row:
+            try:
+                build = build.difference(q)
+            except Exception:
+                pass
     kept, written = [], 0
     for i, r in enumerate(roads):
         for sd in (1, -1):
             for a, bb, dep in r['lots'][sd]:
                 written += 1
-                if i not in anchored or dep < 5:
+                if i not in anchored or dep < 5 or lines[i] is None:
                     continue
                 sub = substring(lines[i], max(0.0, a), min(lines[i].length, bb))
                 if sub.geom_type != 'LineString' or sub.length < max(min_w - 0.5, 5.0):
@@ -556,25 +603,34 @@ def resolve(s, b, roads, cfg, min_w):
 
 
 def evaluate(model, sites, cfg, ytargets, per_site=False):
-    rows, t0 = [], time.time()
+    rows, t0, failed = [], time.time(), 0
+
+    def safe(fn):
+        nonlocal failed
+        try:
+            return fn()
+        except Exception:
+            failed += 1
+            return 0
+
     for s in sites:
         b, roads = canon(s)
         P = poly_of(b)
         r = {'key': s['key'], 'built': s['n_total'], 'in_format': s['n_fmt']}
         ref = decode(encode(s, cfg))
-        r['ref_area'] = resolve(s, b, ref, cfg, 0.0)[0]
-        r['ref_strict'] = resolve(s, b, ref, cfg, s['w'])[0]
-        r['packed'] = resolve(s, b, pack(s, cfg, roads, P), cfg, s['w'])[0]
-        r['packed_existing_only'] = resolve(s, b, pack(s, cfg, [q for q in roads if q['ctx']], P), cfg, s['w'])[0]
+        r['ref_area'] = safe(lambda: resolve(s, b, ref, cfg, 0.0)[0])
+        r['ref_strict'] = safe(lambda: resolve(s, b, ref, cfg, s['w'])[0])
+        r['packed'] = safe(lambda: resolve(s, b, pack(s, cfg, roads, P), cfg, s['w'])[0])
+        r['packed_existing_only'] = safe(lambda: resolve(s, b, pack(s, cfg, [q for q in roads if q['ctx']], P), cfg, s['w'])[0])
         if model is not None:
             mw = s['w'] if cfg['strict_width'] else 0.0
             yy = ytargets[min(1, len(ytargets) - 1)]
-            r['model_lots'] = resolve(s, b, generate(model, s, cfg, yy, [q['line'] for q in roads if not q['ctx']]), cfg, mw)[0]
+            r['model_lots'] = safe(lambda: resolve(s, b, generate(model, s, cfg, yy, [q['line'] for q in roads if not q['ctx']]), cfg, mw)[0]) if cfg.get('lots', True) else 0
             tries, packed = [], []
             for t in range(cfg['tries']):
-                roads_t = generate(model, s, cfg, ytargets[t % len(ytargets)])
-                tries.append(resolve(s, b, roads_t, cfg, mw)[0])
-                packed.append(resolve(s, b, pack(s, cfg, roads_t, P), cfg, s['w'])[0])      # the model's streets, lots packed by rule
+                roads_t = safe(lambda: generate(model, s, cfg, ytargets[t % len(ytargets)])) or []
+                tries.append(safe(lambda: resolve(s, b, roads_t, cfg, mw)[0]))
+                packed.append(safe(lambda: resolve(s, b, pack(s, cfg, roads_t, P), cfg, s['w'])[0]))      # the model's streets, lots packed by rule
             r['model_all_1'], r['model_all_best'] = tries[0], max(tries)
             r['model_streets_packed_best'] = max(packed)
             r['model_either_best'] = max(max(a, c) for a, c in zip(tries, packed))
@@ -582,7 +638,7 @@ def evaluate(model, sites, cfg, ytargets, per_site=False):
     built = max(1, sum(r['built'] for r in rows))
     tot = lambda k: sum(r.get(k, 0) for r in rows)
     sh = lambda k: round(tot(k) / built, 3)
-    out = {'sites': len(rows), 'built_lots': tot('built'), 'seconds': round(time.time() - t0),
+    out = {'sites': len(rows), 'built_lots': tot('built'), 'seconds': round(time.time() - t0), 'scores_that_failed_and_count_zero': failed,
            'built_lots_in_format': sh('in_format'),
            'built_layout_resolved_area_standard': sh('ref_area'),
            'built_layout_resolved_module_width': sh('ref_strict'),
@@ -638,7 +694,12 @@ def train(minutes, lines, out_dir='.', cfg=None, log=print, eval_holdout=True):
     t0, step, hist = time.time(), 0, []
     while time.time() - t0 < minutes * 60:
         model.train()
-        batch = [encode(random.choice(tr), cfg, random.uniform(0, 2 * math.pi), random.random() < 0.5) for _ in range(cfg['batch'])]
+        batch = []
+        for _ in range(cfg['batch']):
+            ex = random.choice(tr)
+            hi = min(1 + cfg['scale_aug'], CBIN * (NC // 2 - 5) / max(1.0, ex['radius']))
+            batch.append(encode(ex, cfg, random.uniform(0, 2 * math.pi), random.random() < 0.5,
+                                random.uniform(min(1 - cfg['scale_aug'], hi), hi) if cfg['scale_aug'] > 0 else 1.0))
         frac = (time.time() - t0) / (minutes * 60)
         for gr in opt.param_groups:
             gr['lr'] = cfg['lr'] * min(1.0, (step + 1) / cfg['warmup']) * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * frac)))
