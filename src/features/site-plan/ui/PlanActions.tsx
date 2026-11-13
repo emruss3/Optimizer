@@ -53,12 +53,14 @@ const PlanActions: React.FC<{
   justSaved: string | null;
   /** Set when Save version did not go through: the reason. */
   saveFailed?: string | null;
+  /** A way to sign in, shown beside a save that failed for want of an account. The plan stays on the sheet. */
+  signIn?: React.ReactNode;
   locked: number;
   free: number;
   onUnlockAll: () => void;
   change: PlanChange | null;
   onDismissChange: () => void;
-}> = ({ busy, onRecalculate, onAnotherOption, onSaveVersion, savedAs, justSaved, saveFailed, locked, free, onUnlockAll, change, onDismissChange }) => {
+}> = ({ busy, onRecalculate, onAnotherOption, onSaveVersion, savedAs, justSaved, saveFailed, signIn, locked, free, onUnlockAll, change, onDismissChange }) => {
   const [locksOpen, setLocksOpen] = useState(false);
   const btn = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed';
   return (
@@ -89,7 +91,7 @@ const PlanActions: React.FC<{
           Save version
         </button>
         <span className="px-1.5 text-[11px] text-gray-500" data-testid="plan-saved-state">
-          {saveFailed ? <span className="text-red-700" role="alert">Not saved. {saveFailed}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? `On the sheet: ${savedAs}` : 'Not a saved option'}
+          {saveFailed ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><span>Not saved. {saveFailed}</span>{signIn && <span className="text-gray-700" data-testid="plan-sign-in">{signIn}</span>}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? `On the sheet: ${savedAs}` : 'Not a saved option'}
         </span>
         <button
           type="button" onClick={() => setLocksOpen(o => !o)} aria-expanded={locksOpen} data-testid="plan-locks"

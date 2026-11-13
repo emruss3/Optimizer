@@ -85,6 +85,7 @@ import { mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
 import ExportMenu from './ui/ExportMenu';
+import AuthChip from '../../components/AuthChip';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
 import { accessFinding } from './api/accessFinding';
@@ -3262,6 +3263,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         : null,
     };
   }, [plannerCtx]);
+  // a save refused for want of an account: the planner offers sign-in where the user is
+  const needsSignIn = !!versionSaved && !versionSaved.ok && saveVersionAskedRef.current && /sign/i.test(savedPlansError ?? '');
   // what the Export menu and the sheets call the scheme on screen
   const exportSchemeName = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Current plan (not a saved option)';
   const sheetsTitle = useMemo(() => {
@@ -4008,7 +4011,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 onSaveVersion={handleSaveVersion}
                 savedAs={(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || null}
                 justSaved={versionSaved?.ok ? versionSaved.name : null}
-                saveFailed={versionSaved && !versionSaved.ok ? ((saveVersionAskedRef.current ? savedPlansError : null) ?? 'The save did not go through. Check the connection and try again.') : null}
+                saveFailed={versionSaved && !versionSaved.ok
+                  ? (needsSignIn ? 'Sign in to save this plan. It stays on the sheet while you do; then press Save version again.' : ((saveVersionAskedRef.current ? savedPlansError : null) ?? 'The save did not go through. Check the connection and try again.'))
+                  : null}
+                signIn={needsSignIn ? <AuthChip /> : undefined}
                 locked={lockCounts.locked}
                 free={lockCounts.free}
                 onUnlockAll={handleUnlockAll}
@@ -4237,6 +4243,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 investmentAnalysis={investmentAnalysis}
                 isGenerating={isGenerating}
                 violations={violations}
+                schemeLabel={`${exportSchemeName}${scene ? ` · revision ${scene.identity.revision}` : ''}`}
               />
             )}
             {dockTab === 'profile' && <StreetProfilePanel profiles={streetProfiles} topo={topo} />}
