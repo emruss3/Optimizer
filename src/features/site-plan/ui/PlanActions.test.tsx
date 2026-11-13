@@ -37,9 +37,12 @@ describe('PlanActions', () => {
   it('keeps recalculating, a new option and saving apart', () => {
     const onRecalculate = vi.fn(), onAnotherOption = vi.fn(), onSaveVersion = vi.fn();
     render(<PlanActions {...base} onRecalculate={onRecalculate} onAnotherOption={onAnotherOption} onSaveVersion={onSaveVersion} savedAs="Option 3" />);
-    fireEvent.click(screen.getByText('Recalculate this design'));
-    fireEvent.click(screen.getByText('Create another option'));
-    fireEvent.click(screen.getByText('Save version'));
+    // the labels shorten on a narrow screen, so the buttons are found by what they are
+    expect(screen.getByTestId('plan-recalculate').textContent).toContain('Recalculate');
+    expect(screen.getByTestId('plan-another-option').textContent).toContain('Create another option');
+    fireEvent.click(screen.getByTestId('plan-recalculate'));
+    fireEvent.click(screen.getByTestId('plan-another-option'));
+    fireEvent.click(screen.getByTestId('plan-save-version'));
     expect([onRecalculate.mock.calls.length, onAnotherOption.mock.calls.length, onSaveVersion.mock.calls.length]).toEqual([1, 1, 1]);
     expect(screen.getByTestId('plan-saved-state').textContent).toBe('On the sheet: Option 3');
   });

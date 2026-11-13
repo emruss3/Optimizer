@@ -51,7 +51,7 @@ import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToE
 import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
-import FlagsPanel from './ui/FlagsPanel';
+import FlagsPanel, { isActionableFlag } from './ui/FlagsPanel';
 import HbuStrip from './ui/HbuStrip';
 import BuiltHeadline from './ui/BuiltHeadline';
 import ExportReport from './ui/ExportReport';
@@ -3681,12 +3681,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       )}
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
-      <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+      {/* on a narrow screen the figures and the controls each take a line, so neither runs off the side */}
+      <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip
           metrics={metrics}
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
+          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); }}
           unverified={contextState === 'unavailable' || contextState === 'stale' ? contextStateLabel(contextState) : contextState === 'compiling' ? 'context still compiling' : null}
           empty={
             isGenerating || isGeneratingLots
@@ -3717,7 +3719,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               : null
           }
         />
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 max-w-full lg:flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
             onClick={undo}
@@ -4005,7 +4007,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             {leftRailCollapsed && <span>Inspector</span>}
           </button>
           {displayElements.some(isMfPlanElement) && !seedViewOn && !draftMode && !compileBlocked && (
-            <div className={`absolute ${viewMode === '3d' ? 'top-12 left-32' : 'top-4 left-[17.5rem]'} z-20`}>
+            <div className={`absolute z-20 left-2 right-2 top-16 lg:right-auto ${viewMode === '3d' ? 'lg:top-12 lg:left-32' : 'lg:top-4 lg:left-[17.5rem]'}`}>
               <PlanActions
                 busy={isGenerating}
                 onRecalculate={handleRecalculate}
@@ -4169,13 +4171,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <div data-testid="dock" data-open={dockOpen ? 'true' : 'false'} className="mt-3 flex-shrink-0 bg-white border border-gray-200 rounded-lg flex flex-col max-h-72">
           <div className="flex items-center border-b border-gray-100 flex-shrink-0">
             {([
-              { key: 'tabulation', label: 'Tabulation', badge: null, alert: false },
+              { key: 'tabulation', label: 'Schedule', badge: null, alert: false },
               { key: 'schemes', label: 'Schemes', badge: mfCandidates.length || null, alert: false },
               {
                 key: 'flags',
-                label: 'Flags',
+                label: 'Checks',
+                // only what asks something of the user is counted: engine notes sit in the panel, uncounted
                 badge:
-                  (violations.length + (planLineage?.flags?.length ?? 0) + (solveRejected ? 1 : 0)) || null,
+                  (violations.length + (planLineage?.flags ?? []).filter(isActionableFlag).length + (solveRejected ? 1 : 0)) || null,
                 alert: violations.some(v => v.severity === 'error'),
               },
               { key: 'results', label: 'Results', badge: null, alert: false },
