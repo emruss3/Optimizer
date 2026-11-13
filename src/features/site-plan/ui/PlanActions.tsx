@@ -72,7 +72,7 @@ const PlanActions: React.FC<{
           className={`${btn} border-gray-200 bg-white text-gray-800 hover:bg-gray-50`}
         >
           <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
-          Recalculate<span className="hidden sm:inline">&nbsp;this design</span>
+          <span>Recalculate<span className="hidden sm:inline"> this design</span></span>
         </button>
         <button
           type="button" onClick={onAnotherOption} disabled={busy} data-testid="plan-another-option"
@@ -88,10 +88,10 @@ const PlanActions: React.FC<{
           className={`${btn} border-gray-200 bg-white text-gray-800 hover:bg-gray-50`}
         >
           <Save className="w-3.5 h-3.5" />
-          Save<span className="hidden sm:inline">&nbsp;version</span>
+          <span>Save<span className="hidden sm:inline"> version</span></span>
         </button>
         <span className="px-1.5 text-[11px] text-gray-500" data-testid="plan-saved-state">
-          {saveFailed ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><span>Not saved. {saveFailed}</span>{signIn && <span className="text-gray-700" data-testid="plan-sign-in">{signIn}</span>}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : <span className="hidden md:inline">{savedAs ? `On the sheet: ${savedAs}` : 'Not a saved option'}</span>}
+          {saveFailed ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><span>Not saved. {saveFailed}</span>{signIn && <span className="text-gray-700" data-testid="plan-sign-in">{signIn}</span>}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? <span><span className="hidden md:inline">On the sheet: </span>{savedAs}</span> : <span className="hidden md:inline">Not a saved option</span>}
         </span>
         <button
           type="button" onClick={() => setLocksOpen(o => !o)} aria-expanded={locksOpen} data-testid="plan-locks"
