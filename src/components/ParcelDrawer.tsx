@@ -56,6 +56,11 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
 
   if (!isOpen || !parcel) return null;
 
+  // two different acreages: the assessor's deeded figure, and the parcel as mapped
+  const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  const deeded = num(parcel.deeded_acres) ?? num((parcel as { deededacreage?: unknown }).deededacreage);
+  const mapped = num((parcel as { gisacre?: unknown }).gisacre);
+
   const formatAcreage = (acres: number) => {
     if (acres < 1) {
       return `${Math.round(acres * 43560).toLocaleString()} sq ft`;
@@ -80,10 +85,11 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
           <div className="flex items-center space-x-2">
             <Building className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Parcel Details</h2>
+            <h2 className="text-lg font-semibold text-gray-900 truncate" title={parcel.address || undefined}>{parcel.address || 'Parcel'}</h2>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close parcel"
             className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />
@@ -118,79 +124,63 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'overview' && (
             <div className="p-4 space-y-6">
-              {/* Property Summary */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center space-x-2">
-                    <MapPin className="w-4 h-4 text-blue-600" />
-                    <h3 className="font-semibold text-gray-900">Property Summary</h3>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-600">Address</p>
-                    <p className="font-medium text-gray-900">{parcel.address || 'N/A'}</p>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-600">Parcel #</p>
-                      <p className="font-medium text-gray-900">{parcel.parcelnumb || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Lot Size</p>
-                      <p className="font-medium text-gray-900">
-                        {formatAcreage(parcel.deeded_acres || parcel.deededacreage || parcel.gisacre || 0)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-600">Zoning</p>
-                      <p className="font-medium text-gray-900">{parcel.zoning || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Use</p>
-                      <p className="font-medium text-gray-900">{parcel.usedesc || 'N/A'}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Ownership & Valuation */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
+              {/* Feasibility first: what is known, what is not, and the one next step */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4" data-testid="parcel-feasibility">
                 <div className="flex items-center space-x-2 mb-3">
-                  <User className="w-4 h-4 text-green-600" />
-                  <h3 className="font-semibold text-gray-900">Ownership & Valuation</h3>
+                  <MapPin className="w-4 h-4 text-blue-600" />
+                  <h3 className="font-semibold text-gray-900">Feasibility</h3>
                 </div>
-                
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-600">Owner</p>
-                    <p className="font-medium text-gray-900">{parcel.primary_owner || parcel.owner || 'N/A'}</p>
+                <dl className="space-y-2 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-600">Zoning</dt>
+                    <dd className="font-medium text-gray-900">{parcel.zoning || 'not on record'}</dd>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-gray-600">Total Value</p>
-                      <p className="font-medium text-gray-900">{formatCurrency(parcel.parval)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Land Value</p>
-                      <p className="font-medium text-gray-900">{formatCurrency(parcel.landval)}</p>
-                    </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-600">Deeded area <span className="text-gray-400">(assessor)</span></dt>
+                    <dd className="font-medium text-gray-900" data-testid="parcel-deeded-acres">{deeded ? formatAcreage(deeded) : 'not on record'}</dd>
                   </div>
-
-                  {parcel.yearbuilt && (
-                    <div>
-                      <p className="text-sm text-gray-600">Year Built</p>
-                      <p className="font-medium text-gray-900">{parcel.yearbuilt}</p>
+                  {mapped != null && (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-gray-600">Mapped area <span className="text-gray-400">(parcel map)</span></dt>
+                      <dd className="font-medium text-gray-900" data-testid="parcel-mapped-acres">{formatAcreage(mapped)}</dd>
                     </div>
                   )}
-                </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-gray-600">Current use</dt>
+                    <dd className="font-medium text-gray-900 text-right">{parcel.usedesc || 'not on record'}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-xs text-gray-600">
+                  The planner draws on the parcel as mapped, so its acreage can differ from the deeded figure.
+                  Not checked yet: what the zoning allows here, street access, height and parking. The planner checks these when it draws a plan and marks what it could not verify.
+                </p>
+                <button
+                  onClick={() => setShowSitePlanner(true)}
+                  data-testid="parcel-open-planner"
+                  className="mt-3 w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Building className="w-4 h-4" />
+                  <span>Site Planner</span>
+                </button>
               </div>
+
+              {/* The assessor's record, for reference */}
+              <details className="bg-white border border-gray-200 rounded-lg p-4" data-testid="parcel-assessor">
+                <summary className="cursor-pointer select-none font-semibold text-gray-900 flex items-center gap-2">
+                  <User className="w-4 h-4 text-green-600" />
+                  Assessor record
+                </summary>
+                <dl className="mt-3 space-y-2 text-sm">
+                  <div className="flex justify-between gap-4"><dt className="text-gray-600">Parcel ID</dt><dd className="font-medium text-gray-900">{parcel.parcelnumb || 'not on record'}</dd></div>
+                  <div className="flex justify-between gap-4"><dt className="text-gray-600">Owner</dt><dd className="font-medium text-gray-900 text-right">{parcel.primary_owner || parcel.owner || 'not on record'}</dd></div>
+                  <div className="flex justify-between gap-4"><dt className="text-gray-600">Assessed total value</dt><dd className="font-medium text-gray-900">{formatCurrency(parcel.parval)}</dd></div>
+                  <div className="flex justify-between gap-4"><dt className="text-gray-600">Assessed land value</dt><dd className="font-medium text-gray-900">{formatCurrency(parcel.landval)}</dd></div>
+                  {parcel.yearbuilt && (
+                    <div className="flex justify-between gap-4"><dt className="text-gray-600">Year built</dt><dd className="font-medium text-gray-900">{parcel.yearbuilt}</dd></div>
+                  )}
+                </dl>
+                <p className="mt-2 text-xs text-gray-500">Assessed values are the assessor's, not asking prices.</p>
+              </details>
 
               {/* Zoning Summary */}
               {parcel.zoning_data && (
@@ -229,14 +219,6 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
               {/* Action Buttons */}
               <div className="space-y-3">
                 <button
-                  onClick={() => setShowSitePlanner(true)}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Building className="w-4 h-4" />
-                  <span>Site Planner</span>
-                </button>
-
-                <button
                   onClick={() => setShowFullAnalysis(true)}
                   className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
                 >
@@ -246,10 +228,11 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
                 
                 <button
                   onClick={() => setShowMultiParcelAnalysis(true)}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  data-testid="parcel-assemble"
+                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Multi-Parcel Analysis</span>
+                  <span>Add to assemblage</span>
                 </button>
 
                 {hasActiveProject && onAddToProject && (
@@ -257,7 +240,7 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
                     onClick={() => onAddToProject(parcel)}
                     className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" />
                     <span>Add to Project</span>
                   </button>
                 )}
@@ -267,7 +250,7 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
                     onClick={() => onCreateProjectFromParcel(parcel)}
                     className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" />
                     <span>Create Project from Parcel</span>
                   </button>
                 )}
@@ -296,6 +279,7 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
 
       {/* Multi-Parcel Analysis Modal */}
       <MultiParcelAnalysis
+        seed={parcel as never}
         isOpen={showMultiParcelAnalysis}
         onClose={() => setShowMultiParcelAnalysis(false)}
       />

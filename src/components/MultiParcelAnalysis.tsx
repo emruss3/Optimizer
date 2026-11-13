@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Plus, X, Building, Map, Users, DollarSign, Target, Car } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 import { GeoJSONGeometry } from '../types/parcel';
+import { searchParcels, type ParcelHit } from '../lib/parcelSearch';
+import { supabase } from '../lib/supabase';
 
 interface SelectedParcel {
   id: string;
@@ -17,9 +19,22 @@ interface SelectedParcel {
 interface MultiParcelAnalysisProps {
   isOpen: boolean;
   onClose: () => void;
+  /** The parcel the user opened this from: the set starts with it. */
+  seed?: Partial<SelectedParcel> & { ogc_fid?: string | number } | null;
 }
 
-export default function MultiParcelAnalysis({ isOpen, onClose }: MultiParcelAnalysisProps) {
+const asSelected = (row: Record<string, any>): SelectedParcel => ({
+  id: String(row.ogc_fid ?? row.id ?? ''),
+  address: row.address || 'Unknown address',
+  parcelnumb: row.parcelnumb || '',
+  deeded_acres: Number(row.deeded_acres) || 0,
+  sqft: Number(row.sqft) || 0,
+  zoning: row.zoning || '',
+  parval: Number(row.parval) || 0,
+  geometry: row.geometry,
+});
+
+export default function MultiParcelAnalysis({ isOpen, onClose, seed }: MultiParcelAnalysisProps) {
   const [selectedParcels, setSelectedParcels] = useState<SelectedParcel[]>([]);
   const [activeTab, setActiveTab] = useState<'selection' | 'analysis' | 'comparison'>('selection');
   const { selectedParcel } = useUIStore();
@@ -39,6 +54,54 @@ export default function MultiParcelAnalysis({ isOpen, onClose }: MultiParcelAnal
       }]);
     }
   }, [selectedParcel, selectedParcels]);
+
+  // the set starts with the parcel the user came from
+  useEffect(() => {
+    if (!isOpen || !seed) return;
+    const first = asSelected(seed as Record<string, any>);
+    if (!first.id) return;
+    setSelectedParcels(prev => (prev.some(p => p.id === first.id) ? prev : [first, ...prev]));
+  }, [isOpen, seed]);
+
+  // Escape closes this, the topmost surface, and nothing under it
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [isOpen, onClose]);
+
+  // add a parcel by address or parcel ID: the map is behind this dialog
+  const [addQuery, setAddQuery] = useState('');
+  const [addHits, setAddHits] = useState<ParcelHit[]>([]);
+  const [addNote, setAddNote] = useState<string | null>(null);
+  useEffect(() => {
+    const term = addQuery.trim();
+    if (term.length < 2) { setAddHits([]); return; }
+    let live = true;
+    const timer = setTimeout(() => {
+      searchParcels(term, 6)
+        .then(h => { if (live) { setAddHits(h); setAddNote(h.length ? null : `No parcel matches "${term}".`); } })
+        .catch(e => { if (live) { setAddHits([]); setAddNote(`The search did not go through (${e instanceof Error ? e.message : String(e)}).`); } });
+    }, 250);
+    return () => { live = false; clearTimeout(timer); };
+  }, [addQuery]);
+  const addParcel = async (hit: ParcelHit) => {
+    setAddNote(null);
+    try {
+      if (!supabase) throw new Error('the database client is not configured');
+      const { data, error } = await supabase.rpc('get_parcel_by_id', { p_ogc_fid: hit.ogcFid });
+      if (error) throw new Error(error.message ?? String(error));
+      const row = (Array.isArray(data) ? data[0] : data) as Record<string, any> | null;
+      if (!row) throw new Error('no record for that parcel');
+      const next = asSelected({ ...row, ogc_fid: row.ogc_fid ?? hit.ogcFid, address: row.address ?? hit.address });
+      setSelectedParcels(prev => (prev.some(p => p.id === next.id) ? prev : [...prev, next]));
+      setAddQuery('');
+      setAddHits([]);
+    } catch (e) {
+      setAddNote(`Could not add ${hit.address}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   const removeParcel = (id: string) => {
     setSelectedParcels(prev => prev.filter(p => p.id !== id));
@@ -73,7 +136,7 @@ export default function MultiParcelAnalysis({ isOpen, onClose }: MultiParcelAnal
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <Building className="w-6 h-6 text-blue-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Multi-Parcel Analysis</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Assemblage</h1>
             </div>
             <div className="text-sm text-gray-600">
               {selectedParcels.length} parcel{selectedParcels.length !== 1 ? 's' : ''} selected
@@ -81,6 +144,7 @@ export default function MultiParcelAnalysis({ isOpen, onClose }: MultiParcelAnal
           </div>
           <button
             onClick={onClose}
+            aria-label="Close assemblage"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-6 h-6 text-gray-500" />
@@ -132,11 +196,31 @@ export default function MultiParcelAnalysis({ isOpen, onClose }: MultiParcelAnal
             {activeTab === 'selection' && (
               <div className="space-y-6">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-blue-900 mb-2">How to Add Parcels</h3>
-                  <p className="text-blue-800 text-sm">
-                    Click on parcels in the map to add them to your analysis. You can analyze individual parcels 
-                    or combine multiple parcels for comprehensive development analysis.
+                  <label htmlFor="assemblage-add" className="block text-lg font-semibold text-blue-900 mb-2">Add a parcel</label>
+                  <p className="text-blue-800 text-sm mb-2">
+                    These parcels are evaluated together, as one site. Add the next one by address or parcel ID.
                   </p>
+                  <input
+                    id="assemblage-add"
+                    data-testid="assemblage-add"
+                    value={addQuery}
+                    onChange={e => setAddQuery(e.target.value)}
+                    placeholder="Street address or parcel ID"
+                    className="w-full px-3 py-2 rounded-lg border border-blue-200 text-sm bg-white"
+                  />
+                  {addHits.length > 0 && (
+                    <ul className="mt-2 bg-white border border-blue-200 rounded-lg divide-y divide-gray-100">
+                      {addHits.map(h => (
+                        <li key={h.ogcFid}>
+                          <button onClick={() => { void addParcel(h); }} className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50">
+                            <span className="font-medium text-gray-900">{h.address}</span>
+                            <span className="text-gray-500"> · {[h.parcelNumber, h.zoning].filter(Boolean).join(' · ')}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {addNote && <p className="mt-2 text-sm text-blue-900" role="status">{addNote}</p>}
                 </div>
 
                 {selectedParcels.length > 0 && (
@@ -166,6 +250,7 @@ export default function MultiParcelAnalysis({ isOpen, onClose }: MultiParcelAnal
                             </div>
                             <button
                               onClick={() => removeParcel(parcel.id)}
+                              aria-label={`Remove ${parcel.address} from the assemblage`}
                               className="ml-4 p-2 hover:bg-red-50 rounded-lg transition-colors"
                             >
                               <X className="w-4 h-4 text-red-500" />
@@ -180,9 +265,9 @@ export default function MultiParcelAnalysis({ isOpen, onClose }: MultiParcelAnal
                 {selectedParcels.length === 0 && (
                   <div className="text-center py-12">
                     <Building className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Parcels Selected</h3>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No parcels yet</h3>
                     <p className="text-gray-600">
-                      Click on parcels in the map to start your multi-parcel analysis.
+                      Add a parcel above by address or parcel ID.
                     </p>
                   </div>
                 )}

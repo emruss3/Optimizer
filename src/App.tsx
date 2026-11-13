@@ -222,10 +222,11 @@ function App() {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  // First visit and every visit after: search and the sample come first. The tour is optional help.
   const handleGetStarted = () => {
     markVisited();
     setShowLandingPage(false);
-    setShowOnboarding(true);
+    setShowStart(true);
   };
 
   const handleOpenUnifiedWorkspace = () => {
@@ -307,7 +308,14 @@ function App() {
   }
 
   if (showStart && !activeProjectId && !isDrawerOpen) {
-    return <StartPage onBrowseMap={() => setShowStart(false)} onAbout={() => { setShowStart(false); setShowLandingPage(true); }} />;
+    return (
+      <StartPage
+        onBrowseMap={() => setShowStart(false)}
+        onAbout={() => { setShowStart(false); setShowLandingPage(true); }}
+        onSample={() => openParcel(SAMPLE_PARCEL, true)}
+        onTour={() => { setShowStart(false); setShowOnboarding(true); }}
+      />
+    );
   }
 
   return (

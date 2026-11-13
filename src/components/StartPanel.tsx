@@ -26,6 +26,7 @@ const StartPanel: React.FC<{ onOpened?: () => void; autoFocus?: boolean }> = ({ 
   const [recent] = useState<RecentParcel[]>(() => listRecent());
   const [resume] = useState<RecentParcel | null>(() => lastPlan());
   const seq = useRef(0);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const term = query.trim();
@@ -39,7 +40,7 @@ const StartPanel: React.FC<{ onOpened?: () => void; autoFocus?: boolean }> = ({ 
         .finally(() => { if (run === seq.current) setSearching(false); });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, attempt]);
 
   const open = (p: { ogcFid: number | string; address?: string | null; zoning?: string | null }, planner: boolean) => {
     openParcel(p, planner);
@@ -64,8 +65,9 @@ const StartPanel: React.FC<{ onOpened?: () => void; autoFocus?: boolean }> = ({ 
         </div>
         {searching && <p className="mt-2 text-xs text-gray-500">Searching…</p>}
         {error && (
-          <p className="mt-2 text-xs text-red-700" role="alert">
-            The search did not go through ({error}). Check the connection and try again.
+          <p className="mt-2 text-xs text-red-700 flex items-center gap-2" role="alert">
+            <span>The search did not go through ({error}). Your query is kept.</span>
+            <button type="button" onClick={() => setAttempt(a => a + 1)} data-testid="start-retry" className="px-2 py-0.5 rounded border border-red-300 text-red-800 hover:bg-red-50">Try again</button>
           </p>
         )}
         {hits && hits.length === 0 && !searching && (

@@ -13,6 +13,9 @@ export interface ParcelHit {
  * unformatted column takes the digits as well. Throws when the request fails:
  * a failed search is not "no results".
  */
+/** How long a search may run before it is reported as failed. */
+export const SEARCH_TIMEOUT_MS = 12_000;
+
 export async function searchParcels(query: string, limit = 10): Promise<ParcelHit[]> {
   if (!supabase) throw new Error('the database client is not configured');
   // PostgREST's filter grammar reads commas, parentheses and quotes as syntax,
@@ -23,13 +26,17 @@ export async function searchParcels(query: string, limit = 10): Promise<ParcelHi
   const digits = term.replace(/[^0-9a-z]/gi, '');
   const filters = [`address.ilike.%${term}%`, `parcelnumb.ilike.%${term}%`];
   if (digits.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${digits}%`);
-  const { data, error } = await supabase
+  const request = supabase
     .from('parcels')
     .select('ogc_fid, parcelnumb, address, zoning, landval')
     .or(filters.join(','))
     .limit(limit);
+  // a request that never answers must not leave "Searching" on screen for good
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const slow = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer after ${SEARCH_TIMEOUT_MS / 1000} seconds`)), SEARCH_TIMEOUT_MS); });
+  const { data, error } = await Promise.race([request, slow]).finally(() => clearTimeout(timer));
   if (error) throw new Error(error.message ?? String(error));
-  return (data ?? []).map(p => ({
+  return ((data ?? []) as Array<Record<string, unknown>>).map((p: any) => ({
     ogcFid: Number(p.ogc_fid),
     address: p.address || 'Unknown Address',
     parcelNumber: p.parcelnumb ?? null,
