@@ -114,7 +114,7 @@ const SchemeCompare: React.FC<{
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Compare schemes</h2>
-            <p className="text-xs text-gray-500">Same parcel, same scale. Differences are against {schemes[0]?.name}.</p>
+            <p className="text-xs text-gray-500">Same parcel, same scale. Differences are against {schemes[0]?.name}. Figures are the ones saved with each scheme; each drawing is replayed from its saved settings.</p>
           </div>
           <button onClick={onClose} aria-label="Close comparison" className="p-1 rounded hover:bg-gray-100"><X className="w-4 h-4" /></button>
         </div>

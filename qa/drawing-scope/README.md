@@ -430,6 +430,24 @@ Checks: 71 files, 777 tests pass; app type check 2,086, unchanged.
 Checks: 76 files, 794 tests pass; app type check 2,073 (was 2,086);
 `check-slice.cjs` passes.
 
+## Slice 8: predictable regeneration
+
+- A bar on the plan keeps three actions apart. Recalculate this design runs
+  the same option and locked buildings again and saves nothing new. Create
+  another option asks for a different layout and saves it as a new option.
+  Save version keeps the sheet under a name and reports whether it saved.
+- "N locked · M free" opens what the planner keeps and what it may move, with
+  Unlock all.
+- After each action a note states what changed, in the engine's figures.
+- Undo and redo are one history for both engines. A server plan is undone by
+  replaying its seed, locked buildings, product and context. Nothing is saved
+  by an undo.
+- `slice-8/plan-actions.png`, `slice-8/plan-actions-3d.png`. The fixture
+  store returns one plan per parcel, so the note in the capture reads
+  unchanged, and the mock has no save endpoint.
+
+Checks: 801 tests pass; app type check 2,073; `check-slice.cjs` passes.
+
 ## Not done yet
 
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry

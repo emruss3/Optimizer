@@ -85,6 +85,7 @@ import { mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
 import ExportMenu from './ui/ExportMenu';
+import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
 import { accessFinding } from './api/accessFinding';
 import { loadSchemeDrawing } from './api/schemeDrawing';
@@ -102,6 +103,19 @@ const Massing3D = React.lazy(() => import('./ui/Massing3D'));
  * being blocked outright. Never set in production builds — the enterprise
  * posture is that nothing renders without a compiled ordinance context.
  */
+
+/** What identifies a server plan: replaying it draws the same plan. */
+interface ServerPlanState {
+  seed: number;
+  pins: MfPin[];
+  product: 'apartments' | 'townhomes';
+  /** undefined = the active context; a string = a stored one; null = the pre-context path. */
+  contextId: string | null | undefined;
+  /** The saved option this plan is, when it is one. */
+  candidateId: string | null;
+  summary: PlanSummary;
+}
+type HistoryEntry = { kind: 'local'; buildings: BuildingSpec[] } | { kind: 'server'; state: ServerPlanState };
 
 type SiteWorkspaceProps = {
   parcel: SelectedParcel;
@@ -432,9 +446,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // The undo unit is the worker's canonical BuildingSpec[] — restoring a
   // snapshot replays it through the worker (SET_BUILDINGS) so parking, metrics
   // and pro forma all regenerate consistently. Max 50 steps.
+  // One history for both engines: a step is either the worker's building set
+  // or the server plan's identity (seed, locked buildings, product, context),
+  // which replays to the same drawing. The user does not need to know which.
   const currentBuildingsRef = useRef<BuildingSpec[]>([]);
-  const pastRef = useRef<BuildingSpec[][]>([]);
-  const futureRef = useRef<BuildingSpec[][]>([]);
+  const pastRef = useRef<HistoryEntry[]>([]);
+  const futureRef = useRef<HistoryEntry[]>([]);
+  const serverStateRef = useRef<ServerPlanState | null>(null);
+  const [planChange, setPlanChange] = useState<PlanChange | null>(null);
+  const [lockCounts, setLockCounts] = useState({ locked: 0, free: 0 });
   const gestureActiveRef = useRef(false);
   const [historyVersion, setHistoryVersion] = useState(0);
 
@@ -443,7 +463,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, []);
 
   const pushHistory = useCallback(() => {
-    pastRef.current.push(structuredClone(currentBuildingsRef.current));
+    pastRef.current.push({ kind: 'local', buildings: structuredClone(currentBuildingsRef.current) });
     if (pastRef.current.length > 50) pastRef.current.shift();
     futureRef.current = [];
     setHistoryVersion(v => v + 1);
@@ -490,6 +510,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     },
     [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis, activeCandidateId]
   );
+
+  /** Save version: keep the plan on the sheet under a name, and say whether it worked. */
+  const [versionSaved, setVersionSaved] = useState<{ name: string; ok: boolean } | null>(null);
+  const handleSaveVersion = useCallback(() => {
+    if (draftModeRef.current || compileBlockedRef.current) {
+      setViolations(v => [...v, {
+        code: 'draft-not-saved',
+        message: 'This plan uses default assumptions (context unavailable) — retry the context compile before saving.',
+        severity: 'warning',
+      }]);
+      return;
+    }
+    const option = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Plan';
+    const name = `${option}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+    savePlanToDb({ parcel_id: parcelIdStr, name, config, elements, metrics, violations, investment: investmentAnalysis })
+      .then(saved => {
+        setVersionSaved({ name, ok: !!saved });
+        // only a save that happened is a save in the feedback stream
+        if (saved) void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_saved', activeCandidateId, { name, kind: 'saved_version' });
+      })
+      .catch(() => setVersionSaved({ name, ok: false }));
+  }, [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis, activeCandidateId, mfCandidates]);
 
   const handleLoadPlan = useCallback(
     (plan: SavedSitePlan) => {
@@ -616,6 +658,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     /** Explicit product override (candidate replays); defaults to the
      *  active product selection. */
     product?: 'apartments' | 'townhomes';
+    /** A live-drag frame: not a step in the history, not a change to report. */
+    preview?: boolean;
+    /** Whether this replaces the sheet as an undoable step. Defaults to: it was saved. */
+    undoStep?: boolean;
+    /** A replay from undo or redo: the stacks are already updated. */
+    fromHistory?: boolean;
+    /** The saved option this replay is (view, undo); a new save reports its own. */
+    candidateId?: string | null;
+    /** What the user did, for the note that says what changed. */
+    action?: string;
+    /** A replay: the figures this plan had when the user last saw it. */
+    expected?: PlanSummary;
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     serverRejectRef.current = null;
@@ -786,6 +840,44 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     mfSeedRef.current = opts.seed;
     mfPinsRef.current = resp.pins ?? [];
     if (resp.candidate_id) setActiveCandidateId(resp.candidate_id);
+    if (!opts.preview) {
+      const buildingsNow = generated.filter(el => el.type === 'building');
+      const lockedNow = buildingsNow.filter(el => el.properties?.pinned).length;
+      const summary: PlanSummary = {
+        units: serverMetrics?.totalUnits ?? null,
+        stalls: serverMetrics?.stallsProvided ?? null,
+        gsf: serverMetrics?.totalBuiltSF ?? null,
+        buildings: buildingsNow.length,
+        locked: lockedNow,
+      };
+      const before = serverStateRef.current;
+      const step = opts.undoStep ?? (opts.persist !== false);
+      if (step && before && !opts.fromHistory) {
+        pastRef.current.push({ kind: 'server', state: before });
+        if (pastRef.current.length > 50) pastRef.current.shift();
+        futureRef.current = [];
+        setHistoryVersion(v => v + 1);
+      }
+      serverStateRef.current = {
+        seed: opts.seed,
+        pins: resp.pins ?? [],
+        product: effectiveProduct,
+        // the context this plan was actually solved under, so a replay uses the same one
+        contextId: opts.contextId !== undefined ? opts.contextId : (effectiveContextId ?? undefined),
+        candidateId: resp.candidate_id ?? opts.candidateId ?? (step ? null : before?.candidateId ?? null),
+        summary,
+      };
+      setLockCounts({ locked: lockedNow, free: buildingsNow.length - lockedNow });
+      setVersionSaved(null);
+      // A replay is a fresh solve. If it does not match what the user saw, say so.
+      const e = opts.expected;
+      const redrawn = !!e && (e.units !== summary.units || e.stalls !== summary.stalls || e.gsf !== summary.gsf || e.buildings !== summary.buildings);
+      setPlanChange(
+        redrawn && e
+          ? { action: `${opts.action ?? 'Replay'} redrew this plan and it differs from the one you saw`, before: e, after: summary }
+          : before && opts.action ? { action: opts.action, before: before.summary, after: summary } : null,
+      );
+    }
     const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
     // The multifamily side of the layout choice is the plan last drawn here;
@@ -882,6 +974,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       parentId: activeCandidateId,
       persist: pending.final,
       dropPinIndex: pending.dropPinIndex,
+      preview: !pending.final,
+      action: 'Moved a building',
     })
       .catch(() => undefined)
       .finally(() => {
@@ -929,6 +1023,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           seed: mfSeedRef.current + 1,
           pins: mfPinsRef.current,
           parentId: activeCandidateId,
+          action: 'New option',
         });
         if (!ok) {
           // Regeneration failure mid-session: the CURRENT plan (a real server
@@ -1317,21 +1412,100 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
   }, [setPlanOutput, trackBuildings]);
 
-  const undo = useCallback(() => {
-    const prev = pastRef.current.pop();
-    if (!prev) return;
-    futureRef.current.push(structuredClone(currentBuildingsRef.current));
-    setHistoryVersion(v => v + 1);
-    void applyBuildingSet(prev);
-  }, [applyBuildingSet]);
+  /** Put a server plan back on the sheet from its identity. Nothing is saved. */
+  const restoreServerPlan = useCallback((state: ServerPlanState, action: string): Promise<boolean> => {
+    if (mfRegenInFlightRef.current) return Promise.resolve(false);
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    if (productRef.current !== state.product) {
+      productRef.current = state.product;
+      setProduct(state.product);
+    }
+    return runServerMfPlan({
+      seed: state.seed,
+      pins: state.pins,
+      persist: false,
+      ...(state.contextId !== undefined ? { contextId: state.contextId } : {}),
+      product: state.product,
+      fromHistory: true,
+      candidateId: state.candidateId,
+      expected: state.summary,
+      action,
+    })
+      .then(ok => { if (ok) setActiveCandidateId(state.candidateId); return ok; })
+      .catch(() => false)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan]);
 
-  const redo = useCallback(() => {
-    const next = futureRef.current.pop();
-    if (!next) return;
-    pastRef.current.push(structuredClone(currentBuildingsRef.current));
-    setHistoryVersion(v => v + 1);
-    void applyBuildingSet(next);
-  }, [applyBuildingSet]);
+  /** The plan on the sheet as a history step, whichever engine drew it. */
+  const snapshotNow = useCallback((): HistoryEntry => (
+    planModeRef.current === 'mf-server' && serverStateRef.current
+      ? { kind: 'server', state: serverStateRef.current }
+      : { kind: 'local', buildings: structuredClone(currentBuildingsRef.current) }
+  ), []);
+  const applyHistoryEntry = useCallback((entry: HistoryEntry, action: string): Promise<boolean> => {
+    if (entry.kind === 'server') return restoreServerPlan(entry.state, action);
+    if (planModeRef.current === 'mf-server') planModeRef.current = 'mf';
+    return applyBuildingSet(entry.buildings).then(() => true);
+  }, [restoreServerPlan, applyBuildingSet]);
+
+  /** One step back or forward. The stacks move only once the plan is back on
+   *  the sheet: a replay that fails leaves the plan and the history as they were. */
+  const stepHistory = useCallback((from: React.MutableRefObject<HistoryEntry[]>, to: React.MutableRefObject<HistoryEntry[]>, action: string) => {
+    if (mfRegenInFlightRef.current) return;
+    const target = from.current[from.current.length - 1];
+    if (!target) return;
+    const here = snapshotNow();
+    void applyHistoryEntry(target, action).then(ok => {
+      if (ok) {
+        from.current.pop();
+        to.current.push(here);
+        setHistoryVersion(v => v + 1);
+      } else {
+        setViolations(v => [...v, {
+          code: 'history-replay',
+          message: `${action} did not go through: ${serverFailCauseRef.current ?? 'the plan could not be redrawn.'} The current plan is unchanged.`,
+          severity: 'warning',
+        }]);
+      }
+    });
+  }, [snapshotNow, applyHistoryEntry]);
+  const undo = useCallback(() => stepHistory(pastRef, futureRef, 'Undo'), [stepHistory]);
+  const redo = useCallback(() => stepHistory(futureRef, pastRef, 'Redo'), [stepHistory]);
+
+  /** Recalculate this design: the same option and the same locked buildings,
+   *  run again. No new saved option, no history step. */
+  const handleRecalculate = useCallback(() => {
+    if (planModeRef.current !== 'mf-server') { void handleGenerate(0); return; }
+    if (mfRegenInFlightRef.current || generationBlockedRef.current) return;
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: mfSeedRef.current, pins: mfPinsRef.current, persist: false, action: 'Recalculated' })
+      .then(ok => {
+        if (!ok) setViolations(v => [...v, { code: 'server-unreachable', message: `${serverFailCauseRef.current ?? 'The massing service did not respond.'} The current plan is unchanged.`, severity: 'warning' }]);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan, handleGenerate]);
+
+  /** Release every locked building and run the design again. An undoable step. */
+  const handleUnlockAll = useCallback(() => {
+    if (planModeRef.current !== 'mf-server' || mfRegenInFlightRef.current) return;
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: mfSeedRef.current, pins: [], parentId: activeCandidateId, action: 'Unlocked all buildings' })
+      .catch(() => undefined)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan, activeCandidateId]);
 
   const handleDeleteBuildings = useCallback((ids: string[]) => {
     // Server plans: deleting a PINNED bar releases its pin and re-solves the
@@ -2316,6 +2490,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       planModeRef.current = null;
       mfSeedRef.current = 1;
       mfPinsRef.current = [];
+      serverStateRef.current = null;
+      pastRef.current = [];
+      futureRef.current = [];
+      setHistoryVersion(v => v + 1);
+      setPlanChange(null);
+      setVersionSaved(null);
+      setLockCounts({ locked: 0, free: 0 });
       productRef.current = 'apartments';
       setProduct('apartments');
       draftModeRef.current = false;
@@ -2767,6 +2948,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       persist: false,
       contextId: c.contextId ?? null,
       product: candidateProduct,
+      undoStep: true,
+      candidateId: c.id,
+      action: 'Opened a saved option',
     })
       .then(ok => {
         if (ok) {
@@ -3505,7 +3689,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <button
             onClick={undo}
             disabled={!canUndo}
-            title={canUndo ? 'Undo (Ctrl+Z)' : 'Undo (Ctrl+Z) — applies to local-engine edits; server schemes have their history in the rail'}
+            title={canUndo ? 'Undo the last change to the plan (Ctrl+Z)' : 'Nothing to undo yet'}
             className="px-2.5 py-1.5 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Undo2 className="w-4 h-4" />
@@ -3744,7 +3928,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             rpcMetrics={rpcMetrics}
             status={status}
             isGenerating={isGenerating}
-            onGenerate={handleGenerate}
+            onGenerate={handleRecalculate}
             onGenerateAlternatives={handleGenerate}
             onGenerateLots={plannerCtx?.context.typology === 'multifamily' ? undefined : handleGenerateLots}
             isGeneratingLots={isGeneratingLots}
@@ -3787,8 +3971,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             {leftRailCollapsed && <span>Inspector</span>}
           </button>
+          {displayElements.some(isMfPlanElement) && !seedViewOn && !draftMode && !compileBlocked && (
+            <div className={`absolute ${viewMode === '3d' ? 'top-12 left-32' : 'top-4 left-[17.5rem]'} z-20`}>
+              <PlanActions
+                busy={isGenerating}
+                onRecalculate={handleRecalculate}
+                onAnotherOption={() => { void handleGenerate(); }}
+                onSaveVersion={handleSaveVersion}
+                savedAs={(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || null}
+                justSaved={versionSaved?.ok ? versionSaved.name : null}
+                saveFailed={versionSaved && !versionSaved.ok ? (savedPlansError ?? 'The save did not go through. Check the connection and try again.') : null}
+                locked={lockCounts.locked}
+                free={lockCounts.free}
+                onUnlockAll={handleUnlockAll}
+                change={planChange}
+                onDismissChange={() => setPlanChange(null)}
+              />
+            </div>
+          )}
           {access && !draftMode && (accessNote || access.state === 'needs_verification') && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20" data-testid="landlocked-banner" data-access-type={engineAccess?.type ?? 'frontage-layer'} title={accessNote?.detail ?? undefined}>
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20" data-testid="landlocked-banner" data-access-type={engineAccess?.type ?? 'frontage-layer'} title={accessNote?.detail ?? undefined}>
               <AccessCard finding={accessNote ? { ...access, headline: accessNote.text } : access} highlighted={showFrontage} onHighlight={setShowFrontage} />
             </div>
           )}
