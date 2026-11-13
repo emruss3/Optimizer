@@ -255,6 +255,9 @@ export interface SiteModelOptions {
   /** A lighter model of the same plan, for a device that draws on its processor
    *  (render3d/quality): the site's trees as painted cards, no shrubs, plain neighbours. */
   light?: boolean;
+  /** A picture for a sheet, where the reader must see at once which land is the scheme's: the
+   *  parcel line drawn on the ground, and the existing buildings as quiet pale solids. */
+  markSite?: boolean;
 }
 
 /** The style the existing houses round a site are drawn in: ordinary, and not the scheme's own. */
@@ -540,6 +543,11 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
         put('plain|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), [238, 235, 228, 255]);
         return;
       }
+      if (opts.markSite) {
+        // existing buildings step back: only the scheme is in its materials
+        put('plain|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), [226, 224, 218, 255]);
+        return;
+      }
       // far from the site, and everywhere on a device that draws on its processor, a neighbour
       // is its footprint at its height under a dark roof
       const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
@@ -583,6 +591,13 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const ring = l.polygon[0];
     // in review the parcel is lighter than the land round it, so there is no doubt which one it is
     if (ring) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), opts.review ? [214, 224, 170, 255] : LAWN);
+    // the parcel line, on the ground: a pale band over a dark one, so it reads on grass and on pavement
+    if (ring && opts.markSite) {
+      const line = [...ring, ring[0] ?? []].map(p => [p[0] ?? 0, p[1] ?? 0]);
+      const w = Math.max(0.9, Math.min(3, data.extent / 140));
+      put('plain|flat', ribbon(line, w * 1.9, 0.44), [40, 44, 48, 255]);
+      put('plain|flat', ribbon(line, w, 0.47), [252, 248, 236, 255]);
+    }
   }
   // a subdivision's lots: each yard its own shade of lawn, and a board fence round the back of it.
   // Illustration: the plan draws a lot line, not a fence.

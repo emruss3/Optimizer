@@ -53,7 +53,7 @@ export async function renderAerialImage(req: { data: MassingData; widthPx: numbe
   const { data } = req;
   const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
   const light = renderQuality() === 'light';
-  const model = buildSiteModel(data, { light });
+  const model = buildSiteModel(data, { light, markSite: true });
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, light });
   try {
     await model.ready;
