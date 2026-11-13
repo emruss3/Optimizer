@@ -7,7 +7,8 @@ describe('streetGaps', () => {
   it('paves the gap between two parcels that face each other across a street', () => {
     // two lots 18 m apart: a street between them
     const strips = streetGaps([box(0, 0), box(58, 0)]);
-    expect(strips.length).toBe(2);
+    // paved once, not once from each side
+    expect(strips.length).toBe(1);
     for (const s of strips) {
       const xs = s.map(p => p[0] ?? 0);
       // each strip spans the gap, to within the 2 m step it is probed at
@@ -26,6 +27,6 @@ describe('streetGaps', () => {
 
   it('does not care which way a parcel ring is wound', () => {
     const a = box(0, 0), b = [...box(58, 0)].reverse();
-    expect(streetGaps([a, b]).length).toBe(2);
+    expect(streetGaps([a, b]).length).toBe(1);
   });
 });

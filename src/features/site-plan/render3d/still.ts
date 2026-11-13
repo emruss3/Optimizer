@@ -53,14 +53,14 @@ export async function renderAerialImage(req: { data: MassingData; widthPx: numbe
   const { data } = req;
   const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
   const light = renderQuality() === 'light';
-  const model = buildSiteModel(data, { light });
+  const model = buildSiteModel(data, { light, markSite: true });
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, light });
   try {
     await model.ready;
     const E = model.extent;
     const camera = new THREE.PerspectiveCamera(30, widthPx / heightPx, 1.5, E * 40);
     // centred on the parcel, far enough back to hold all of it, with a band of sky above
-    // on a large parcel with a small built part, the picture is of what is built
+    // on a large parcel the picture is of what is built, or of the densest group of buildings
     const { x, y, radius } = model.built;
     const el = (20 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180;
     const dist = (radius * 1.25) / Math.sin((30 * Math.PI) / 360 * Math.min(1, widthPx / heightPx));

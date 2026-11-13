@@ -3,7 +3,7 @@ import { ArchStylePicker } from './ArchStylePicker';
 import type { DrawingScene } from '../scene/types';
 import {
   renderSectionSheet, renderSitePlanSheet, renderViewSheet, sheetLayout, viewSheetLayout, SHEET_SIZES,
-  type SheetLayout, type SheetSize, type SheetTitle,
+  type SheetLayout, type SheetSize, type SheetTitle, type HeightControl,
 } from '../scene/sheetSvg';
 
 type Which = 'plan' | 'view' | 'section';
@@ -39,7 +39,9 @@ export const ExhibitSheets: React.FC<{
   schemeName?: string | undefined;
   /** Open, then print every sheet as one set. */
   printSetOnOpen?: boolean | undefined;
-}> = ({ scene, title, onClose, renderUnderlay, renderView, photoreal, look, initial, schemeName, printSetOnOpen }) => {
+  /** The zoning height limit and plane, for the section. */
+  heightControl?: HeightControl | null | undefined;
+}> = ({ scene, title, onClose, renderUnderlay, renderView, photoreal, look, initial, schemeName, printSetOnOpen, heightControl }) => {
   const [which, setWhich] = useState<Which>(initial ?? 'plan');
   const [size, setSize] = useState<SheetSize>('slide');
   const [style, setStyle] = useState<'rendered' | 'drawn'>(renderUnderlay ? 'rendered' : 'drawn');
@@ -101,7 +103,7 @@ export const ExhibitSheets: React.FC<{
       .finally(() => setPainting(false));
   }, [photoreal, rendering2, key]);
   const viewSheet = useMemo(() => renderViewSheet(scene, title, size, viewPicture), [scene, title, size, viewPicture]);
-  const sectionSheet = useMemo(() => renderSectionSheet(scene, title, size), [scene, title, size]);
+  const sectionSheet = useMemo(() => renderSectionSheet(scene, title, size, heightControl ?? null), [scene, title, size, heightControl]);
   const sheet = which === 'plan' ? planSheet : which === 'view' ? viewSheet : sectionSheet;
   const number = which === 'plan' ? 'A-01' : which === 'view' ? 'A-02' : 'A-03';
   const name = which === 'plan' ? 'site-plan' : which === 'view' ? 'aerial-view' : 'section';
