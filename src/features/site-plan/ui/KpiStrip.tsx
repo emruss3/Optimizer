@@ -78,7 +78,9 @@ const KpiStrip: React.FC<{
    * (1710 Meharry Blvd: "Code compliant" beside "context not verified").
    */
   unverified?: string | null;
-}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty, unverified = null }) => {
+  /** Opens the checks behind the status: the status is a door, not a verdict to take on trust. */
+  onOpenChecks?: () => void;
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty, unverified = null, onOpenChecks }) => {
   if (!metrics) {
     const state = empty?.state ?? 'generating';
     const text = state === 'generating'
@@ -163,7 +165,7 @@ const KpiStrip: React.FC<{
   const pctMax = metrics.parkingPctOfMaxNeed;
 
   return (
-    <div className="flex items-center gap-5 overflow-x-auto">
+    <div className="flex flex-wrap lg:flex-nowrap items-center gap-x-5 gap-y-1 overflow-x-auto min-w-0 max-w-full">
       <Stat label="Units" value={`${metrics.totalUnits ?? 0}`} />
       {/* FAR/Coverage/Open at exactly 0 mean "not reported by this engine"
           (the seed payload carries none and the client never re-measures) —
@@ -239,6 +241,15 @@ const KpiStrip: React.FC<{
       {/* Compliance and optimization are SEPARATE verdicts: a code-compliant
           plan at 78% of the theoretical envelope is not "done" — the capture
           chip says so instead of letting the green chip imply optimality. */}
+      <span
+        data-testid="kpi-status"
+        {...(onOpenChecks ? {
+          role: 'button', tabIndex: 0, title: 'Open the checks behind this status',
+          onClick: onOpenChecks,
+          onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChecks(); } },
+          className: 'cursor-pointer rounded-full focus-ring',
+        } : {})}
+      >
       {parkingUnverified && !metrics.conditional ? (
         // Two parking counts the evidence cannot choose between: neither a pass
         // nor a shortfall (0 Whites Creek Pike: 292 drawn, 85 reported, 92
@@ -292,12 +303,13 @@ const KpiStrip: React.FC<{
           : parkingShort
             ? `Parking shortfall · ${stallsProvided} of ${stallsRequired} stalls${clampReasons.filter(r => r !== 'parking short').length > 0 ? ` · ${clampReasons.filter(r => r !== 'parking short')[0]}` : ''}`
             : constrained
-              ? `Code compliant · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
+              ? `Checks passed · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
               : parkingNotEvaluated
                 ? 'Compliant on evaluated checks · parking not evaluated'
-                : 'Code compliant'}
+                : 'Checks passed'}
       </div>
       )}
+      </span>
       {utilizationPct != null && utilizationPct < 85 && (
         <div
           title="The constructive solver has not reproduced the theoretical envelope — additional optimization search is warranted."

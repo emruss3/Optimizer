@@ -46,7 +46,7 @@ describe('KpiStrip — parking regime chip', () => {
         utilizationPct={62}
       />
     );
-    expect(screen.getByText('Code compliant')).toBeTruthy();
+    expect(screen.getByText('Checks passed')).toBeTruthy();
     expect(screen.getByText(/62% of theoretical envelope/)).toBeTruthy();
     expect(screen.getByText('Tuck-under parking')).toBeTruthy();
   });
@@ -87,7 +87,7 @@ describe('KpiStrip — a parking shortfall leads the badge (0 Whites Creek Pike,
       />
     );
     expect(screen.getByText('Parking shortfall · 85 of 92 stalls · coverage-capped')).toBeTruthy();
-    expect(screen.queryByText(/^Code compliant/)).toBeNull();
+    expect(screen.queryByText(/^Checks passed/)).toBeNull();
   });
 });
 
@@ -142,7 +142,7 @@ describe('KpiStrip — the verdict names its scope (the scope\'s P0.2, 2026-11-0
     const house = { ...base, conditional: 'assumes an access easement across a neighbour (no mapped street contact)' } as SiteMetrics;
     render(<KpiStrip metrics={house} investment={null} />);
     expect(screen.getByTestId('kpi-conditional').textContent).toContain('Conditional · assumes an access easement across a neighbour');
-    expect(screen.queryByText(/Code compliant/)).toBeNull();
+    expect(screen.queryByText(/Checks passed/)).toBeNull();
   });
 });
 
@@ -155,7 +155,7 @@ describe('KpiStrip — parking the evidence cannot settle (the cohort retest, 20
       />
     );
     expect(screen.getByTestId('kpi-parking-verify').textContent).toBe('Parking needs verification · 292 drawn / 85 reported · 92 required');
-    expect(screen.queryByText(/Code compliant/)).toBeNull();
+    expect(screen.queryByText(/Checks passed/)).toBeNull();
     expect(screen.getByText('292 drawn · 85 reported / 92')).toBeTruthy();
   });
 
@@ -220,10 +220,10 @@ describe('KpiStrip: a plan whose basis is not established (1710 Meharry Blvd, 20
   it('reads Needs verification, not Code compliant, while the context is not verified', () => {
     const { rerender } = render(<KpiStrip metrics={base} investment={null} unverified="context not verified" />);
     expect(screen.getByTestId('kpi-needs-verification').textContent).toContain('Needs verification · context not verified');
-    expect(screen.queryByText('Code compliant')).toBeNull();
+    expect(screen.queryByText('Checks passed')).toBeNull();
     // with the basis established the same plan reads compliant
     rerender(<KpiStrip metrics={base} investment={null} unverified={null} />);
-    expect(screen.getByText('Code compliant')).toBeTruthy();
+    expect(screen.getByText('Checks passed')).toBeTruthy();
     expect(screen.queryByTestId('kpi-needs-verification')).toBeNull();
   });
 

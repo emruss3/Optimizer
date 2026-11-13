@@ -31,7 +31,7 @@ describe('FlagsPanel — regime comparison receipts', () => {
   it('stays silent when there was no comparison', () => {
     render(<FlagsPanel violations={[]} lineageFlags={[]} />);
     expect(screen.queryByText(/Parking-regime comparison/)).toBeNull();
-    expect(screen.getByText(/No active flags/)).toBeTruthy();
+    expect(screen.getByText(/Nothing to check/)).toBeTruthy();
   });
 });
 

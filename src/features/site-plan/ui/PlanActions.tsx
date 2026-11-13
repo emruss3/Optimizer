@@ -65,14 +65,14 @@ const PlanActions: React.FC<{
   const btn = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed';
   return (
     <div className="flex flex-col items-start gap-1.5" data-testid="plan-actions">
-      <div className="flex items-center gap-1.5 bg-white/95 border border-gray-200 rounded-lg shadow-sm p-1">
+      <div className="flex flex-wrap items-center gap-1.5 bg-white/95 border border-gray-200 rounded-lg shadow-sm p-1 max-w-full">
         <button
           type="button" onClick={onRecalculate} disabled={busy} data-testid="plan-recalculate"
           title="Run this design again: same option, same locked buildings. Nothing new is added to the saved options."
           className={`${btn} border-gray-200 bg-white text-gray-800 hover:bg-gray-50`}
         >
           <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
-          Recalculate this design
+          Recalculate<span className="hidden sm:inline">&nbsp;this design</span>
         </button>
         <button
           type="button" onClick={onAnotherOption} disabled={busy} data-testid="plan-another-option"
@@ -80,7 +80,7 @@ const PlanActions: React.FC<{
           className={`${btn} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`}
         >
           <CopyPlus className="w-3.5 h-3.5" />
-          Create another option
+          <span className="sm:hidden">New option</span><span className="hidden sm:inline">Create another option</span>
         </button>
         <button
           type="button" onClick={onSaveVersion} disabled={busy} data-testid="plan-save-version"
@@ -88,10 +88,10 @@ const PlanActions: React.FC<{
           className={`${btn} border-gray-200 bg-white text-gray-800 hover:bg-gray-50`}
         >
           <Save className="w-3.5 h-3.5" />
-          Save version
+          Save<span className="hidden sm:inline">&nbsp;version</span>
         </button>
         <span className="px-1.5 text-[11px] text-gray-500" data-testid="plan-saved-state">
-          {saveFailed ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><span>Not saved. {saveFailed}</span>{signIn && <span className="text-gray-700" data-testid="plan-sign-in">{signIn}</span>}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? `On the sheet: ${savedAs}` : 'Not a saved option'}
+          {saveFailed ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><span>Not saved. {saveFailed}</span>{signIn && <span className="text-gray-700" data-testid="plan-sign-in">{signIn}</span>}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : <span className="hidden md:inline">{savedAs ? `On the sheet: ${savedAs}` : 'Not a saved option'}</span>}
         </span>
         <button
           type="button" onClick={() => setLocksOpen(o => !o)} aria-expanded={locksOpen} data-testid="plan-locks"

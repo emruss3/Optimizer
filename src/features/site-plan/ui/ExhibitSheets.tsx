@@ -201,6 +201,17 @@ export const ExhibitSheets: React.FC<{
     void printSet();
   }, [printSetOnOpen, style, renderUnderlay, picture, printSet]);
 
+  // what a full set will contain, and why a sheet is missing from it
+  const sheetList = [
+    { number: 'A-01', included: true, state: 'ready' },
+    renderView
+      ? { number: 'A-02', included: !viewFailed, state: viewFailed ? 'left out: the aerial view could not be rendered' : viewPicture ? 'ready' : 'renders on export' }
+      : { number: 'A-02', included: false, state: 'left out: no 3D view for this plan' },
+    scene.buildings.length > 0
+      ? { number: 'A-03', included: true, state: 'ready' }
+      : { number: 'A-03', included: false, state: 'left out: no building to cut' },
+  ];
+
   const seg = (on: boolean, first: boolean) => `px-2.5 py-1 ${on ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${first ? '' : 'border-l border-gray-200'}`;
   const scaleNote = which === 'section' ? 'Schematic section · graphic scale' : which === 'view'
     ? 'A rendering: not to scale'
@@ -252,10 +263,18 @@ export const ExhibitSheets: React.FC<{
               </button>
             ))}
           </div>
-          <button type="button" onClick={downloadPng} disabled={pngBusy} data-testid="sheet-download-png" title="A picture of the sheet at 200 dpi, for a slide" className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">Download PNG</button>
-          <button type="button" onClick={download} data-testid="sheet-download" className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Download SVG</button>
-          <button type="button" onClick={() => { void printSet(); }} disabled={setBusy} data-testid="sheet-print-set" title="Every sheet in one PDF" className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">Print set</button>
-          <button type="button" onClick={print} data-testid="sheet-print" className="px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Print</button>
+          <span className="text-xs text-gray-500" data-testid="sheet-list" title="What a full set contains">
+            {sheetList.map(x => `${x.number} ${x.state}`).join(' · ')}
+          </span>
+          <details className="relative" data-testid="sheet-more-formats">
+            <summary className="list-none cursor-pointer px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 select-none">More formats</summary>
+            <div className="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-1 flex flex-col w-44">
+              <button type="button" onClick={downloadPng} disabled={pngBusy} data-testid="sheet-download-png" title="A picture of this sheet at 200 dpi, for a slide" className="text-left px-3 py-1.5 rounded text-gray-700 hover:bg-gray-50 disabled:opacity-50">PNG image of this sheet</button>
+              <button type="button" onClick={download} data-testid="sheet-download" title="The sheet as a vector drawing" className="text-left px-3 py-1.5 rounded text-gray-700 hover:bg-gray-50">SVG drawing of this sheet</button>
+            </div>
+          </details>
+          <button type="button" onClick={() => { void printSet(); }} disabled={setBusy} data-testid="sheet-print-set" title="Opens the print dialog with every sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">Save PDF · all {sheetList.filter(x => x.included).length} sheets</button>
+          <button type="button" onClick={print} data-testid="sheet-print" title="Opens the print dialog with this sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save PDF · {number}</button>
           <button type="button" onClick={onClose} aria-label="Close sheets" className="px-2 py-1 text-gray-500 hover:text-gray-900">Close</button>
         </div>
       </div>
