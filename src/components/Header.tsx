@@ -30,7 +30,7 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
   // The menu lists the user's own project only. There is no project list to
   // pick from yet, so none is invented: sample projects are not shown here.
   const [showProjectMenu, setShowProjectMenu] = React.useState(false);
-  const mockProjects: Array<{ id: string; name: string }> = activeProjectId && activeProjectName ? [{ id: activeProjectId, name: activeProjectName }] : [];
+  const openProjects: Array<{ id: string; name: string }> = activeProjectId && activeProjectName ? [{ id: activeProjectId, name: activeProjectName }] : [];
 
   const handleProjectSelect = (project: { id: string; name: string }) => {
     if (activeProjectId === project.id) {
@@ -106,14 +106,14 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
               <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50" data-testid="project-menu">
                 <div className="p-2">
                   <div className="text-xs font-medium text-gray-500 px-3 py-2 uppercase tracking-wider">
-                    {mockProjects.length ? 'Open project' : 'Projects'}
+                    {openProjects.length ? 'Open project' : 'Projects'}
                   </div>
-                  {mockProjects.length === 0 && (
+                  {openProjects.length === 0 && (
                     <p className="px-3 pb-2 text-sm text-gray-600" data-testid="no-projects">
                       No projects yet. Start one from a parcel, or with New Project.
                     </p>
                   )}
-                  {mockProjects.map((project) => (
+                  {openProjects.map((project) => (
                     <button
                       key={project.id}
                       onClick={() => handleProjectSelect(project)}
@@ -127,7 +127,7 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
                       {project.name}
                     </button>
                   ))}
-                  {mockProjects.length > 0 && (
+                  {openProjects.length > 0 && (
                     <>
                       <hr className="my-2" />
                       <button

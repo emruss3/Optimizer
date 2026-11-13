@@ -238,9 +238,9 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
                 {hasActiveProject && onAddToProject && (
                   <button
                     onClick={() => onAddToProject(parcel)}
-                    className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
-                    <Plus className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" />
+                    <Plus className="w-4 h-4" />
                     <span>Add to Project</span>
                   </button>
                 )}
@@ -248,9 +248,9 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
                 {!hasActiveProject && onCreateProjectFromParcel && (
                   <button
                     onClick={() => onCreateProjectFromParcel(parcel)}
-                    className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
-                    <Plus className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" />
+                    <Plus className="w-4 h-4" />
                     <span>Create Project from Parcel</span>
                   </button>
                 )}

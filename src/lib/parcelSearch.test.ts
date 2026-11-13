@@ -31,11 +31,14 @@ describe('searchParcels', () => {
   it('reports a search that never answers, so the screen is not left searching', async () => {
     vi.useFakeTimers();
     hang = true;
-    const pending = searchParcels('12 Main St').catch(e => (e as Error).message);
-    await vi.advanceTimersByTimeAsync(12_000);
-    expect(await pending).toBe('no answer after 12 seconds');
-    hang = false;
-    vi.useRealTimers();
+    try {
+      const pending = searchParcels('12 Main St').catch(e => (e as Error).message);
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(await pending).toBe('no answer after 12 seconds');
+    } finally {
+      hang = false;
+      vi.useRealTimers();
+    }
   });
 
   it('does not search on a single character', async () => {
