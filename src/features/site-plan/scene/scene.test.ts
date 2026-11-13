@@ -161,6 +161,29 @@ describe('scene from the saved multifamily plan (488278, 1710 Meharry Blvd)', ()
     expect(sheet.svg).toContain(`rev ${scene.identity.revision}`);
   });
 
+  it('draws the zoning height control on the section and says when the building is above it', () => {
+    const title = { project: '1710 MEHARRY BLVD', subtitle: 'RM20', date: '2026-11-12', notes: [] };
+    // no record of a limit: no line, no finding
+    const bare = renderSectionSheet(scene, title, 'slide');
+    expect(bare.overLimit).toBe(false);
+    expect(bare.svg).not.toContain('data-role="height-limit"');
+    // the record's single figure: a 44 ft estimate is above 30 ft
+    const flat = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 30 });
+    expect(flat.svg).toContain('Height limit 30 ft');
+    expect(flat.overLimit).toBe(true);
+    expect(flat.svg).toContain('estimated at 44 ft, above the 30 ft the record allows at this cut. Needs verification.');
+    expect(flat.svg).toContain('an ordinance that allows more height away from the setback line is not shown');
+    // a limit the building is under: the line, and nothing to verify
+    const roomy = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 60 });
+    expect(roomy.overLimit).toBe(false);
+    expect(roomy.svg).not.toContain('data-role="height-finding"');
+    // the ordinance's plane, where the record states one, is drawn as a plane
+    const plane = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 30, plane: { heightAtSetbackFt: 30, slopeHorizontal: 1, slopeVertical: 1.5 } });
+    expect(plane.svg).toContain('data-role="height-plane"');
+    expect(plane.svg).toContain('30 ft at the setback line, then 1H:1.5V');
+    expect(plane.svg).not.toContain('data-role="height-limit"');
+  });
+
   it('finds where a line crosses a ring', () => {
     const square = [[0, 0], [10, 0], [10, 10], [0, 10]];
     expect(crossings(square, [5, 5], [1, 0])).toEqual([-5, 5]);

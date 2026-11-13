@@ -457,12 +457,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [lockCounts, setLockCounts] = useState({ locked: 0, free: 0 });
   const gestureActiveRef = useRef(false);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const setVersionSavedRef = useRef<((v: null) => void) | null>(null);
 
   const trackBuildings = useCallback((buildings?: BuildingSpec[]) => {
     if (buildings) currentBuildingsRef.current = buildings;
   }, []);
 
   const pushHistory = useCallback(() => {
+    // a local edit is a new plan: an earlier "Saved as" no longer describes the sheet
+    setVersionSavedRef.current?.(null);
     pastRef.current.push({ kind: 'local', buildings: structuredClone(currentBuildingsRef.current) });
     if (pastRef.current.length > 50) pastRef.current.shift();
     futureRef.current = [];
@@ -513,6 +516,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   /** Save version: keep the plan on the sheet under a name, and say whether it worked. */
   const [versionSaved, setVersionSaved] = useState<{ name: string; ok: boolean } | null>(null);
+  // the saved-plans error belongs to this save only once a save has been asked for: the hook clears it at the start of each save
+  const saveVersionAskedRef = useRef(false);
+  setVersionSavedRef.current = setVersionSaved;
   const handleSaveVersion = useCallback(() => {
     if (draftModeRef.current || compileBlockedRef.current) {
       setViolations(v => [...v, {
@@ -524,6 +530,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     const option = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Plan';
     const name = `${option}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+    saveVersionAskedRef.current = true;
     savePlanToDb({ parcel_id: parcelIdStr, name, config, elements, metrics, violations, investment: investmentAnalysis })
       .then(saved => {
         setVersionSaved({ name, ok: !!saved });
@@ -871,7 +878,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setVersionSaved(null);
       // A replay is a fresh solve. If it does not match what the user saw, say so.
       const e = opts.expected;
-      const redrawn = !!e && (e.units !== summary.units || e.stalls !== summary.stalls || e.gsf !== summary.gsf || e.buildings !== summary.buildings);
+      // only figures both plans report can show a difference
+      const differs = (a: number | null, b: number | null) => a != null && b != null && a !== b;
+      const redrawn = !!e && (differs(e.units, summary.units) || differs(e.stalls, summary.stalls) || differs(e.gsf, summary.gsf) || e.buildings !== summary.buildings);
       setPlanChange(
         redrawn && e
           ? { action: `${opts.action ?? 'Replay'} redrew this plan and it differs from the one you saw`, before: e, after: summary }
@@ -1465,7 +1474,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         to.current.push(here);
         setHistoryVersion(v => v + 1);
       } else {
-        setViolations(v => [...v, {
+        setViolations(v => [...v.filter(x => x.code !== 'history-replay'), {
           code: 'history-replay',
           message: `${action} did not go through: ${serverFailCauseRef.current ?? 'the plan could not be redrawn.'} The current plan is unchanged.`,
           severity: 'warning',
@@ -3242,6 +3251,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? prev
       : { key: sceneKey, ids }));
   }, [sceneKey]);
+  // the zoning height control the section draws: the record's limit, and its plane where it states one
+  const sectionHeightControl = useMemo(() => {
+    if (!plannerCtx) return null;
+    const hp = plannerContextToDesignContext(plannerCtx).heightPlane;
+    return {
+      maxHeightFt: plannerCtx.solver_brief.hard_constraints.max_height_ft ?? null,
+      plane: hp?.heightAtSetbackFt != null && hp.slopeHorizontal != null && hp.slopeVertical != null
+        ? { heightAtSetbackFt: hp.heightAtSetbackFt, slopeHorizontal: hp.slopeHorizontal, slopeVertical: hp.slopeVertical, ...(hp.law ? { law: hp.law } : {}) }
+        : null,
+    };
+  }, [plannerCtx]);
   // what the Export menu and the sheets call the scheme on screen
   const exportSchemeName = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Current plan (not a saved option)';
   const sheetsTitle = useMemo(() => {
@@ -3255,12 +3275,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (acres) data.push({ label: 'Site area', value: `${n(acres, 2)} ac` });
     if (units) data.push({ label: sfPlanOnSheet ? 'Lots' : 'Homes', value: n(units) });
     if (units && acres) data.push({ label: 'Density', value: `${n(units / acres, 1)} per acre` });
+    // a subdivision's count is the engine's lot count; the massing metrics carry none
+    if (!units && sfV1OnSheet && sfV1Summary) {
+      data.push({ label: 'Lots', value: n(sfV1Summary.lots) });
+      if (sfV1Summary.densityDuAc != null) data.push({ label: 'Density', value: `${n(sfV1Summary.densityDuAc, 1)} per acre` });
+    } else if (!units && thV3OnSheet && thV3Summary) {
+      data.push({ label: 'Homes', value: n(thV3Summary.homes) });
+      if (thV3Summary.homesPerAcre != null) data.push({ label: 'Density', value: `${n(thV3Summary.homesPerAcre, 1)} per acre` });
+    }
     if (!sfPlanOnSheet && metrics?.totalBuiltSF) data.push({ label: 'Gross floor area', value: `${n(metrics.totalBuiltSF)} sf` });
     if (!sfPlanOnSheet && metrics?.achievedFAR) data.push({ label: 'Floor area ratio', value: n(metrics.achievedFAR, 2) });
     if (!sfPlanOnSheet && metrics?.siteCoveragePct) data.push({ label: 'Building coverage', value: `${n(metrics.siteCoveragePct)}%` });
     if (stalls) data.push({ label: 'Parking', value: `${n(stalls)} stalls${units ? ` · ${n(stalls / units, 2)} per home` : ''}` });
     return { project: sheetTitle.project, subtitle: sheetTitle.subtitle, date: sheetTitle.date, notes: sheetTitle.notes, data: seedViewOn ? [] : data };
-  }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn]);
+  }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn, sfV1OnSheet, sfV1Summary, thV3OnSheet, thV3Summary]);
   // The sheet's picture: the ground it shows, rendered from above from the
   // same model the 3D view draws. Loaded when a sheet first asks for it.
   const archStyle = useArchStyle();
@@ -3980,7 +4008,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 onSaveVersion={handleSaveVersion}
                 savedAs={(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || null}
                 justSaved={versionSaved?.ok ? versionSaved.name : null}
-                saveFailed={versionSaved && !versionSaved.ok ? (savedPlansError ?? 'The save did not go through. Check the connection and try again.') : null}
+                saveFailed={versionSaved && !versionSaved.ok ? ((saveVersionAskedRef.current ? savedPlansError : null) ?? 'The save did not go through. Check the connection and try again.') : null}
                 locked={lockCounts.locked}
                 free={lockCounts.free}
                 onUnlockAll={handleUnlockAll}
@@ -4228,7 +4256,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} />
       )}
       {exportOpen && (
         <ExportReport

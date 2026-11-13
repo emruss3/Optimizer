@@ -12,6 +12,7 @@
 // illustration. Parking stripes are drawn only when they can show exactly the
 // stall count the plan reports for the bay. Every colour sits on an outline,
 // so the sheet still reads in greyscale.
+import { builtFocus } from './builtFocus';
 import type { DrawingScene, ScenePolygons } from './types';
 import type { Pt } from './frame';
 import { LABEL_PRIORITY, placeLabels, type LabelCandidate, type PlacedLabel } from './labels';
@@ -623,9 +624,20 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
   out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">${picture?.ai
     ? "An AI impression painted over a render of the plan. The layout is the plan's. Materials, planting, sky and surroundings are invented, and a detail may differ from the plan. Not a design."
-    : "Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design."}</text>`);
+    : `${viewScope(scene)}Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design.`}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H };
+}
+
+/** What the aerial picture frames (scene/builtFocus, the rule the renderer uses), said on the sheet when it is not the whole site. */
+export function viewScope(scene: DrawingScene): string {
+  const lot = scene.parcel?.polygons[0]?.[0];
+  if (!lot || lot.length < 3) return '';
+  const xs = lot.map(p => p[0]), ys = lot.map(p => p[1]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const radius = Math.max(50, ...lot.map(p => Math.hypot(p[0] - cx, p[1] - cy)));
+  const kind = builtFocus({ x: cx, y: cy, radius }, scene.buildings.map(b => (b.polygons[0]?.[0] ?? []).map(p => [p[0], p[1]] as [number, number]))).kind;
+  return kind === 'cluster' ? 'A detail: the view is of the densest group of buildings, not the whole site. ' : kind === 'built' ? 'The view is of the built part of the site. ' : '';
 }
 
 /** Where a line through `at` along `dir` crosses a ring: distances along the line, in the ring's units, sorted. */
@@ -652,7 +664,14 @@ export function crossings(ring: ArrayLike<ArrayLike<number>>, at: Pt, dir: Pt): 
  * (estimated from story counts unless the plan reports one); no horizontal
  * distance is stated, and the sheet carries a graphic scale only.
  */
-export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize): { svg: string; widthPt: number; heightPt: number; drawn: number } {
+export interface HeightControl {
+  /** The height limit in the zoning record, feet. */
+  maxHeightFt: number | null;
+  /** The ordinance's height plane, where the record states one: a height at the setback line, rising inward. */
+  plane?: { heightAtSetbackFt: number; slopeHorizontal: number; slopeVertical: number; law?: string } | null;
+}
+
+export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize, control?: HeightControl | null): { svg: string; widthPt: number; heightPt: number; drawn: number; overLimit: boolean } {
   const { wIn, hIn } = SHEET_SIZES[size];
   const { widthPt: W, heightPt: H, image } = viewSheetLayout(size);
   const M = image.x;
@@ -666,6 +685,7 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
   const subject = scene.buildings.find(b => b.tagOnPlan) ?? scene.buildings[0];
   const ring = subject?.polygons[0]?.[0];
   let drawn = 0;
+  let overLimit = false, limitNote: string | null = null;
   if (subject && ring && ring.length >= 3) {
     // the cut runs at right angles to the building's longest wall, through its label point
     let long: Pt = [1, 0], best = 0;
@@ -682,7 +702,11 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
     const cuts = scene.buildings.map(b => ({ b, hits: crossings(b.polygons[0]?.[0] ?? [], at, dir) })).filter(c => c.hits.length >= 2);
     const lo = Math.min(before.length ? (before[before.length - 1] as number) : Infinity, ...cuts.flatMap(c => c.hits)) - 12;
     const hi = Math.max(after.length ? (after[0] as number) : -Infinity, ...cuts.flatMap(c => c.hits)) + 12;
-    const tallest = Math.max(10, ...cuts.map(c => c.b.height.aboveGradeFt));
+    const limit = control?.maxHeightFt != null && control.maxHeightFt > 0 ? control.maxHeightFt : null;
+    const tallest = Math.max(10, limit ?? 0, ...cuts.map(c => c.b.height.aboveGradeFt));
+    // the setback lines the cut crosses: the buildable envelope, nearest each property line
+    const envCuts = scene.envelope?.polygons[0]?.[0] ? crossings(scene.envelope.polygons[0][0], at, dir) : [];
+    const setLeft = envCuts.filter(t => t < 0)[0], setRight = envCuts.filter(t => t > 0).pop();
     // one scale both ways: a true section
     const k = Math.min((image.w - 120) / (hi - lo), (image.h - 110) / (tallest + 16));
     const x = (t: number) => r2(image.x + image.w / 2 + (t - (lo + hi) / 2) * k);
@@ -694,13 +718,39 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
       if (t == null) continue;
       out.push(`<g data-role="property-line"><line x1="${x(t)}" y1="${y(tallest + 8)}" x2="${x(t)}" y2="${r2(ground + 14)}" stroke="${INK}" stroke-width="0.9" stroke-dasharray="7 2.5 1.5 2.5"/><text x="${x(t)}" y="${r2(y(tallest + 8) - 4)}" font-size="6" text-anchor="middle" fill="#4b5158">Property line</text></g>`);
     }
+    for (const t of [setLeft, setRight]) {
+      if (t == null) continue;
+      out.push(`<g data-role="setback-line"><line x1="${x(t)}" y1="${y(tallest + 3)}" x2="${x(t)}" y2="${r2(ground)}" stroke="#7a8087" stroke-width="0.6" stroke-dasharray="3 2"/><text x="${x(t)}" y="${r2(y(tallest + 3) - 3)}" font-size="5.4" text-anchor="middle" fill="#7a8087">Setback</text></g>`);
+    }
+    // The zoning height control, as the record states it. A plane is drawn where the record has
+    // one; otherwise the single figure, which may be the height at the setback line only.
+    const pl = control?.plane && control.plane.slopeHorizontal > 0 ? control.plane : null;
+    const from = setLeft ?? before[before.length - 1] ?? lo, to = setRight ?? after[0] ?? hi;
+    const allowedAt = (t: number): number | null => {
+      if (pl) return pl.heightAtSetbackFt + Math.max(0, Math.min(t - from, to - t)) * (pl.slopeVertical / pl.slopeHorizontal);
+      return limit;
+    };
+    if (pl) {
+      const mid = (from + to) / 2, peak = allowedAt(mid) as number, cap = Math.min(peak, tallest + 6);
+      const run = (cap - pl.heightAtSetbackFt) * (pl.slopeHorizontal / pl.slopeVertical);
+      out.push(`<g data-role="height-plane"><polyline points="${x(from)},${y(pl.heightAtSetbackFt)} ${x(from + run)},${y(cap)} ${x(to - run)},${y(cap)} ${x(to)},${y(pl.heightAtSetbackFt)}" fill="none" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
+        + `<text x="${r2(x(from) - 4)}" y="${r2(y(pl.heightAtSetbackFt) + 2)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`${Math.round(pl.heightAtSetbackFt)} ft at the setback line, then ${pl.slopeHorizontal}H:${pl.slopeVertical}V`)}</text></g>`);
+    } else if (limit != null) {
+      out.push(`<g data-role="height-limit"><line x1="${x(from)}" y1="${y(limit)}" x2="${x(to)}" y2="${y(limit)}" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
+        + `<text x="${r2(x(from) - 4)}" y="${r2(y(limit) + 2)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`Height limit ${Math.round(limit)} ft`)}</text></g>`);
+    }
     for (const { b, hits } of cuts) {
       const a = hits[0] as number, z = hits[hits.length - 1] as number;
+      const allow = [allowedAt(a), allowedAt(z)].filter((v): v is number => v != null);
+      if (allow.length && b.height.aboveGradeFt > Math.min(...allow) + 0.5) {
+        overLimit = true;
+        limitNote = `${b.display.title} is ${b.height.basis === 'estimated' ? 'estimated at' : 'reported at'} ${Math.round(b.height.aboveGradeFt)} ft, above the ${Math.round(Math.min(...allow))} ft the record allows at this cut. Needs verification.${pl ? '' : ' The record gives one figure; an ordinance that allows more height away from the setback line is not shown.'}`;
+      }
       const levels = b.height.levelsFt;
       levels.forEach((top, i) => {
         const base = i === 0 ? 0 : (levels[i - 1] as number);
         out.push(`<rect x="${x(a)}" y="${y(top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="${i % 2 ? '#f4f1ea' : '#ebe7de'}" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}"/>`);
-        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y((top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">Level ${i + 1}</text>`);
+        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y((top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">${esc(`Level ${i + 1} · ${Math.round(top - base)} ft`)}</text>`);
       });
       const top = b.height.aboveGradeFt, dx = x(z) + 12;
       out.push(`<g data-role="height" data-building="${esc(b.id)}"><line x1="${dx}" y1="${r2(ground)}" x2="${dx}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${r2(ground)}" x2="${r2(dx + 3)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${y(top)}" x2="${r2(dx + 3)}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/>`
@@ -712,6 +762,7 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
     const bar = [100, 50, 20, 10].find(ft => ft * k <= image.w * 0.22) ?? 10;
     const sx = image.x + 18, sy = ground + 36;
     out.push(`<g data-role="scale-bar"><rect x="${r2(sx)}" y="${r2(sy)}" width="${r2((bar / 2) * k)}" height="3" fill="${INK}"/><rect x="${r2(sx + (bar / 2) * k)}" y="${r2(sy)}" width="${r2((bar / 2) * k)}" height="3" fill="#fff" stroke="${INK}" stroke-width="0.6"/><text x="${r2(sx)}" y="${r2(sy - 3)}" font-size="5.6" fill="#4b5158">0</text><text x="${r2(sx + bar * k)}" y="${r2(sy - 3)}" font-size="5.6" text-anchor="middle" fill="#4b5158">${bar} ft</text></g>`);
+    if (limitNote) out.push(`<text x="${r2(image.x + image.w - 18)}" y="${r2(ground + 38)}" font-size="6.4" font-weight="600" text-anchor="end" fill="#b4232a" data-role="height-finding">${esc(limitNote)}</text>`);
     out.push('</g>');
   } else {
     out.push(`<text x="${r2(W / 2)}" y="${r2(image.y + image.h / 2)}" font-size="10" text-anchor="middle" fill="#7a8087">No building on this plan to cut a section through.</text>`);
@@ -726,5 +777,5 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
     ? 'Schematic. The ground is drawn level: the plan carries no grade. Roofs and parapets are not drawn. Graphic scale only.'
     : 'Schematic. The ground is drawn level: the plan carries no grade. Heights are estimated from story counts and are not measured or controlling. Roofs and parapets are not drawn. Graphic scale only.')}</text>`);
   out.push('</svg>');
-  return { svg: out.join('\n'), widthPt: W, heightPt: H, drawn };
+  return { svg: out.join('\n'), widthPt: W, heightPt: H, drawn, overLimit };
 }

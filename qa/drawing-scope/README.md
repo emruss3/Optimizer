@@ -459,6 +459,22 @@ Checks: 801 tests pass; app type check 2,073; `check-slice.cjs` passes.
 
 Checks: 817 tests pass; app type check 2,073; `check-slice.cjs` passes.
 
+## Slice 10: the section's height control, subdivision aerials
+
+- Section A-03 draws the setback lines and the zoning height control. Where
+  the record states a height plane it is drawn as a plane; otherwise the one
+  figure is drawn as a line. A building above it is called out as needing
+  verification, in the sheet's own words. On 1710 Meharry: estimated 44 ft
+  against a 30 ft record. `slice-10/a03-section-height-control.png`.
+- The aerial sheet frames the densest group of buildings where homes are
+  spread across a parcel, and says so on the sheet. Subdivisions show lots and
+  density. `slice-10/aerial-35-lots.png`, `slice-10/aerial-17-lots.png`.
+- Each street gap is paved once.
+- The parcel in slice-9's "70 ac" captures has no proposal: the engine drew
+  no lot there, and the buildings in it are existing ones.
+
+Checks: 819 tests pass; app type check 2,073; `check-slice.cjs` passes.
+
 ## Not done yet
 
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry

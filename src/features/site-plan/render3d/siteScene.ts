@@ -11,6 +11,7 @@ import type { RenderSlab, RGBA, Surface } from '../ui/renderModel';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
+import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
 import { Tree } from '@dgreenheck/ez-tree';
@@ -24,7 +25,7 @@ export interface SiteModel {
   /** The parcel a camera should centre on and fit: its middle (x east, y north) and the radius that holds all of it, metres. */
   focus: { x: number; y: number; radius: number };
   /** The built part of the plan, where it is much smaller than the parcel; otherwise the parcel. */
-  built: { x: number; y: number; radius: number };
+  built: Focus;
   surfaces: Surfaces;
   /** Settles when the pictures the trees are made of have arrived (or after a few seconds without them): a still waits for it. */
   ready: Promise<void>;
@@ -338,7 +339,6 @@ function prism(rings: number[][][], h: number): THREE.BufferGeometry | null {
   return g;
 }
 
-/** A flat, convex polygon in space, with texture coordinates in metres along its first edge. */
 /**
  * The gaps between parcels that are streets: for each parcel edge, a strip
  * reaching out to the parcel that faces it, where one does within `maxM`.
@@ -351,8 +351,8 @@ export function streetGaps(rings: number[][][], maxM = 32): number[][][] {
       const xs = r.map(p => p[0] ?? 0), ys = r.map(p => p[1] ?? 0);
       return { ring: r, minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
     });
-  const owner = (x: number, y: number, skip: number): boolean =>
-    parcels.some((q, j) => j !== skip && x >= q.minX && x <= q.maxX && y >= q.minY && y <= q.maxY && pointInPolygon(x, y, [q.ring as never]));
+  const owner = (x: number, y: number, skip: number): number =>
+    parcels.findIndex((q, j) => j !== skip && x >= q.minX && x <= q.maxX && y >= q.minY && y <= q.maxY && pointInPolygon(x, y, [q.ring as never]));
   const out: number[][][] = [];
   parcels.forEach((q, i) => {
     const r = q.ring;
@@ -370,9 +370,11 @@ export function streetGaps(rings: number[][][], maxM = 32): number[][][] {
       for (const t of [0.25, 0.5, 0.75]) {
         const mx = ax + (bx - ax) * t, my = ay + (by - ay) * t;
         // a neighbour right against the edge: a lot line, not a street
-        if (owner(mx + nx * 2, my + ny * 2, i)) continue;
+        if (owner(mx + nx * 2, my + ny * 2, i) >= 0) continue;
         for (let d = 6; d <= maxM; d += 2) {
-          if (owner(mx + nx * d, my + ny * d, i)) { reach = Math.max(reach, d); break; }
+          const facing = owner(mx + nx * d, my + ny * d, i);
+          // each gap is paved once, from the parcel listed first
+          if (facing >= 0) { if (facing > i) reach = Math.max(reach, d); break; }
         }
       }
       if (reach > 0) {
@@ -385,6 +387,7 @@ export function streetGaps(rings: number[][][], maxM = 32): number[][][] {
   return out;
 }
 
+/** A flat, convex polygon in space, with texture coordinates in metres along its first edge. */
 function plane(points: number[][]): THREE.BufferGeometry | null {
   if (points.length < 3) return null;
   const v = points.map(p => new THREE.Vector3(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0));
@@ -859,14 +862,15 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const held = outline.length >= 3 ? outline : [[-data.extent / 2, -data.extent / 2], [data.extent / 2, data.extent / 2]] as Array<[number, number]>;
   const fx = (Math.min(...held.map(p => p[0])) + Math.max(...held.map(p => p[0]))) / 2, fy = (Math.min(...held.map(p => p[1])) + Math.max(...held.map(p => p[1]))) / 2;
   const focus = { x: fx, y: fy, radius: Math.max(15, ...held.map(p => Math.hypot(p[0] - fx, p[1] - fy))) };
-  // what a picture of the scheme centres on: the buildings, where they take up a small part of a large parcel
-  const builtPts = (data.slabs as RenderSlab[]).flatMap(sl => (sl.polygon[0] ?? []).map(p => [p[0] ?? 0, p[1] ?? 0] as [number, number]));
-  let built = focus;
-  if (builtPts.length >= 3) {
-    const bx = (Math.min(...builtPts.map(p => p[0])) + Math.max(...builtPts.map(p => p[0]))) / 2, by = (Math.min(...builtPts.map(p => p[1])) + Math.max(...builtPts.map(p => p[1]))) / 2;
-    const br = Math.max(15, ...builtPts.map(p => Math.hypot(p[0] - bx, p[1] - by))) * 1.25;
-    if (br < focus.radius * 0.6) built = { x: bx, y: by, radius: br };
+  // what a picture of the scheme centres on (scene/builtFocus): the buildings or their densest group on a large parcel
+  const byBuilding = new Map<string, Array<[number, number]>>();
+  for (const sl of data.slabs as RenderSlab[]) {
+    if (sl.part === 'detail') continue;
+    const list = byBuilding.get(sl.id) ?? [];
+    for (const p of sl.polygon[0] ?? []) list.push([p[0] ?? 0, p[1] ?? 0]);
+    byBuilding.set(sl.id, list);
   }
+  const built = builtFocus(focus, [...byBuilding.values()]);
   // picking: one unseen solid a building
   const pickGroup = new THREE.Group();
   pickGroup.visible = false;
