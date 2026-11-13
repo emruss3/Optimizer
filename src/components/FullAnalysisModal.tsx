@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Building, TrendingUp, Map, DollarSign } from 'lucide-react';
+import { X, Building, TrendingUp, Map } from 'lucide-react';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
 import { SelectedParcel, isValidParcel } from '../types/parcel';
 import SitePlanDesigner from './SitePlanDesigner';
@@ -27,8 +27,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Map },
     { id: 'hbu', label: 'HBU Analysis', icon: TrendingUp },
-    { id: 'site', label: 'Site Plan', icon: Building },
-    { id: 'financial', label: 'Financial', icon: DollarSign }
+    { id: 'site', label: 'Site Plan', icon: Building }
   ];
 
   return (
@@ -174,17 +173,6 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                   {/* The recommendation is a starting point, not a dead end:
                       hand the user straight to the planner tab from here. */}
                   <HBUAnalysisPanel parcel={p} onDesignSitePlan={() => setActiveTab('site')} />
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'financial' && (
-              <div className="space-y-6">
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Financial Analysis</h2>
-                  <div className="text-gray-600">
-                    Financial analysis tools will be integrated here.
-                  </div>
                 </div>
               </div>
             )}

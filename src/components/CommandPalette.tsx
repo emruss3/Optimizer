@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, Transition, Combobox } from '@headlessui/react';
 import { 
-  Search, MapPin, Building2, Users, Calculator, 
-  TrendingUp, FileText, Settings, ArrowRight,
+  Search, MapPin, Building2, Users,
+  TrendingUp, Settings, ArrowRight,
   Clock, Star, Zap
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -92,56 +92,10 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   };
 
-  const getDefaultItems = (): CommandItem[] => [
-    // Navigation
-    {
-      id: 'nav-map',
-      title: 'Go to Map View',
-      category: 'navigation',
-      icon: <MapPin className="w-4 h-4" />,
-      action: () => { /* Navigate to map */ onClose(); },
-      keyboard: '⌘1'
-    },
-    {
-      id: 'nav-projects',
-      title: 'Go to Projects',
-      category: 'navigation', 
-      icon: <Building2 className="w-4 h-4" />,
-      action: () => { /* Navigate to projects */ onClose(); },
-      keyboard: '⌘2'
-    },
-    {
-      id: 'nav-analysis',
-      title: 'Go to Analysis',
-      category: 'navigation',
-      icon: <Calculator className="w-4 h-4" />,
-      action: () => { /* Navigate to analysis */ onClose(); },
-      keyboard: '⌘3'
-    },
-    
-    // Actions
-    {
-      id: 'action-create-project',
-      title: 'Create New Project',
-      category: 'action',
-      icon: <Building2 className="w-4 h-4" />,
-      action: () => { /* Create project */ onClose(); }
-    },
-    {
-      id: 'action-export-pdf',
-      title: 'Export Current Project as PDF',
-      category: 'action',
-      icon: <FileText className="w-4 h-4" />,
-      action: () => { /* Export PDF */ onClose(); }
-    },
-    {
-      id: 'action-optimize-massing',
-      title: 'Optimize Building Massing',
-      category: 'action',
-      icon: <Zap className="w-4 h-4" />,
-      action: () => { /* Optimize massing */ onClose(); }
-    }
-  ];
+  // Commands are listed only when they do something. Navigation, export and
+  // optimize entries used to close the palette and nothing else; they return
+  // when each has a destination.
+  const getDefaultItems = (): CommandItem[] => [];
 
   /**
    * Open a search hit the way a map click does: the full parcel row from
@@ -228,30 +182,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
             });
           });
         }
-
-        // Mock project search results
-        if (searchQuery.toLowerCase().includes('demo')) {
-          results.push({
-            id: 'project-demo',
-            title: 'Demo Project',
-            subtitle: '5 parcels • Nashville',
-            category: 'project',
-            icon: <Building2 className="w-4 h-4" />,
-            action: () => {
-              // Switch to demo project
-              onClose();
-            }
-          });
-        }
       }
-
-      // Add action items that match search
-      const actionItems = getDefaultItems().filter(item => 
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.category === 'action'
-      );
-      
-      results.push(...actionItems);
 
       if (stale()) return;
       setItems(results);
@@ -340,7 +271,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                       <Combobox.Input
                         ref={inputRef}
                         className="flex-1 bg-transparent outline-none text-lg placeholder-gray-500"
-                        placeholder="Search parcels, projects, or run commands..."
+                        placeholder="Search by address or parcel ID"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                       />

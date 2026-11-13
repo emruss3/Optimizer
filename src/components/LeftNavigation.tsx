@@ -1,7 +1,7 @@
 import React from 'react';
-import { 
-  Map, Settings, FileText, Users, Bookmark, Menu, X
-} from 'lucide-react';
+import { Map, Menu, X, Clock } from 'lucide-react';
+import { listRecent } from '../lib/recentWork';
+import { openParcel } from '../lib/parcelSearch';
 import { useUIStore } from '../store/ui';
 import MapControls from './MapControls';
 
@@ -11,20 +11,13 @@ export default function LeftNavigation() {
   
   // Props for MapControls - these would come from the map component
   const [parcelStats] = React.useState(null);
-  const handleReload = () => {
-    // This would trigger map reload
-    console.log('Reload parcels');
-  };
-
+  // Only destinations that exist are listed. Saved parcels, reports and
+  // settings come back when each has a real view behind it.
   const navigationItems = [
     { id: 'map', label: 'Map View', icon: Map },
-    { id: 'saved', label: 'Saved Parcels', icon: Bookmark },
-    { id: 'reports', label: 'Reports', icon: FileText },
   ];
-
-  const bottomItems = [
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
+  // what this browser has actually opened: never sample activity
+  const recent = listRecent().slice(0, 5);
 
   const NavContent = () => (
     <>
@@ -75,62 +68,34 @@ export default function LeftNavigation() {
         {/* Map Controls Section - only show when Map View is active */}
         {activeTab === 'map' && (
           <div className="mt-6" data-testid="map-controls">
-            <MapControls onReload={handleReload} parcelStats={parcelStats} />
+            <MapControls parcelStats={parcelStats} />
           </div>
         )}
 
-        {/* Recent Activity Section */}
-        <div className="mt-6">
+        {/* Recent: the parcels opened on this device */}
+        <div className="mt-6" data-testid="nav-recent">
           <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            Recent Activity
+            Recent
           </h3>
-          <div className="space-y-1">
-            <div className="px-3 py-2 text-sm text-gray-600">
-              <div className="font-medium">2312 Heiman St</div>
-              <div className="text-xs text-gray-500">Viewed 2 hours ago</div>
+          {recent.length === 0 ? (
+            <p className="px-3 text-xs text-gray-500">Parcels you open on this device are listed here.</p>
+          ) : (
+            <div className="space-y-1">
+              {recent.map(r => (
+                <button
+                  key={r.ogcFid}
+                  onClick={() => openParcel(r, r.planned)}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg flex items-start gap-2 focus-ring"
+                >
+                  <Clock className="w-3.5 h-3.5 mt-0.5 text-gray-400 flex-shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block font-medium truncate">{r.address}</span>
+                    <span className="block text-xs text-gray-500">{[r.zoning, r.planned ? 'plan' : 'parcel'].filter(Boolean).join(' · ')}</span>
+                  </span>
+                </button>
+              ))}
             </div>
-            <div className="px-3 py-2 text-sm text-gray-600">
-              <div className="font-medium">1501 Jefferson St</div>
-              <div className="text-xs text-gray-500">Analyzed yesterday</div>
-            </div>
-            <div className="px-3 py-2 text-sm text-gray-600">
-              <div className="font-medium">890 26th Ave N</div>
-              <div className="text-xs text-gray-500">Added to project</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Navigation */}
-      <div className="p-2 border-t border-gray-200">
-        <div className="space-y-1">
-          {bottomItems.map((item) => {
-            const Icon = item.icon;
-            
-            return (
-              <button
-                key={item.id}
-                className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors focus-ring"
-                data-testid={`nav-${item.id}`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* User Info */}
-      <div className="p-4 border-t border-gray-200">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
-            <Users className="w-4 h-4 text-gray-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">User</p>
-            <p className="text-xs text-gray-500">Nashville Metro</p>
-          </div>
+          )}
         </div>
       </div>
     </>

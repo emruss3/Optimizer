@@ -27,13 +27,10 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
   const { activeProjectId, activeProjectName } = useParcelSelection();
   const { set: setActiveProject, clear: clearActiveProject } = useActiveProject();
   const [showShareDialog, setShowShareDialog] = React.useState(false);
-  // Mock projects - in real app, this would come from Supabase
+  // The menu lists the user's own project only. There is no project list to
+  // pick from yet, so none is invented: sample projects are not shown here.
   const [showProjectMenu, setShowProjectMenu] = React.useState(false);
-  const mockProjects = [
-    { id: 'demo-1', name: 'Demo Project' },
-    { id: 'nashville-dev', name: 'Nashville Development' },
-    { id: 'mixed-use-23', name: 'Mixed Use 2023' },
-  ];
+  const mockProjects: Array<{ id: string; name: string }> = activeProjectId && activeProjectName ? [{ id: activeProjectId, name: activeProjectName }] : [];
 
   const handleProjectSelect = (project: { id: string; name: string }) => {
     if (activeProjectId === project.id) {
@@ -63,7 +60,7 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by address, parcel ID, or coordinates..."
+              placeholder="Search by address or parcel ID"
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus-ring"
               aria-label="Search parcels"
               data-testid="search-input"
@@ -109,8 +106,13 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
               <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50" data-testid="project-menu">
                 <div className="p-2">
                   <div className="text-xs font-medium text-gray-500 px-3 py-2 uppercase tracking-wider">
-                    Select Project
+                    {mockProjects.length ? 'Open project' : 'Projects'}
                   </div>
+                  {mockProjects.length === 0 && (
+                    <p className="px-3 pb-2 text-sm text-gray-600" data-testid="no-projects">
+                      No projects yet. Start one from a parcel, or with New Project.
+                    </p>
+                  )}
                   {mockProjects.map((project) => (
                     <button
                       key={project.id}
@@ -125,17 +127,21 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
                       {project.name}
                     </button>
                   ))}
-                  <hr className="my-2" />
-                  <button
-                    onClick={() => {
-                      clearActiveProject();
-                      setShowProjectMenu(false);
-                    }}
-                    className="w-full text-left px-3 py-2 text-sm rounded-md text-gray-500 hover:bg-gray-100"
-                    data-testid="no-active-project"
-                  >
-                    No Active Project
-                  </button>
+                  {mockProjects.length > 0 && (
+                    <>
+                      <hr className="my-2" />
+                      <button
+                        onClick={() => {
+                          clearActiveProject();
+                          setShowProjectMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm rounded-md text-gray-500 hover:bg-gray-100"
+                        data-testid="no-active-project"
+                      >
+                        Close project
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -146,8 +152,8 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
           onClick={onOpenUnifiedProjectWorkflow}
           className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium bg-blue-600 text-white hover:bg-blue-700"
           data-testid="unified-project-workflow-button"
-          title="Open unified project workflow"
-          aria-label="Open unified project workflow"
+          title="Start a new project"
+          aria-label="New project"
         >
           <Building2 className="w-4 h-4" />
           <span className="text-sm hidden md:inline">New Project</span>
@@ -158,8 +164,8 @@ export default function Header({ onOpenUnifiedWorkspace, onOpenProjectWorkflow, 
           onClick={onOpenRealUnderwritingWorkflow}
           className="flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100"
           data-testid="real-underwriting-workflow-button"
-          title="Open real underwriting workflow"
-          aria-label="Open real underwriting workflow"
+          title="Underwrite a deal"
+          aria-label="Underwriting"
         >
           <Calculator className="w-4 h-4" />
           <span className="text-sm hidden md:inline">Underwriting</span>

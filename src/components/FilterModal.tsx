@@ -1,6 +1,6 @@
 import React from 'react';
 import { Dialog, Transition } from '@headlessui/react';
-import { X, Filter, Search, MapPin, DollarSign, Calendar, Building } from 'lucide-react';
+import { X, Filter, Search, Building } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 
 interface FilterState {
@@ -105,7 +105,7 @@ export default function FilterModal() {
                 >
                   <div className="flex items-center space-x-2">
                     <Filter className="w-5 h-5" />
-                    <span>Advanced Filters</span>
+                    <span>Filter by zoning</span>
                   </div>
                   <button
                     onClick={() => setFilterModal(false)}
@@ -117,113 +117,9 @@ export default function FilterModal() {
                 </Dialog.Title>
 
                 <div className="mt-6 space-y-6">
-                  {/* Address Search */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <MapPin className="w-4 h-4 inline mr-1" />
-                      Address or Location
-                    </label>
-                    <input
-                      type="text"
-                      value={filters.address}
-                      onChange={(e) => setFilters(prev => ({ ...prev, address: e.target.value }))}
-                      placeholder="Search by address, neighborhood, or parcel ID..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus-ring"
-                      data-testid="address-search"
-                    />
-                  </div>
-
-                  {/* Price Range */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <DollarSign className="w-4 h-4 inline mr-1" />
-                      Price Range
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        type="number"
-                        value={filters.priceRange.min}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          priceRange: { ...prev.priceRange, min: e.target.value }
-                        }))}
-                        placeholder="Min price"
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus-ring"
-                        data-testid="min-price"
-                      />
-                      <input
-                        type="number"
-                        value={filters.priceRange.max}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,  
-                          priceRange: { ...prev.priceRange, max: e.target.value }
-                        }))}
-                        placeholder="Max price"
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus-ring"
-                        data-testid="max-price"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Size Range */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Lot Size (sq ft)
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        type="number"
-                        value={filters.sizeRange.min}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          sizeRange: { ...prev.sizeRange, min: e.target.value }
-                        }))}
-                        placeholder="Min sq ft"
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus-ring"
-                      />
-                      <input
-                        type="number"
-                        value={filters.sizeRange.max}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          sizeRange: { ...prev.sizeRange, max: e.target.value }
-                        }))}
-                        placeholder="Max sq ft"
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus-ring"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Year Built */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Calendar className="w-4 h-4 inline mr-1" />
-                      Year Built
-                    </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <input
-                        type="number"
-                        value={filters.yearBuilt.min}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          yearBuilt: { ...prev.yearBuilt, min: e.target.value }
-                        }))}
-                        placeholder="From year"
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus-ring"
-                      />
-                      <input
-                        type="number"
-                        value={filters.yearBuilt.max}
-                        onChange={(e) => setFilters(prev => ({
-                          ...prev,
-                          yearBuilt: { ...prev.yearBuilt, max: e.target.value }
-                        }))}
-                        placeholder="To year"
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus-ring"
-                      />
-                    </div>
-                  </div>
-
+                  {/* Only zoning is listed: it is the one criterion the map applies. Price, lot
+                      size, year built and a for-sale switch come back when each has a data
+                      source and changes both the map and the list. */}
                   {/* Zoning Types */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -248,19 +144,11 @@ export default function FilterModal() {
                     </div>
                   </div>
 
-                  {/* For Sale Toggle */}
-                  <div>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={filters.forSale}
-                        onChange={(e) => setFilters(prev => ({ ...prev, forSale: e.target.checked }))}
-                        className="rounded focus-ring"
-                        data-testid="for-sale-toggle"
-                      />
-                      <span className="text-sm font-medium text-gray-700">For Sale Only</span>
-                    </label>
-                  </div>
+                  <p className="text-sm text-gray-600" data-testid="filter-summary" aria-live="polite">
+                    {filters.zoning.length === 0
+                      ? 'No filter: the map shows every zoning district.'
+                      : `The map will show ${filters.zoning.length} district${filters.zoning.length === 1 ? '' : 's'}: ${filters.zoning.join(', ')}.`}
+                  </p>
                 </div>
 
                 <div className="mt-6 flex justify-between">

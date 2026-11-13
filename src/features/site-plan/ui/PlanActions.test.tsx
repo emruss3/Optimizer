@@ -67,3 +67,11 @@ describe('PlanActions', () => {
     expect(screen.getByTestId('plan-change').textContent).toContain('Units 30 → 32 (+2)');
   });
 });
+
+describe('PlanActions for a guest', () => {
+  it('offers sign-in beside a save refused for want of an account', () => {
+    render(<PlanActions {...base} saveFailed="Sign in to save this plan." signIn={<button>Sign in</button>} />);
+    expect(screen.getByRole('alert').textContent).toContain('Not saved. Sign in to save this plan.');
+    expect(screen.getByTestId('plan-sign-in').textContent).toBe('Sign in');
+  });
+});

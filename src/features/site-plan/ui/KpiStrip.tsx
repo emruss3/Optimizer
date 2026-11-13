@@ -223,7 +223,7 @@ const KpiStrip: React.FC<{
       {money?.available && typeof money.margin_on_cost === 'number' && (
         <span title={money.basis ?? 'Local-sales valuation'} className="flex items-center">
           <Stat
-            label={`Margin · mkt${money.n_sales != null ? ` (${money.n_sales} sales)` : ''}`}
+            label={`Sale margin${money.n_sales != null ? ` · ${money.n_sales} local sales` : ''}`}
             value={`${(money.margin_on_cost * 100).toFixed(1)}%`}
             alert={money.margin_on_cost < 0}
           />
