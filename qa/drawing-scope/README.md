@@ -448,6 +448,17 @@ Checks: 76 files, 794 tests pass; app type check 2,073 (was 2,086);
 
 Checks: 801 tests pass; app type check 2,073; `check-slice.cjs` passes.
 
+## Slice 9: the aerial sheet
+
+- Streets between parcels are strips laid across each gap where two parcels
+  face each other within a street's width. The single plate over all the
+  neighbouring parcels is gone: on a 70-acre site it read as a slate lake.
+- The aerial sheet frames what is built where that is much smaller than the
+  parcel. The 3D view on screen still centres on the parcel.
+- `slice-9/aerial-*-before.png` and `-after.png`.
+
+Checks: 817 tests pass; app type check 2,073; `check-slice.cjs` passes.
+
 ## Not done yet
 
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry

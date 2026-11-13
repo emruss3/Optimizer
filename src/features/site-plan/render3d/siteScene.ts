@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MassingData } from '../ui/massingData';
-import { convexHull, type RenderSlab, type RGBA, type Surface } from '../ui/renderModel';
+import type { RenderSlab, RGBA, Surface } from '../ui/renderModel';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
@@ -23,6 +23,8 @@ export interface SiteModel {
   extent: number;
   /** The parcel a camera should centre on and fit: its middle (x east, y north) and the radius that holds all of it, metres. */
   focus: { x: number; y: number; radius: number };
+  /** The built part of the plan, where it is much smaller than the parcel; otherwise the parcel. */
+  built: { x: number; y: number; radius: number };
   surfaces: Surfaces;
   /** Settles when the pictures the trees are made of have arrived (or after a few seconds without them): a still waits for it. */
   ready: Promise<void>;
@@ -337,6 +339,52 @@ function prism(rings: number[][][], h: number): THREE.BufferGeometry | null {
 }
 
 /** A flat, convex polygon in space, with texture coordinates in metres along its first edge. */
+/**
+ * The gaps between parcels that are streets: for each parcel edge, a strip
+ * reaching out to the parcel that faces it, where one does within `maxM`.
+ * Edges that share a line with a neighbour, or face open land, get none.
+ */
+export function streetGaps(rings: number[][][], maxM = 32): number[][][] {
+  const parcels = rings
+    .filter(r => r.length >= 3)
+    .map(r => {
+      const xs = r.map(p => p[0] ?? 0), ys = r.map(p => p[1] ?? 0);
+      return { ring: r, minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    });
+  const owner = (x: number, y: number, skip: number): boolean =>
+    parcels.some((q, j) => j !== skip && x >= q.minX && x <= q.maxX && y >= q.minY && y <= q.maxY && pointInPolygon(x, y, [q.ring as never]));
+  const out: number[][][] = [];
+  parcels.forEach((q, i) => {
+    const r = q.ring;
+    let area = 0;
+    for (let k = 0; k < r.length; k++) { const a = r[k]!, b = r[(k + 1) % r.length]!; area += (a[0] ?? 0) * (b[1] ?? 0) - (b[0] ?? 0) * (a[1] ?? 0); }
+    const sign = area > 0 ? 1 : -1;
+    for (let k = 0; k < r.length; k++) {
+      const a = r[k]!, b = r[(k + 1) % r.length]!;
+      const ax = a[0] ?? 0, ay = a[1] ?? 0, bx = b[0] ?? 0, by = b[1] ?? 0;
+      const len = Math.hypot(bx - ax, by - ay);
+      if (len < 3) continue;
+      // outward normal of the edge
+      const nx = (sign * (by - ay)) / len, ny = (-sign * (bx - ax)) / len;
+      let reach = 0;
+      for (const t of [0.25, 0.5, 0.75]) {
+        const mx = ax + (bx - ax) * t, my = ay + (by - ay) * t;
+        // a neighbour right against the edge: a lot line, not a street
+        if (owner(mx + nx * 2, my + ny * 2, i)) continue;
+        for (let d = 6; d <= maxM; d += 2) {
+          if (owner(mx + nx * d, my + ny * d, i)) { reach = Math.max(reach, d); break; }
+        }
+      }
+      if (reach > 0) {
+        // run on past both ends by the street's width, so crossings are paved too; parcels are drawn over it
+        const ux = ((bx - ax) / len) * reach, uy = ((by - ay) / len) * reach;
+        out.push([[ax - ux, ay - uy], [bx + ux, by + uy], [bx + ux + nx * reach, by + uy + ny * reach], [ax - ux + nx * reach, ay - uy + ny * reach]]);
+      }
+    }
+  });
+  return out;
+}
+
 function plane(points: number[][]): THREE.BufferGeometry | null {
   if (points.length < 3) return null;
   const v = points.map(p => new THREE.Vector3(p[0] ?? 0, p[1] ?? 0, p[2] ?? 0));
@@ -452,14 +500,17 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const real = !opts.clayContext && !opts.review;
   const reach = Math.max(1600, data.extent * 16);
   put('plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
-  // Public streets. The record gives the neighbouring parcels, and often no street lines: what lies
-  // between parcels is right of way. A road-coloured plate under them shows it, so the streets read
-  // even where no line was sent. Where lines were sent they are drawn over it.
+  // Public streets. The record gives the neighbouring parcels, and often no street lines: a gap
+  // between two parcels is right of way. A road-coloured strip is laid across each such gap, so
+  // the streets read even where no line was sent. Open land beside a parcel is not a street: a
+  // strip is laid only where another parcel faces the edge within a street's width.
   if (!opts.noContext) {
-    const corners: Array<[number, number]> = [];
-    for (const c of data.contextPolygons) if (c.elevation < 1) for (const p of c.polygon[0] ?? []) corners.push([p[0] ?? 0, p[1] ?? 0]);
-    const hull = corners.length >= 3 ? convexHull(corners) : [];
-    if (hull.length >= 3) put(opts.review || opts.clayContext ? 'plain|flat' : 'asphalt|flat', plane(hull.map(p => [p[0], p[1], -0.005])), opts.review || opts.clayContext ? [176, 178, 180, 255] : [120, 120, 122, 255]);
+    const streetColor = opts.review || opts.clayContext ? [176, 178, 180, 255] : [120, 120, 122, 255];
+    const streetKey = opts.review || opts.clayContext ? 'plain|flat' : 'asphalt|flat';
+    for (const q of streetGaps([
+      ...data.contextPolygons.filter(c => c.elevation < 1).map(c => c.polygon[0] ?? []),
+      ...(data.lawn[0]?.polygon[0] ? [data.lawn[0].polygon[0]] : []),
+    ])) put(streetKey, plane(q.map(p => [p[0] ?? 0, p[1] ?? 0, -0.005])), streetColor);
   }
   const neighbours: Array<{ ring: number[][]; minX: number; minY: number; maxX: number; maxY: number }> = [];
   // how far from the middle of the site a neighbour is still drawn with its windows and roof
@@ -808,6 +859,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const held = outline.length >= 3 ? outline : [[-data.extent / 2, -data.extent / 2], [data.extent / 2, data.extent / 2]] as Array<[number, number]>;
   const fx = (Math.min(...held.map(p => p[0])) + Math.max(...held.map(p => p[0]))) / 2, fy = (Math.min(...held.map(p => p[1])) + Math.max(...held.map(p => p[1]))) / 2;
   const focus = { x: fx, y: fy, radius: Math.max(15, ...held.map(p => Math.hypot(p[0] - fx, p[1] - fy))) };
+  // what a picture of the scheme centres on: the buildings, where they take up a small part of a large parcel
+  const builtPts = (data.slabs as RenderSlab[]).flatMap(sl => (sl.polygon[0] ?? []).map(p => [p[0] ?? 0, p[1] ?? 0] as [number, number]));
+  let built = focus;
+  if (builtPts.length >= 3) {
+    const bx = (Math.min(...builtPts.map(p => p[0])) + Math.max(...builtPts.map(p => p[0]))) / 2, by = (Math.min(...builtPts.map(p => p[1])) + Math.max(...builtPts.map(p => p[1]))) / 2;
+    const br = Math.max(15, ...builtPts.map(p => Math.hypot(p[0] - bx, p[1] - by))) * 1.25;
+    if (br < focus.radius * 0.6) built = { x: bx, y: by, radius: br };
+  }
   // picking: one unseen solid a building
   const pickGroup = new THREE.Group();
   pickGroup.visible = false;
@@ -836,6 +895,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     pick,
     extent: Math.max(20, data.extent / 2),
     focus,
+    built,
     surfaces,
     ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),
     dispose() {

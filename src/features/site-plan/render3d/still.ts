@@ -60,7 +60,8 @@ export async function renderAerialImage(req: { data: MassingData; widthPx: numbe
     const E = model.extent;
     const camera = new THREE.PerspectiveCamera(30, widthPx / heightPx, 1.5, E * 40);
     // centred on the parcel, far enough back to hold all of it, with a band of sky above
-    const { x, y, radius } = model.focus;
+    // on a large parcel with a small built part, the picture is of what is built
+    const { x, y, radius } = model.built;
     const el = (20 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180;
     const dist = (radius * 1.25) / Math.sin((30 * Math.PI) / 360 * Math.min(1, widthPx / heightPx));
     camera.position.set(x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), -y + dist * Math.cos(el) * Math.cos(az));
