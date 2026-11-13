@@ -86,6 +86,7 @@ import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
 import ExportMenu from './ui/ExportMenu';
 import AuthChip from '../../components/AuthChip';
+import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
 import { accessFinding } from './api/accessFinding';
@@ -877,6 +878,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       };
       setLockCounts({ locked: lockedNow, free: buildingsNow.length - lockedNow });
       setVersionSaved(null);
+      saveVersionAskedRef.current = false;
       // A replay is a fresh solve. If it does not match what the user saw, say so.
       const e = opts.expected;
       // only figures both plans report can show a difference
@@ -3264,7 +3266,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
   }, [plannerCtx]);
   // a save refused for want of an account: the planner offers sign-in where the user is
-  const needsSignIn = !!versionSaved && !versionSaved.ok && saveVersionAskedRef.current && /sign/i.test(savedPlansError ?? '');
+  const needsSignIn = !!versionSaved && !versionSaved.ok && saveVersionAskedRef.current && savedPlansError === SIGN_IN_REQUIRED_MSG;
   // what the Export menu and the sheets call the scheme on screen
   const exportSchemeName = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Current plan (not a saved option)';
   const sheetsTitle = useMemo(() => {

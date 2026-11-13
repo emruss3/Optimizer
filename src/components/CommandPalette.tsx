@@ -318,7 +318,8 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                     )}
                     {searchError && !loading && (
                       <div data-testid="palette-search-error" className="mx-4 mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                        Parcel search failed: {searchError}. The commands below still work; try the search again.
+                        Parcel search failed: {searchError}. Your query is kept.{' '}
+                        <button type="button" data-testid="palette-retry" onClick={() => { void searchItems(query); }} className="underline font-medium">Try again</button>
                       </div>
                     )}
                     {openError && (

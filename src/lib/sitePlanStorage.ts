@@ -58,7 +58,8 @@ function isRlsDeniedError(e: unknown): boolean {
 
 const NOT_PROVISIONED_MSG =
   'Saved plans are not available in this environment (site_plans table missing).';
-const SIGN_IN_REQUIRED_MSG =
+/** The one reason a save is refused for want of an account: callers compare against it, not against its wording. */
+export const SIGN_IN_REQUIRED_MSG =
   'Saving plans requires signing in — saved plans are private to your account.';
 
 /**
