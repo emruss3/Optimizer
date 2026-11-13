@@ -18,8 +18,8 @@ are from the local fixture run.
 | 11 Guest save | Sign-in offered in the planner. Editable version name not built. |
 | 12 Compare stored revisions | Not started. Needs stored drawings. |
 | 13 Underwrite while loading | Results marks stale figures. Explicit target revision not built. |
-| 14 Chrome around the plan | Not started. |
-| 15 Review and Present | Not started. |
+| 14 Chrome around the plan | First pass: the headline is one line and the planner's header row is shorter. At 1280 × 800 the canvas is 439 px tall, from 401. One header for parcel, scheme and save state is not built. |
+| 15 Review and Present | Review shows camera and selection only. Sun, style and Photoreal appear in Rendering and Present, under an Illustration tag. Section is still under Export, not beside Plan and 3D. |
 | 16 Status wording | "Checks passed" in place of "Code compliant"; the status opens the checks; tabs are Schedule and Checks; the Checks badge counts only what asks something of the user. The basis line's engine wording is unchanged. |
 | 17 Phone layout | At 390 and 430 px nothing runs off the side: figures, view switch, Export and the plan actions wrap. The canvas title block and legend still cover part of a small plan. |
 | 18 Keyboard and dialogs | Assemblage only (PR 150). |
@@ -31,3 +31,5 @@ are from the local fixture run.
 - `assemblage.png`: the assemblage opened from 1710 Meharry Blvd.
 
 - `phone-390-before.png`, `phone-390-after.png`: the planner at 390 px.
+- `plan-1280x800.png`: the plan at 1280 × 800.
+- `review-3d.png`: the 3D Review view without the illustration controls.

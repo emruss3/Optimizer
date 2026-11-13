@@ -273,7 +273,7 @@ export const ExhibitSheets: React.FC<{
               <button type="button" onClick={download} data-testid="sheet-download" title="The sheet as a vector drawing" className="text-left px-3 py-1.5 rounded text-gray-700 hover:bg-gray-50">SVG drawing of this sheet</button>
             </div>
           </details>
-          <button type="button" onClick={() => { void printSet(); }} disabled={setBusy} data-testid="sheet-print-set" title="Opens the print dialog with every sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">Save PDF · all {sheetList.filter(x => x.included).length} sheets</button>
+          <button type="button" onClick={() => { void printSet(); }} disabled={setBusy} data-testid="sheet-print-set" title="Opens the print dialog with every sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">{(n => (n === 1 ? 'Save PDF · the one sheet' : `Save PDF · all ${n} sheets`))(sheetList.filter(x => x.included).length)}</button>
           <button type="button" onClick={print} data-testid="sheet-print" title="Opens the print dialog with this sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save PDF · {number}</button>
           <button type="button" onClick={onClose} aria-label="Close sheets" className="px-2 py-1 text-gray-500 hover:text-gray-900">Close</button>
         </div>

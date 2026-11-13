@@ -162,7 +162,7 @@ describe('KpiStrip — parking the evidence cannot settle (the cohort retest, 20
   it('a requirement that was not evaluated reads as unknown, and the badge scopes its claim (1289 Currey Rd)', () => {
     render(<KpiStrip metrics={{ ...base, totalUnits: 1, stallsProvided: 0, stallsRequired: undefined, parkingStatus: 'not_evaluated' } as SiteMetrics} investment={null} />);
     expect(screen.getByText('0 / not evaluated')).toBeTruthy();
-    expect(screen.getByText('Compliant on evaluated checks · parking not evaluated')).toBeTruthy();
+    expect(screen.getByText('Checks passed · parking not evaluated')).toBeTruthy();
     expect(screen.queryByText('0 / 0')).toBeNull();
   });
 
@@ -217,7 +217,7 @@ describe('KpiStrip — every check passes and most of the land is not planned (0
 
 
 describe('KpiStrip: a plan whose basis is not established (1710 Meharry Blvd, 2026-11-12)', () => {
-  it('reads Needs verification, not Code compliant, while the context is not verified', () => {
+  it('reads Needs verification, not Checks passed, while the context is not verified', () => {
     const { rerender } = render(<KpiStrip metrics={base} investment={null} unverified="context not verified" />);
     expect(screen.getByTestId('kpi-needs-verification').textContent).toContain('Needs verification · context not verified');
     expect(screen.queryByText('Checks passed')).toBeNull();

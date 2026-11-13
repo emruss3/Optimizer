@@ -241,7 +241,7 @@ const KpiStrip: React.FC<{
       {/* Compliance and optimization are SEPARATE verdicts: a code-compliant
           plan at 78% of the theoretical envelope is not "done" — the capture
           chip says so instead of letting the green chip imply optimality. */}
-      <span
+      <div
         data-testid="kpi-status"
         {...(onOpenChecks ? {
           role: 'button', tabIndex: 0, title: 'Open the checks behind this status',
@@ -305,11 +305,11 @@ const KpiStrip: React.FC<{
             : constrained
               ? `Checks passed · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
               : parkingNotEvaluated
-                ? 'Compliant on evaluated checks · parking not evaluated'
+                ? 'Checks passed · parking not evaluated'
                 : 'Checks passed'}
       </div>
       )}
-      </span>
+      </div>
       {utilizationPct != null && utilizationPct < 85 && (
         <div
           title="The constructive solver has not reproduced the theoretical envelope — additional optimization search is warranted."

@@ -146,9 +146,9 @@ export const BuiltHeadline: React.FC<{ metrics: SiteMetrics | null; elements: El
   const s = builtSummary(metrics, elements);
   if (!s) return null;
   return (
-    <div data-testid="built-headline" className="px-4 pt-2 pb-1.5 bg-white border-b border-gray-100 flex-shrink-0">
-      <div data-testid="built-headline-title" className="text-sm font-semibold text-gray-900">{s.headline}</div>
-      <div data-testid="built-headline-detail" className="text-xs text-gray-600">{s.detail}</div>
+    <div data-testid="built-headline" className="px-4 py-1.5 bg-white border-b border-gray-100 flex-shrink-0 lg:flex lg:items-baseline lg:gap-3 min-w-0">
+      <div data-testid="built-headline-title" className="text-sm font-semibold text-gray-900 lg:flex-shrink-0">{s.headline}</div>
+      <div data-testid="built-headline-detail" className="text-xs text-gray-600 lg:truncate lg:min-w-0" title={s.detail}>{s.detail}</div>
     </div>
   );
 };

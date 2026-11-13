@@ -300,11 +300,21 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const tagged = scene.buildings.filter(b => b.tagOnPlan);
   const selected = selectedId ? scene.buildings.find(b => b.id === selectedId) ?? null : null;
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
+  // light, style and photoreal are for showing the plan, not for reading it
+  const showy = look === 'rendering' || present;
 
   return (
     <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
+      {/* Review reads the site data; light, style and photoreal belong to showing it */}
+      {!showy && (
+        <div className="absolute top-2 left-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm" data-testid="look-note">
+          Review · the plan's footprints, parcel, envelope and access
+        </div>
+      )}
+      {showy && (
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
+        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium" data-testid="look-illustration" title="Materials, planting, light and the surroundings are illustration, not site data">Illustration</span>
         <select value={sunKey} onChange={e => setSunKey(e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 bg-white" data-testid="sun-date" aria-label="Date of the sun study">
           {SUN_DATES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
         </select>
@@ -313,6 +323,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <span className="w-px h-4 bg-gray-200" aria-hidden="true" />
         <ArchStylePicker />
       </div>
+      )}
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
         <div className="inline-flex rounded border border-gray-200 overflow-hidden mr-1" role="group" aria-label="View">
           {(['review', 'rendering'] as const).map(k => (
@@ -329,7 +340,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="Bring the whole site back into view, keeping the angle">Fit site</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
-        <button
+        {showy && <button
           className="px-1.5 py-0.5 rounded bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50"
           onClick={makePhotoreal}
           disabled={photo.status === 'working'}
@@ -337,7 +348,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
           title="Repaint this view as a photograph. Sends this picture, and only this picture, to an image model."
         >
           {photo.status === 'working' ? 'Painting…' : 'Photoreal'}
-        </button>
+        </button>}
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
       </div>
       {onSelect && tagged.length > 0 && (
