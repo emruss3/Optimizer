@@ -9,24 +9,32 @@ class Gen2(nn.Module):
         s.tok=nn.Embedding(VOCAB2,d); s.pos=nn.Embedding(MAXL,d)
         s.c=nn.Sequential(nn.Linear(8,d),nn.GELU(),nn.Linear(d,d)); s.bp=nn.Linear(2,d); s.be=nn.Embedding(NE,d); s.bpos=nn.Embedding(NB,d)
         l=nn.TransformerEncoderLayer(d,H,4*d,p,batch_first=True,norm_first=True,activation='gelu'); s.tr=nn.TransformerEncoder(l,L,enable_nested_tensor=False)
-        s.ln=nn.LayerNorm(d); s.out=nn.Linear(d,VOCAB2); s.drop=nn.Dropout(p)
-    def forward(s,c,bp,x):
+        s.ln=nn.LayerNorm(d); s.out=nn.Linear(d,VOCAB2); s.drop=nn.Dropout(p); s.rem=nn.Linear(2,d)
+    def forward(s,c,bp,x,r):
         B,T=x.shape
         pre=torch.cat([s.c(c)[:,None],s.bp(bp[:,:,:2])+s.be(bp[:,:,2].long())+s.bpos(torch.arange(NB))[None]],1)
-        h=s.drop(torch.cat([pre,s.tok(x)+s.pos(torch.arange(T))[None]],1)); n=h.shape[1]
+        h=s.drop(torch.cat([pre,s.tok(x)+s.pos(torch.arange(T))[None]+s.rem(r)],1)); n=h.shape[1]
         return s.out(s.ln(s.tr(h,mask=torch.triu(torch.ones(n,n,dtype=torch.bool),1))))[:,1+NB:]
+UO,UN=OFF['u']
+def prog(x,tgt):
+    # per position: share of the unit target already placed, and buildings placed so far (program progress the model can see)
+    out=[]; u=0; n=0
+    for t in x:
+        out.append((u/max(tgt or 1,1),math.log1p(n)/4))
+        if UO<=t<UO+UN: u+=du(t-UO) or 0; n+=1
+    return out
 def batch(es,aug):
-    C=[];BP=[];X=[]
+    C=[];BP=[];X=[];R=[]
     for e in es:
         mir=aug and random.random()<0.5; b=bpts(e,mir)
         if aug: b=np.roll(b,random.randrange(NB),0)
         u=e['units']
         if aug and u: u=u*math.exp(random.gauss(0,0.05))
-        C.append(cond(e,u)); BP.append(b); X.append(toks2(e,mir)[:MAXL])
-    T=max(map(len,X)); X=[x+[PAD]*(T-len(x)) for x in X]
-    return torch.tensor(np.array(C)),torch.tensor(np.array(BP)),torch.tensor(X)
+        C.append(cond(e,u)); BP.append(b); X.append(toks2(e,mir)[:MAXL]); R.append(prog(X[-1],u))
+    T=max(map(len,X)); R=[r+[(0.,0.)]*(T-len(x)) for r,x in zip(R,X)]; X=[x+[PAD]*(T-len(x)) for x in X]
+    return torch.tensor(np.array(C)),torch.tensor(np.array(BP)),torch.tensor(X),torch.tensor(R,dtype=torch.float32)
 def loss_of(m,es,aug):
-    c,bp,x=batch(es,aug); lg=m(c,bp,x[:,:-1])
+    c,bp,x,r=batch(es,aug); lg=m(c,bp,x[:,:-1],r[:,:-1])
     return F.cross_entropy(lg.reshape(-1,VOCAB2),x[:,1:].reshape(-1),ignore_index=PAD,label_smoothing=0.05 if aug else 0.)
 def train(E,epochs,name):
     tr=[e for e in E if e['split']=='train' and not isval(e['pid'])]; va=[e for e in E if e['split']=='train' and isval(e['pid'])]
@@ -60,7 +68,7 @@ def allowed(sec,cur):
     if n==0: return [PRK,EOS]
     return R[['px','py','pw','pd','pa'][n-1]]
 @torch.no_grad()
-def sample(m,e,N=16,temp=0.9,tries=25):
+def sample(m,e,N=16,temp=0.9,tries=60):
     m.eval(); S=e['S']; site=e['site']; sb=site.buffer(2); tgt=e['units']
     c=torch.tensor(cond(e,tgt))[None].repeat(N,1); bp=torch.tensor(bpts(e))[None].repeat(N,1,1)
     st=[dict(seq=[BOS],cur=[],sec=0,drv=[],b=[],prk=[],ll=0.,cl=0.,done=False,fails=0,un=0,pave=None,nt=0) for _ in range(N)]
@@ -71,15 +79,18 @@ def sample(m,e,N=16,temp=0.9,tries=25):
         if term==SEC and s['sec']==1: s['pave']=unary_union([l.buffer(HW) for l in s['drv']]) if s['drv'] else None
         if term==EOS: s['done']=True
     def fail(s,term_on_giveup):
-        s['cur']=[]; s['cl']=0.; s['fails']+=1
-        if s['fails']>=tries: close(s,term_on_giveup)
+        s['cur']=[]; s['cl']=0.; s['fails']+=1; s['tf']=s.get('tf',0)+1
+        if s['fails']>=tries or s['tf']>=3*tries: close(s,term_on_giveup)  # a budget of rejected pieces per plan
     while not all(s['done'] for s in st):
         act=[s for s in st if not s['done']]
         xs=[s['seq']+s['cur'] for s in act]; T=max(map(len,xs))
-        lg=m(c[:len(act)],bp[:len(act)],torch.tensor([x+[PAD]*(T-len(x)) for x in xs]))
+        rr=torch.tensor([prog(x,tgt)+[(0.,0.)]*(T-len(x)) for x in xs],dtype=torch.float32)
+        lg=m(c[:len(act)],bp[:len(act)],torch.tensor([x+[PAD]*(T-len(x)) for x in xs]),rr)
         for j,s in enumerate(act):
             if len(xs[j])>=MAXL-10: close(s,EOS); continue
-            al=allowed(s['sec'],s['cur']); z=lg[j,len(xs[j])-1][al]/temp; pr=torch.log_softmax(z,-1); i=torch.multinomial(pr.exp(),1).item(); t=al[i]; lp=pr[i].item()
+            al=allowed(s['sec'],s['cur'])
+            if s['sec']==1 and not s['cur'] and tgt and s['un']<0.85*tgt and s['fails']<tries-1 and s.get('tf',0)<3*tries-1: al=[a for a in al if a!=SEC]  # the programme is an input: keep placing buildings until it is met
+            z=lg[j,len(xs[j])-1][al]/temp; pr=torch.log_softmax(z,-1); i=torch.multinomial(pr.exp(),1).item(); t=al[i]; lp=pr[i].item()
             sec=s['sec']; cur=s['cur']
             if sec==0:
                 if t in (DRV,SEC) and len(cur)>=5:
