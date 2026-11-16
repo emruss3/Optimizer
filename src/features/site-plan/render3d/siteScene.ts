@@ -14,6 +14,7 @@ import { pointInPolygon } from '../scene/frame';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
+import { carParts, carSpot } from './cars';
 import { Tree } from '@dgreenheck/ez-tree';
 
 export interface SiteModel {
@@ -657,7 +658,18 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const s of data.slabs) put(`${s.surface ?? 'plain'}|solid`, prism(s.polygon, s.elevation), s.color);
   for (const f of data.roofs) put(`${f.surface ?? 'plain'}|sheet`, plane(f.polygon), f.color);
   for (const w of data.windows) put('glass|sheet', plane(w.polygon), w.color);
-  for (const c of data.cars) put(c.elevation > 0.6 ? 'paint|solid' : 'glass|solid', prism(c.polygon, c.elevation), c.color);
+  // Cars. On a device that draws on its processor a car is two boxes; otherwise it is a shaped
+  // one (render3d/cars). The plan data gives each car a body and a cabin footprint: the body places it.
+  if (opts.light) {
+    for (const c of data.cars) put(c.elevation > 0.6 ? 'paint|solid' : 'glass|solid', prism(c.polygon, c.elevation), c.color);
+  } else {
+    (data.cars as RenderSlab[]).forEach((c, n) => {
+      if (c.elevation <= 0.6) return;
+      const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${n}`));
+      if (!spot) return;
+      for (const part of carParts(spot)) put(part.key, part.geometry, part.color);
+    });
+  }
 
   lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
   for (const [key, list] of bins) {
