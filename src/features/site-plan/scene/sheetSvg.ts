@@ -639,7 +639,8 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
     if (last !== undefined && (last + ' ' + word).length <= perLine) lines[lines.length - 1] = last + ' ' + word;
     else lines.push(word);
   }
-  out.push(`<text x="${tx}" font-size="5.4" fill="#7a8087" data-role="view-note">${lines.map((l, k) => `<tspan x="${tx}" y="${r2(H - M - 5 - (lines.length - 1 - k) * 6.6)}">${esc(l)}</tspan>`).join('')}</text>`);
+  // each line keeps its trailing space, so the note reads as one sentence to anything that reads its text
+  out.push(`<text x="${tx}" font-size="5.4" fill="#7a8087" data-role="view-note">${lines.map((l, k) => `<tspan x="${tx}" y="${r2(H - M - 5 - (lines.length - 1 - k) * 6.6)}">${esc(l)}${k < lines.length - 1 ? ' ' : ''}</tspan>`).join('')}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H };
 }

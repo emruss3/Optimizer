@@ -134,3 +134,45 @@ describe('what the rendered view is given', () => {
     expect(buildMassingData([building]).lots).toHaveLength(0);
   });
 });
+
+import { streetConnection } from './massingData';
+
+describe('streetConnection', () => {
+  const street: Array<[number, number]> = [[-50, 0], [50, 0]];
+  // a 6 m wide lane running north from y = 12 to y = 40: its mouth is 12 m from the street's centre line
+  const lane: Array<[number, number]> = [[-3, 12], [3, 12], [3, 40], [-3, 40]];
+
+  it('lays an apron from the lane mouth to the street pavement', () => {
+    const apron = streetConnection([lane], [street])!;
+    expect(apron).toHaveLength(4);
+    expect(apron[0]).toEqual([-3, 12]);
+    expect(apron[1]).toEqual([3, 12]);
+    // it runs on to just inside the 3.65 m half width the street is drawn at
+    expect(apron[2]![1]).toBeLessThan(3.65);
+    expect(apron[2]![1]).toBeGreaterThan(2.5);
+    expect(apron[2]![0]).toBeCloseTo(3, 6);
+  });
+
+  it('lays nothing where the pavement already reaches the street', () => {
+    expect(streetConnection([[[-3, 2], [3, 2], [3, 40], [-3, 40]]], [street])).toBeNull();
+  });
+
+  it('lays nothing where no street is near, or none is known', () => {
+    expect(streetConnection([lane], [])).toBeNull();
+    expect(streetConnection([[[-3, 112], [3, 112], [3, 140], [-3, 140]]], [street])).toBeNull();
+  });
+
+  it('runs to the parcel line and a lane past it where the street has no centre line', () => {
+    const parcel: Array<[number, number]> = [[-40, 4], [40, 4], [40, 60], [-40, 60], [-40, 4]];
+    const apron = streetConnection([lane], [], [parcel])!;
+    expect(apron[0]).toEqual([-3, 12]);
+    // the line is at y = 4; the apron runs on 6 m past it
+    expect(apron[2]![1]).toBeCloseTo(-2, 5);
+    // a lane that stops well inside the parcel is not taken for the way out
+    expect(streetConnection([[[-3, 25], [3, 25], [3, 40], [-3, 40]]], [], [parcel])).toBeNull();
+  });
+
+  it('does not take a long side of a parking field for a mouth', () => {
+    expect(streetConnection([[[-30, 12], [30, 12], [30, 30], [-30, 30]]], [street])).toBeNull();
+  });
+});

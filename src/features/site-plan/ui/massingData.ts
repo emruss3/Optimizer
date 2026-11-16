@@ -344,6 +344,17 @@ export function buildMassingData(
   const roads = (ground?.contextRoads ?? [])
     .filter(r => (r.line?.coordinates?.length ?? 0) >= 2)
     .map(r => ({ path: r.line.coordinates.map(p => [...m(p)]) }));
+  // The plan's drives and lanes stop at the right-of-way line; the street's pavement is drawn from its
+  // centre line and is narrower than the right-of-way. The apron across that strip is drawn here, so
+  // the scheme's pavement meets the street. Illustration: the plan gives the mouth, not the apron.
+  const mouth = streetConnection(
+    polygons.filter(q => !q.building && PAVED.has(q.kind ?? '')).map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
+    roads.map(r => r.path.map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
+    // Where the record has no centre line for the street, the parcel line stands for it: a lane that
+    // leaves the site leaves it across the line, and the mouth nearest the line is the way out.
+    ground?.parcelRing && ground.parcelRing.length >= 3 ? [[...ground.parcelRing, ground.parcelRing[0]!].map(q => { const v = m(q); return [v[0] ?? 0, v[1] ?? 0] as [number, number]; })] : [],
+  );
+  if (mouth) polygons.push({ id: 'illustration:street-connection', kind: 'drive', polygon: [mouth], elevation: 0.15, color: TYPE_COLORS.circulation ?? [150, 150, 150, 255], label: 'Drive apron (illustration)' });
   for (const el of buildings) {
     const top = heightOf(el).aboveGradeFt * METERS_PER_FOOT + 0.05;
     for (const ring of el.geometry.coordinates) roofLines.push({ id: el.id, path: ring.map(p => [...m(p), top]) });
@@ -385,4 +396,65 @@ function densify(ring: number[][]): Array<[number, number]> {
     for (let k = 0; k < n; k++) out.push([ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n]);
   }
   return out;
+}
+
+/** The plan's paved kinds: what a car drives or parks on. */
+const PAVED = new Set(['drive', 'parking-aisle', 'circulation', 'parking', 'parking-bay', 'driveway', 'street', 'alley', 'road']);
+/** Half the width the street's pavement is drawn at, metres (render3d/siteScene lays a 7.3 m ribbon). */
+const STREET_HALF_M = 3.65;
+
+/**
+ * The apron that joins the scheme's pavement to the street: from the edge of the plan's pavement that
+ * faces the nearest street and lies closest to it, straight out to the street's pavement. Null when
+ * the pavement already reaches the street, when no street is near, or when no edge is a drive's mouth.
+ */
+export function streetConnection(paved: Array<Array<[number, number]>>, roads: Array<Array<[number, number]>>, fronts: Array<Array<[number, number]>> = []): Array<[number, number]> | null {
+  // With a centre line the apron runs to the street's pavement. Without one it runs to the parcel
+  // line and a lane's width past it, onto the street the scene draws beyond the parcel.
+  const byLine = roads.length > 0;
+  const targets = byLine ? roads : fronts;
+  if (!targets.length) return null;
+  const reaches = (x: number, y: number): { d: number; q: [number, number] } => {
+    let d = Infinity, q: [number, number] = [x, y];
+    for (const line of targets) for (let i = 0; i + 1 < line.length; i++) {
+      const p0 = line[i]!, p1 = line[i + 1]!;
+      const dx = p1[0] - p0[0], dy = p1[1] - p0[1], l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((x - p0[0]) * dx + (y - p0[1]) * dy) / l2));
+      const fx = p0[0] + dx * t, fy = p0[1] + dy * t, dist = Math.hypot(x - fx, y - fy);
+      if (dist < d) { d = dist; q = [fx, fy]; }
+    }
+    return { d, q };
+  };
+  const inside = (x: number, y: number, ring: Array<[number, number]>): boolean => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[i]!, b = ring[j]!;
+      if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) hit = !hit;
+    }
+    return hit;
+  };
+  let best: { a: [number, number]; b: [number, number]; n: [number, number]; d: number } | null = null;
+  for (const ring of paved) {
+    // pavement that already lies on the street's pavement needs no apron
+    if (byLine && ring.some(p => reaches(p[0], p[1]).d < STREET_HALF_M + 0.3)) return null;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      // a drive's mouth: about a lane to two lanes wide
+      if (len < 3 || len > 11) continue;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      // the way out of the pavement across this edge
+      let n: [number, number] = [(b[1] - a[1]) / len, -(b[0] - a[0]) / len];
+      if (inside(mx + n[0] * 0.3, my + n[1] * 0.3, ring)) n = [-n[0], -n[1]];
+      const r = reaches(mx, my);
+      if (r.d > (byLine ? 45 : 12)) continue;
+      // the street lies ahead of the mouth, not off to one side of it
+      if (r.d > 0.5 && ((r.q[0] - mx) * n[0] + (r.q[1] - my) * n[1]) / r.d < 0.6) continue;
+      if (!best || r.d < best.d) best = { a, b, n, d: r.d };
+    }
+  }
+  if (!best) return null;
+  const reach = byLine ? best.d - STREET_HALF_M + 0.6 : best.d + 6;
+  if (reach < 0.9) return null;
+  return [best.a, best.b, [best.b[0] + best.n[0] * reach, best.b[1] + best.n[1] * reach], [best.a[0] + best.n[0] * reach, best.a[1] + best.n[1] * reach]];
 }
