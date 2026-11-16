@@ -20,3 +20,10 @@ Run everything from this folder. `plans.json`, `E.pkl` and `prompts/` hold plan 
 repo; rebuild them with the first three steps.
 
 The model was Claude run as one sub-agent per site, told to read only `TASK.md` and its brief and to run no code.
+
+## Drawing layouts as the app's site plan sheets
+
+`context.sql` pulls streets, neighbouring parcels and buildings; `sheets.py <saved result>` turns the civil plan, the
+pretrained layout and the nearest training plan into the app's plan elements (`sheets.json`);
+`npx tsx render_sheets.ts sheets.json svg` draws them with `src/features/site-plan/scene` (the app's own sheet code);
+`page2.py` puts the sheets on one page. Stories and stall counts are not in the layout data, so sheets show one story and no stalls.
