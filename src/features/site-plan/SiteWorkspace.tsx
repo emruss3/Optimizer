@@ -3307,8 +3307,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
       ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
       treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
+      ...(topo ? { topo } : {}),
     });
-  }, [scene, displayElements, neighbors, archStyle]);
+  }, [scene, displayElements, neighbors, archStyle, topo]);
   const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
     if (!scene) throw new Error('no scene');
     const [{ renderPlanImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
@@ -3399,18 +3400,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (!scene) return null;
       const [{ buildRenderJob }, data] = await Promise.all([import('./render3d/exportJob'), sheetModelData()]);
       if (!data) return null;
-      // the ground the survey sampled, where there is one: the scene stands on it
-      const { makeTerrain } = await import('./render3d/terrain');
-      const { point2274To3857 } = await import('./api/parcelTopo');
-      const terrain = topo ? makeTerrain(topo, p => { const q = data.toLocal(point2274To3857(p)); return [q[0] ?? 0, q[1] ?? 0]; }) : null;
-      const { glb, job } = await buildRenderJob(data, scene, { style: opts?.style ?? 'gray', ...(opts?.sunKey ? { sunKey: opts.sunKey } : {}), ...(opts?.sunHour != null ? { sunHour: opts.sunHour } : {}), grossSf: metrics?.totalBuiltSF ?? null, terrain });
+      const { glb, job } = await buildRenderJob(data, scene, { style: opts?.style ?? 'gray', ...(opts?.sunKey ? { sunKey: opts.sunKey } : {}), ...(opts?.sunHour != null ? { sunHour: opts.sunHour } : {}), grossSf: metrics?.totalBuiltSF ?? null });
       let bin = '';
       const bytes = new Uint8Array(glb);
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       return { glbBase64: btoa(bin), job };
     };
     return () => { delete w.__ppRenderJob; };
-  }, [scene, sheetModelData, metrics?.totalBuiltSF, topo]);
+  }, [scene, sheetModelData, metrics?.totalBuiltSF]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -4111,6 +4108,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 scene={scene}
                 selectedId={sceneSelectedIds.length === 1 ? sceneSelectedIds[0] : null}
                 onSelect={scene ? (id => handleSceneSelection(id ? [id] : [])) : undefined}
+                topo={topo}
               />
               </React.Suspense>
             </SitePlannerErrorBoundary>

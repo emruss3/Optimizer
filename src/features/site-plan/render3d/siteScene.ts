@@ -16,6 +16,7 @@ import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
 import { carParts, carSpot } from './cars';
+import { drape, gradeSite, lift, type Grade } from './terrain';
 import { Tree } from '@dgreenheck/ez-tree';
 
 /** One part of the model as it is handed to an exporter: local metres, z up. */
@@ -33,6 +34,10 @@ export interface SiteModel {
   built: Focus;
   /** What a street camera needs (render3d/shots): the scheme's buildings, the neighbours that can stand in the way, and the street lines. */
   ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]> };
+  /** The height of the ground the model is drawn on at a point, metres: 0 everywhere on flat ground. */
+  groundAt(x: number, y: number): number;
+  /** The ground the model stands on, where the parcel has a survey (render3d/terrain): the graded surface, each building's pad, what was assumed. */
+  grade: Grade | null;
   /** With `keepParts`: every part before merging, with the feature it belongs to and its material slot. Empty otherwise. */
   parts: ModelPart[];
   surfaces: Surfaces;
@@ -266,6 +271,8 @@ export interface SiteModelOptions {
   light?: boolean;
   /** Keep each part with its feature and material slot, for an export (render3d/exportJob). */
   keepParts?: boolean;
+  /** Leave every part on flat ground, though the ground is known: an export lays the parts itself, after joining them (render3d/exportJob). */
+  flatParts?: boolean;
   /** A picture for a sheet, where the reader must see at once which land is the scheme's: the
    *  parcel line drawn on the ground, and the existing buildings as quiet pale solids. */
   markSite?: boolean;
@@ -510,13 +517,44 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // the material slot it takes, before the parts of a slot are merged for drawing.
   let owner = 'ground';
   const parts: ModelPart[] = [];
+  // The ground. Where the parcel has a survey the model stands on it: graded where the work is
+  // (render3d/terrain), each building level on its pad. A building, a neighbour's building and a
+  // car are raised whole; every other part is laid over the ground point by point.
+  const footprints = new Map<string, Array<[number, number]>>();
+  for (const sl of data.slabs as RenderSlab[]) {
+    if (sl.part === 'detail') continue;
+    const list = footprints.get(sl.id) ?? [];
+    for (const p of sl.polygon[0] ?? []) list.push([p[0] ?? 0, p[1] ?? 0]);
+    footprints.set(sl.id, list);
+  }
+  const grade: Grade | null = data.terrain
+    ? gradeSite(
+      data.terrain,
+      [...footprints.entries()].map(([id, pts]) => ({ id: String(id), ring: convexHull(pts) as Array<[number, number]> })).filter(b => b.ring.length >= 3),
+      data.polygons
+        .filter(q => !q.building && ['drive', 'parking-aisle', 'circulation', 'parking', 'parking-bay', 'driveway'].includes(q.kind ?? ''))
+        .map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number]))
+        .filter(r => r.length >= 3),
+    )
+    : null;
+  const laid = grade && !opts.flatParts ? grade.terrain : null;
+  const groundAt = (x: number, y: number) => (laid ? laid.heightAt(x, y) : 0);
+  /** What a whole piece is raised by, keyed by its owner. */
+  const seat = new Map<string, number>();
+  if (grade) for (const [id, z] of grade.pads) seat.set(`building:${id}`, z);
   const put = (key: string, g: THREE.BufferGeometry | null, color: readonly number[]) => {
     if (!g) return;
     const list = bins.get(key) ?? [];
-    const painted = paint(g.index ? g.toNonIndexed() : g, linear(color));
+    let painted = paint(g.index ? g.toNonIndexed() : g, linear(color));
+    if (opts.keepParts) parts.push({ owner, slot: key.split('|')[0] ?? 'plain', geometry: painted.clone() });
+    if (laid) {
+      const dz = seat.get(owner);
+      const placed = dz != null ? lift(painted, dz) : drape(painted, laid);
+      painted.dispose();
+      painted = placed;
+    }
     list.push(painted);
     bins.set(key, list);
-    if (opts.keepParts) parts.push({ owner, slot: key.split('|')[0] ?? 'plain', geometry: painted.clone() });
   };
 
   // ground: a wide plate that runs out into the haze, then the neighbourhood on it
@@ -549,6 +587,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       if (!ring) return;
       owner = c.elevation < 1 ? 'context-parcels' : `context-building:${n}`;
       const flat = ring.map(p => [p[0] ?? 0, p[1] ?? 0]);
+      // a neighbour's building stands at the lowest ground under it, so it never floats
+      if (laid && c.elevation >= 1) seat.set(owner, Math.min(...flat.map(p => laid.heightAt(p[0] ?? 0, p[1] ?? 0))));
       if (c.elevation < 1) {
         put('grass|flat', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.03), real ? [126, 144, 98, 255] : [170, 184, 142, 255]);
         return;
@@ -685,6 +725,17 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const s of data.slabs) { owner = `building:${s.id}`; put(`${s.surface ?? 'plain'}|solid`, prism(s.polygon, s.elevation), s.color); }
   for (const f of data.roofs) { owner = `building:${f.id}`; put(`${f.surface ?? 'plain'}|sheet`, plane(f.polygon), f.color); }
   for (const w of data.windows) { owner = `building:${w.id}`; put('glass|sheet', plane(w.polygon), w.color); }
+  // a plain foundation: the foot of each building's walls carried a little below its pad
+  if (grade) {
+    for (const sl of data.slabs as RenderSlab[]) {
+      const ring = sl.polygon[0];
+      const pad = grade.pads.get(String(sl.id));
+      if (pad == null || !ring || ring.length < 3 || (ring[0]?.[2] ?? 0) > 0.05 || sl.elevation < 1.5 || sl.part === 'detail') continue;
+      owner = `plinth:${sl.id}`;
+      seat.set(owner, pad - 0.6);
+      put('concrete|solid', prism([ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], 0.6), [150, 148, 142, 255]);
+    }
+  }
   owner = 'cars';
   // Cars. On a device that draws on its processor a car is two boxes; otherwise it is a shaped
   // one (render3d/cars). The plan data gives each car a body and a cabin footprint: the body places it.
@@ -696,6 +747,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${n}`));
       if (!spot) return;
       owner = `car:${n}`;
+      if (laid) { const ring = c.polygon[0] ?? []; seat.set(owner, laid.heightAt(ring.reduce((t, p) => t + (p[0] ?? 0), 0) / Math.max(1, ring.length), ring.reduce((t, p) => t + (p[1] ?? 0), 0) / Math.max(1, ring.length))); }
       for (const part of carParts(spot)) put(part.key, part.geometry, part.color);
     });
   }
@@ -931,7 +983,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     tops.set(sl.id, Math.max(tops.get(sl.id) ?? 0, ((sl.polygon[0]?.[0]?.[2]) ?? 0) + sl.elevation));
   }
   const ground = {
-    subjects: [...byBuilding.entries()].map(([id, pts]) => ({ id: String(id), points: convexHull(pts) as Array<[number, number]>, height: tops.get(id) ?? 3 })),
+    subjects: [...byBuilding.entries()].map(([id, pts]) => ({ id: String(id), points: convexHull(pts) as Array<[number, number]>, height: tops.get(id) ?? 3, base: (laid && grade?.pads.get(String(id))) || 0 })),
     obstacles: neighbours.map(n => n.ring),
     roads: data.roads.map(r => r.path),
     trees: opts.review ? [] : standing,
@@ -957,6 +1009,24 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     pick.push(mesh);
   }
   root.add(pickGroup);
+  // everything placed many times (trees, shrubs, the wooded surroundings) stands on the ground where it is;
+  // the unseen solid a building is picked by rises with its pad
+  if (laid) {
+    const mm4 = new THREE.Matrix4();
+    root.traverse(o => {
+      const inst = o as THREE.InstancedMesh;
+      if (!inst.isInstancedMesh) return;
+      for (let i = 0; i < inst.count; i++) {
+        inst.getMatrixAt(i, mm4);
+        const e = mm4.elements;
+        e[14] = (e[14] ?? 0) + laid.heightAt(e[12] ?? 0, e[13] ?? 0);
+        inst.setMatrixAt(i, mm4);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      inst.computeBoundingSphere();
+    });
+    for (const mesh of pick) mesh.position.z = grade?.pads.get(String(mesh.userData.id)) ?? 0;
+  }
   root.updateMatrixWorld(true);
   lap('done');
 
@@ -967,6 +1037,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     focus,
     built,
     ground,
+    grade,
+    groundAt,
     parts,
     surfaces,
     ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),

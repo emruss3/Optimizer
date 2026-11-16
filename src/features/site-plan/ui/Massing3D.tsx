@@ -68,6 +68,8 @@ type Massing3DProps = {
   scene?: DrawingScene | null;
   /** The selected feature, shared with the plan. */
   selectedId?: string | null;
+  /** The parcel's surveyed elevations: the rendered scene stands on them. */
+  topo?: import('../api/parcelTopo').ParcelTopo | null;
   onSelect?: (id: string | null) => void;
 };
 
@@ -685,6 +687,7 @@ const Massing3D: React.FC<Massing3DProps> = props => {
         scene={props.scene}
         selectedId={props.selectedId}
         onSelect={props.onSelect}
+        topo={props.topo}
         onFail={onFail}
       />
     );

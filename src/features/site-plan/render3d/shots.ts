@@ -5,7 +5,10 @@ import { pointInPolygon } from '../scene/frame';
 
 export interface Subject {
   /** The building this outline belongs to. */
-  id?: string; points: Array<[number, number]>; height: number }
+  id?: string; points: Array<[number, number]>; height: number
+  /** The level the building stands on, metres above the model's zero: 0 on flat ground. */
+  base?: number;
+}
 
 export interface Shot {
   /** Where the camera is: ground position and height above the ground. */
@@ -128,4 +131,23 @@ export function streetShot(subjects: Subject[], obstacles: number[][][], roads: 
 function extent(pts: Array<[number, number]>): number {
   const [x, y] = centre(pts);
   return Math.max(0, ...pts.map(p => Math.hypot(p[0] - x, p[1] - y)));
+}
+
+/**
+ * A street shot found on flat ground, stood on the real ground: the eye rises to
+ * the ground where the camera is and stays level, and the lens shifts by the
+ * difference between that ground and the building's pad, so the building keeps
+ * its place in the frame and its walls stay upright.
+ */
+export function standOn(shot: Shot, groundAt: (x: number, y: number) => number, padZ: number): Shot {
+  const stand = groundAt(shot.position[0], shot.position[1]);
+  if (stand === 0 && padZ === 0) return shot;
+  const away = Math.hypot(shot.target[0] - shot.position[0], shot.target[1] - shot.position[1]) || 1;
+  const lift = Math.max(1, shot.lift + ((padZ - stand) / away) / Math.tan((shot.fovDeg * Math.PI) / 360));
+  return {
+    ...shot,
+    position: [shot.position[0], shot.position[1], shot.position[2] + stand],
+    target: [shot.target[0], shot.target[1], shot.target[2] + stand],
+    lift,
+  };
 }
