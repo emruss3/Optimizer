@@ -627,9 +627,19 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   });
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-02</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
-  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">${picture?.ai
+  // what the picture is, in as many lines as it needs: the note must never run off the sheet
+  const note = picture?.ai
     ? "An AI impression painted over a render of the plan. The layout is the plan's. Materials, planting, sky and surroundings are invented, and a detail may differ from the plan. Not a design."
-    : `${viewScope(scene)}The site is outlined in white; existing buildings are grey. ${picture?.graded ? GRADED_NOTE : ''}Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design.`}</text>`);
+    : `${viewScope(scene)}The site is outlined in white; existing buildings are grey. ${picture?.graded ? GRADED_NOTE : ''}Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design.`;
+  // short of the sheet number and its line at the right of the band
+  const perLine = Math.floor((W - 2 * M - 200) / 2.55);
+  const lines: string[] = [];
+  for (const word of note.split(' ')) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && (last + ' ' + word).length <= perLine) lines[lines.length - 1] = last + ' ' + word;
+    else lines.push(word);
+  }
+  out.push(`<text x="${tx}" font-size="5.4" fill="#7a8087" data-role="view-note">${lines.map((l, k) => `<tspan x="${tx}" y="${r2(H - M - 5 - (lines.length - 1 - k) * 6.6)}">${esc(l)}</tspan>`).join('')}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H };
 }
