@@ -78,3 +78,17 @@ parcels yet.
   site times 1.15, not a measured envelope.
 - `optimize_yield_scenarios` and `optimize_assemblage_massing` are not part
   of the deterministic engines.
+
+## Owner review of PR 167: requirements for the database half
+
+1. **Security first.** The browser role must not write combined rows
+   straight into `public.parcels`. Use a SECURITY DEFINER
+   `fn_assemble_parcels` with a pinned search_path. Keep the members in
+   their own table (sorted fid[] to id) with RLS on. Cap member count and
+   rows per caller. Grant execute to authenticated only, not anon.
+2. **One migration.** The frontage, neighbour and edge-class exclusions and
+   the sweep, search and map-view exclusions ship together, each with a
+   fixture test, so a combined row never takes frontage from real parcels.
+3. **Proof before anyone sees a combined site.** A battery assert on a real
+   two-parcel RM set: frontage kept, envelope on the union, and a
+   screenshot of the plan.
