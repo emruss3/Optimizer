@@ -1,0 +1,435 @@
+{
+  "schema_version": 1,
+  "units": "ft",
+  "blender": "4.5.16 LTS",
+  "site": {
+    "parcel_id": "488278",
+    "scheme_id": "mf:seed_v2",
+    "revision": "de87f8d2"
+  },
+  "glb_sha256": "24ddb8dbb8f9888f91bd887134d79a81a025fc38186d735a8223b57a4f9091ef",
+  "preset": "gray-pass",
+  "bounds_ft": {
+    "job": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -0.066
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        67.15
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        67.216
+      ]
+    },
+    "blender": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -0.066
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        67.15
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        67.216
+      ]
+    },
+    "worst_difference_ft": 0.0,
+    "axes": [
+      "east",
+      "north",
+      "up"
+    ]
+  },
+  "known_dimensions": {
+    "what": "building mfgen-bldg-1: top, extent east, extent north",
+    "job_ft": [
+      53.514,
+      158.524,
+      214.163
+    ],
+    "blender_ft": [
+      53.514,
+      158.524,
+      214.163
+    ]
+  },
+  "camera_parity_at_1920x1080": {
+    "street": {
+      "points": 14,
+      "worst_error_px": 0.006,
+      "tolerance_px": 2.0,
+      "rows": [
+        {
+          "id": "main-base-0",
+          "browser_px": [
+            1074.75,
+            739.27
+          ],
+          "blender_px": [
+            1074.75,
+            739.27
+          ],
+          "error_px": 0.004
+        },
+        {
+          "id": "main-top-0",
+          "browser_px": [
+            1074.75,
+            527.49
+          ],
+          "blender_px": [
+            1074.75,
+            527.49
+          ],
+          "error_px": 0.006
+        },
+        {
+          "id": "main-base-1",
+          "browser_px": [
+            131.79,
+            768.85
+          ],
+          "blender_px": [
+            131.79,
+            768.85
+          ],
+          "error_px": 0.004
+        },
+        {
+          "id": "main-top-1",
+          "browser_px": [
+            131.79,
+            320.42
+          ],
+          "blender_px": [
+            131.79,
+            320.42
+          ],
+          "error_px": 0.005
+        },
+        {
+          "id": "main-base-2",
+          "browser_px": [
+            645.22,
+            785.42
+          ],
+          "blender_px": [
+            645.22,
+            785.42
+          ],
+          "error_px": 0.002
+        },
+        {
+          "id": "main-top-2",
+          "browser_px": [
+            645.22,
+            204.47
+          ],
+          "blender_px": [
+            645.22,
+            204.47
+          ],
+          "error_px": 0.004
+        },
+        {
+          "id": "main-base-3",
+          "browser_px": [
+            768.32,
+            778.4
+          ],
+          "blender_px": [
+            768.32,
+            778.4
+          ],
+          "error_px": 0.001
+        },
+        {
+          "id": "main-top-3",
+          "browser_px": [
+            768.32,
+            253.6
+          ],
+          "blender_px": [
+            768.32,
+            253.6
+          ],
+          "error_px": 0.002
+        },
+        {
+          "id": "main-base-4",
+          "browser_px": [
+            1286.34,
+            748.86
+          ],
+          "blender_px": [
+            1286.34,
+            748.86
+          ],
+          "error_px": 0.003
+        },
+        {
+          "id": "main-top-4",
+          "browser_px": [
+            1286.34,
+            460.4
+          ],
+          "blender_px": [
+            1286.34,
+            460.4
+          ],
+          "error_px": 0.002
+        },
+        {
+          "id": "main-base-5",
+          "browser_px": [
+            1377.83,
+            743.64
+          ],
+          "blender_px": [
+            1377.83,
+            743.64
+          ],
+          "error_px": 0.001
+        },
+        {
+          "id": "main-top-5",
+          "browser_px": [
+            1377.83,
+            496.93
+          ],
+          "blender_px": [
+            1377.83,
+            496.93
+          ],
+          "error_px": 0.004
+        },
+        {
+          "id": "main-base-6",
+          "browser_px": [
+            1398.36,
+            742.47
+          ],
+          "blender_px": [
+            1398.37,
+            742.47
+          ],
+          "error_px": 0.005
+        },
+        {
+          "id": "main-top-6",
+          "browser_px": [
+            1398.36,
+            505.12
+          ],
+          "blender_px": [
+            1398.37,
+            505.12
+          ],
+          "error_px": 0.006
+        }
+      ]
+    },
+    "drone": {
+      "points": 14,
+      "worst_error_px": 0.006,
+      "tolerance_px": 2.0,
+      "rows": [
+        {
+          "id": "main-base-0",
+          "browser_px": [
+            986.01,
+            419.42
+          ],
+          "blender_px": [
+            986.01,
+            419.43
+          ],
+          "error_px": 0.006
+        },
+        {
+          "id": "main-top-0",
+          "browser_px": [
+            986.78,
+            302.72
+          ],
+          "blender_px": [
+            986.78,
+            302.72
+          ],
+          "error_px": 0.005
+        },
+        {
+          "id": "main-base-1",
+          "browser_px": [
+            699.85,
+            701.91
+          ],
+          "blender_px": [
+            699.85,
+            701.91
+          ],
+          "error_px": 0.003
+        },
+        {
+          "id": "main-top-1",
+          "browser_px": [
+            689.69,
+            560.22
+          ],
+          "blender_px": [
+            689.69,
+            560.22
+          ],
+          "error_px": 0.003
+        },
+        {
+          "id": "main-base-2",
+          "browser_px": [
+            924.75,
+            757.33
+          ],
+          "blender_px": [
+            924.75,
+            757.33
+          ],
+          "error_px": 0.003
+        },
+        {
+          "id": "main-top-2",
+          "browser_px": [
+            923.31,
+            611.28
+          ],
+          "blender_px": [
+            923.31,
+            611.28
+          ],
+          "error_px": 0.003
+        },
+        {
+          "id": "main-base-3",
+          "browser_px": [
+            947.73,
+            728.43
+          ],
+          "blender_px": [
+            947.73,
+            728.43
+          ],
+          "error_px": 0.005
+        },
+        {
+          "id": "main-top-3",
+          "browser_px": [
+            947.24,
+            584.63
+          ],
+          "blender_px": [
+            947.24,
+            584.63
+          ],
+          "error_px": 0.005
+        },
+        {
+          "id": "main-base-4",
+          "browser_px": [
+            1107.73,
+            527.16
+          ],
+          "blender_px": [
+            1107.73,
+            527.16
+          ],
+          "error_px": 0.002
+        },
+        {
+          "id": "main-top-4",
+          "browser_px": [
+            1112.66,
+            400.39
+          ],
+          "blender_px": [
+            1112.66,
+            400.39
+          ],
+          "error_px": 0.005
+        },
+        {
+          "id": "main-base-5",
+          "browser_px": [
+            1155.38,
+            467.22
+          ],
+          "blender_px": [
+            1155.38,
+            467.22
+          ],
+          "error_px": 0.001
+        },
+        {
+          "id": "main-top-5",
+          "browser_px": [
+            1161.51,
+            345.97
+          ],
+          "blender_px": [
+            1161.51,
+            345.97
+          ],
+          "error_px": 0.004
+        },
+        {
+          "id": "main-base-6",
+          "browser_px": [
+            1167.46,
+            452.03
+          ],
+          "blender_px": [
+            1167.46,
+            452.03
+          ],
+          "error_px": 0.005
+        },
+        {
+          "id": "main-top-6",
+          "browser_px": [
+            1173.86,
+            332.21
+          ],
+          "blender_px": [
+            1173.86,
+            332.21
+          ],
+          "error_px": 0.006
+        }
+      ]
+    }
+  },
+  "checks_passed": true,
+  "failures": [],
+  "images": {
+    "street": {
+      "file": "gray-street-960.png",
+      "width": 960,
+      "height": 540,
+      "samples": 48
+    },
+    "drone": {
+      "file": "gray-drone-960.png",
+      "width": 960,
+      "height": 540,
+      "samples": 48
+    }
+  }
+}

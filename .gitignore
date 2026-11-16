@@ -12,3 +12,7 @@ test-results/
 scripts/visual-battery/mock_hits.log
 scripts/visual-battery/mock_misses.log
 battery-out/
+
+# offline render jobs (scripts/render4k)
+/out/
+__pycache__/
