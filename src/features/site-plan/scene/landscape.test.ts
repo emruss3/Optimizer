@@ -150,7 +150,12 @@ describe('the sheet', () => {
     // a picture on ground graded for it says the grading is assumed; one on flat or ungraded ground does not
     expect(doc.querySelector('[data-role="view-note"]')?.textContent).not.toMatch(/not a grading plan/);
     const graded = renderViewSheet(scene, title, 'slide', { href: 'data:image/jpeg;base64,AAAA', graded: true });
-    expect(graded.svg).toContain('graded to 4% or less: an assumption of the picture, not a grading plan');
+    // the note wraps to more than one line, and still reads as whole sentences
+    const gdoc = new DOMParser().parseFromString(graded.svg, 'image/svg+xml');
+    const note = gdoc.querySelector('[data-role="view-note"]');
+    expect(note?.querySelectorAll('tspan').length).toBeGreaterThanOrEqual(2);
+    expect(note?.textContent).toMatch(/graded to 4% or less: an assumption of the picture, not a grading plan/);
+    expect(note?.textContent).toMatch(/are illustration, not a design/);
     const painted = renderViewSheet(scene, title, 'slide', { href: 'data:image/jpeg;base64,AAAA', ai: true, graded: true });
     expect(painted.svg).not.toContain('not a grading plan');
   });

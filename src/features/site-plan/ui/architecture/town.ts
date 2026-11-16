@@ -20,6 +20,8 @@ interface Row {
   p: HousePalette;
   /** A drive comes to the far end. */
   drive: boolean;
+  /** How far the pavement is from the garage end, metres; null where none comes to it. */
+  driveGap: number | null;
   /** A neighbour stands against the left side, the right side. */
   party: [boolean, boolean];
   /** How far straight out from a point on the door end the pavement is, or null. */
@@ -36,7 +38,15 @@ function entry(r: Row, o: { leaf: Mat; frame: Mat; win: WindowSpec; sidelight?: 
   if (W >= 5) k.windows(f.w, (doorS + 1.0 + W - 0.55) / 2, W >= 5.6 ? 2 : 1, 0.85, SLAB + 0.8, SLAB + 2.15, o.win, d);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 0, 1.0, 0, SLAB, PORCH);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 1.0, 1.32, 0, SLAB * 0.5, PORCH);
-  if (toPavement != null && toPavement > 2.6) k.box(f.w, doorS - 0.55, doorS + 0.55, 1.32, Math.min(toPavement + 0.3, 12), 0, 0.2, WALK);
+  if (toPavement != null && toPavement > 2.6 && toPavement <= 12) k.box(f.w, doorS - 0.55, doorS + 0.55, 1.32, toPavement + 0.3, 0, 0.2, WALK);
+  else if (toPavement == null || toPavement > 12) {
+    // No pavement lies ahead of the door: the home fronts a green or a mews. A walk runs out from the
+    // stoop to a path along the front of the row. Each home lays its own stretch of that path, so a
+    // row's stretches join, and an end home carries it on past its open side toward the lane there.
+    const out = 3.3, wide = 1.3;
+    k.box(f.w, doorS - 0.55, doorS + 0.55, 1.32, out + 0.05, 0, 0.2, WALK);
+    k.box(f.w, r.party[0] ? -0.05 : -4.5, r.party[1] ? W + 0.05 : W + 4.5, out, out + wide, 0, 0.2, WALK);
+  }
   if (W >= 5) k.bed(f.w, doorS + 1.0, W - 0.2, 0.12, 0.95);
   return doorS;
 }
@@ -47,6 +57,8 @@ function rear(r: Row, back: Wall, o: { frame: Mat; trim: Mat; leaf: Mat; lites: 
   if (drive) {
     const gw = W >= 6 ? 4.9 : Math.min(2.75, W - 1.1);
     k.garage(back, W / 2 - gw / 2, W / 2 + gw / 2, 0.04, 2.15, { frame: o.trim, leaf: o.leaf, lites: o.lites });
+    // the apron: a car has to get from the lane to the door
+    if (r.driveGap != null && r.driveGap > 0.25) k.box(back, W / 2 - gw / 2 - 0.2, W / 2 + gw / 2 + 0.2, 0, Math.min(r.driveGap + 0.35, 16.3), 0, 0.26, WALK);
   } else {
     k.window(back, W / 2, Math.min(1.8, W - 1.4), SLAB + 0.05, SLAB + 2.15, { frame: o.frame, grid: [2, 1] });
     k.box(back, 0.3, W - 0.3, 0.02, 2.4, 0, 0.2, PORCH);
@@ -243,6 +255,7 @@ export function rowHome(k: Kit, rings: number[][][], height: SceneHeight, paveme
   const row: Row = {
     k, f, W, D, lv: levelsM(height), p: housePalette(style, k.seed),
     drive: near.dist != null && near.dist < 16,
+    driveGap: near.dist != null && near.dist < 16 ? near.dist : null,
     party: [attached(faces.left), attached(faces.right)],
     reach: s => reachOf(front, pavement, s),
   };
