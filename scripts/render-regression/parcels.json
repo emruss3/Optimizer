@@ -1,21 +1,101 @@
 {
   "note": "The parcels every change to the 3D view and the stills is judged on. Chosen from the fixture store (scripts/visual-battery/fixtures) to cover the population: apartments and subdivisions, gentle and steep, small and very large, with and without a survey.",
   "parcels": [
-    { "fid": 488278, "address": "1710 MEHARRY BLVD", "zoning": "RM20", "class": "apartments, small, gentle" },
-    { "fid": 553450, "address": "2600 W HEIMAN ST", "zoning": "RM40", "class": "apartments, small, flat" },
-    { "fid": 660125, "address": "5525 MT VIEW RD", "zoning": "RM15", "class": "apartments, steep (85 ft of relief)" },
-    { "fid": 680339, "address": "0 WHITES CREEK PIKE", "zoning": "RM9", "class": "apartments, mid size, sloped" },
-    { "fid": 670533, "address": "0 SMITH SPRINGS RD", "zoning": "RM6", "class": "apartments, larger, sloped" },
-    { "fid": 669046, "address": "1200 W H DAVIS DR", "zoning": "RM40", "class": "apartments, no survey" },
-    { "fid": 469303, "address": "535 MAIN ST", "zoning": "MUG-A", "class": "mixed use, urban" },
-    { "fid": 393306, "address": "303 E PALESTINE AVE", "zoning": "RS10", "class": "single lot, infill, no survey" },
-    { "fid": 680001, "address": "0 UNION HILL RD", "zoning": "RS40", "class": "subdivision, 3 lots" },
-    { "fid": 661661, "address": "6404 EATONS CREEK RD", "zoning": "R40", "class": "subdivision, 3 lots, sloped" },
-    { "fid": 672526, "address": "0 HICKORY BEND DR", "zoning": "RS10", "class": "subdivision, 9 lots, flat" },
-    { "fid": 680391, "address": "0 HILLS LN", "zoning": "R10", "class": "subdivision, 14 lots" },
-    { "fid": 682644, "address": "4701 BOWFIELD DR", "zoning": "R8", "class": "subdivision, 35 lots, sloped" },
-    { "fid": 680719, "address": "0 MARTINGALE DR", "zoning": "R10", "class": "subdivision, 147 lots, 70 acres" },
-    { "fid": 686430, "address": "4255 BRICK CHURCH PIKE", "zoning": "R20", "class": "very steep (28% average)" },
-    { "fid": 550510, "address": "2400 W HEIMAN ST", "zoning": "R6", "class": "large site, 13 acres" }
+    {
+      "fid": 488278,
+      "address": "1710 MEHARRY BLVD",
+      "zoning": "RM20",
+      "class": "apartments, small, gentle"
+    },
+    {
+      "fid": 553450,
+      "address": "2600 W HEIMAN ST",
+      "zoning": "RM40",
+      "class": "apartments, small, flat"
+    },
+    {
+      "fid": 660125,
+      "address": "5525 MT VIEW RD",
+      "zoning": "RM15",
+      "class": "townhomes, mews, steep (85 ft of relief)"
+    },
+    {
+      "fid": 680339,
+      "address": "0 WHITES CREEK PIKE",
+      "zoning": "RM9",
+      "class": "apartments, mid size, sloped"
+    },
+    {
+      "fid": 670533,
+      "address": "0 SMITH SPRINGS RD",
+      "zoning": "RM6",
+      "class": "apartments, larger, sloped"
+    },
+    {
+      "fid": 669046,
+      "address": "1200 W H DAVIS DR",
+      "zoning": "RM40",
+      "class": "apartments, no survey"
+    },
+    {
+      "fid": 469303,
+      "address": "535 MAIN ST",
+      "zoning": "MUG-A",
+      "class": "mixed use, urban"
+    },
+    {
+      "fid": 393306,
+      "address": "303 E PALESTINE AVE",
+      "zoning": "RS10",
+      "class": "single lot, infill, no survey"
+    },
+    {
+      "fid": 680001,
+      "address": "0 UNION HILL RD",
+      "zoning": "RS40",
+      "class": "subdivision, 3 lots"
+    },
+    {
+      "fid": 661661,
+      "address": "6404 EATONS CREEK RD",
+      "zoning": "R40",
+      "class": "subdivision, 3 lots, sloped"
+    },
+    {
+      "fid": 672526,
+      "address": "0 HICKORY BEND DR",
+      "zoning": "RS10",
+      "class": "refused: the floodplain leaves no buildable piece"
+    },
+    {
+      "fid": 680391,
+      "address": "0 HILLS LN",
+      "zoning": "R10",
+      "class": "subdivision, 14 lots"
+    },
+    {
+      "fid": 682644,
+      "address": "4701 BOWFIELD DR",
+      "zoning": "R8",
+      "class": "subdivision, 35 lots, sloped"
+    },
+    {
+      "fid": 680719,
+      "address": "0 MARTINGALE DR",
+      "zoning": "R10",
+      "class": "70 acres, opens on a plan with no lots"
+    },
+    {
+      "fid": 686430,
+      "address": "4255 BRICK CHURCH PIKE",
+      "zoning": "R20",
+      "class": "very steep (28% average)"
+    },
+    {
+      "fid": 550510,
+      "address": "2400 W HEIMAN ST",
+      "zoning": "R6",
+      "class": "large site, 13 acres"
+    }
   ]
 }
