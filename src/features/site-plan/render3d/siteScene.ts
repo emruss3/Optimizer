@@ -538,6 +538,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     )
     : null;
   const laid = grade && !opts.flatParts ? grade.terrain : null;
+  // the live view lays its parts on a coarser lattice than a still does: the survey is sampled every
+  // 6 m, so nothing of the ground is lost, and the view opens sooner
+  const lattice = opts.light ? 9 : 6;
   const groundAt = (x: number, y: number) => (laid ? laid.heightAt(x, y) : 0);
   /** What a whole piece is raised by, keyed by its owner. */
   const seat = new Map<string, number>();
@@ -549,7 +552,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (opts.keepParts) parts.push({ owner, slot: key.split('|')[0] ?? 'plain', geometry: painted.clone() });
     if (laid) {
       const dz = seat.get(owner);
-      const placed = dz != null ? lift(painted, dz) : drape(painted, laid);
+      const placed = dz != null ? lift(painted, dz) : drape(painted, laid, lattice);
       painted.dispose();
       painted = placed;
     }

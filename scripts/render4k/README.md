@@ -63,6 +63,11 @@ and what was assumed:
 
 A parcel with no survey renders on flat ground and `terrain` is null.
 
+The grading lives in the shared model (`render3d/terrain`, `gradeSite`), so the
+live 3D view stands on the same graded ground and the same pads. The live view
+lays its parts on a 6 m lattice and a still on a 3 m one; both sample the same
+surface.
+
 ## Checks before any pixel is rendered
 
 The worker stops with a non-zero exit code when one fails.
@@ -111,6 +116,12 @@ simple shapes: the kit has no car models.
 | Gray pass, both cameras | 960 by 540 | 48 | 42 s |
 | Daylight with the kit, both cameras | 960 by 540 | 64 | 2 min 44 s |
 | Daylight with the kit and lawn, street only | 1920 by 1080 | 96 | 6 min 44 s |
+| The same on graded ground | 1920 by 1080 | 12 | 2 min 21 s |
+| The same on graded ground | 3840 by 2160 | 160 | 39 min |
+
+Of the 12-sample run, about 20 s is loading and checking the scene, 50 s is
+building the kit, lawn and plants, 20 s is the ray tracer's own preparation and
+50 s is tracing. On this hardware no setting brings a still under two minutes.
 
 ## Not yet
 
