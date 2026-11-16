@@ -11,7 +11,7 @@ import type { Polygon } from 'geojson';
 
 const box = (x0: number, y0: number, x1: number, y1: number): Pt[] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
 const feature = (id: string, role: SceneFeature['role'], styleRole: SceneFeature['styleRole'], ring: Pt[]): SceneFeature => ({
-  id, role, styleRole, name: id, polygons: [[ring]], stalls: null, reportedAreaSqFt: null, provenance: { elementType: 'x', generator: null },
+  id, role, styleRole, name: id, polygons: [[ring]], label: null, stalls: null, reportedAreaSqFt: null, provenance: { elementType: 'x', generator: null },
 });
 
 describe('planting', () => {
