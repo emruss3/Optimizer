@@ -42,7 +42,12 @@ describe('PlanActions', () => {
     expect(screen.getByTestId('plan-another-option').textContent).toContain('Create another option');
     fireEvent.click(screen.getByTestId('plan-recalculate'));
     fireEvent.click(screen.getByTestId('plan-another-option'));
+    // saving asks for a name first, with one offered
     fireEvent.click(screen.getByTestId('plan-save-version'));
+    expect(onSaveVersion).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByTestId('plan-version-name'), { target: { value: 'Board scheme' } });
+    fireEvent.click(screen.getByTestId('plan-save-confirm'));
+    expect(onSaveVersion).toHaveBeenCalledWith('Board scheme');
     expect([onRecalculate.mock.calls.length, onAnotherOption.mock.calls.length, onSaveVersion.mock.calls.length]).toEqual([1, 1, 1]);
     expect(screen.getByTestId('plan-saved-state').textContent).toBe('On the sheet: Option 3');
   });

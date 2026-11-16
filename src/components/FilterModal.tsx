@@ -3,26 +3,17 @@ import { Dialog, Transition } from '@headlessui/react';
 import { X, Filter, Search, Building } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 
+/** Only what the map applies. A criterion is added here when it has a source and a predicate. */
 interface FilterState {
-  priceRange: { min: string; max: string };
-  sizeRange: { min: string; max: string };
   zoning: string[];
-  forSale: boolean;
-  yearBuilt: { min: string; max: string };
-  address: string;
 }
 
 export default function FilterModal() {
   const { filterModalOpen, setFilterModal, zoningFilters, setZoningFilters } = useUIStore();
   
-  const [filters, setFilters] = React.useState<FilterState>({
-    priceRange: { min: '', max: '' },
-    sizeRange: { min: '', max: '' },
-    zoning: zoningFilters.activeZones,
-    forSale: false,
-    yearBuilt: { min: '', max: '' },
-    address: '',
-  });
+  const [filters, setFilters] = React.useState<FilterState>({ zoning: zoningFilters.activeZones });
+  // the chips on the map can change the filter while this is closed: open on what is applied
+  React.useEffect(() => { if (filterModalOpen) setFilters({ zoning: zoningFilters.activeZones }); }, [filterModalOpen, zoningFilters.activeZones]);
   
   const zoningOptions = [
     'RS5', 'RS7.5', 'RS10', 'RS15', 'RS20', 'RS30', 'RS40',
@@ -42,14 +33,7 @@ export default function FilterModal() {
   };
 
   const resetFilters = () => {
-    setFilters({
-      priceRange: { min: '', max: '' },
-      sizeRange: { min: '', max: '' },
-      zoning: [],
-      forSale: false,
-      yearBuilt: { min: '', max: '' },
-      address: '',
-    });
+    setFilters({ zoning: [] });
   };
 
   const applyFilters = () => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Building, TrendingUp, Map } from 'lucide-react';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
 import { SelectedParcel, isValidParcel } from '../types/parcel';
@@ -13,6 +13,13 @@ interface FullAnalysisModalProps {
 
 const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen, onClose }: FullAnalysisModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'hbu' | 'site' | 'financial'>('overview');
+  // Escape closes this, the topmost surface. On the planner tab the planner owns Escape.
+  useEffect(() => {
+    if (!isOpen || activeTab === 'site') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [isOpen, activeTab, onClose]);
   
   // Use useParcelDetail hook to fetch and normalize full parcel data
   const { parcelDetail, loading: isLoadingDetail, error: parcelError } = useParcelDetail(
@@ -46,6 +53,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
           </div>
           <button
             onClick={onClose}
+            aria-label="Close full analysis"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-6 h-6 text-gray-500" />

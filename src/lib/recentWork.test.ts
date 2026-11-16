@@ -31,3 +31,15 @@ describe('recentWork', () => {
     expect(listRecent()).toEqual([]);
   });
 });
+
+describe('useRecent', () => {
+  it('follows the list as parcels are opened', async () => {
+    const { renderHook, act } = await import('@testing-library/react');
+    const { useRecent } = await import('./recentWork');
+    localStorage.clear();
+    const { result } = renderHook(() => useRecent());
+    expect(result.current).toEqual([]);
+    act(() => recordRecent({ ogcFid: 9, address: '9 Ninth St' }));
+    expect(result.current.map(r => r.address)).toEqual(['9 Ninth St']);
+  });
+});

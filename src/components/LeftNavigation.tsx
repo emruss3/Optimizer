@@ -1,6 +1,6 @@
 import React from 'react';
 import { Map, Menu, X, Clock } from 'lucide-react';
-import { listRecent } from '../lib/recentWork';
+import { useRecent } from '../lib/recentWork';
 import { openParcel } from '../lib/parcelSearch';
 import { useUIStore } from '../store/ui';
 import MapControls from './MapControls';
@@ -17,7 +17,7 @@ export default function LeftNavigation() {
     { id: 'map', label: 'Map View', icon: Map },
   ];
   // what this browser has actually opened: never sample activity
-  const recent = listRecent().slice(0, 5);
+  const recent = useRecent().slice(0, 5);
 
   const NavContent = () => (
     <>
