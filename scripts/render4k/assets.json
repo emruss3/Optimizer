@@ -77,5 +77,19 @@
       "id": "shrub_03",
       "res": "1k"
     }
+  ],
+  "grass": [
+    {
+      "id": "grass_bermuda_01",
+      "res": "1k"
+    },
+    {
+      "id": "grass_medium_01",
+      "res": "1k"
+    },
+    {
+      "id": "grass_medium_02",
+      "res": "1k"
+    }
   ]
 }

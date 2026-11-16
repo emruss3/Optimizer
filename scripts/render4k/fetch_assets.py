@@ -76,6 +76,7 @@ def main():
     lock["materials"] = {slot: {**texture(m["id"], m["res"], root, lock), "tint": m.get("tint", 1.0)} for slot, m in kit["materials"].items()}
     lock["trees"] = [{**model(t["id"], t["res"], root, lock, "trees"), "weight": t.get("weight", 1)} for t in kit["trees"]]
     lock["shrubs"] = [model(t["id"], t["res"], root, lock, "shrubs") for t in kit["shrubs"]]
+    lock["grass"] = [model(t["id"], t["res"], root, lock, "grass") for t in kit.get("grass", [])]
     del lock["_root"]
     with open(os.path.join(root, "assets.lock.json"), "w") as f:
         json.dump(lock, f, indent=2)

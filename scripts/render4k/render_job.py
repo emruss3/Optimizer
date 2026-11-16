@@ -268,7 +268,10 @@ def slot_material(slot):
         bsdf.inputs["Roughness"].default_value = 0.6
         _bump(nt, bsdf, wave.outputs[0], 1.0, 0.012)
     elif slot == "glass":
-        bsdf.inputs["Base Color"].default_value = (0.012, 0.018, 0.024, 1)
+        room = nt.nodes.new("ShaderNodeMix"); room.data_type = "RGBA"; room.blend_type = "MULTIPLY"; room.inputs["Factor"].default_value = 1.0
+        link(tint, room.inputs["A"])
+        room.inputs["B"].default_value = (0.55, 0.55, 0.55, 1)
+        link(room.outputs["Result"], bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.02
         bsdf.inputs["Metallic"].default_value = 0.0
         bsdf.inputs["IOR"].default_value = 1.52
@@ -508,6 +511,28 @@ def kit_material(slot, entry, root):
     nm.inputs["Strength"].default_value = 1.0
     link(nor.outputs["Color"], nm.inputs["Color"])
     link(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    if slot == "siding":
+        # lap boards at a 6 inch exposure: each board's face tips out to its lower edge
+        sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+        link(_wall_coords(nt, 1.0, 1 / 0.1524), sep.inputs[0])
+        lap = nt.nodes.new("ShaderNodeMath"); lap.operation = "FRACT"
+        link(sep.outputs["Y"], lap.inputs[0])
+        inv = nt.nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"; inv.inputs[0].default_value = 1.0
+        link(lap.outputs[0], inv.inputs[1])
+        bump = nt.nodes.new("ShaderNodeBump")
+        bump.inputs["Strength"].default_value = 1.0
+        bump.inputs["Distance"].default_value = 0.014
+        link(inv.outputs[0], bump.inputs["Height"])
+        link(nm.outputs["Normal"], bump.inputs["Normal"])
+        link(bump.outputs["Normal"], bsdf.inputs["Normal"])
+        # and a thin shadow under each lap
+        edge = nt.nodes.new("ShaderNodeMath"); edge.operation = "GREATER_THAN"; edge.inputs[1].default_value = 0.93
+        link(lap.outputs[0], edge.inputs[0])
+        dark = nt.nodes.new("ShaderNodeMix"); dark.data_type = "RGBA"; dark.blend_type = "MULTIPLY"
+        link(edge.outputs[0], dark.inputs["Factor"])
+        link(blend.outputs["Result"], dark.inputs["A"])
+        dark.inputs["B"].default_value = (0.55, 0.55, 0.55, 1)
+        link(dark.outputs["Result"], bsdf.inputs["Base Color"])
     return mat
 
 
@@ -603,6 +628,86 @@ def kit_plants(job, lock, root):
     return count
 
 
+def kit_lawn(job, lock, root, meshes, reach_m=27.0, per_m2=300.0):
+    """Blades of grass on the lawns near a camera that stands on the ground.
+
+    Past the reach the photographed lawn surface carries on alone. Seeded by the job.
+    """
+    import numpy as np
+    eyes = [m(c["position_ft"]) for c in job["cameras"] if c["position_ft"][2] < 30]
+    entries = lock.get("grass", [])
+    if not eyes or not entries:
+        return 0
+    rng = np.random.default_rng(int(job["lighting"].get("seed", 1)))
+    pts = []
+    for name, obj in meshes.items():
+        if not name.endswith("__grass"):
+            continue
+        me = obj.data
+        me.calc_loop_triangles()
+        n = len(me.loop_triangles)
+        if not n:
+            continue
+        co = np.empty(len(me.vertices) * 3, dtype=np.float32); me.vertices.foreach_get("co", co); co = co.reshape(-1, 3)
+        tri = np.empty(n * 3, dtype=np.int32); me.loop_triangles.foreach_get("vertices", tri); tri = tri.reshape(-1, 3)
+        nor = np.empty(n * 3, dtype=np.float32); me.loop_triangles.foreach_get("normal", nor); nor = nor.reshape(-1, 3)
+        area = np.empty(n, dtype=np.float32); me.loop_triangles.foreach_get("area", area)
+        a, b, c = co[tri[:, 0]], co[tri[:, 1]], co[tri[:, 2]]
+        for eye in eyes:
+            e = np.array([eye.x, eye.y], dtype=np.float32)
+            # a large lawn is a few large triangles: sample it whole and keep what is in reach
+            near = (nor[:, 2] > 0.9)
+            lo = np.minimum(np.minimum(a[:, :2], b[:, :2]), c[:, :2]); hi = np.maximum(np.maximum(a[:, :2], b[:, :2]), c[:, :2])
+            near &= np.all(lo - reach_m < e, axis=1) & np.all(hi + reach_m > e, axis=1)
+            for i in np.nonzero(near)[0]:
+                # only the part of the triangle inside the reach is worth sampling
+                count = int(min(area[i], math.pi * reach_m ** 2) * per_m2 * 1.3)
+                if count < 1:
+                    continue
+                u, v = rng.random(count, dtype=np.float32), rng.random(count, dtype=np.float32)
+                flip = u + v > 1
+                u[flip], v[flip] = 1 - u[flip], 1 - v[flip]
+                p = a[i] + (b[i] - a[i]) * u[:, None] + (c[i] - a[i]) * v[:, None]
+                d = np.hypot(p[:, 0] - e[0], p[:, 1] - e[1])
+                # full near the eye, thinning out to the reach
+                keep = rng.random(count) < np.clip((reach_m - d) / (reach_m * 0.25), 0, 1) * (area[i] * per_m2 / max(count, 1))
+                pts.append(p[keep & (d < reach_m)])
+    if not pts:
+        return 0
+    pts = np.concatenate(pts)
+    # a lawn runs on under roads, walks and buildings in the model: grass grows only where nothing lies over it
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    up = Vector((0, 0, 1))
+    cast = bpy.context.scene.ray_cast
+    open_sky = np.fromiter((not cast(dg, Vector((float(p[0]), float(p[1]), float(p[2]) + 0.002)), up, distance=60.0)[0] for p in pts), dtype=bool, count=len(pts))
+    pts = pts[open_sky]
+    if not len(pts):
+        return 0
+    clumps = [s for s in _import_plants(entries, root, True) if 0.1 < s["height"] < 0.45 and s["radius"] > 0.06]
+    if not clumps:
+        return 0
+    coll = bpy.data.collections.new("lawn")
+    bpy.context.scene.collection.children.link(coll)
+    which = rng.integers(0, len(clumps), len(pts))
+    for k, clump in enumerate(clumps):
+        mine = pts[which == k]
+        if not len(mine):
+            continue
+        cloud = bpy.data.meshes.new(f"lawn:points{k}")
+        cloud.vertices.add(len(mine))
+        cloud.vertices.foreach_set("co", mine.astype(np.float32).ravel())
+        host = bpy.data.objects.new(f"lawn:{k}", cloud)
+        host.instance_type = "VERTS"
+        coll.objects.link(host)
+        blade = bpy.data.objects.new(f"lawn:clump{k}", clump["meshes"][0])
+        # a mown lawn: the clump at its own width, cut to about 3 inches
+        blade.scale = (1.0, 1.0, min(1.0, 0.085 / clump["height"]))
+        blade.parent = host
+        coll.objects.link(blade)
+    return int(len(pts))
+
+
 def kit_pass(job, meshes, root, report):
     with open(os.path.join(root, "assets.lock.json")) as f:
         lock = json.load(f)
@@ -618,7 +723,10 @@ def kit_pass(job, meshes, root, report):
                      "photographed_slots": sorted(s for s in made if s in lock["materials"]),
                      "other_slots": sorted(s for s in made if s not in lock["materials"])}
     report["sky"] = kit_sky(job, lock, root)
+    # the lawn first: it looks up for anything lying over the grass, and a tree's crown is not a road
+    clumps = kit_lawn(job, lock, root, meshes)
     report["planting"] = kit_plants(job, lock, root)
+    report["planting"]["grass_clumps"] = clumps
 
 
 def setup_cycles(job, args):
@@ -637,7 +745,10 @@ def setup_cycles(job, args):
         c.use_denoising = False
     c.seed = int(job["lighting"].get("seed", 1))
     scene.view_settings.view_transform = "AgX"
-    scene.view_settings.look = "None"
+    try:
+        scene.view_settings.look = "AgX - Base Contrast" if (args.preset or job["renderer"]["preset"]) == "daylight" else "None"
+    except TypeError:
+        scene.view_settings.look = "None"
     scene.view_settings.exposure = float(job["lighting"].get("exposure_ev", 0))
     scene.render.film_transparent = False
     c.transparent_max_bounces = 24

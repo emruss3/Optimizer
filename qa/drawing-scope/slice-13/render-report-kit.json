@@ -69,11 +69,6 @@
       "points": 14,
       "worst_error_px": 0.006,
       "tolerance_px": 2.0
-    },
-    "drone": {
-      "points": 14,
-      "worst_error_px": 0.006,
-      "tolerance_px": 2.0
     }
   },
   "checks_passed": true,
@@ -106,20 +101,15 @@
   },
   "planting": {
     "trees": 727,
-    "shrubs": 120
+    "shrubs": 120,
+    "grass_clumps": 283735
   },
   "images": {
     "street": {
-      "file": "kit-street-960.png",
-      "width": 960,
-      "height": 540,
-      "samples": 64
-    },
-    "drone": {
-      "file": "kit-drone-960.png",
-      "width": 960,
-      "height": 540,
-      "samples": 64
+      "file": "kit-street-1920.png",
+      "width": 1920,
+      "height": 1080,
+      "samples": 96
     }
   }
 }

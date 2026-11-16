@@ -76,6 +76,7 @@ when it is there (`--assets` names another folder).
 | --- | --- |
 | Materials | Each slot (`brick`, `siding`, `plaster`, `asphalt`, `concrete`, `grass`, `shingle`) takes the photographed surface at its true size, in the colour the model painted. `tint` in the manifest says how much of that colour carries. |
 | Sky | The photographed sky lights the scene. It is turned so its sun stands on the job's sun bearing. The report gives the sky's sun height beside the job's, so pick a date and hour that match it. |
+| Lawn | Scanned grass on the lawns within about 90 ft of a camera that stands on the ground, and only where no road, walk or building lies over it. Farther out the photographed lawn surface carries on alone. |
 | Plants | A scanned tree for each tree in `planting.trees`, sized to its crown radius, and a scanned shrub for each in `planting.shrubs`. The job's seed fixes which one and which way it faces. |
 
 Slots with no photographed surface yet (`glass`, `paint`, `plain`, `panel`,
@@ -88,7 +89,7 @@ simple shapes: the kit has no car models.
 | --- | --- | --- | --- |
 | Gray pass, both cameras | 960 by 540 | 48 | 42 s |
 | Daylight with the kit, both cameras | 960 by 540 | 64 | 2 min 44 s |
-| Daylight with the kit, street only | 1920 by 1080 | 96 | about 5 min |
+| Daylight with the kit and lawn, street only | 1920 by 1080 | 96 | 6 min 44 s |
 
 ## Not yet
 
