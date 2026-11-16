@@ -107,7 +107,8 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
         const a = ring[i], b = ring[(i + 1) % ring.length], e = on(w, w.len);
         if (!a || !b) return;
         k.flat([[w.a[0], w.a[1], zB], [e[0], e[1], zB], [b[0], b[1], zc], [a[0], a[1], zc]], tone(p.crown, 1 - (i % 3) * 0.04));
-        k.box(w, -0.1, w.len + 0.1, 0, 0.14, zB - 0.1, 0.1, p.trim);
+        // the cornice under the mansard: a deep board the roof springs from, with its shadow under it
+        k.box(w, -0.16, w.len + 0.16, 0, 0.3, zB - 0.22, 0.22, p.trim);
       });
     });
     k.slabs.push({ id: k.id, building: true, polygon: tops.map(r => r.map(q => [q[0], q[1], zc])), elevation: 0.14, color: FLAT_ROOF.color, surface: FLAT_ROOF.surface, part: 'parapet', label: k.label });
@@ -144,6 +145,14 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
         if (lift) k.box(w, a - 0.04, b + 0.04, -0.3, 0.13, top + PARAPET + lift, 0.06, p.cap);
       }
     }
+    // a belt course where the ground story's cladding meets the one above: the line every such building draws
+    // The ground story's masonry is a wall with depth: its face stands SKIN proud of the windows, so
+    // each opening is a true recess with jambs, a head and a sill of brick that catch their own shadow.
+    const skinned = style !== 'heritage' && !lite && n >= 2 && first < zB && use !== 'amenity';
+    // a facade detail, like the proud cladding above it: the building's solid, which the plan fixes, is unchanged
+    const SKIN = 0.18;
+    const holes: Array<[number, number, number, number]> = [];
+    if (style !== 'heritage' && !lite && n >= 2 && first < zB) k.box(w, -0.04 - (skinned ? SKIN : 0), w.len + 0.04 + (skinned ? SKIN : 0), 0, (skinned ? SKIN : 0) + 0.07, first - 0.1, 0.2, p.trim);
     if (style === 'heritage' && !lite) {
       // piers between the stretches, a stone band over the ground story, and a cornice
       for (let m = 0; m <= mods; m++) { const s = Math.min(w.len - 0.3, Math.max(0.3, Math.round(m * per) * step)); k.box(w, s - 0.3, s + 0.3, 0, 0.14, 0, top + PARAPET - 0.1, tone(p.body, 0.94)); }
@@ -167,13 +176,19 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
       const gTop = Math.min(first - 0.75, 3.15);
       if (b === entryBay && use !== 'amenity') {
         k.door(w, s - 0.55, 1.1, 0.06, 2.35, { frame: p.frame, leaf: p.frame, lite: true, sidelight: 1.1, transom: true });
+        holes.push([s - 1.2, s + 1.2, 0, 2.95]);
         k.box(w, s - 2.3, s + 2.3, 0, 1.9, Math.min(first - 0.55, 3.2), 0.14, p.cap);
         for (const q of [s - 2.1, s + 2.1]) k.post(w, q, 1.75, 0, Math.min(first - 0.55, 3.2), 0.12, BLACK);
       } else if (use === 'amenity' || use === 'other') {
-        k.window(w, s, Math.min(step - 0.7, 2.8), 0.5, gTop, { frame: p.frame, grid: lite ? undefined : [3, 1] });
+        const wd = Math.min(step - 0.7, 2.8);
+        k.window(w, s, wd, 0.5, gTop, { frame: p.frame, grid: lite ? undefined : [3, 1] });
+        if (wd >= 0.3) holes.push([s - wd / 2 - 0.06, s + wd / 2 + 0.06, 0.47, gTop + 0.04]);
       } else {
         const each = Math.min(1.0, (step - 1.3) / 2);
-        if (each > 0.45) k.windows(w, s, 2, each, 0.85, gTop, win);
+        if (each > 0.45) {
+          k.windows(w, s, 2, each, 0.85, gTop, win);
+          holes.push([s - each - 0.05 - 0.06, s + each + 0.05 + 0.06, 0.82, gTop + 0.04]);
+        }
       }
       for (let st = 1; st < n; st++) {
         const z0 = lv[st - 1] ?? first, z1 = lv[st] ?? top, head = Math.min(z1 - 0.35, z0 + 2.3);
@@ -200,6 +215,18 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
           if (each > 0.45) k.windows(w, s, 2, each, z0 + 0.9, head, win, proud);
         }
       }
+    }
+    if (skinned) {
+      const H = first - 0.1;
+      const open = holes.filter(h => h[1] > h[0]).sort((a, b) => a[0] - b[0]);
+      let at = -SKIN;
+      for (const [s0, s1, z0, z1] of open) {
+        if (s0 - at > 0.02) k.box(w, at, s0, 0, SKIN, 0, H, p.base);
+        if (z0 > 0.03) k.box(w, s0, s1, 0, SKIN, 0, z0, p.base);
+        if (H - z1 > 0.03) k.box(w, s0, s1, 0, SKIN, z1, H - z1, p.base);
+        at = Math.max(at, s1);
+      }
+      if (w.len + SKIN - at > 0.02) k.box(w, at, w.len + SKIN, 0, SKIN, 0, H, p.base);
     }
   });
   if (use === 'amenity' || lite) return;

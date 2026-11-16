@@ -811,6 +811,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       wood.castShadow = leaves.castShadow = shadows;
       wood.receiveShadow = leaves.receiveShadow = shadows;
       leaves.customDepthMaterial = form.leafDepth;
+      wood.userData.standsOnGround = leaves.userData.standsOnGround = true;
       root.add(wood, leaves);
     });
   };
@@ -838,6 +839,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       // a card is mostly air: the occlusion pass, which would read it as a wall, leaves it out
       mesh.userData.noOcclusion = true;
       mesh.name = name;
+      mesh.userData.standsOnGround = true;
       root.add(mesh);
     });
   };
@@ -863,6 +865,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       canopy.setColorAt(i, linear([100, 140, 70]));
     });
     canopy.castShadow = true;
+    canopy.userData.standsOnGround = true;
     root.add(canopy);
   }
 
@@ -953,6 +956,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       wood.castShadow = shadows;
       wood.receiveShadow = false;
       wood.name = name;
+      wood.userData.standsOnGround = true;
       root.add(wood);
     };
     // the surrounding trees are portraits of the site's own, on crossed cards; where a portrait
@@ -1018,7 +1022,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const mm4 = new THREE.Matrix4();
     root.traverse(o => {
       const inst = o as THREE.InstancedMesh;
-      if (!inst.isInstancedMesh) return;
+      // only what was marked as standing on the ground (trees, shrubs, the woods), and only when it hangs
+      // straight off the root: anything else placed many times is seated by the part that made it
+      if (!inst.isInstancedMesh || !inst.userData.standsOnGround || inst.parent !== root) return;
       for (let i = 0; i < inst.count; i++) {
         inst.getMatrixAt(i, mm4);
         const e = mm4.elements;

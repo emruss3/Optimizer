@@ -49,11 +49,13 @@ export async function renderPlanImage(req: PlanImageRequest): Promise<string> {
  * A picture of the site from the air, for the rendering sheet: the view the
  * 3D panel opens on, a little lower and closer, on an equinox afternoon.
  */
-export async function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number }): Promise<string> {
+export async function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number; onGraded?: (graded: boolean) => void }): Promise<string> {
   const { data } = req;
   const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
   const light = renderQuality() === 'light';
   const model = buildSiteModel(data, { light, markSite: true });
+  // whether this picture stands on ground that was graded for it: the sheet says so only then
+  req.onGraded?.(!!model.grade?.grading);
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, light });
   try {
     await model.ready;

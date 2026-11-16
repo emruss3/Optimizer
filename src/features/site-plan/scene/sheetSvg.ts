@@ -42,6 +42,8 @@ export interface SheetUnderlay {
   href: string;
   /** True when an image model painted it: the sheet then says so. */
   ai?: boolean | undefined;
+  /** True when the picture stands on surveyed ground that was graded for it (render3d/terrain): the sheet then says the grading is assumed. */
+  graded?: boolean | undefined;
 }
 
 export interface SheetLayout {
@@ -590,6 +592,9 @@ export function viewSheetLayout(size: SheetSize): { widthPt: number; heightPt: n
   return { widthPt: W, heightPt: H, image: { x: M, y: M, w: W - 2 * M, h: H - 2 * M - band } };
 }
 
+/** What a sheet says when its picture stands on ground graded for the picture. */
+export const GRADED_NOTE = 'The ground is the surveyed ground, with the paved area and each building pad graded to 4% or less: an assumption of the picture, not a grading plan. ';
+
 /**
  * A-02 Aerial View: a rendering of the scheme filling the page, with a band
  * under it that names the project, gives the scheme's figures and says what
@@ -624,7 +629,7 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
   out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">${picture?.ai
     ? "An AI impression painted over a render of the plan. The layout is the plan's. Materials, planting, sky and surroundings are invented, and a detail may differ from the plan. Not a design."
-    : `${viewScope(scene)}The site is outlined in white; existing buildings are grey. Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design.`}</text>`);
+    : `${viewScope(scene)}The site is outlined in white; existing buildings are grey. ${picture?.graded ? GRADED_NOTE : ''}Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design.`}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H };
 }

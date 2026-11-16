@@ -147,6 +147,12 @@ describe('the sheet', () => {
     expect(doc.querySelector('[data-figure="Density"]')?.textContent).toBe('11.2 per acreDENSITY');
     expect(doc.querySelector('[data-role="view-note"]')?.textContent).toMatch(/are illustration, not a design/);
     expect(sheet.svg).toMatch(/width="13.333in" height="7.5in"/);
+    // a picture on ground graded for it says the grading is assumed; one on flat or ungraded ground does not
+    expect(doc.querySelector('[data-role="view-note"]')?.textContent).not.toMatch(/not a grading plan/);
+    const graded = renderViewSheet(scene, title, 'slide', { href: 'data:image/jpeg;base64,AAAA', graded: true });
+    expect(graded.svg).toContain('graded to 4% or less: an assumption of the picture, not a grading plan');
+    const painted = renderViewSheet(scene, title, 'slide', { href: 'data:image/jpeg;base64,AAAA', ai: true, graded: true });
+    expect(painted.svg).not.toContain('not a grading plan');
   });
 });
 

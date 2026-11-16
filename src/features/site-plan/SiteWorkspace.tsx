@@ -3323,9 +3323,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const { requestPhotoreal, describeScene } = await import('./render3d/photoreal');
     return (await requestPhotoreal({ image, view: 'aerial', style: archStyle, ...describeScene(scene) })).image;
   }, [scene, archStyle]);
+  // true when the sheet's aerial picture stood on ground graded for it (the model says, not the survey's mere presence)
+  const [sheetGraded, setSheetGraded] = useState(false);
   const renderSheetView = useCallback(async (widthPx: number, heightPx: number): Promise<string> => {
     const [{ renderAerialImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
-    return renderAerialImage({ data, widthPx, heightPx });
+    return renderAerialImage({ data, widthPx, heightPx, onGraded: setSheetGraded });
   }, [sheetModelData]);
   const contextState = resolveContextApplication({
     compiling: plannerLoading,
@@ -4299,7 +4301,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} groundGraded={sheetGraded} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} />
       )}
       {exportOpen && (
         <ExportReport
