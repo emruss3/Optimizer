@@ -140,9 +140,9 @@ export class Kit {
   constructor(readonly id: string, readonly label: string) { this.seed = hashId(id); }
 
   /** A solid on a footprint ring, from z0 up by h. */
-  prism(ring: V2[], z0: number, h: number, m: Mat, part: RenderSlab['part'] = 'detail'): void {
+  prism(ring: V2[], z0: number, h: number, m: Mat, part: RenderSlab['part'] = 'detail', approach?: RenderSlab['approach']): void {
     if (h <= 0.001 || ring.length < 3) return;
-    this.slabs.push({ id: this.id, building: true, polygon: [ring.map(p => [p[0], p[1], z0])], elevation: h, color: m.color, surface: m.surface, part, label: this.label });
+    this.slabs.push({ id: this.id, building: true, polygon: [ring.map(p => [p[0], p[1], z0])], elevation: h, color: m.color, surface: m.surface, part, label: this.label, ...(approach ? { approach } : {}) });
   }
   /** A whole footprint, courts kept, from z0 up by h. */
   mass(rings: number[][][], z0: number, h: number, m: Mat, part: RenderSlab['part']): void {
@@ -154,6 +154,20 @@ export class Kit {
     const lo = Math.min(d0, d1), hi = Math.max(d0, d1);
     if (s1 - s0 < 0.01 || hi - lo < 0.004) return;
     this.prism([on(w, s0, lo), on(w, s1, lo), on(w, s1, hi), on(w, s0, hi)], z0, h, m, part);
+  }
+
+  /** The renderer seats the two ends independently on the building and pavement. */
+  approach(w: Wall, s: number, d0: number, d1: number, width: number, threshold: number, kind: 'walk' | 'apron', material: Mat, pavement = 0.3): void {
+    if (d1 <= d0) return;
+    this.approachBetween(on(w, s, d0), on(w, s, d1), width, threshold, kind, material, pavement, w.n);
+  }
+
+  approachBetween(start: V2, end: V2, width: number, threshold: number, kind: 'walk' | 'apron', material: Mat, pavement: number, facing?: V2): void {
+    const dx = end[0] - start[0], dy = end[1] - start[1], distance = Math.hypot(dx, dy);
+    if (distance < 0.18 || width < 0.4) return;
+    const px = (-dy * width) / (2 * distance), py = (dx * width) / (2 * distance);
+    const edges: V2[] = [[start[0] + px, start[1] + py], [start[0] - px, start[1] - py], [end[0] - px, end[1] - py], [end[0] + px, end[1] + py]];
+    this.prism(edges, 0, threshold, material, 'detail', { start, end, width, threshold, pavement, kind, ...(facing ? { facing } : {}) });
   }
   /** A flat upright panel on a wall, d out from it. */
   panel(w: Wall, s0: number, s1: number, z0: number, z1: number, d: number, m: Mat): void {
@@ -238,6 +252,12 @@ export class Kit {
     this.box(w, a - f, a, d, d + p, z0, top - z0, o.frame);
     this.box(w, b + side, b + side + f, d, d + p, z0, top - z0, o.frame);
     this.panel(w, a, b, z0, z0 + h, d + 0.03, o.leaf);
+    if (!this.lite && width >= 0.75) {
+      this.box(w, a - 0.025, b + 0.02, d - 0.03, d + 0.14, z0 - 0.019, 0.019, CONCRETE);
+      const latch = b - 0.13;
+      this.box(w, latch - 0.025, latch + 0.025, d + 0.029, d + 0.045, z0 + 0.91, 0.11, o.frame);
+      this.box(w, latch - 0.085, latch + 0.025, d + 0.055, d + 0.085, z0 + 0.968, 0.023, o.frame);
+    }
     if (o.lite) this.pane(w, a + width * 0.2, b - width * 0.2, z0 + h * 0.55, z0 + h - 0.18, d + 0.04);
     if (side > 0) {
       this.box(w, b, b + 0.05, d, d + p, z0, h, o.frame);
@@ -267,8 +287,22 @@ export class Kit {
   /** A balustrade along a wall line: thin bars, or glass, under a top rail. */
   rail(w: Wall, s0: number, s1: number, d: number, z: number, kind: 'bars' | 'glass', m: Mat, h = 1.05): void {
     if (s1 - s0 < 0.1) return;
-    const p0 = on(w, s0, d), p1 = on(w, s1, d);
-    this.flats.push({ id: this.id, polygon: [[p0[0], p0[1], z + 0.06], [p1[0], p1[1], z + 0.06], [p1[0], p1[1], z + h - 0.03], [p0[0], p0[1], z + h - 0.03]], color: m.color, surface: kind === 'bars' ? 'railing' : 'glassrail' });
+    if (kind === 'bars' && !this.lite) {
+      const steel: Mat = { ...m, surface: 'metalwork' };
+      const posts = Math.ceil((s1 - s0) / 1.45);
+      const bars = Math.ceil((s1 - s0) / 0.113);
+      for (let i = 0; i <= posts; i++) {
+        const s = s0 + (s1 - s0) * i / posts;
+        this.box(w, s - 0.023, s + 0.023, d - 0.022, d + 0.022, z, h - 0.03, steel);
+      }
+      for (let i = 1; i < bars; i++) {
+        const s = s0 + (s1 - s0) * i / bars;
+        this.box(w, s - 0.008, s + 0.008, d - 0.009, d + 0.009, z + 0.06, h - 0.09, steel);
+      }
+    } else {
+      const p0 = on(w, s0, d), p1 = on(w, s1, d);
+      this.flats.push({ id: this.id, polygon: [[p0[0], p0[1], z + 0.06], [p1[0], p1[1], z + 0.06], [p1[0], p1[1], z + h - 0.03], [p0[0], p0[1], z + h - 0.03]], color: m.color, surface: kind === 'bars' ? 'railing' : 'glassrail' });
+    }
     this.box(w, s0, s1, d - 0.025, d + 0.025, z + h - 0.04, 0.045, m);
     if (kind === 'bars') this.box(w, s0, s1, d - 0.02, d + 0.02, z + 0.05, 0.03, m);
   }

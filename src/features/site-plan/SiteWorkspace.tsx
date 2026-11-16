@@ -93,7 +93,7 @@ import { accessFinding } from './api/accessFinding';
 import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
-import { buildDrawingScene, sceneEvidence, selectionFor, type SelectionCache } from './scene/buildScene';
+import { buildDrawingScene, sceneEvidence, sceneRevision, selectionFor, type SelectionCache } from './scene/buildScene';
 import { ExhibitSheets } from './ui/ExhibitSheets';
 import { useArchStyle } from './ui/archStyle';
 import { DOCK_KEY, INSPECTOR_KEY } from './ui/workspaceLayout';
@@ -518,6 +518,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   /** Save version: keep the plan on the sheet under a name, and say whether it worked. */
   const [versionSaved, setVersionSaved] = useState<{ name: string; ok: boolean } | null>(null);
+  const [savedRenderPlan, setSavedRenderPlan] = useState<{ id: string; parcel: string; revision: string }>();
   // the saved-plans error belongs to this save only once a save has been asked for: the hook clears it at the start of each save
   const saveVersionAskedRef = useRef(false);
   setVersionSavedRef.current = setVersionSaved;
@@ -536,6 +537,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     savePlanToDb({ parcel_id: parcelIdStr, name, config, elements, metrics, violations, investment: investmentAnalysis })
       .then(saved => {
         setVersionSaved({ name, ok: !!saved });
+        if (saved) setSavedRenderPlan({ id: saved.id, parcel: saved.parcel_id, revision: sceneRevision(saved.elements ?? []) });
         // only a save that happened is a save in the feedback stream
         if (saved) void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_saved', activeCandidateId, { name, kind: 'saved_version' });
       })
@@ -544,6 +546,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   const handleLoadPlan = useCallback(
     (plan: SavedSitePlan) => {
+      setSavedRenderPlan({ id: plan.id, parcel: plan.parcel_id, revision: sceneRevision(plan.elements ?? []) });
       setPlanOutput(plan.elements ?? [], plan.metrics ?? null);
       setViolations(plan.violations ?? []);
       setInvestmentAnalysis(plan.investment ?? null);
@@ -3422,14 +3425,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (!scene) return null;
       const [{ buildRenderJob }, data] = await Promise.all([import('./render3d/exportJob'), sheetModelData()]);
       if (!data) return null;
-      const { glb, job } = await buildRenderJob(data, scene, { style: opts?.style ?? 'gray', ...(opts?.sunKey ? { sunKey: opts.sunKey } : {}), ...(opts?.sunHour != null ? { sunHour: opts.sunHour } : {}), grossSf: metrics?.totalBuiltSF ?? null });
+      const { glb, job } = await buildRenderJob(data, scene, { style: archStyle, ...(opts?.sunKey ? { sunKey: opts.sunKey } : {}), ...(opts?.sunHour != null ? { sunHour: opts.sunHour } : {}), grossSf: metrics?.totalBuiltSF ?? null });
       let bin = '';
       const bytes = new Uint8Array(glb);
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       return { glbBase64: btoa(bin), job };
     };
     return () => { delete w.__ppRenderJob; };
-  }, [scene, sheetModelData, metrics?.totalBuiltSF]);
+  }, [scene, sheetModelData, archStyle, metrics?.totalBuiltSF]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -4131,6 +4134,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 selectedId={sceneSelectedIds.length === 1 ? sceneSelectedIds[0] : null}
                 onSelect={scene ? (id => handleSceneSelection(id ? [id] : [])) : undefined}
                 topo={topo}
+                grossSf={seedViewOn ? null : metrics?.totalBuiltSF}
+                savedPlanId={scene && savedRenderPlan?.parcel === scene.identity.parcelId && savedRenderPlan.revision === scene.identity.revision
+                  ? savedRenderPlan.id : undefined}
               />
               </React.Suspense>
             </SitePlannerErrorBoundary>

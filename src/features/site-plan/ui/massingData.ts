@@ -16,8 +16,11 @@ export interface MassingPolygon {
   id?: string;
   /** True for a plan building: the only solids that can be selected. */
   building?: boolean;
+  detached?: boolean;
   /** The plan element's type, for a view that chooses its own materials. */
   kind?: string;
+  hazard?: 'wetland' | 'floodplain' | 'floodway' | 'slope';
+  privateDrive?: boolean;
   /** Polygon rings in local metres, centred on the plan's bbox centre */
   polygon: number[][][];
   /** Extrusion height in metres */
@@ -44,6 +47,7 @@ export const SITE_MATERIALS: Record<string, [number, number, number, number]> = 
   street: [128, 128, 126, 255],
   drive: [150, 150, 146, 255],
   driveway: [208, 204, 194, 255],
+  walk: [196, 190, 176, 255],
   'parking-bay': [212, 212, 207, 255],
   parking: [212, 212, 207, 255],
   'parking-aisle': [158, 158, 154, 255],
@@ -97,11 +101,11 @@ export function buildMassingData(
   shrubs: Array<[number, number, number]>;
   /** Walks, as lines to be drawn wide under what they follow: the plan's own
    *  streets (with a planted strip inside the walk) and the larger buildings. */
-  walks: Array<{ path: number[][]; widthM: number; strip: boolean }>;
+  walks: Array<{ id?: string; path: number[][]; widthM: number; strip: boolean }>;
   /** Curbs: the edges of the plan's streets and drives. */
-  curbs: Array<{ path: number[][] }>;
+  curbs: Array<{ id?: string; path: number[][] }>;
   /** The block's streets, centre lines in local metres. */
-  roads: Array<{ path: number[][] }>;
+  roads: Array<{ id?: string; path: number[][] }>;
   /** Stall stripes, where a bay's reported count divides into whole stalls. */
   stripes: Array<{ path: number[][] }>;
   /** Parked cars in some of those stalls. Illustration. */
@@ -162,21 +166,23 @@ export function buildMassingData(
   const heightOf = (el: Element) =>
     buildingHeight(buildingUse(el), (el.properties?.floors as number) ?? (el.properties?.stories as number) ?? 1, el.properties?.heightFt);
 
-  const polygons: MassingPolygon[] = drawable.map(el => ({
-    id: el.id,
-    building: el.type === 'building',
-    kind: pavementKind(el) ?? el.type,
-    polygon: el.geometry.coordinates.map(ring => ring.map(m)),
-    elevation:
-      el.type === 'building'
-        ? heightOf(el).aboveGradeFt * METERS_PER_FOOT
-        : 0.15, // flatwork gets a sliver of height so it reads above the ground plane
-    color: TYPE_COLORS[el.type],
-    label:
-      el.type === 'building'
+  const polygons: MassingPolygon[] = drawable.map(el => {
+    const hazard = el.properties?.hazardKind;
+    return {
+      id: el.id,
+      building: el.type === 'building',
+      ...(el.type === 'building' && buildingUse(el) === 'house' ? { detached: true } : {}),
+      kind: el.type === 'circulation' && el.name === 'Walk' ? 'walk' : el.properties?.kind === 'pond' ? 'pond' : pavementKind(el) ?? el.type,
+      ...(hazard === 'wetland' || hazard === 'floodplain' || hazard === 'floodway' || hazard === 'slope' ? { hazard } : {}),
+      ...(el.properties?.privateDrive === true || /private drive/i.test(el.name ?? '') ? { privateDrive: true } : {}),
+      polygon: el.geometry.coordinates.map(ring => ring.map(m)),
+      elevation: el.type === 'building' ? heightOf(el).aboveGradeFt * METERS_PER_FOOT : 0.15,
+      color: TYPE_COLORS[el.type]!,
+      label: el.type === 'building'
         ? `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`
         : el.name ?? el.id,
-  }));
+    };
+  });
 
   // Parcel + envelope outlines on the ground plane, in the SAME centred frame
   const groundPaths: Array<{ path: number[][]; color: [number, number, number, number]; widthM: number }> = [];
@@ -255,6 +261,8 @@ export function buildMassingData(
   const pavement: Array<[number, number]> = drawable
     .filter(el => el.type === 'circulation' || el.type === 'parking-aisle')
     .flatMap(el => densify((el.geometry.coordinates[0] ?? []).map(m)));
+  const driveways = drawable.filter(el => pavementKind(el) === 'driveway')
+    .map(el => (el.geometry.coordinates[0] ?? []).map(v => m(v) as [number, number]));
   const style = ground?.style ?? DEFAULT_STYLE;
   const roadFrontage = (ground?.contextRoads ?? []).flatMap(road => densify((road.line?.coordinates ?? []).map(m)));
   const frontage = roadFrontage.length ? roadFrontage : (ground?.frontEdges ?? []).flatMap(edge => densify(edge.map(m)));
@@ -265,7 +273,10 @@ export function buildMassingData(
     buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
       const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
-      const a = buildArchitecture(el.id, label, rings, buildingUse(el), heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i), frontage);
+      const use = buildingUse(el), properties = el.properties;
+      const a = buildArchitecture(el.id, label, rings, use, heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i), frontage,
+        use === 'house' ? { driveways, garage: typeof properties?.houseGarage === 'boolean' ? properties.houseGarage : null,
+          catalogued: typeof properties?.floorplanId === 'string' || typeof properties?.housePlan === 'string' } : undefined);
       slabs.push(...a.slabs);
       windows.push(...a.glass);
       roofs.push(...a.flats);
@@ -281,16 +292,19 @@ export function buildMassingData(
   const { slabs, windows, roofs, shrubs } = model;
   if (debug) console.info(`[time] buildings settled at ${Math.round(performance.now() - t0)} ms: ${slabs.length} solids, ${roofs.length} flats, ${windows.length} panes`);
   // walks and curbs follow the plan's own shapes
-  const walks: Array<{ path: number[][]; widthM: number; strip: boolean }> = [];
-  const curbs: Array<{ path: number[][] }> = [];
+  const walks: Array<{ id: string; path: number[][]; widthM: number; strip: boolean }> = [];
+  const curbs: Array<{ id: string; path: number[][] }> = [];
   for (const el of drawable) {
     const kind = pavementKind(el);
     const use = el.type === 'building' ? buildingUse(el) : null;
-    for (const ring of el.geometry.coordinates) {
+    for (const [index, ring] of el.geometry.coordinates.entries()) {
       const path = ring.map(p => [...m(p)]);
-      if (kind === 'street') walks.push({ path, widthM: 22 * METERS_PER_FOOT, strip: true });
-      if (use === 'apartments' || use === 'amenity' || use === 'other') walks.push({ path, widthM: 12 * METERS_PER_FOOT, strip: false });
-      if (kind === 'street' || kind === 'drive') curbs.push({ path });
+      const id = `${el.id}:${index}`;
+      if (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? '')) {
+        walks.push({ id, path, widthM: 22 * METERS_PER_FOOT, strip: true });
+      }
+      if (use === 'apartments' || use === 'amenity' || use === 'other') walks.push({ id, path, widthM: 12 * METERS_PER_FOOT, strip: false });
+      if (kind === 'drive' || (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? ''))) curbs.push({ id, path });
     }
   }
   // stalls: stripes only where they show exactly the count the plan reports
@@ -345,7 +359,7 @@ export function buildMassingData(
   }
   const roads = (ground?.contextRoads ?? [])
     .filter(r => (r.line?.coordinates?.length ?? 0) >= 2)
-    .map(r => ({ path: r.line.coordinates.map(p => [...m(p)]) }));
+    .map((r, i) => ({ id: `road-${i + 1}`, path: r.line.coordinates.map(p => [...m(p)]) }));
   // The plan's drives and lanes stop at the right-of-way line; the street's pavement is drawn from its
   // centre line and is narrower than the right-of-way. The apron across that strip is drawn here, so
   // the scheme's pavement meets the street. Illustration: the plan gives the mouth, not the apron.

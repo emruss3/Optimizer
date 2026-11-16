@@ -1,5 +1,5 @@
 import type { SceneHeight } from '../../scene/heights';
-import { levelsM } from './house';
+import { levelsM, reachOf } from './house';
 import { frontOf, inRing, insetRing, mat, on, ringWalls, tone, type Kit, type Mat, type V2, type Wall } from './kit';
 import { blockPalette, MEMBRANE, type BlockPalette } from './styles';
 
@@ -76,7 +76,7 @@ export function infillBlock(
           if (lobby) {
             const lobbyCorners = [on(w, first, -2.1), on(w, last, -2.1)];
             const fits = lobbyCorners.every(([x, y]) => inRing(x, y, outer) && !rings.slice(1).some(r => inRing(x, y, r)));
-            storefront(k, w, first, last, bottom, openingTop, p, fits ? 1.85 : 0.32);
+            storefront(k, w, first, last, bottom, openingTop, p, fits ? 1.85 : 0.32, reachOf(w, access, s));
           } else {
             const rear = on(w, s, -0.95);
             const depth = inRing(rear[0], rear[1], outer) && !rings.slice(1).some(r => inRing(rear[0], rear[1], r)) ? 0.57 : 0.13;
@@ -135,7 +135,7 @@ export function infillBlock(
   return true;
 }
 
-function storefront(k: Kit, w: Wall, a: number, b: number, z0: number, z1: number, p: BlockPalette, depth: number): void {
+function storefront(k: Kit, w: Wall, a: number, b: number, z0: number, z1: number, p: BlockPalette, depth: number, walkTo: number | null): void {
   const s = (a + b) / 2, f = 0.055;
   const frame = FRAME_SETBACK;
   const transom = Math.min(z0 + 2.15, z1 - 0.26);
@@ -155,7 +155,12 @@ function storefront(k: Kit, w: Wall, a: number, b: number, z0: number, z1: numbe
     k.box(w, a + 0.18, Math.min(b - 0.15, a + 1.25), -depth, -depth + 0.4, z0 + 0.28, 0.13, p.accent);
     k.box(w, s - 0.37, s + 0.37, -depth + 0.05, -depth + 0.29, z1 - 0.11, 0.07, mat(218, 193, 150));
   }
-  k.box(w, a - 0.1, b + 0.1, 0, 1.18, 0.02, z0 - 0.02, p.slab);
+  k.box(w, a - 0.1, b + 0.1, 0, 0.69, 0.02, z0 - 0.02, p.slab);
+  const pavedApproach = walkTo != null && walkTo > 1.9 && walkTo <= 14;
+  k.approach(w, s, 0.69, pavedApproach ? walkTo : 1.93, Math.min(1.85, b - a), z0, 'walk', p.slab, pavedApproach ? 0.305 : 0.211);
+  // Flush stone threshold, door hardware, and a metal fascia return at the canopy.
+  k.box(w, a, b, -0.16, 0.08, z0 - 0.025, 0.025, p.slab);
+  k.box(w, a - 0.24, b + 0.24, 1.385, 1.445, z1 + 0.039, 0.24, p.cap);
   k.box(w, a - 0.24, b + 0.24, -0.04, 1.44, z1 + 0.08, 0.21, p.cap);
   k.box(w, a - 0.17, b + 0.17, -0.02, 1.36, z1 + 0.055, 0.035, p.accent);
   for (const offset of [-0.22, 0.22]) k.lamp(w, s + offset * (b - a), z1 + 0.01, 0.08);

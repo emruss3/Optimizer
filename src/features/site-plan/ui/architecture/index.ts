@@ -10,6 +10,7 @@
 // The plan carries a footprint and a story count, not a design, and the view
 // says so. A style changes the look and nothing else.
 import type { BuildingUse, SceneHeight } from '../../scene/heights';
+import { fittedHouse, type HouseAccess } from './fittedHouse';
 import type { RGBA, Surface } from '../renderModel';
 import { Kit, inRing, on, type Architecture, type V2, type Wall } from './kit';
 import { DEFAULT_STYLE, type ArchStyle } from './styles';
@@ -34,11 +35,16 @@ export const surfaceOf = (part: { surface?: Surface; color?: RGBA }): Surface =>
  */
 export function buildArchitecture(
   id: string, label: string, rings: number[][][], use: BuildingUse, height: SceneHeight,
-  pavement: V2[] = [], bayScale = 1, style: ArchStyle = DEFAULT_STYLE, neighbours: number[][][] = [], frontage: V2[] = [],
+  pavement: V2[] = [], bayScale = 1, style: ArchStyle = DEFAULT_STYLE, neighbours: number[][][] = [], frontage: V2[] = [], houseAccess?: HouseAccess,
 ): Architecture {
   const kit = new Kit(id, label);
   kit.lite = bayScale > 1.6;
-  if (use === 'house' && house(kit, rings, height, pavement, style)) return kit.done();
+  if (use === 'house') {
+    const exterior = houseAccess && (houseAccess.catalogued || houseAccess.driveways.length > 0 || houseAccess.garage === false)
+      ? fittedHouse(kit, rings, height, pavement, style, houseAccess)
+      : house(kit, rings, height, pavement, style) || fittedHouse(kit, rings, height, pavement, style);
+    if (exterior) return kit.done();
+  }
   if (use === 'townhome') {
     const attached = (w: Wall): boolean => {
       const [x, y] = on(w, w.len / 2, 0.6);

@@ -118,11 +118,19 @@ describe('houses', () => {
     expect(apronOn(front, [[2, -9], [6, -9], [10, -9]])).toBeNull();
   });
 
-  it('fall back to a plain building on a pad that is not a rectangle', () => {
+  it('fits a pitched house and driveway to a catalog pad with a notch', () => {
     const ell = [[[0, 0], [12, 0], [12, 6], [6, 6], [6, 12], [0, 12], [0, 0]]];
-    const a = buildArchitecture('odd', 'House', ell, 'house', buildingHeight('house', 2), [], 1, 'farmhouse');
+    const drives: Array<Array<[number, number]>> = [[[2, -7], [6, -7], [6, 0], [2, 0], [2, -7]]];
+    const build = (garage: boolean) => buildArchitecture('odd', 'House', ell, 'house', buildingHeight('house', 2),
+      [], 1, 'infill', [], [], { driveways: drives, garage, catalogued: true });
+    const a = build(true);
     expect(span(solid(a))).toEqual([0, 12, 0, 12]);
     expect(a.glass.length).toBeGreaterThan(4);
+    expect(a.flats.some(f => f.surface === 'shingle')).toBe(true);
+    const apron = a.slabs.find(s => s.approach?.kind === 'apron')?.approach;
+    expect(apron?.start[0]).toBeCloseTo(4, 3);
+    expect(apron?.end[1]).toBeCloseTo(-1.06, 2);
+    expect(build(false).slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
   });
 });
 
@@ -174,7 +182,7 @@ describe.each(STYLES)('an apartment building in the %s style', style => {
   });
 
   it('has balconies with railings, an entrance, planting and roof equipment', () => {
-    expect([...a.flats].filter(f => f.surface === 'railing' || f.surface === 'glassrail').length).toBeGreaterThan(6);
+    expect([...a.flats, ...a.slabs].filter(f => f.surface === 'metalwork' || f.surface === 'railing' || f.surface === 'glassrail').length).toBeGreaterThan(6);
     expect(a.glass.length).toBeGreaterThan(150);
     expect(a.shrubs.length).toBeGreaterThan(10);
     let roofEquipment = 0;

@@ -1058,11 +1058,15 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Hatch, clipped to the piece: 45°, ~8 px apart on screen
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(coords[0][0], coords[0][1]);
-    for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
-    ctx.closePath();
-    ctx.clip();
-    ctx.strokeStyle = 'rgba(13, 148, 136, 0.5)';
+    for (const ring of element.geometry.coordinates) {
+      if (!ring[0]) continue;
+      ctx.moveTo(ring[0][0], ring[0][1]);
+      for (const pt of ring.slice(1)) ctx.lineTo(pt[0], pt[1]);
+      ctx.closePath();
+    }
+    ctx.clip('evenodd');
+    ctx.strokeStyle = p.hazardKind === 'slope' ? 'rgba(180, 83, 9, 0.5)'
+      : p.hazardKind === 'wetland' ? 'rgba(13, 148, 136, 0.55)' : 'rgba(29, 78, 216, 0.45)';
     ctx.lineWidth = 0.8 / zoom;
     const h = maxY - minY;
     const step = Math.max(8 / zoom, 2);
@@ -1080,7 +1084,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const label = typeof named === 'string' && named
       ? named
       : p.hazardKind === 'wetland'
-        ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''} · ${p.bufferFt ?? 25}-ft buffer`
+        ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''}${p.bufferFt ? ` · ${p.bufferFt}-ft buffer` : ''}`
         : p.hazardKind === 'floodway'
           ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
           : `${p.zone ? `${p.zone} ` : ''}floodplain`;

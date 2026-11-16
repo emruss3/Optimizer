@@ -96,7 +96,7 @@ export function reachOf(w: Wall, pavement: V2[], s: number, except: [number, num
 export function approach(k: Kit, w: Wall, s: number, toPavement: number | null, from = 0.06): void {
   k.box(w, s - 0.85, s + 0.85, from, from + 0.36, 0, FOUND * 0.55, PORCH);
   if (toPavement != null && toPavement > 2.4) {
-    k.box(w, s - 0.6, s + 0.6, from + 0.36, Math.min(toPavement + 0.3, 14), 0, 0.2, WALK);
+    if (toPavement <= 14) k.approach(w, s, from + 0.36, toPavement, 1.2, FOUND * 0.55, 'walk', WALK, 0.305);
     // a mailbox where the walk meets the road
     if (toPavement < 13) k.mailbox(w, s + 1.0, toPavement - 0.7);
   }

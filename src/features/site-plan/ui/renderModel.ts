@@ -10,6 +10,7 @@ export type Surface =
   | 'brick'
   | 'shingle'    // roof shingles, and shingled walls
   | 'metal'      // standing-seam metal roofing
+  | 'metalwork'
   | 'membrane'   // rolled flat roofing
   | 'wood'       // cedar and other boarding
   | 'plaster'    // stucco
@@ -17,6 +18,7 @@ export type Surface =
   | 'concrete'
   | 'asphalt'
   | 'grass'
+  | 'site-hatch'
   | 'railing'    // a balustrade of thin bars: see-through between them
   | 'glassrail'  // a glass balustrade
   | 'water'
@@ -35,6 +37,8 @@ export interface RenderSlab {
   surface?: Surface;
   part: 'base' | 'body' | 'parapet' | 'detail';
   label: string;
+  /** An entrance walk or apron from its threshold to the plan's pavement. Metres, relative to the pad. */
+  approach?: { start: [number, number]; end: [number, number]; width: number; threshold: number; pavement: number; kind: 'walk' | 'apron'; facing?: [number, number] };
 }
 
 export interface RenderWindow {

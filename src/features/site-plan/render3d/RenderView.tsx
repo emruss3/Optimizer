@@ -11,9 +11,11 @@ import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
-import { streetShot, FT } from './shots';
+import { aerialShot, approachShot, prominentSubject, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
+import { Render4kPanel } from './Render4kPanel';
+import type { RenderCameraId } from './exportJob';
 
 export interface RenderViewProps {
   elements: Element[];
@@ -28,14 +30,13 @@ export interface RenderViewProps {
   onSelect?: ((id: string | null) => void) | undefined;
   /** The parcel's surveyed elevations: the scene stands on them. */
   topo?: import('../api/parcelTopo').ParcelTopo | null | undefined;
+  grossSf?: number | null | undefined;
+  savedPlanId?: string | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
 
-/** The angle of view of the aerial presets, degrees. The street view sets its own. */
-const BASE_FOV = 30;
-
-type Shot = 'iso' | 'top' | 'street';
+type Shot = 'iso' | 'top' | 'street' | 'approach';
 
 interface Rig {
   /** Set once the sun has been placed for this model: nothing is drawn before it. */
@@ -56,7 +57,7 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   const [look, setLook] = useState<'review' | 'rendering'>('review');
@@ -75,7 +76,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         style: archStyle,
         ...(topo ? { topo } : {}),
       }),
-    [elements, parcelRing, neighbors, edgeClassifications, scene, archStyle, topo],
+    [elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, archStyle, topo],
   );
 
   const host = useRef<HTMLDivElement>(null);
@@ -95,8 +96,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [present]);
-  const [sunKey, setSunKey] = useState('jun21');
-  const [sunHour, setSunHour] = useState(9);
+  const [sunKey, setSunKey] = useState<string>(DEFAULT_RENDER_SUN.key);
+  const [sunHour, setSunHour] = useState<number>(DEFAULT_RENDER_SUN.hour);
+  const [renderCamera, setRenderCamera] = useState<RenderCameraId | null>(null);
   const fail = useRef(onFail);
   fail.current = onFail;
   // where the camera stood, so a change of style redraws the same view of the same plan
@@ -137,7 +139,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     // the radius that holds the parcel, seen through half the lens's angle, with room to spare
     const { x, y, radius } = r.model.focus;
     // the level a camera centres on: the main building's pad, or the ground at the middle of the parcel
-    const padOf = (c: { x: number; y: number }) => { const main = [...r.model.ground.subjects].sort((p, q) => q.points.length - p.points.length)[0]; return main?.base || r.model.groundAt(c.x, c.y); };
+    const padOf = (c: { x: number; y: number }) => prominentSubject(r.model.ground.subjects)?.base ?? r.model.groundAt(c.x, c.y);
     const fits = (radius * 1.2) / Math.sin((r.camera.fov * Math.PI) / 360 * Math.min(1, r.camera.aspect));
     const t = r.controls.target;
     if (shot === 'fit') {
@@ -150,9 +152,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
-      const { subjects, obstacles, roads, trees } = r.model.ground;
-      const arrival = shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt) : null;
-      setShotNote(shot === 'street' && !arrival ? 'A clear, fully framed street view is unavailable for this scheme. Showing the aerial.' : null);
+      const { subjects, obstacles, roads, trees, approaches, foreground } = r.model.ground;
+      const arrival = shot === 'approach' ? approachShot(approaches, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
+        : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground) : null;
+      r.controls.minDistance = arrival && shot === 'approach' ? 0.55 : 8;
+      r.controls.maxPolarAngle = arrival && shot === 'approach' ? 2.05 : Math.PI / 2;
+      setShotNote((shot === 'street' || shot === 'approach') && !arrival ? 'A clear entrance view is unavailable for this scheme. Showing the aerial.' : null);
       if (arrival) {
         // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
         lift.current = arrival.lift;
@@ -160,19 +165,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
         t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
         r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
-        lastShot.current = { shot: 'street', ...arrival };
+        lastShot.current = { shot, ...arrival };
       } else {
         lift.current = 1;
-        r.camera.fov = BASE_FOV;
+        r.camera.fov = AERIAL_FOV;
         if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
         // the drone view of a rendering centres on what is built; review centres on the parcel
         const c = shot === 'top' || review ? r.model.focus : r.model.built;
-        const reach = (c.radius * 1.2) / Math.sin((BASE_FOV * Math.PI) / 360 * Math.min(1, r.camera.aspect));
-        const [el, az, dist] = shot === 'top' ? [89.2, 0, reach] : [review ? 32 : 28, aerial.current, reach];
-        const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
-        t.set(c.x, c.radius * 0.06 + padOf(c), -c.y);
-        r.camera.position.set(t.x + dist * Math.cos(e) * Math.sin(a), t.y + dist * Math.sin(e), t.z + dist * Math.cos(e) * Math.cos(a));
-        lastShot.current = { shot: shot === 'street' ? 'iso' : shot, basis: shot === 'top' ? 'Straight down on the parcel' : review ? 'Three-quarter view of the parcel' : `Three-quarter view of ${c === r.model.focus ? 'the parcel' : 'the built area'}, ${el} degrees down`, position: [r.camera.position.x, -r.camera.position.z, r.camera.position.y], target: [t.x, -t.z, t.y], fovDeg: BASE_FOV };
+        const camera = aerialShot(c, shot === 'top' ? 0 : aerial.current, r.camera.aspect, padOf(c), shot === 'top' ? 89.2 : review ? 32 : 28);
+        t.set(camera.target[0], camera.target[2], -camera.target[1]);
+        r.camera.position.set(camera.position[0], camera.position[2], -camera.position[1]);
+        lastShot.current = { shot: shot === 'top' ? 'top' : 'iso', ...camera, ...(shot === 'top' ? { basis: 'Straight down on the parcel' } : {}) };
       }
     }
     setShotStamp(s => s + 1);
@@ -204,7 +207,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       return;
     }
     const E = model.extent;
-    const camera = new THREE.PerspectiveCamera(BASE_FOV, Math.max(0.1, el.clientWidth / Math.max(1, el.clientHeight)), 1.5, E * 40);
+    const camera = new THREE.PerspectiveCamera(AERIAL_FOV, Math.max(0.1, el.clientWidth / Math.max(1, el.clientHeight)), 0.305, Math.max(609.6, E * 80));
     const controls = new OrbitControls(camera, cv);
     controls.enableDamping = true;
     controls.dampingFactor = 0.12;
@@ -265,6 +268,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const modelRevision = revision.current;
     const was = stood.current;
     if (was && was.revision === modelRevision) {
+      if (lastShot.current?.shot === 'approach') {
+        controls.minDistance = 0.55;
+        controls.maxPolarAngle = 2.05;
+      }
       camera.position.copy(was.position);
       controls.target.copy(was.target);
       camera.fov = was.fov;
@@ -379,6 +386,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
   // light, style and photoreal are for showing the plan, not for reading it
   const showy = look === 'rendering' || present;
+  const hazards = new Set(data.polygons.map(p => p.hazard));
 
   return (
     <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-buildings={scene.buildings.length} data-ground={JSON.stringify(ground)} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
@@ -414,6 +422,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <button className={btn} onClick={() => frame('iso')} data-testid="camera-iso">Aerial</button>
         <button className={btn} onClick={() => frame('top')} data-testid="camera-top">Top</button>
         <button className={btn} onClick={() => frame('street')} data-testid="camera-street">Street</button>
+        {showy && data.slabs.some(s => s.approach?.kind === 'walk') && <button className={btn} onClick={() => frame('approach')} data-testid="camera-approach">Entry</button>}
         <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="Bring the whole site back into view, keeping the angle">Fit site</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
@@ -424,8 +433,14 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
           data-testid="render-photoreal"
           title="Repaint this view as a photograph. Sends this picture, and only this picture, to an image model."
         >
-          {photo.status === 'working' ? 'Painting…' : 'Photoreal'}
+          {photo.status === 'working' ? 'Painting…' : 'AI impression'}
         </button>}
+        {showy && ready && scene.buildings.length > 0 && (
+          <button type="button" className={btn} data-testid="render-4k" aria-expanded={renderCamera !== null}
+            onClick={() => setRenderCamera(previous => previous ? null : lastShot.current?.shot === 'street' ? 'street' : lastShot.current?.shot === 'approach' ? 'approach' : 'drone')}>
+            Render 4K
+          </button>
+        )}
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
       </div>
       {scene.buildings.length === 0 && (
@@ -463,10 +478,18 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
           <span className="flex items-center gap-1"><i className="inline-block w-3 h-2 rounded-sm bg-white border border-gray-300" />Existing</span>
           <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-slate-600" />Parcel</span>
           {envelopeRing && <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-blue-600" />Buildable envelope</span>}
-          <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-amber-500" />Access</span>
+          {data.polygons.some(p => p.privateDrive) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 rounded-sm bg-slate-700" />Shared private drive</span>}
+          {hazards.has('wetland') && <span className="flex items-center gap-1" data-testid="legend-wetland"><i className="inline-block h-2 w-3 bg-teal-200 border border-teal-600" />Wetland / water buffer</span>}
+          {(hazards.has('floodplain') || hazards.has('floodway')) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 bg-blue-200 border border-blue-600" />Flood hazard area</span>}
+          {hazards.has('slope') && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 bg-amber-200 border border-amber-600" />Hillside</span>}
         </div>
       )}
       {selected && photo.status !== 'done' && <SceneInspector building={selected} onClose={onSelect ? () => onSelect(null) : undefined} className="absolute right-2 bottom-2" />}
+      {showy && renderCamera !== null && (
+        <Render4kPanel key={JSON.stringify([scene.identity.key, scene.identity.revision, archStyle, sunKey, sunHour, savedPlanId])}
+          data={data} scene={scene} style={archStyle} sunKey={sunKey} sunHour={sunHour} camera={renderCamera}
+          grossSf={grossSf} savedPlanId={savedPlanId} onClose={() => setRenderCamera(null)} />
+      )}
       {photo.status === 'working' && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/35 text-white text-sm" role="status" data-testid="photoreal-working">
           <span className="bg-slate-900/80 rounded-lg px-4 py-2">Painting the photoreal picture. This takes about a minute.</span>

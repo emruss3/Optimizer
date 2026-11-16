@@ -24,6 +24,8 @@ import json
 import math
 import os
 import sys
+import time
+from pathlib import Path
 
 import bpy
 from bpy_extras.object_utils import world_to_camera_view
@@ -33,6 +35,9 @@ FT = 0.3048
 PIN = (4, 5)
 BOUNDS_TOL_FT = 0.05
 PIXEL_TOL = 2.0          # at 1920 by 1080
+REPO = Path(__file__).resolve().parents[2]
+ASSET_CATALOG = REPO / "src/features/site-plan/render3d/siteAssets.json"
+SITE_TEXTURES = REPO / "public/textures/site"
 
 
 def parse_args():
@@ -41,11 +46,15 @@ def parse_args():
     p.add_argument("job")
     p.add_argument("--scale", type=float, default=1.0, help="fraction of the job's resolution (a smoke run uses 0.125)")
     p.add_argument("--samples", type=int, default=256)
+    p.add_argument("--device", choices=["CPU", "OPTIX", "CUDA", "HIP", "ONEAPI", "METAL"], default="CPU")
+    p.add_argument("--threads", type=int, default=0, help="CPU thread count, or 0 for automatic")
+    p.add_argument("--adaptive-threshold", type=float, default=0.025)
+    p.add_argument("--require-version", default="", help="exact Blender patch for a deployment")
     p.add_argument("--cameras", default="", help="comma list of camera ids; default all")
     p.add_argument("--preset", default="", choices=["", "gray-pass", "daylight"], help="default: the job's own")
     p.add_argument("--assets", default="", help="the render kit's cache (fetch_assets.py); default: out/assets when it exists")
     p.add_argument("--check-only", action="store_true", help="run the checks, render nothing")
-    p.add_argument("--exr", action="store_true", help="also write a 32-bit EXR master")
+    p.add_argument("--exr", action="store_true", help="also write a half-float linear EXR master")
     p.add_argument("--allow-version", action="store_true", help="run on a Blender other than the pinned 4.5 LTS")
     return p.parse_args(argv)
 
@@ -186,6 +195,59 @@ def _tint(nt):
     return n.outputs["Color"]
 
 
+def file_digest(path):
+    with open(path, "rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+def shared_catalog(job, report):
+    catalog = json.loads(ASSET_CATALOG.read_text())
+    lock = json.dumps(catalog, ensure_ascii=False, separators=(",", ":")).encode()
+    checksum = hashlib.sha256(lock).hexdigest()
+    appearance = job.get("appearance", {})
+    if appearance and (appearance["kit"] != catalog["version"] or appearance.get("assets_sha256") != checksum):
+        raise ValueError("The worker and render job have different asset catalogs")
+    manifest = {catalog["sky"]["file"]: catalog["sky"]["sha256"]}
+    for material in catalog["textures"].values():
+        for kind in ("color", "normal"):
+            manifest[material[kind]] = material[f"{kind}_sha256"]
+    for name, wanted in manifest.items():
+        if file_digest(SITE_TEXTURES / name) != wanted:
+            raise ValueError(f"Shared texture {name} does not match its catalog hash")
+    report["shared_assets"] = {"version": catalog["version"], "sha256": checksum, "files": manifest}
+    return catalog
+
+
+def shared_texture_material(slot, entry):
+    mat, nt, bsdf = _nodes(f"site:{slot}")
+    link = nt.links.new
+    uv = nt.nodes.new("ShaderNodeTexCoord")
+    scale = nt.nodes.new("ShaderNodeVectorMath")
+    scale.operation = "MULTIPLY"
+    scale.inputs[1].default_value = (1 / entry["tile_m"][0], 1 / entry["tile_m"][1], 1)
+    link(uv.outputs["UV"], scale.inputs[0])
+
+    def image(kind, colorspace):
+        node = nt.nodes.new("ShaderNodeTexImage")
+        node.image = bpy.data.images.load(str(SITE_TEXTURES / entry[kind]), check_existing=True)
+        node.image.colorspace_settings.name = colorspace
+        link(scale.outputs["Vector"], node.inputs["Vector"])
+        return node.outputs["Color"]
+
+    mult = nt.nodes.new("ShaderNodeMixRGB")
+    mult.blend_type = "MULTIPLY"
+    mult.inputs[0].default_value = 1.0
+    link(_tint(nt), mult.inputs[1])
+    link(image("color", "sRGB"), mult.inputs[2])
+    link(mult.outputs["Color"], bsdf.inputs["Base Color"])
+    normal = nt.nodes.new("ShaderNodeNormalMap")
+    normal.inputs["Strength"].default_value = entry["normal_strength"]
+    link(image("normal", "Non-Color"), normal.inputs["Color"])
+    link(normal.outputs["Normal"], bsdf.inputs["Normal"])
+    bsdf.inputs["Roughness"].default_value = entry["roughness"]
+    return mat
+
+
 def _wall_coords(nt, scale_u=1.0, scale_v=1.0):
     """Coordinates that run along a wall and up it, whatever way the wall faces."""
     geo = nt.nodes.new("ShaderNodeNewGeometry")
@@ -322,10 +384,14 @@ def slot_material(slot):
         bsdf.inputs["Metallic"].default_value = 0.4
         bsdf.inputs["Coat Weight"].default_value = 1.0
         bsdf.inputs["Coat Roughness"].default_value = 0.05
-    elif slot in ("railing", "metal"):
+    elif slot in ("railing", "metal", "metalwork"):
         link(tint, bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.4
         bsdf.inputs["Metallic"].default_value = 0.8
+    elif slot == "water":
+        bsdf.inputs["Base Color"].default_value = (0.038, 0.10, 0.12, 1)
+        bsdf.inputs["Roughness"].default_value = 0.15
+        bsdf.inputs["IOR"].default_value = 1.333
     else:
         link(tint, bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.75
@@ -338,7 +404,9 @@ def grow_trees(job):
     Seeded by the job, so a tree is the same tree in every render of a revision.
     """
     import random
-    trees = job.get("planting", {}).get("trees", [])
+    planting = job.get("planting", {})
+    shared = set(planting.get("shared", []))
+    trees = [t for t in planting.get("trees", []) if t["id"] not in shared]
     if not trees:
         return 0
     rng = random.Random(int(job["lighting"].get("seed", 1)))
@@ -397,20 +465,23 @@ def grow_trees(job):
     for t in trees:
         r = max(1.2, t["crown_radius_ft"] * FT)
         obj = bpy.data.objects.new(t["id"], rng.choice(variants))
-        obj.location = (t["position_ft"][0] * FT, t["position_ft"][1] * FT, 0)
+        obj.location = m(t["position_ft"])
         obj.scale = (r, r, r * rng.uniform(0.92, 1.08))
         obj.rotation_euler = (0, 0, rng.uniform(0, math.tau))
         coll.objects.link(obj)
     return len(trees)
 
 
-def daylight_pass(job, meshes):
+def daylight_pass(job, meshes, catalog=None):
     scene = bpy.context.scene
     made = {}
     for obj in meshes.values():
         slot = obj.get("slot") or obj.name.rsplit("__", 1)[-1]
+        if slot in ("foliage-bark", "foliage-leaf") or slot.startswith("vehicle-"):
+            continue  # retain the browser's bark, leaf coverage and vehicle materials
         if slot not in made:
-            made[slot] = slot_material(slot)
+            texture = catalog["textures"].get(slot) if catalog else None
+            made[slot] = shared_texture_material(slot, texture) if texture else slot_material(slot)
         obj.data.materials.clear()
         obj.data.materials.append(made[slot])
 
@@ -418,9 +489,9 @@ def daylight_pass(job, meshes):
     az, alt = math.radians(light["sun_azimuth_deg"]), math.radians(light["sun_altitude_deg"])
     to_sun = Vector((math.sin(az) * math.cos(alt), math.cos(az) * math.cos(alt), math.sin(alt)))
     sun = bpy.data.lights.new("sun", "SUN")
-    sun.energy = 5.5
+    sun.energy = 4.6 if catalog else 5.5
     sun.color = (1.0, 0.96, 0.9)
-    sun.angle = math.radians(0.53)
+    sun.angle = math.radians(1.1)
     sun_obj = bpy.data.objects.new("sun", sun)
     sun_obj.rotation_euler = (-to_sun).to_track_quat("-Z", "Y").to_euler()
     scene.collection.objects.link(sun_obj)
@@ -429,19 +500,30 @@ def daylight_pass(job, meshes):
     world = bpy.data.worlds.new("sky")
     world.use_nodes = True
     nt = world.node_tree
-    sky = nt.nodes.new("ShaderNodeTexSky")
-    try:
-        sky.sky_type = "NISHITA"
-    except TypeError:
-        sky.sky_type = "HOSEK_WILKIE"
-    if sky.sky_type == "NISHITA":
-        sky.sun_disc = False
-        sky.sun_elevation = max(alt, math.radians(2))
-        sky.sun_rotation = az
-        sky.air_density, sky.dust_density, sky.ozone_density = 1.0, 1.0, 1.0
     bg = nt.nodes.get("Background")
+    if catalog:
+        sky = nt.nodes.new("ShaderNodeTexEnvironment")
+        sky.image = bpy.data.images.load(str(SITE_TEXTURES / catalog["sky"]["file"]), check_existing=True)
+        directions = nt.nodes.new("ShaderNodeTexCoord")
+        rotation = nt.nodes.new("ShaderNodeVectorRotate")
+        rotation.rotation_type = "Z_AXIS"
+        rotation.inputs["Angle"].default_value = math.radians(light.get("sky_rotation_deg", 0))
+        nt.links.new(directions.outputs["Generated"], rotation.inputs["Vector"])
+        nt.links.new(rotation.outputs["Vector"], sky.inputs["Vector"])
+        bg.inputs["Strength"].default_value = 1.05
+    else:
+        sky = nt.nodes.new("ShaderNodeTexSky")
+        try:
+            sky.sky_type = "NISHITA"
+        except TypeError:
+            sky.sky_type = "HOSEK_WILKIE"
+        if sky.sky_type == "NISHITA":
+            sky.sun_disc = False
+            sky.sun_elevation = max(alt, math.radians(2))
+            sky.sun_rotation = az
+            sky.air_density, sky.dust_density, sky.ozone_density = 1.0, 1.0, 1.0
+        bg.inputs["Strength"].default_value = 0.22
     nt.links.new(sky.outputs["Color"], bg.inputs["Color"])
-    bg.inputs["Strength"].default_value = 0.22
     scene.world = world
     return sorted(made)
 
@@ -617,18 +699,21 @@ def kit_plants(job, lock, root):
     coll = bpy.data.collections.new("planting")
     bpy.context.scene.collection.children.link(coll)
     planting = job.get("planting", {})
+    shared = set(planting.get("shared", []))
     count = {"trees": 0, "shrubs": 0}
 
     def stand(kind, shapes, items, size_of, fit):
         if not shapes:
             return
         for item in items:
+            if item["id"] in shared:
+                continue
             shape = rng.choices(shapes, weights=[s.get("weight", 1) for s in shapes])[0]
             k = fit(size_of(item) * FT, shape)
             turn = rng.uniform(0, math.tau)
             for mesh in shape["meshes"]:
                 obj = bpy.data.objects.new(item["id"], mesh)
-                obj.location = (item["position_ft"][0] * FT, item["position_ft"][1] * FT, 0)
+                obj.location = m(item["position_ft"])
                 obj.scale = (k, k, k)
                 obj.rotation_euler = (0, 0, turn)
                 coll.objects.link(obj)
@@ -728,6 +813,8 @@ def kit_pass(job, meshes, root, report):
     made = {}
     for obj in meshes.values():
         slot = obj.get("slot") or obj.name.rsplit("__", 1)[-1]
+        if slot in ("foliage-bark", "foliage-leaf") or slot.startswith("vehicle-"):
+            continue
         if slot not in made:
             entry = lock["materials"].get(slot)
             made[slot] = kit_material(slot, entry, root) if entry else slot_material(slot)
@@ -747,10 +834,24 @@ def setup_cycles(job, args):
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
     c = scene.cycles
-    c.device = "CPU"
+    names = []
+    if args.device != "CPU":
+        prefs = bpy.context.preferences.addons["cycles"].preferences
+        prefs.compute_device_type = args.device
+        prefs.refresh_devices()
+        for device in prefs.devices:
+            device.use = device.type == args.device
+            if device.use:
+                names.append(device.name)
+        if not names:
+            raise ValueError(f"Cycles found no {args.device} device")
+    c.device = "GPU" if names else "CPU"
+    if args.threads > 0:
+        scene.render.threads_mode = "FIXED"
+        scene.render.threads = min(128, args.threads)
     c.samples = args.samples
     c.use_adaptive_sampling = True
-    c.adaptive_threshold = 0.01
+    c.adaptive_threshold = args.adaptive_threshold
     c.adaptive_min_samples = min(32, args.samples)
     c.use_denoising = True
     try:
@@ -767,6 +868,7 @@ def setup_cycles(job, args):
     scene.render.film_transparent = False
     c.transparent_max_bounces = 24
     c.max_bounces = 6
+    return {"backend": args.device, "devices": names, "threads": scene.render.threads, "adaptive_threshold": args.adaptive_threshold}
 
 
 def render(job, cams, job_dir, args, report):
@@ -781,21 +883,26 @@ def render(job, cams, job_dir, args, report):
         scene.render.image_settings.color_mode = "RGB"
         scene.render.image_settings.color_depth = "16"
         scene.render.filepath = os.path.join(job_dir, f"{cid}.png")
+        started = time.monotonic()
         bpy.ops.render.render(write_still=True)
-        images[cid] = {"file": f"{cid}.png", "width": w, "height": h, "samples": args.samples}
+        images[cid] = {"file": f"{cid}.png", "width": w, "height": h, "samples": args.samples,
+                       "seconds": round(time.monotonic() - started, 2)}
         if args.exr:
             scene.render.image_settings.file_format = "OPEN_EXR"
-            scene.render.image_settings.color_depth = "32"
+            scene.render.image_settings.color_depth = "16"
             bpy.data.images["Render Result"].save_render(os.path.join(job_dir, f"{cid}.exr"))
             images[cid]["master"] = f"{cid}.exr"
     report["images"] = images
 
 
 def main():
+    started = time.monotonic()
     args = parse_args()
     if bpy.app.version[:2] != PIN and not args.allow_version:
         print(f"render4k: needs Blender {PIN[0]}.{PIN[1]} LTS, this is {bpy.app.version_string}", file=sys.stderr)
         sys.exit(1)
+    if args.require_version and ".".join(map(str, bpy.app.version[:3])) != args.require_version:
+        raise ValueError(f"Expected Blender {args.require_version}")
     with open(args.job) as f:
         job = json.load(f)
     if job.get("schema_version") != 1 or job.get("units") != "ft":
@@ -803,15 +910,20 @@ def main():
         sys.exit(1)
     job_dir = os.path.dirname(os.path.abspath(args.job))
     failures = []
-    report = {"schema_version": 1, "units": "ft", "blender": bpy.app.version_string, "site": job["site"], "glb_sha256": job["glb"]["sha256"], "preset": job["renderer"]["preset"]}
+    report = {"schema_version": 1, "units": "ft", "blender": bpy.app.version_string, "site": job["site"],
+              "glb_sha256": job["glb"]["sha256"], "preset": job["renderer"]["preset"], "appearance": job.get("appearance"),
+              "timing": {}}
 
     meshes = load_scene(job, job_dir, failures)
     check_geometry(job, meshes, report, failures)
     only = [c for c in args.cameras.split(",") if c]
     cams = {c["id"]: make_camera(c) for c in job["cameras"] if not only or c["id"] in only}
+    if not cams or any(cid not in cams for cid in only):
+        failures.append("One or more requested cameras are missing")
     check_anchors(job, cams, report, failures)
     report["checks_passed"] = not failures
     report["failures"] = failures
+    report["timing"]["import_and_checks_seconds"] = round(time.monotonic() - started, 2)
 
     if not failures and not args.check_only:
         preset = args.preset or job["renderer"]["preset"]
@@ -820,13 +932,16 @@ def main():
         if preset == "daylight" and kit:
             kit_pass(job, meshes, os.path.abspath(kit), report)
         elif preset == "daylight":
-            report["material_slots"] = daylight_pass(job, meshes)
+            report["material_slots"] = daylight_pass(job, meshes, shared_catalog(job, report))
             report["trees_grown"] = grow_trees(job)
+            report["shared_plants"] = len(job.get("planting", {}).get("shared", []))
         else:
             gray_pass(job, meshes)
-        setup_cycles(job, args)
+        report["device"] = setup_cycles(job, args)
+        report["timing"]["pre_render_seconds"] = round(time.monotonic() - started, 2)
         render(job, cams, job_dir, args, report)
 
+    report["timing"]["total_seconds"] = round(time.monotonic() - started, 2)
     with open(os.path.join(job_dir, "render-report.json"), "w") as f:
         json.dump(report, f, indent=2)
         f.write("\n")
