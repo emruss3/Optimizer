@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Plus, X, Building, Map, Users, DollarSign, Target, Car } from 'lucide-react';
 import { useUIStore } from '../store/ui';
 import { GeoJSONGeometry } from '../types/parcel';
-import { searchParcels, type ParcelHit } from '../lib/parcelSearch';
+import { searchParcels, openParcel, type ParcelHit } from '../lib/parcelSearch';
+import { assembleParcels, type AssembleResult } from '../lib/assemblage';
 import { supabase } from '../lib/supabase';
 
 interface SelectedParcel {
@@ -96,6 +97,7 @@ export default function MultiParcelAnalysis({ isOpen, onClose, seed }: MultiParc
       if (!row) throw new Error('no record for that parcel');
       const next = asSelected({ ...row, ogc_fid: row.ogc_fid ?? hit.ogcFid, address: row.address ?? hit.address });
       setSelectedParcels(prev => (prev.some(p => p.id === next.id) ? prev : [...prev, next]));
+      setCombine(null);
       setAddQuery('');
       setAddHits([]);
     } catch (e) {
@@ -105,6 +107,22 @@ export default function MultiParcelAnalysis({ isOpen, onClose, seed }: MultiParc
 
   const removeParcel = (id: string) => {
     setSelectedParcels(prev => prev.filter(p => p.id !== id));
+    setCombine(null);
+  };
+
+  // combine the set into one site and open the planner on it
+  const [combining, setCombining] = useState(false);
+  const [combine, setCombine] = useState<AssembleResult | null>(null);
+  const planAsOne = async () => {
+    setCombining(true);
+    setCombine(null);
+    const result = await assembleParcels(selectedParcels.map(p => p.id));
+    setCombining(false);
+    setCombine(result);
+    if (result.status === 'ready') {
+      openParcel({ ogcFid: result.ogcFid, address: result.address, zoning: result.zoning }, true);
+      onClose();
+    }
   };
 
   const getCombinedStats = () => {
@@ -127,6 +145,31 @@ export default function MultiParcelAnalysis({ isOpen, onClose, seed }: MultiParc
   const combinedStats = getCombinedStats();
 
   if (!isOpen) return null;
+
+  const planCard = (
+    <div className="bg-white border border-gray-200 rounded-lg p-6" data-testid="assemblage-plan">
+      <h2 className="text-xl font-semibold text-gray-900 mb-2">Plan as one site</h2>
+      <p className="text-sm text-gray-600 mb-4">
+        The parcels are joined into one site and the planner draws on the combined outline. They must touch and share a zoning district.
+      </p>
+      <button
+        onClick={() => { void planAsOne(); }}
+        disabled={selectedParcels.length < 2 || combining}
+        data-testid="assemblage-plan-button"
+        className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+      >
+        {combining ? 'Combining the parcels' : 'Plan as one site'}
+      </button>
+      {selectedParcels.length < 2 && (
+        <p className="mt-3 text-sm text-gray-600">Add a second parcel to combine them.</p>
+      )}
+      {combine && combine.status !== 'ready' && (
+        <p className="mt-3 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-3" role="status" data-testid="assemblage-plan-note">
+          {combine.status === 'failed' ? `The parcels could not be combined: ${combine.message}` : combine.message}
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -262,6 +305,8 @@ export default function MultiParcelAnalysis({ isOpen, onClose, seed }: MultiParc
                   </div>
                 )}
 
+                {selectedParcels.length > 0 && planCard}
+
                 {selectedParcels.length === 0 && (
                   <div className="text-center py-12">
                     <Building className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -307,20 +352,7 @@ export default function MultiParcelAnalysis({ isOpen, onClose, seed }: MultiParc
                   </div>
                 </div>
 
-                {/* Development Potential */}
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Development Potential</h2>
-                  <div className="text-gray-600">
-                    <p>Combined analysis tools will be integrated here, including:</p>
-                    <ul className="list-disc list-inside mt-2 space-y-1">
-                      <li>Combined zoning analysis</li>
-                      <li>Master site planning</li>
-                      <li>Infrastructure requirements</li>
-                      <li>Phased development options</li>
-                      <li>Combined financial modeling</li>
-                    </ul>
-                  </div>
-                </div>
+                {planCard}
               </div>
             )}
 
