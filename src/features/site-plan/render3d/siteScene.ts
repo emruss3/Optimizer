@@ -791,8 +791,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // crown stands in.
   const opacity = opts.canopyOpacity ?? 1;
   const kinds = ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
-  const cardsOnly = !!opts.light && (data.trees.length > 48 || !real) && typeof document !== 'undefined';
-  const bushes = cardsOnly ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
+  const plantBudget = opts.light ? 48 : Infinity;
+  const bushes = opts.review ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
   // the leaves and bark are pictures that arrive after the trees are grown
   const waits: Array<Promise<unknown>> = [...kinds, ...bushes].flatMap(t => [arrived((t.leaf as THREE.MeshStandardMaterial).map), arrived((t.bark as THREE.MeshStandardMaterial).map)]);
   let disposed = false;
@@ -833,6 +833,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   let sat: Array<{ form: TreeForm; picture: THREE.DataTexture }> | null = null;
   const sitters = () => (sat ??= kinds.flatMap(form => { const made = portrait(form); if (made) waits.push(made.painted); return made ? [{ form, picture: made.picture }] : []; }));
   const TINTS: Array<readonly number[]> = [[229, 233, 213], [207, 224, 197], [222, 219, 187], [182, 207, 170], [212, 223, 194], [195, 212, 183], [175, 199, 162]];
+  const distance = ([x, y]: [number, number, number]) => Math.hypot(x, y);
   const plant = (spots: Array<[number, number, number]>, name: string, shadows: boolean) => {
     const all = sitters();
     all.forEach(({ form, picture }, k) => {
@@ -857,13 +858,17 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   };
   if (opts.review) {
     // no planting in review: nothing stands between the reader and the proposal
-  } else if (kinds.length && cardsOnly && sitters().length) {
-    plant(data.trees.map(t => [t.position[0], t.position[1], (t.radiusM ?? 2.8) * 1.12]), 'site-trees', true);
   } else if (kinds.length) {
-    // no two trees on a street are the same green
+    // Keep the proposal's nearest crowns volumetric at either quality.
     const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
-    place(kinds, data.trees.map((t, i) => ({ x: t.position[0], y: t.position[1], r: (t.radiusM ?? 2.8) * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
-    if (bushes.length) place(bushes, data.shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25);
+    const ranked = standing.length > plantBudget && sitters().length ? [...standing].sort((a, b) => distance(a) - distance(b)) : standing;
+    const detail = ranked === standing ? standing : ranked.slice(0, plantBudget);
+    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
+    if (ranked !== standing) plant(ranked.slice(plantBudget).map(([x, y, r]) => [x, y, r * 1.12]), 'site-trees', true);
+    if (bushes.length) {
+      const shrubs = opts.light && data.shrubs.length > 144 ? [...data.shrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : data.shrubs;
+      place(bushes, shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25);
+    }
   } else {
     const crownG = crown();
     const leavesM = surfaces.foliage(opacity) as THREE.MeshStandardMaterial;
@@ -977,9 +982,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     standing.push(...nearby);
     const beyond = scatter(half * 4, half * 13, 22, 0.7, opts.light ? 5000 : 11000);
     if (sitters().length) {
-      const distance = ([x, y]: [number, number, number]) => Math.hypot(x, y);
-      const foreground = nearby.filter(p => distance(p) < Math.min(95, half * 1.5))
-        .sort((a, b) => distance(a) - distance(b)).slice(0, opts.light ? 12 : 24);
+      const detailRadius = Math.min(135, Math.max(65, half * 2));
+      const foreground = nearby.filter(p => distance(p) < detailRadius)
+        .sort((a, b) => distance(a) - distance(b)).slice(0, opts.light ? 28 : 56);
       const nearSet = new Set(foreground);
       place(kinds, foreground.map(([x, y, r]) => ({ x, y, r, tint: [221, 230, 205] })), 0.02);
       plant(nearby.filter(p => !nearSet.has(p)), 'surrounding-trees', true);
