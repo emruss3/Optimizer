@@ -84,6 +84,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const [ready, setReady] = useState(false);
   // true when the model stands on surveyed ground that was graded for the picture: the view says so
   const [graded, setGraded] = useState(false);
+  const [ground, setGround] = useState<Record<string, unknown>>({ kind: 'flat' });
   // counts the models built: a new one needs its sun and its selection set again
   const [built, setBuilt] = useState(0);
   const [present, setPresent] = useState(false);
@@ -253,6 +254,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     cv.addEventListener('pointerup', onUp);
     rig.current = { lit: false, review: look === 'review' && !present, stage, model, camera, controls, request, highlight: null };
     setGraded(!!model.grade?.grading);
+    // what ground this model stands on, for a reader of the page and for the regression runner
+    setGround(model.grade ? { kind: model.grade.grading ? 'graded' : 'survey', ...(model.grade.grading ?? {}), pads: model.grade.padList.length } : { kind: 'flat' });
     const was = stood.current;
     if (was && was.revision === revision.current) {
       camera.position.copy(was.position);
@@ -361,7 +364,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const showy = look === 'rendering' || present;
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-ground={JSON.stringify(ground)} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
       {/* Review reads the site data; light, style and photoreal belong to showing it */}
       {!showy && (
