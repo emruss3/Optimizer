@@ -676,9 +676,8 @@ export function crossings(ring: ArrayLike<ArrayLike<number>>, at: Pt, dir: Pt): 
  * A-03 Section A–A: a cut across the first tagged building, at right angles to
  * its longest wall, from property line to property line. Every building the
  * cut passes through is drawn as its stories at the scene's heights. The
- * ground is drawn level: the plan carries no grade. Heights are the scene's
- * (estimated from story counts unless the plan reports one); no horizontal
- * distance is stated, and the sheet carries a graphic scale only.
+ * ground and pad elevations are sampled from the same surfaces as 3D.
+ * Heights come from the drawing scene and the sheet carries a graphic scale.
  */
 export interface HeightControl {
   /** The height limit in the zoning record, feet. */
@@ -687,7 +686,15 @@ export interface HeightControl {
   plane?: { heightAtSetbackFt: number; slopeHorizontal: number; slopeVertical: number; law?: string } | null;
 }
 
-export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize, control?: HeightControl | null): { svg: string; widthPt: number; heightPt: number; drawn: number; overLimit: boolean } {
+export interface SectionGround {
+  /** Elevations are feet above the shared model origin. Null outside the source grid. */
+  at(point: Pt): { existing: number; assumed: number | null } | null;
+  padsFt: ReadonlyMap<string, number>;
+  source: string;
+  grading: { deepest_cut_ft: number; deepest_fill_ft: number } | null;
+}
+
+export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize, control?: HeightControl | null, profile?: SectionGround | null): { svg: string; widthPt: number; heightPt: number; drawn: number; overLimit: boolean } {
   const { wIn, hIn } = SHEET_SIZES[size];
   const { widthPt: W, heightPt: H, image } = viewSheetLayout(size);
   const M = image.x;
@@ -719,60 +726,91 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
     const lo = Math.min(before.length ? (before[before.length - 1] as number) : Infinity, ...cuts.flatMap(c => c.hits)) - 12;
     const hi = Math.max(after.length ? (after[0] as number) : -Infinity, ...cuts.flatMap(c => c.hits)) + 12;
     const limit = control?.maxHeightFt != null && control.maxHeightFt > 0 ? control.maxHeightFt : null;
-    const tallest = Math.max(10, limit ?? 0, ...cuts.map(c => c.b.height.aboveGradeFt));
+    const pad = (id: string) => profile?.padsFt.get(id) ?? 0;
+    const reference = pad(subject.id);
+    const count = Math.max(1, Math.min(240, Math.ceil((hi - lo) / 4)));
+    const samples = profile ? Array.from({ length: count + 1 }, (_, i) => {
+      const t = lo + (i * (hi - lo)) / count;
+      return { t, z: profile.at([at[0] + dir[0] * t, at[1] + dir[1] * t]) };
+    }) : [];
+    const grades = samples.flatMap(({ z }) => z ? [z.existing, z.assumed ?? z.existing] : []);
+    const bottom = Math.min(reference, ...grades, ...cuts.map(c => pad(c.b.id)));
+    const top = Math.max(reference + Math.max(10, limit ?? 0, control?.plane?.heightAtSetbackFt ?? 0), ...grades, ...cuts.map(c => pad(c.b.id) + c.b.height.aboveGradeFt));
     // the setback lines the cut crosses: the buildable envelope, nearest each property line
     const envCuts = scene.envelope?.polygons[0]?.[0] ? crossings(scene.envelope.polygons[0][0], at, dir) : [];
     const setLeft = envCuts.filter(t => t < 0)[0], setRight = envCuts.filter(t => t > 0).pop();
     // one scale both ways: a true section
-    const k = Math.min((image.w - 120) / (hi - lo), (image.h - 110) / (tallest + 16));
+    const k = Math.min((image.w - 120) / (hi - lo), (image.h - 110) / (top - bottom + 16));
     const x = (t: number) => r2(image.x + image.w / 2 + (t - (lo + hi) / 2) * k);
     const ground = image.y + image.h - 56;
-    const y = (ft: number) => r2(ground - ft * k);
+    const y = (ft: number) => r2(ground - (ft - bottom) * k);
+    const heightY = (ft: number) => y(reference + ft);
     out.push(`<g data-role="section" data-building="${esc(subject.id)}">`);
-    out.push(`<rect x="${x(lo)}" y="${r2(ground)}" width="${r2((hi - lo) * k)}" height="14" fill="#e9e6df"/><line x1="${x(lo)}" y1="${r2(ground)}" x2="${x(hi)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="1.2" data-role="ground"/>`);
+    if (!profile) out.push(`<rect x="${x(lo)}" y="${r2(ground)}" width="${r2((hi - lo) * k)}" height="14" fill="#e9e6df"/><line x1="${x(lo)}" y1="${r2(ground)}" x2="${x(hi)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="1.2" data-role="ground"/>`);
     for (const t of [before[before.length - 1], after[0]]) {
       if (t == null) continue;
-      out.push(`<g data-role="property-line"><line x1="${x(t)}" y1="${y(tallest + 8)}" x2="${x(t)}" y2="${r2(ground + 14)}" stroke="${INK}" stroke-width="0.9" stroke-dasharray="7 2.5 1.5 2.5"/><text x="${x(t)}" y="${r2(y(tallest + 8) - 4)}" font-size="6" text-anchor="middle" fill="#4b5158">Property line</text></g>`);
+      out.push(`<g data-role="property-line"><line x1="${x(t)}" y1="${y(top + 8)}" x2="${x(t)}" y2="${r2(ground + 14)}" stroke="${INK}" stroke-width="0.9" stroke-dasharray="7 2.5 1.5 2.5"/><text x="${x(t)}" y="${r2(y(top + 8) - 4)}" font-size="6" text-anchor="middle" fill="#4b5158">Property line</text></g>`);
     }
     for (const t of [setLeft, setRight]) {
       if (t == null) continue;
-      out.push(`<g data-role="setback-line"><line x1="${x(t)}" y1="${y(tallest + 3)}" x2="${x(t)}" y2="${r2(ground)}" stroke="#7a8087" stroke-width="0.6" stroke-dasharray="3 2"/><text x="${x(t)}" y="${r2(y(tallest + 3) - 3)}" font-size="5.4" text-anchor="middle" fill="#7a8087">Setback</text></g>`);
+      out.push(`<g data-role="setback-line"><line x1="${x(t)}" y1="${y(top + 3)}" x2="${x(t)}" y2="${r2(ground)}" stroke="#7a8087" stroke-width="0.6" stroke-dasharray="3 2"/><text x="${x(t)}" y="${r2(y(top + 3) - 3)}" font-size="5.4" text-anchor="middle" fill="#7a8087">Setback</text></g>`);
     }
     // The zoning height control, as the record states it. A plane is drawn where the record has
     // one; otherwise the single figure, which may be the height at the setback line only.
-    const pl = control?.plane && control.plane.slopeHorizontal > 0 ? control.plane : null;
+    const pl = control?.plane && control.plane.slopeHorizontal > 0 && control.plane.slopeVertical > 0 ? control.plane : null;
     const from = setLeft ?? before[before.length - 1] ?? lo, to = setRight ?? after[0] ?? hi;
     const allowedAt = (t: number): number | null => {
       if (pl) return pl.heightAtSetbackFt + Math.max(0, Math.min(t - from, to - t)) * (pl.slopeVertical / pl.slopeHorizontal);
       return limit;
     };
     if (pl) {
-      const mid = (from + to) / 2, peak = allowedAt(mid) as number, cap = Math.min(peak, tallest + 6);
+      const mid = (from + to) / 2, peak = allowedAt(mid) as number, cap = Math.min(peak, top - reference + 6);
       const run = (cap - pl.heightAtSetbackFt) * (pl.slopeHorizontal / pl.slopeVertical);
-      out.push(`<g data-role="height-plane"><polyline points="${x(from)},${y(pl.heightAtSetbackFt)} ${x(from + run)},${y(cap)} ${x(to - run)},${y(cap)} ${x(to)},${y(pl.heightAtSetbackFt)}" fill="none" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
-        + `<text x="${r2(x(from) - 4)}" y="${r2(y(pl.heightAtSetbackFt) + 2)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`${Math.round(pl.heightAtSetbackFt)} ft at the setback line, then ${pl.slopeHorizontal}H:${pl.slopeVertical}V`)}</text></g>`);
+      out.push(`<g data-role="height-plane"><polyline points="${x(from)},${heightY(pl.heightAtSetbackFt)} ${x(from + run)},${heightY(cap)} ${x(to - run)},${heightY(cap)} ${x(to)},${heightY(pl.heightAtSetbackFt)}" fill="none" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
+        + `<text x="${r2(x(from) - 4)}" y="${r2(heightY(pl.heightAtSetbackFt) + 2)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`${Math.round(pl.heightAtSetbackFt)} ft at the setback line, then ${pl.slopeHorizontal}H:${pl.slopeVertical}V`)}</text></g>`);
     } else if (limit != null) {
-      out.push(`<g data-role="height-limit"><line x1="${x(from)}" y1="${y(limit)}" x2="${x(to)}" y2="${y(limit)}" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
-        + `<text x="${r2(x(from) - 4)}" y="${r2(y(limit) + 2)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`Height limit ${Math.round(limit)} ft`)}</text></g>`);
+      out.push(`<g data-role="height-limit"><line x1="${x(from)}" y1="${heightY(limit)}" x2="${x(to)}" y2="${heightY(limit)}" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
+        + `<text x="${r2(x(to) - 4)}" y="${r2(heightY(limit) - 4)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`Screening height ${Math.round(limit)} ft`)}</text></g>`);
     }
     for (const { b, hits } of cuts) {
       const a = hits[0] as number, z = hits[hits.length - 1] as number;
       const allow = [allowedAt(a), allowedAt(z)].filter((v): v is number => v != null);
       if (allow.length && b.height.aboveGradeFt > Math.min(...allow) + 0.5) {
         overLimit = true;
-        limitNote = `${b.display.title} is ${b.height.basis === 'estimated' ? 'estimated at' : 'reported at'} ${Math.round(b.height.aboveGradeFt)} ft, above the ${Math.round(Math.min(...allow))} ft the record allows at this cut. Needs verification.${pl ? '' : ' The record gives one figure; an ordinance that allows more height away from the setback line is not shown.'}`;
+        limitNote = `${b.display.title} is ${b.height.basis === 'estimated' ? 'estimated at' : 'reported at'} ${Math.round(b.height.aboveGradeFt)} ft. ${pl ? 'Height plane' : 'Screening height'} at this cut is ${Math.round(Math.min(...allow))} ft. Verify the applicable height control.`;
       }
       const levels = b.height.levelsFt;
+      const seat = pad(b.id), seatY = y(seat);
       levels.forEach((top, i) => {
         const base = i === 0 ? 0 : (levels[i - 1] as number);
-        out.push(`<rect x="${x(a)}" y="${y(top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="${i % 2 ? '#f4f1ea' : '#ebe7de'}" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}"/>`);
-        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y((top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">${esc(`Level ${i + 1} · ${Math.round(top - base)} ft`)}</text>`);
+        out.push(`<rect x="${x(a)}" y="${y(seat + top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="${i % 2 ? '#f4f1ea' : '#ebe7de'}" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}"/>`);
+        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y(seat + (top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">${esc(`Level ${i + 1} · ${Math.round(top - base)} ft`)}</text>`);
       });
-      const top = b.height.aboveGradeFt, dx = x(z) + 12;
-      out.push(`<g data-role="height" data-building="${esc(b.id)}"><line x1="${dx}" y1="${r2(ground)}" x2="${dx}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${r2(ground)}" x2="${r2(dx + 3)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${y(top)}" x2="${r2(dx + 3)}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/>`
-        + `<text x="${r2(dx + 6)}" y="${r2((ground + y(top)) / 2 + 2.4)}" font-size="6.6" fill="${INK}">${esc(`${b.height.basis === 'estimated' ? 'est. ' : ''}${Math.round(top)} ft`)}</text></g>`);
-      out.push(`<text x="${r2((x(a) + x(z)) / 2)}" y="${r2(y(top) - 6)}" font-size="8" font-weight="700" text-anchor="middle" fill="${INK}">${esc(`${b.display.title} · ${levels.length} ${levels.length === 1 ? 'story' : 'stories'}`)}</text>`);
+      const heightFt = b.height.aboveGradeFt, topY = y(seat + heightFt), dx = x(z) + 12;
+      out.push(`<g data-role="height" data-building="${esc(b.id)}"><line x1="${dx}" y1="${seatY}" x2="${dx}" y2="${topY}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${seatY}" x2="${r2(dx + 3)}" y2="${seatY}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${topY}" x2="${r2(dx + 3)}" y2="${topY}" stroke="${INK}" stroke-width="0.6"/>`
+        + `<text x="${r2(dx + 6)}" y="${r2((seatY + topY) / 2 + 2.4)}" font-size="6.6" fill="${INK}">${esc(`${b.height.basis === 'estimated' ? 'est. ' : ''}${Math.round(heightFt)} ft`)}</text></g>`);
+      out.push(`<text x="${r2((x(a) + x(z)) / 2)}" y="${r2(topY - 6)}" font-size="8" font-weight="700" text-anchor="middle" fill="${INK}">${esc(`${b.display.title} · ${levels.length} ${levels.length === 1 ? 'story' : 'stories'}`)}</text>`);
       drawn++;
+    }
+    if (profile) {
+      for (const kind of ['existing', 'assumed'] as const) {
+        let penDown = false;
+        const d = samples.map(({ t, z }) => {
+          const elevation = z?.[kind];
+          if (elevation == null) { penDown = false; return ''; }
+          const command = penDown ? 'L' : 'M';
+          penDown = true;
+          return `${command}${x(t)} ${y(elevation)}`;
+        }).join(' ');
+        if (d.trim()) out.push(`<path data-role="${kind}-grade" d="${d}" fill="none" stroke="${kind === 'existing' ? '#68727c' : '#146b5e'}" stroke-width="1.3"${kind === 'existing' ? ' stroke-dasharray="4 2.5"' : ''}/>`);
+      }
+      const gx = image.x + 18, gy = ground + 17;
+      const source = profile.source.split(' (')[0]?.slice(0, 39) ?? '';
+      out.push(`<line x1="${gx}" y1="${gy}" x2="${gx + 16}" y2="${gy}" stroke="#68727c" stroke-dasharray="4 2.5"/><text x="${gx + 21}" y="${gy + 2}" font-size="6.2" fill="#4b5158"><title>${esc(profile.source)}</title>${esc(`Existing grade · ${source}`)}</text>`);
+      if (profile.grading) {
+        const { deepest_cut_ft, deepest_fill_ft } = profile.grading;
+        out.push(`<line x1="${gx + 205}" y1="${gy}" x2="${gx + 221}" y2="${gy}" stroke="#146b5e" stroke-width="1.3"/><text x="${gx + 226}" y="${gy + 2}" font-size="6.2" fill="#146b5e">${esc(`Assumed grade · site cut ${deepest_cut_ft} ft · fill ${deepest_fill_ft} ft`)}</text>`);
+      }
     }
     // a graphic scale: the section states no horizontal distance in figures
     const bar = [100, 50, 20, 10].find(ft => ft * k <= image.w * 0.22) ?? 10;
@@ -789,9 +827,10 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
   if (title.subtitle) out.push(`<text x="${tx}" y="${r2(by + 54)}" font-size="7.5" fill="#4b5158">${esc(title.subtitle.length > 110 ? title.subtitle.slice(0, 108) + '…' : title.subtitle)}</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-03</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
-  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="section-note">${esc(subject?.height.basis === 'reported'
-    ? 'Schematic. The ground is drawn level: the plan carries no grade. Roofs and parapets are not drawn. Graphic scale only.'
-    : 'Schematic. The ground is drawn level: the plan carries no grade. Heights are estimated from story counts and are not measured or controlling. Roofs and parapets are not drawn. Graphic scale only.')}</text>`);
+  const groundNote = profile?.grading ? 'Existing elevations and illustrative grading share the 3D model datum.'
+    : profile ? 'Existing elevations share the 3D model datum.' : 'Schematic level ground. Terrain is unavailable for this section.';
+  const heightNote = subject?.height.basis === 'reported' ? '' : ' Heights are estimated from story counts.';
+  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="section-note">${esc(`${groundNote}${heightNote} Floor levels shown. Graphic scale only.`)}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H, drawn, overLimit };
 }

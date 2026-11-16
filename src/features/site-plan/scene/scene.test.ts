@@ -169,10 +169,9 @@ describe('scene from the saved multifamily plan (488278, 1710 Meharry Blvd)', ()
     expect(bare.svg).not.toContain('data-role="height-limit"');
     // the record's single figure: a 44 ft estimate is above 30 ft
     const flat = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 30 });
-    expect(flat.svg).toContain('Height limit 30 ft');
+    expect(flat.svg).toContain('Screening height 30 ft');
     expect(flat.overLimit).toBe(true);
-    expect(flat.svg).toContain('estimated at 44 ft, above the 30 ft the record allows at this cut. Needs verification.');
-    expect(flat.svg).toContain('an ordinance that allows more height away from the setback line is not shown');
+    expect(flat.svg).toContain('estimated at 44 ft. Screening height at this cut is 30 ft. Verify the applicable height control.');
     // a limit the building is under: the line, and nothing to verify
     const roomy = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 60 });
     expect(roomy.overLimit).toBe(false);
@@ -182,6 +181,25 @@ describe('scene from the saved multifamily plan (488278, 1710 Meharry Blvd)', ()
     expect(plane.svg).toContain('data-role="height-plane"');
     expect(plane.svg).toContain('30 ft at the setback line, then 1H:1.5V');
     expect(plane.svg).not.toContain('data-role="height-limit"');
+  });
+
+  it('draws distinct terrain lines and seats the floors on the model pad', () => {
+    const building = scene.buildings[0]!;
+    const sheet = renderSectionSheet(scene, { project: 'Meharry', subtitle: 'RM20', date: '2026-11-16', notes: [] }, 'slide', null, {
+      at: ([x, y]) => ({ existing: (x + y) / 17, assumed: 3 }),
+      padsFt: new Map([[building.id, 3]]),
+      source: 'USGS 3DEP',
+      grading: { deepest_cut_ft: 7.1, deepest_fill_ft: 5.6 },
+    });
+    const existing = sheet.svg.match(/data-role="existing-grade" d="([^"]+)"/)?.[1];
+    const assumed = sheet.svg.match(/data-role="assumed-grade" d="([^"]+)"/)?.[1];
+    expect(existing).toBeTruthy();
+    expect(assumed).toBeTruthy();
+    expect(existing).not.toBe(assumed);
+    expect(sheet.svg).toContain('site cut 7.1 ft · fill 5.6 ft');
+    const gradeY = assumed?.match(/M[^ ]+ ([^ ]+)/)?.[1];
+    expect(sheet.svg).toContain(`y1="${gradeY}"`);
+    expect(sheet.svg).toContain('est. 44 ft');
   });
 
   it('finds where a line crosses a ring', () => {

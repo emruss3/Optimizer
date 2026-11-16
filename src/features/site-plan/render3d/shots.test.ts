@@ -30,6 +30,23 @@ describe('streetShot', () => {
     }
   });
 
+  it.each([16 / 9, 3.3])('fits graded pads and roof detail in a %f aspect viewport', aspect => {
+    const subject = { ...building, base: 7, roofHeight: 18 };
+    const shot = streetShot([subject], [], street, aspect, [], () => -2)!;
+    expect(shot.position[2]).toBeCloseTo(-2 + 5.5 * 0.3048);
+    expect(shot.target[2]).toBe(shot.position[2]);
+    const [px, py, pz] = shot.position;
+    const distance = Math.hypot(px, py);
+    const tanV = Math.tan((shot.fovDeg * Math.PI) / 360);
+    for (const [x, y] of subject.points) {
+      const depth = (-px * (x - px) - py * (y - py)) / distance;
+      for (const height of [subject.base, subject.base + subject.roofHeight]) {
+        const projected = (height - pz) / (depth * tanV) - (shot.lift - 1);
+        expect(Math.abs(projected)).toBeLessThanOrEqual(0.900001);
+      }
+    }
+  });
+
   it('looks at the building at an angle, not square on', () => {
     const shot = streetShot([building], [], street)!;
     const az = Math.atan2(shot.position[1], shot.position[0]);

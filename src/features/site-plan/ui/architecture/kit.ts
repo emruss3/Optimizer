@@ -104,6 +104,8 @@ export interface WindowSpec {
   sill?: Mat | null | undefined;
   /** A planter under the sill, in flower. */
   planter?: boolean | undefined;
+  /** Fit glazing and a shaded window interior into the full-detail frame. */
+  glazed?: boolean;
 }
 
 export interface Architecture {
@@ -122,6 +124,8 @@ const PLANTER = mat(52, 50, 48);
 const MULCH = mat(98, 76, 58);
 const LAMP_DARK = mat(36, 36, 40);
 const LAMP_GLOW = mat(255, 232, 176);
+const WINDOW_INTERIORS = [mat(96, 91, 82), mat(81, 86, 87), mat(112, 105, 94)];
+const ROLLER_SHADE = mat(168, 162, 148);
 
 export class Kit {
   slabs: RenderSlab[] = [];
@@ -156,13 +160,13 @@ export class Kit {
     this.flats.push({ id: this.id, polygon: [[p0[0], p0[1], z0], [p1[0], p1[1], z0], [p1[0], p1[1], z1], [p0[0], p0[1], z1]], color: m.color, surface: m.surface });
   }
   /** A pane of glass on a wall. */
-  pane(w: Wall, s0: number, s1: number, z0: number, z1: number, d: number): void {
+  pane(w: Wall, s0: number, s1: number, z0: number, z1: number, d: number, clear = false): void {
     if (s1 - s0 < 0.02 || z1 - z0 < 0.02) return;
     const p0 = on(w, s0, d), p1 = on(w, s1, d);
     // most rooms are dark behind the glass; a few have their blinds down
     const h = hashId(`${Math.round(p0[0] * 10)},${Math.round(p0[1] * 10)},${Math.round(z0 * 10)}`) % 100;
     const color: RGBA = h < 10 ? [156, 158, 150, 255] : h < 22 ? [70, 84, 96, 255] : h < 60 ? GLASS : [20, 30, 42, 255];
-    this.glass.push({ id: this.id, polygon: [[p0[0], p0[1], z0], [p1[0], p1[1], z0], [p1[0], p1[1], z1], [p0[0], p0[1], z1]], color });
+    this.glass.push({ id: this.id, polygon: [[p0[0], p0[1], z0], [p1[0], p1[1], z0], [p1[0], p1[1], z1], [p0[0], p0[1], z1]], color, ...(clear ? { clear } : {}) });
   }
   /** Any flat polygon in space. */
   flat(points: number[][], m: Mat): void {
@@ -194,10 +198,21 @@ export class Kit {
     this.box(w, a - 0.05, b + 0.05, d, d + p + 0.055, z0 - 0.02, f + 0.02, o.sill ?? o.frame);
     this.box(w, a, a + f, d, d + p, z0 + f, z1 - z0 - 2 * f, o.frame);
     this.box(w, b - f, b, d, d + p, z0 + f, z1 - z0 - 2 * f, o.frame);
-    this.pane(w, a + f, b - f, z0 + f, z1 - f, d + 0.02);
+    const paneDepth = d + (o.glazed ? 0.085 : 0.02);
+    const barDepth = d + (o.glazed ? 0.102 : 0.045);
+    if (o.glazed) {
+      // The glass, shade and interior sit at three different depths in the jamb.
+      const seed = hashId(`${this.seed}|${w.a}|${s.toFixed(2)}|${z0.toFixed(2)}`);
+      this.panel(w, a + f, b - f, z0 + f, z1 - f, d + 0.008, pick(WINDOW_INTERIORS, seed));
+      if (seed % 4 === 0) {
+        const shadeBottom = z1 - f - (z1 - z0 - 2 * f) * (0.35 + (seed % 7) * 0.075);
+        this.panel(w, a + f, b - f, shadeBottom, z1 - f, d + 0.037, ROLLER_SHADE);
+      }
+    }
+    this.pane(w, a + f, b - f, z0 + f, z1 - f, paneDepth, o.glazed);
     const [cols, rows] = o.grid ?? [1, 1];
-    for (let c = 1; c < cols; c++) { const x = a + (width * c) / cols; this.panel(w, x - 0.017, x + 0.017, z0 + f, z1 - f, d + 0.045, o.frame); }
-    for (let r = 1; r < rows; r++) { const z = z0 + ((z1 - z0) * r) / rows; this.panel(w, a + f, b - f, z - 0.017, z + 0.017, d + 0.045, o.frame); }
+    for (let c = 1; c < cols; c++) { const x = a + (width * c) / cols; this.panel(w, x - 0.017, x + 0.017, z0 + f, z1 - f, barDepth, o.frame); }
+    for (let r = 1; r < rows; r++) { const z = z0 + ((z1 - z0) * r) / rows; this.panel(w, a + f, b - f, z - 0.017, z + 0.017, barDepth, o.frame); }
     if (o.planter) {
       this.box(w, a + 0.04, b - 0.04, d, d + 0.26, z0 - 0.32, 0.22, PLANTER);
       this.box(w, a + 0.07, b - 0.07, d + 0.03, d + 0.23, z0 - 0.1, 0.13, pick(FLOWERS, this.seed >>> 3));

@@ -10,6 +10,7 @@ export type Surface =
   | 'brick'
   | 'shingle'    // roof shingles, and shingled walls
   | 'metal'      // standing-seam metal roofing
+  | 'membrane'   // rolled flat roofing
   | 'wood'       // cedar and other boarding
   | 'plaster'    // stucco
   | 'panel'      // fibre-cement panels with joints
@@ -41,6 +42,8 @@ export interface RenderWindow {
   /** One flat polygon in space, [x, y, z] in local metres. */
   polygon: number[][];
   color: RGBA;
+  /** Thin window glass with an interior backing in the façade assembly. */
+  clear?: boolean;
   /** What it is made of. Without one, a renderer treats it as plain. */
   surface?: Surface;
 }

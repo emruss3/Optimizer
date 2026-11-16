@@ -11,7 +11,7 @@ import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
-import { streetShot, standOn, FT } from './shots';
+import { streetShot, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 
@@ -95,8 +95,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [present]);
-  const [sunKey, setSunKey] = useState('mar21');
-  const [sunHour, setSunHour] = useState(16.5);
+  const [sunKey, setSunKey] = useState('jun21');
+  const [sunHour, setSunHour] = useState(9);
   const fail = useRef(onFail);
   fail.current = onFail;
   // where the camera stood, so a change of style redraws the same view of the same plan
@@ -115,7 +115,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const aerial = useRef(-38);
   aerial.current = data.aerialAzimuth;
   // the last preset the camera was put on, so a capture can be regenerated from it
-  const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number } | null>(null);
+  const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number; lift?: number } | null>(null);
   const [shotNote, setShotNote] = useState<string | null>(null);
   const [, setShotStamp] = useState(0);
   // lens shift of the street view (render3d/shots): 1 is none
@@ -150,20 +150,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
-      const found = shot === 'street' ? streetShot(r.model.ground.subjects, r.model.ground.obstacles, r.model.ground.roads, picture, r.model.ground.trees) : null;
-      // the eye stands on the ground where the camera is (render3d/shots)
-      const arrival = found ? standOn(found, r.model.groundAt, [...r.model.ground.subjects].sort((p, q) => q.points.length - p.points.length)[0]?.base ?? 0) : null;
-      setShotNote(shot === 'street' && !arrival ? 'No clear street-level view of this building was found: neighbours stand in every line of sight. Showing the aerial.' : null);
+      const { subjects, obstacles, roads, trees } = r.model.ground;
+      const arrival = shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt) : null;
+      setShotNote(shot === 'street' && !arrival ? 'A clear, fully framed street view is unavailable for this scheme. Showing the aerial.' : null);
       if (arrival) {
         // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
         lift.current = arrival.lift;
         r.camera.fov = (2 * Math.atan(Math.tan((arrival.fovDeg * Math.PI) / 360) * arrival.lift) * 180) / Math.PI;
         if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
-        const away = Math.hypot(arrival.target[0] - arrival.position[0], arrival.target[1] - arrival.position[1]);
-        // a hair below level: the orbit control keeps the eye above what it looks at
-        t.set(arrival.target[0], arrival.target[2] - away * 0.025, -arrival.target[1]);
+        t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
         r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
-        lastShot.current = { shot: 'street', basis: arrival.basis, position: arrival.position, target: arrival.target, fovDeg: arrival.fovDeg };
+        lastShot.current = { shot: 'street', ...arrival };
       } else {
         lift.current = 1;
         r.camera.fov = BASE_FOV;
@@ -211,11 +208,13 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const controls = new OrbitControls(camera, cv);
     controls.enableDamping = true;
     controls.dampingFactor = 0.12;
-    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+    controls.maxPolarAngle = Math.PI / 2;
     controls.minDistance = 8;
     controls.maxDistance = E * 12;
     let raf = 0;
     let frames = 0;
+    let moving = false;
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const draw = () => {
       raf = 0;
       // a frame before the sun is placed would be drawn in the dark and thrown away
@@ -223,14 +222,21 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       controls.update();
       try {
         const t = performance.now();
-        stage.render(camera);
+        stage.render(camera, moving);
         if (frames++ < 3 && (window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] frame ${frames}: ${Math.round(performance.now() - t)} ms`);
       } catch (err) {
         fail.current(err instanceof Error ? err : new Error(String(err)));
       }
     };
     const request = () => { if (!raf) raf = requestAnimationFrame(draw); };
+    const startMoving = () => { clearTimeout(settle); moving = true; };
+    const stopMoving = () => {
+      clearTimeout(settle);
+      settle = setTimeout(() => { moving = false; request(); }, 160);
+    };
     controls.addEventListener('change', request);
+    controls.addEventListener('start', startMoving);
+    controls.addEventListener('end', stopMoving);
     const ro = new ResizeObserver(() => {
       const w = Math.max(2, el.clientWidth), h = Math.max(2, el.clientHeight);
       stage.setSize(w, h);
@@ -266,9 +272,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     }
     setReady(true);
     setBuilt(n => n + 1);
-    // leaf and bark pictures arrive a moment after the model: draw again when they have
-    void model.ready.then(request);
+    let active = true;
+    const refresh = () => { if (active) request(); };
+    void model.ready.then(() => {
+      if (!active) return;
+      stage.invalidateShadows();
+      request();
+    });
+    void stage.ready.then(refresh);
     return () => {
+      active = false;
+      clearTimeout(settle);
       stood.current = { revision: revision.current, position: camera.position.clone(), target: controls.target.clone() };
       setReady(false);
       if (raf) cancelAnimationFrame(raf);

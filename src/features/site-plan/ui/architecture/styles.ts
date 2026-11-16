@@ -15,7 +15,7 @@ export const DEFAULT_STYLE: ArchStyle = 'mansard';
 export const isArchStyle = (v: unknown): v is ArchStyle => typeof v === 'string' && ARCH_STYLES.some(s => s.key === v);
 
 export const CEDAR = mat(158, 112, 70, 'wood');
-export const MEMBRANE = mat(206, 206, 202, 'plain');
+export const MEMBRANE = mat(206, 206, 202, 'membrane');
 const CHARCOAL_SHINGLE = mat(74, 72, 72, 'shingle');
 
 export interface HousePalette {

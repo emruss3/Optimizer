@@ -6,6 +6,8 @@ import { pointInPolygon } from '../scene/frame';
 export interface Subject {
   /** The building this outline belongs to. */
   id?: string; points: Array<[number, number]>; height: number
+  /** The top of the rendered roof and its equipment, metres above the pad. */
+  roofHeight?: number;
   /** The level the building stands on, metres above the model's zero: 0 on flat ground. */
   base?: number;
 }
@@ -65,7 +67,7 @@ function nearestRoad(p: [number, number], roads: number[][][]): number {
  * Of the rest, the one beside a street wins, then the more oblique, the one
  * with fewer trees in the way, and the nearer. Null when no place is clear.
  */
-export function streetShot(subjects: Subject[], obstacles: number[][][], roads: number[][][], aspect = 16 / 9, trees: Array<[number, number, number]> = []): Shot | null {
+export function streetShot(subjects: Subject[], obstacles: number[][][], roads: number[][][], aspect = 16 / 9, trees: Array<[number, number, number]> = [], groundAt: (x: number, y: number) => number = () => 0): Shot | null {
   const main = [...subjects].filter(s => s.points.length >= 3).sort((a, b) => extent(b.points) - extent(a.points))[0];
   if (!main) return null;
   const [cx, cy] = centre(main.points);
@@ -77,31 +79,40 @@ export function streetShot(subjects: Subject[], obstacles: number[][][], roads: 
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     if (len > best) { best = len; long = Math.atan2(b[1] - a[1], b[0] - a[0]); }
   }
-  const halfH = (Math.atan(Math.tan((STREET_FOV * Math.PI) / 360) * aspect));
+  const tanV = Math.tan((STREET_FOV * Math.PI) / 360), tanH = tanV * aspect;
+  const halfH = Math.atan(tanH);
   const full = (reach * 1.15) / Math.sin(halfH);
   const blockers = [...obstacles, ...subjects.filter(s => s !== main).map(s => s.points as number[][])];
   const own = main.points as number[][];
   const sights: Array<[number, number]> = [[cx, cy], ...main.points.filter((_, i) => i % Math.max(1, Math.floor(main.points.length / 6)) === 0)];
-  let pick: { p: [number, number]; score: number; why: string } | null = null;
-  const halfV = (STREET_FOV * Math.PI) / 360;
-  // above the horizon the shifted frame sees further up than half its angle of view
-  const upMost = Math.atan(Math.tan(halfV) * (2 * LIFT - 1));
-  for (const k of [1.3, 1.1, 0.95, 0.8]) {
+  let pick: { p: [number, number]; eye: number; lift: number; score: number; why: string } | null = null;
+  const base = main.base ?? 0, roof = base + (main.roofHeight ?? main.height);
+  const margin = 0.9;
+  for (const k of [1.3, 1.1, 0.95, 0.8, 1.6]) {
     for (let step = 0; step < 36; step++) {
       const az = (step / 36) * Math.PI * 2;
       const p: [number, number] = [cx + Math.cos(az) * full * k, cy + Math.sin(az) * full * k];
       if (pointInPolygon(p[0], p[1], [own as never]) || blockers.some(r => pointInPolygon(p[0], p[1], [r as never]))) continue;
       // every sight line that reaches the building must be clear of the neighbours
       if (blockers.some(r => sights.some(s => crosses(p, s, r)))) continue;
-      // the whole building is in the frame: every corner, ground and roof, inside the angle of view.
-      // The near end of a long building is much closer than its middle, so the middle fitting is not enough.
       const vx = cx - p[0], vy = cy - p[1], vd = Math.hypot(vx, vy);
+      const eye = groundAt(p[0], p[1]) + EYE;
+      let bottom = Infinity, top = -Infinity;
+      // Test the level camera's projection at each actual roof and pad corner.
+      // The depth is measured along the camera axis.
       const fitsFrame = main.points.every(c => {
-        const dx = c[0] - p[0], dy = c[1] - p[1], d = Math.hypot(dx, dy);
-        const side = Math.abs(Math.atan2(vx * dy - vy * dx, vx * dx + vy * dy));
-        return side < halfH * 0.9 && Math.atan2(main.height - EYE, d) < upMost * 0.9;
+        const dx = c[0] - p[0], dy = c[1] - p[1];
+        const depth = (vx * dx + vy * dy) / vd;
+        const side = Math.abs(vx * dy - vy * dx) / vd;
+        if (depth <= 0 || side > margin * depth * tanH) return false;
+        bottom = Math.min(bottom, (base - eye) / (depth * tanV));
+        top = Math.max(top, (roof - eye) / (depth * tanV));
+        return true;
       });
       if (!fitsFrame) continue;
+      const minShift = Math.max(0, top - margin), maxShift = Math.min(0.8, bottom + margin);
+      if (minShift > maxShift) continue;
+      const lift = 1 + Math.max(minShift, Math.min(LIFT - 1, maxShift));
       const road = roads.length ? nearestRoad(p, roads) : 0;
       // 0 square on to a face, 1 at 45 degrees off it
       const off = Math.abs(Math.sin(2 * (az - long)));
@@ -114,16 +125,16 @@ export function streetShot(subjects: Subject[], obstacles: number[][][], roads: 
       // a person stands beside the street, not on its centre line: about a sidewalk's distance off it
       const beside = roads.length ? Math.abs(road - 23 * FT) : 0;
       const score = -beside / Math.max(10, reach) + off * 0.6 - k * 0.25 - inTheWay * 0.45;
-      if (!pick || score > pick.score) pick = { p, score, why: `${roads.length ? `${Math.round(road / FT)} ft from the nearest street line` : 'no street lines in the record'}; ${inTheWay} tree${inTheWay === 1 ? '' : 's'} in the line of sight` };
+      if (!pick || score > pick.score) pick = { p, eye, lift, score, why: `${roads.length ? `${Math.round(road / FT)} ft from the nearest street line` : 'no street lines in the record'}; ${inTheWay} tree${inTheWay === 1 ? '' : 's'} in the line of sight` };
     }
   }
   if (!pick) return null;
   return {
-    position: [pick.p[0], pick.p[1], EYE],
+    position: [pick.p[0], pick.p[1], pick.eye],
     // level with the eye: walls stay upright, and the lens shift brings the roof into the picture
-    target: [cx, cy, EYE],
+    target: [cx, cy, pick.eye],
     fovDeg: STREET_FOV,
-    lift: LIFT,
+    lift: pick.lift,
     basis: `Street arrival at eye level (${(EYE / FT).toFixed(1)} ft), clear line of sight; ${pick.why}`,
   };
 }
@@ -131,23 +142,4 @@ export function streetShot(subjects: Subject[], obstacles: number[][][], roads: 
 function extent(pts: Array<[number, number]>): number {
   const [x, y] = centre(pts);
   return Math.max(0, ...pts.map(p => Math.hypot(p[0] - x, p[1] - y)));
-}
-
-/**
- * A street shot found on flat ground, stood on the real ground: the eye rises to
- * the ground where the camera is and stays level, and the lens shifts by the
- * difference between that ground and the building's pad, so the building keeps
- * its place in the frame and its walls stay upright.
- */
-export function standOn(shot: Shot, groundAt: (x: number, y: number) => number, padZ: number): Shot {
-  const stand = groundAt(shot.position[0], shot.position[1]);
-  if (stand === 0 && padZ === 0) return shot;
-  const away = Math.hypot(shot.target[0] - shot.position[0], shot.target[1] - shot.position[1]) || 1;
-  const lift = Math.max(1, shot.lift + ((padZ - stand) / away) / Math.tan((shot.fovDeg * Math.PI) / 360));
-  return {
-    ...shot,
-    position: [shot.position[0], shot.position[1], shot.position[2] + stand],
-    target: [shot.target[0], shot.target[1], shot.target[2] + stand],
-    lift,
-  };
 }

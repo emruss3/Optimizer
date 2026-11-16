@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import type { Surface } from '../ui/renderModel';
 
 export type { Surface };
-type Drawn = 'siding' | 'batten' | 'brick' | 'shingle' | 'metal' | 'wood' | 'plaster' | 'panel' | 'concrete' | 'asphalt' | 'grass';
+type Drawn = 'siding' | 'batten' | 'brick' | 'shingle' | 'metal' | 'membrane' | 'wood' | 'plaster' | 'panel' | 'concrete' | 'asphalt' | 'grass';
 
 interface Tile { map: THREE.Texture; bump: THREE.Texture; bumpScale: number; roughness: number; metalness?: number }
 
@@ -52,6 +52,22 @@ function finish(c: HTMLCanvasElement, w: number, h: number, colour: boolean): TH
 }
 
 const DRAW: Record<Drawn, () => Tile> = {
+  membrane: () => {
+    const S = 256, r = rng(91);
+    const [colour, paint] = canvas(S), [relief, height] = canvas(S);
+    paint.fillStyle = '#e9e8e5';
+    paint.fillRect(0, 0, S, S);
+    height.fillStyle = '#808080';
+    height.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 64) {
+      paint.fillStyle = y % 128 === 0 ? '#c6c6c4' : '#d7d6d3';
+      paint.fillRect(0, y, S, 2);
+      height.fillStyle = '#b0b0b0';
+      height.fillRect(0, y, S, 2);
+    }
+    speckle(paint, S, 4096, 200, 244, r, 0.18);
+    return { map: finish(colour, 8, 4.8, true), bump: finish(relief, 8, 4.8, false), bumpScale: 0.009, roughness: 0.83 };
+  },
   // lap siding: six boards to a 0.9 m tile, a shadow under each lap
   siding: () => {
     const S = 256, r = rng(11);
@@ -287,6 +303,21 @@ export class Surfaces {
       const t = DRAW[kind]();
       this.tiles.set(kind, t);
       const drawn = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: t.bumpScale, roughness: t.roughness, metalness: t.metalness ?? 0 });
+      if (kind === 'grass') drawn.onBeforeCompile = shader => {
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', `#include <common>
+            float lawnHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+            float lawnNoise(vec2 p) {
+              vec2 i = floor(p), f = smoothstep(0.0, 1.0, fract(p));
+              return mix(mix(lawnHash(i), lawnHash(i + vec2(1,0)), f.x),
+                         mix(lawnHash(i + vec2(0,1)), lawnHash(i + 1.0), f.x), f.y);
+            }`)
+          .replace('#include <map_fragment>', `#include <map_fragment>
+            #ifdef USE_MAP
+              float growth = lawnNoise(vMapUv * 0.27) * 0.72 + lawnNoise(vMapUv * 0.77) * 0.28;
+              diffuseColor.rgb *= mix(vec3(0.75, 0.82, 0.73), vec3(1.06, 1.02, 0.93), growth);
+            #endif`);
+      };
       this.photograph(kind, drawn);
       m = drawn;
     }
@@ -295,11 +326,14 @@ export class Surfaces {
   }
 
   /** Window glass: dark, smooth, reflecting the sky. A pane's own tint shows through: a room with its blinds down is paler. */
-  glass(): THREE.Material {
-    const hit = this.made.get('glass');
+  glass(clear = false): THREE.Material {
+    const slot = clear ? 'glazing' : 'glass';
+    const hit = this.made.get(slot);
     if (hit) return hit;
-    const m = new THREE.MeshPhysicalMaterial({ vertexColors: true, color: 0xffffff, roughness: 0.07, metalness: 0.82, envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.05 });
-    this.made.set('glass', m);
+    const m = new THREE.MeshPhysicalMaterial(clear
+      ? { color: 0xb9d2d4, roughness: 0.07, metalness: 0, ior: 1.5, transparent: true, opacity: 0.30, depthWrite: false, envMapIntensity: 1.5 }
+      : { vertexColors: true, color: 0xffffff, roughness: 0.07, metalness: 0.82, envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.05 });
+    this.made.set(slot, m);
     return m;
   }
 
