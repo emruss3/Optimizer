@@ -475,6 +475,25 @@ Checks: 817 tests pass; app type check 2,073; `check-slice.cjs` passes.
 
 Checks: 819 tests pass; app type check 2,073; `check-slice.cjs` passes.
 
+## Slice 11: camera baseline (design audit of November 15, build order 1)
+
+- Street is a street arrival: a person's eye, 5.5 ft up, beside the street,
+  with a clear line of sight to the main building and the whole of it in the
+  frame. Places with a neighbour or a tree in the way are passed over. The
+  camera is level with a lens shift, so walls stay upright.
+  `slice-11/street-arrival-1710-meharry.png`.
+- Where a parcel's record has no street lines and trees stand all round, the
+  view says how many trees are in the line of sight.
+  `slice-11/street-arrival-535-main.png` (6 trees).
+- The Aerial preset of a rendering centres on the built area, 28 degrees down.
+  Review still centres on the parcel. `slice-11/drone-1710-meharry.png`.
+- Each preset writes a shot record on the view: position and target in feet
+  (local east, north, up), angle of view, revision, style and sun. The two
+  `.shot.json` files are the records the captures were taken with.
+- Cars in the 3D view are shaped cars (`slice-10/cars-shaped.png`).
+
+Checks: 843 tests pass; app type check 2,071; `check-slice.cjs` passes.
+
 ## Not done yet
 
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry

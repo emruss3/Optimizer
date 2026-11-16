@@ -11,6 +11,7 @@ import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
+import { streetShot, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 
@@ -28,6 +29,9 @@ export interface RenderViewProps {
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
+
+/** The angle of view of the aerial presets, degrees. The street view sets its own. */
+const BASE_FOV = 30;
 
 type Shot = 'iso' | 'top' | 'street';
 
@@ -104,6 +108,22 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // the aerial looks from the diagonal the neighbours block least
   const aerial = useRef(-38);
   aerial.current = data.aerialAzimuth;
+  // the last preset the camera was put on, so a capture can be regenerated from it
+  const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number } | null>(null);
+  const [shotNote, setShotNote] = useState<string | null>(null);
+  const [, setShotStamp] = useState(0);
+  // lens shift of the street view (render3d/shots): 1 is none
+  const lift = useRef(1);
+  const lens = useCallback((camera: THREE.PerspectiveCamera, w: number, h: number) => {
+    if (lift.current > 1) {
+      camera.aspect = w / (h * lift.current);
+      camera.setViewOffset(w, h * lift.current, 0, 0, w, h);
+    } else {
+      camera.clearViewOffset();
+      camera.aspect = w / h;
+    }
+    camera.updateProjectionMatrix();
+  }, []);
   const frame = useCallback((shot: Shot | 'fit') => {
     const r = rig.current;
     if (!r) return;
@@ -118,11 +138,37 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       r.camera.position.copy(t).addScaledVector(dir, fits);
     } else {
       const review = r.review;
-      const [el, az, dist] = shot === 'top' ? [89.2, 0, fits] : shot === 'street' ? [6, aerial.current - 14, fits * 0.62] : [review ? 32 : 22, aerial.current, fits];
-      const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
-      t.set(x, radius * 0.06, -y);
-      r.camera.position.set(t.x + dist * Math.cos(e) * Math.sin(a), t.y + dist * Math.sin(e), t.z + dist * Math.cos(e) * Math.cos(a));
+      // Street arrival: a person's eye on the approach, with a clear line to the building
+      // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
+      const cv = canvas.current;
+      const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
+      const arrival = shot === 'street' ? streetShot(r.model.ground.subjects, r.model.ground.obstacles, r.model.ground.roads, picture, r.model.ground.trees) : null;
+      setShotNote(shot === 'street' && !arrival ? 'No clear street-level view of this building was found: neighbours stand in every line of sight. Showing the aerial.' : null);
+      if (arrival) {
+        // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
+        lift.current = arrival.lift;
+        r.camera.fov = (2 * Math.atan(Math.tan((arrival.fovDeg * Math.PI) / 360) * arrival.lift) * 180) / Math.PI;
+        if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+        const away = Math.hypot(arrival.target[0] - arrival.position[0], arrival.target[1] - arrival.position[1]);
+        // a hair below level: the orbit control keeps the eye above what it looks at
+        t.set(arrival.target[0], arrival.target[2] - away * 0.025, -arrival.target[1]);
+        r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
+        lastShot.current = { shot: 'street', basis: arrival.basis, position: arrival.position, target: arrival.target, fovDeg: arrival.fovDeg };
+      } else {
+        lift.current = 1;
+        r.camera.fov = BASE_FOV;
+        if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+        // the drone view of a rendering centres on what is built; review centres on the parcel
+        const c = shot === 'top' || review ? r.model.focus : r.model.built;
+        const reach = (c.radius * 1.2) / Math.sin((BASE_FOV * Math.PI) / 360 * Math.min(1, r.camera.aspect));
+        const [el, az, dist] = shot === 'top' ? [89.2, 0, reach] : [review ? 32 : 28, aerial.current, reach];
+        const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
+        t.set(c.x, c.radius * 0.06, -c.y);
+        r.camera.position.set(t.x + dist * Math.cos(e) * Math.sin(a), t.y + dist * Math.sin(e), t.z + dist * Math.cos(e) * Math.cos(a));
+        lastShot.current = { shot: shot === 'street' ? 'iso' : shot, basis: shot === 'top' ? 'Straight down on the parcel' : review ? 'Three-quarter view of the parcel' : `Three-quarter view of ${c === r.model.focus ? 'the parcel' : 'the built area'}, ${el} degrees down`, position: [r.camera.position.x, -r.camera.position.z, r.camera.position.y], target: [t.x, -t.z, t.y], fovDeg: BASE_FOV };
+      }
     }
+    setShotStamp(s => s + 1);
     r.controls.update();
     r.request();
   }, []);
@@ -151,7 +197,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       return;
     }
     const E = model.extent;
-    const camera = new THREE.PerspectiveCamera(30, Math.max(0.1, el.clientWidth / Math.max(1, el.clientHeight)), 1.5, E * 40);
+    const camera = new THREE.PerspectiveCamera(BASE_FOV, Math.max(0.1, el.clientWidth / Math.max(1, el.clientHeight)), 1.5, E * 40);
     const controls = new OrbitControls(camera, cv);
     controls.enableDamping = true;
     controls.dampingFactor = 0.12;
@@ -178,8 +224,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const ro = new ResizeObserver(() => {
       const w = Math.max(2, el.clientWidth), h = Math.max(2, el.clientHeight);
       stage.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      // keeps the street view's lens shift when the window changes size
+      lens(camera, w, h);
       request();
     });
     ro.observe(el);
@@ -221,7 +267,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, quality, look, present]);
+  }, [data, frame, lens, quality, look, present]);
 
   useEffect(() => {
     const r = rig.current;
@@ -304,7 +350,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const showy = look === 'rendering' || present;
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
       {/* Review reads the site data; light, style and photoreal belong to showing it */}
       {!showy && (
@@ -351,6 +397,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         </button>}
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
       </div>
+      {shotNote && (
+        <div className="absolute top-11 left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 text-[11px] shadow-sm max-w-md" data-testid="shot-note" role="status">{shotNote}</div>
+      )}
       {onSelect && tagged.length > 0 && (
         <div className="absolute top-11 right-2 flex flex-wrap justify-end items-center gap-1 max-w-[50%] bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm" role="group" aria-label="Buildings">
           <span className="text-gray-500 px-0.5">Buildings</span>
