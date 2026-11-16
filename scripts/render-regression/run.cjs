@@ -83,6 +83,14 @@ async function one(browser, parcel) {
     const g = row.ground || {};
     console.log(`${parcel.fid} ${parcel.address.padEnd(24)} opened=${row.opened} model=${row.modelMs ?? '-'}ms ground=${g.kind ?? '-'}${g.kind === 'graded' ? ` cut ${g.deepest_cut_ft} ft fill ${g.deepest_fill_ft} ft` : ''} street=${row.shots.street ? row.shots.street.got : '-'} errors=${row.errors.length}`);
   }
+  // a run of a few parcels keeps the others' rows from the run before, so one parcel can be redone
+  const before = path.join(out, 'results.json');
+  if (only.length && fs.existsSync(before)) {
+    const kept = JSON.parse(fs.readFileSync(before, 'utf8')).rows.filter(r => !rows.some(n => n.fid === r.fid));
+    const order = set.map(p => p.fid);
+    rows.push(...kept);
+    rows.sort((a, b) => order.indexOf(a.fid) - order.indexOf(b.fid));
+  }
   fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ at: new Date().toISOString(), rows }, null, 2) + '\n');
 
   // the contact sheet: a row a parcel, its drone and its street shot, and the facts under them
