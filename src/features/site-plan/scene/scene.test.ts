@@ -380,3 +380,38 @@ describe('party walls in a row of homes', () => {
     expect(unitDividers([[0, 0], [100, 0], [100, 40], [50, 60], [0, 40], [0, 0]], 5)).toBeNull();
   });
 });
+
+describe('cars and the floor plate', () => {
+  it('parks a car in each lined stall and says cars are illustration', () => {
+    const bay = el('p', 'parking', to3857(rect2274(90, 18, 0)), { stalls: 10 });
+    const apt = el('apt', 'building', to3857(rect2274(200, 70, 0, X0, Y0 + 200)), { floors: 4, units: 80 });
+    const sheet = renderSitePlanSheet(buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [bay, apt] })!, { project: 'T', date: 'd' });
+    expect(sheet.striped).toEqual([{ id: 'p', stalls: 10 }]);
+    const cars = must(/data-role="cars"[^>]*>/.exec(sheet.svg.replace(/\n/g, ' ')));
+    expect(cars[0]).toContain('data-illustration="true"');
+    const d = must(/<path d="([^"]+)"[^>]*data-role="cars"/.exec(sheet.svg))[1] ?? '';
+    expect(d.split('Z').length - 1).toBe(10);
+    expect(sheet.svg).toContain('cars and shadows are illustration');
+    // no mix on the building, so no floor plate is invented for it
+    expect(sheet.plated).toEqual([]);
+  });
+
+  it('draws units and a corridor in an apartment building that carries a unit mix', () => {
+    const mix = [{ type: '1br', count: 60, avgSqft: 700 }, { type: '2br', count: 20, avgSqft: 1100 }];
+    const apt = el('apt', 'building', to3857(rect2274(240, 65, 0)), { floors: 4, units: 80, unitMix: mix, areaSqFt: 15600 });
+    const sheet = renderSitePlanSheet(buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [apt] })!, { project: 'T', date: 'd' });
+    expect(sheet.plated).toHaveLength(1);
+    expect(must(sheet.plated[0]).corridors).toBe(1);
+    expect(must(sheet.plated[0]).units).toBeGreaterThan(4);
+    expect(sheet.svg).toContain('data-role="floor-plate"');
+  });
+
+  it('draws the saved Meharry plan with whatever plate its buildings carry', () => {
+    const { elements } = seedFamilyPlanToElements(meharry);
+    const scene = buildDrawingScene({ parcelId: 488278, schemeId: 'mf:test', elements, parcelGeometry: meharryParcel })!;
+    const sheet = renderSitePlanSheet(scene, { project: '1710 MEHARRY BLVD', date: 'd' });
+    const withMix = scene.buildings.filter(b => b.use === 'apartments' && b.unitMix?.length).length;
+    expect(sheet.plated.length).toBeLessThanOrEqual(withMix);
+    if (withMix) expect(sheet.plated.length).toBeGreaterThan(0);
+  });
+});

@@ -218,6 +218,7 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     const b: Omit<SceneBuilding, 'display'> = {
       ...base, role: 'building', styleRole: use === 'amenity' ? 'amenity' : small ? 'house' : 'building',
       tag, tagOnPlan: !small, use, floors, footprintSqFt, grossSqFt, units, height, labelPoint,
+      unitMix: mix ? mix.filter((m): m is { type: string; count: number; avgSqft: number } => typeof (m as { type?: unknown }).type === 'string' && num(m.count) != null && num((m as { avgSqft?: unknown }).avgSqft) != null) : null,
     };
     const full: SceneBuilding = { ...b, display: describe(b) };
     features.push(full);

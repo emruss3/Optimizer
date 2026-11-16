@@ -87,6 +87,8 @@ export interface SceneBuilding extends SceneFeature {
   /** A point inside the footprint and clear of any court, in local feet. */
   labelPoint: Pt;
   display: BuildingDisplay;
+  /** The building's unit mix as the plan gives it, or null. Drives the floor plate on the sheet. */
+  unitMix: Array<{ type: string; count: number; avgSqft: number }> | null;
 }
 
 export interface SceneContext {
