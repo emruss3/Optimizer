@@ -39,8 +39,29 @@ Options after the job path: `--scale` (fraction of the job's resolution),
 | `cameras` | `street` and `drone`: position, target, focal length on a 36 mm wide sensor, lens shift, clipping, aspect, resolution |
 | `lighting` | sun azimuth and altitude for the date and hour, exposure, seed |
 | `planting` | every standing tree: position and crown radius |
+| `terrain` | the ground: survey source, zero elevation, grading assumed, each building's pad |
 | `anchors` | building corners and where each camera puts them at 1920 by 1080 in the browser |
 | `omitted` | what the live view draws that this file does not carry yet |
+
+## The ground
+
+Where the parcel has surveyed elevations (USGS 3DEP, a 20 ft grid over the
+parcel and a 100 ft margin, NAVD88 feet), the scene stands on them. The job's
+`terrain` block records the source, the elevation of the frame's zero height,
+and what was assumed:
+
+- **Existing ground** is the survey's own, interpolated. Past the surveyed
+  margin there are no elevations: the edge is held and eased to one level.
+- **Graded ground** is an assumption of the picture, not a grading plan. The
+  paved area and the buildings stand on one even surface fitted to the existing
+  ground, no steeper than 4%. Each building's pad is level on it. The graded
+  ground meets the existing ground over 39 ft round the work. The block lists
+  the slope before and after and the deepest cut and fill this implies.
+- Roads, walks, lawns and kerbs are laid over the ground on one shared lattice,
+  so a layer an inch above another stays an inch above it. Buildings and cars
+  are raised whole. Trees, shrubs and the street camera stand on the ground.
+
+A parcel with no survey renders on flat ground and `terrain` is null.
 
 ## Checks before any pixel is rendered
 

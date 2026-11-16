@@ -695,6 +695,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       if (c.elevation <= 0.6) return;
       const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${n}`));
       if (!spot) return;
+      owner = `car:${n}`;
       for (const part of carParts(spot)) put(part.key, part.geometry, part.color);
     });
   }
