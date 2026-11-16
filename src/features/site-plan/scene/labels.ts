@@ -28,6 +28,8 @@ export const LABEL_PRIORITY = {
   buildingTag: 1,
   buildingCaption: 2,
   parkingCount: 3,
+  /** A house's or a townhome row's own caption: gives way to tags and stall counts. */
+  homeCaption: 3.5,
   dimension: 4,
   streetName: 5,
   context: 6,

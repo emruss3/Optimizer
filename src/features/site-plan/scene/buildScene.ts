@@ -57,6 +57,8 @@ function roleOf(el: Element): [FeatureRole, StyleRole] {
   const pave = pavementKind(el);
   if (pave === 'street') return ['street', 'street'];
   if (pave === 'driveway') return ['drive', 'driveway'];
+  // a parking structure reads differently from a surface lot
+  if (el.type === 'parking' && (el.properties as Record<string, unknown> | undefined)?.structured === true) return ['parking', 'garage'];
   const r = ROLE[el.type];
   if (r) return r;
   if (/^Lot \d+$/.test(el.name ?? '')) return ['lot', 'lot'];

@@ -111,23 +111,25 @@ const C = {
   contextBuildingEdge: '#cdc8bb',
   road: '#ffffff',
   roadEdge: '#d8d3c6',
-  lawn: '#dde8cc',
+  lawn: '#eef2e4',
   open: '#c7dcae',
   openEdge: '#8fae72',
   walk: '#ece8dc',
   walkEdge: '#cfc9b9',
-  driveway: '#dcd9d0',
-  drive: '#c9c8c3',
-  driveEdge: '#a09e97',
-  parking: '#e4e3de',
-  parkingEdge: '#8d8b84',
+  driveway: '#b8bcc2',
+  drive: '#8f959c',
+  driveEdge: '#4f555c',
+  parking: '#bcd0ea',
+  parkingEdge: '#3f6aa0',
+  garage: '#b9b2d6',
+  garageEdge: '#5a4f8f',
   stripe: '#ffffff',
   lot: '#6b6f66',
-  street: '#d2d1cb',
-  roof: '#ffffff',
+  street: '#8f959c',
+  roof: '#f3b29c',
   roofEdge: '#2a2e33',
   amenity: '#f0e2bd',
-  house: '#f7f3ea',
+  house: '#f7d77a',
   tree: '#a5c78a',
   treeEdge: '#6c9856',
   shadow: '#1c2430',
@@ -218,12 +220,13 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     drive: `fill="${C.drive}" stroke="${C.driveEdge}" stroke-width="0.4"`,
     driveway: `fill="${C.driveway}" stroke="${C.parkingEdge}" stroke-width="0.35"`,
     parking: `fill="${C.parking}" stroke="${C.parkingEdge}" stroke-width="0.5"`,
+    garage: `fill="${C.garage}" stroke="${C.garageEdge}" stroke-width="0.9"`,
     other: `fill="none" stroke="${C.lot}" stroke-width="0.4"`,
     house: `fill="${C.house}" stroke="${C.roofEdge}" stroke-width="0.7"`,
     amenity: `fill="${C.amenity}" stroke="${C.roofEdge}" stroke-width="0.9"`,
     building: `fill="${C.roof}" stroke="${C.roofEdge}" stroke-width="1.3"`,
   } as const;
-  const FLAT = ['open-space', 'lot', 'street', 'drive', 'driveway', 'parking', 'other'] as const;
+  const FLAT = ['open-space', 'lot', 'street', 'drive', 'driveway', 'parking', 'garage', 'other'] as const;
   const striped: SheetModel['striped'] = [];
   // walks: along the plan's own streets (a planted strip, then the walk) and
   // round each tagged building, drawn as strokes under what they follow
@@ -342,9 +345,30 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     const c = centre(f.polygons);
     if (!c) continue;
     const [x, y] = P(c);
-    const s = `${f.stalls} stalls`;
+    const s = f.styleRole === 'garage' ? `Garage · ${f.stalls} stalls` : `${f.stalls} stalls`;
     cands.push({ id: `park:${f.id}`, priority: LABEL_PRIORITY.parkingCount, x, y, w: s.length * 3.4 + 8, h: 11 });
     text.set(`park:${f.id}`, { lines: [s], kind: 'parking', size: 6.5 });
+  }
+  // a garage with no stall count still says what it is
+  for (const f of scene.features) {
+    if (f.styleRole !== 'garage' || (f.stalls != null && f.stalls > 0)) continue;
+    const c = centre(f.polygons);
+    if (!c) continue;
+    const [x, y] = P(c);
+    cands.push({ id: `park:${f.id}`, priority: LABEL_PRIORITY.parkingCount, x, y, w: 6 * 3.4 + 8, h: 11 });
+    text.set(`park:${f.id}`, { lines: ['Garage'], kind: 'parking', size: 6.5 });
+  }
+  // houses and townhome rows say what they are when the sheet has no lots to
+  // read them by; on a plan of lots the lot numbers do that job
+  if (!scene.features.some(f => f.role === 'lot')) {
+    for (const b of scene.buildings) {
+      if (b.tagOnPlan) continue;
+      const [x, y] = P(b.labelPoint);
+      const n = b.units?.value ?? null;
+      const s = n != null && n > 1 ? `${b.display.use} · ${n} units` : b.display.use;
+      cands.push({ id: `home:${b.id}`, priority: LABEL_PRIORITY.homeCaption, x, y, w: s.length * 3.4 + 8, h: 11 });
+      text.set(`home:${b.id}`, { lines: [s], kind: 'home', size: 6.5 });
+    }
   }
   // lot numbers: a plan of lots is read by them
   for (const f of scene.features) {
@@ -497,7 +521,8 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['building', 'Building', STYLE.building],
     ['amenity', 'Amenity', STYLE.amenity],
     ['house', 'House or townhome', STYLE.house],
-    ['parking', 'Parking', STYLE.parking],
+    ['parking', 'Surface parking', STYLE.parking],
+    ['garage', 'Parking garage', STYLE.garage],
     ['drive', 'Drive', STYLE.drive],
     ['driveway', 'Driveway', STYLE.driveway],
     ['walk', 'Walk', `fill="${C.walk}" stroke="${C.walkEdge}" stroke-width="0.5"`],
