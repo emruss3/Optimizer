@@ -457,10 +457,21 @@ def kit_material(slot, entry, root):
     link = nt.links.new
     sx, sy = entry["size_m"]
     if slot in GROUND_SLOTS:
+        # laid flat on the ground; on a kerb face or the side of a slab, run along it and up it
         geo = nt.nodes.new("ShaderNodeNewGeometry")
+        sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+        link(geo.outputs["Normal"], sep.inputs[0])
+        up = nt.nodes.new("ShaderNodeMath"); up.operation = "ABSOLUTE"
+        link(sep.outputs["Z"], up.inputs[0])
+        flat = nt.nodes.new("ShaderNodeMath"); flat.operation = "GREATER_THAN"; flat.inputs[1].default_value = 0.5
+        link(up.outputs[0], flat.inputs[0])
+        pick = nt.nodes.new("ShaderNodeMix"); pick.data_type = "VECTOR"
+        link(flat.outputs[0], pick.inputs["Factor"])
+        link(_wall_coords(nt), pick.inputs["A"])
+        link(geo.outputs["Position"], pick.inputs["B"])
         mp = nt.nodes.new("ShaderNodeMapping")
         mp.inputs["Scale"].default_value = (1 / sx, 1 / sy, 1)
-        link(geo.outputs["Position"], mp.inputs["Vector"])
+        link(pick.outputs["Result"], mp.inputs["Vector"])
         coords = mp.outputs["Vector"]
     else:
         mp = nt.nodes.new("ShaderNodeMapping")
@@ -512,9 +523,9 @@ def kit_sky(job, lock, root):
     y, x = divmod(int(np.argmax(lum)), w)
     del px, lum
     lon, lat = ((x + 0.5) / w - 0.5) * math.tau, ((y + 0.5) / h - 0.5) * math.pi
-    # measured against cast shadows: unturned, this sky's sun stands at lon + 180 degrees from east,
+    # measured against cast shadows: unturned, this sky's sun stands at -lon from east,
     # and turning the lookup by t moves it by -t
-    sky_sun = lon + math.pi
+    sky_sun = -lon
     light = job["lighting"]
     az = math.radians(light["sun_azimuth_deg"])
     want = math.atan2(math.cos(az), math.sin(az))          # compass bearing to an angle from east
@@ -554,7 +565,7 @@ def _import_plants(entries, root, split):
                 me.transform(o.matrix_world)
                 from mathutils import Matrix
                 me.transform(Matrix.Translation((-cx, -cy, -lo.z)))
-            out.append({"meshes": [o.data for o in group], "radius": max(hi.x - lo.x, hi.y - lo.y) / 2, "height": hi.z - lo.z})
+            out.append({"meshes": [o.data for o in group], "radius": max(hi.x - lo.x, hi.y - lo.y) / 2, "height": hi.z - lo.z, "weight": entry.get("weight", 1)})
         for o in new:
             bpy.data.objects.remove(o, do_unlink=True)
     return out
@@ -573,7 +584,7 @@ def kit_plants(job, lock, root):
         if not shapes:
             return
         for item in items:
-            shape = rng.choice(shapes)
+            shape = rng.choices(shapes, weights=[s.get("weight", 1) for s in shapes])[0]
             k = fit(size_of(item) * FT, shape)
             turn = rng.uniform(0, math.tau)
             for mesh in shape["meshes"]:

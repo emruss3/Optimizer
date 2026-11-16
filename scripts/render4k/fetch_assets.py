@@ -74,7 +74,7 @@ def main():
     fetch(f["url"], path, f.get("size"), f.get("md5"), lock)
     lock["sky"] = {"id": sky["id"], "file": os.path.relpath(path, root)}
     lock["materials"] = {slot: {**texture(m["id"], m["res"], root, lock), "tint": m.get("tint", 1.0)} for slot, m in kit["materials"].items()}
-    lock["trees"] = [model(t["id"], t["res"], root, lock, "trees") for t in kit["trees"]]
+    lock["trees"] = [{**model(t["id"], t["res"], root, lock, "trees"), "weight": t.get("weight", 1)} for t in kit["trees"]]
     lock["shrubs"] = [model(t["id"], t["res"], root, lock, "shrubs") for t in kit["shrubs"]]
     del lock["_root"]
     with open(os.path.join(root, "assets.lock.json"), "w") as f:

@@ -78,31 +78,45 @@
   },
   "checks_passed": true,
   "failures": [],
-  "material_slots": [
-    "asphalt",
-    "brick",
-    "concrete",
-    "glass",
-    "grass",
-    "paint",
-    "panel",
-    "plain",
-    "plaster",
-    "railing",
-    "shingle",
-    "siding",
-    "wood"
-  ],
-  "trees_grown": 727,
+  "kit": {
+    "version": "kit-2",
+    "source": "Poly Haven (polyhaven.com), CC0",
+    "photographed_slots": [
+      "asphalt",
+      "brick",
+      "concrete",
+      "grass",
+      "plaster",
+      "shingle",
+      "siding"
+    ],
+    "other_slots": [
+      "glass",
+      "paint",
+      "panel",
+      "plain",
+      "railing",
+      "wood"
+    ]
+  },
+  "sky": {
+    "id": "kloofendal_48d_partly_cloudy_puresky",
+    "sun_altitude_deg": 47.9,
+    "job_sun_altitude_deg": 49.34
+  },
+  "planting": {
+    "trees": 727,
+    "shrubs": 120
+  },
   "images": {
     "street": {
-      "file": "daylight-street-960.png",
+      "file": "kit-street-960.png",
       "width": 960,
       "height": 540,
       "samples": 64
     },
     "drone": {
-      "file": "daylight-drone-960.png",
+      "file": "kit-drone-960.png",
       "width": 960,
       "height": 540,
       "samples": 64

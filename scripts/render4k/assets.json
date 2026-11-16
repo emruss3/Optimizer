@@ -45,19 +45,23 @@
   "trees": [
     {
       "id": "tree_small_02",
-      "res": "1k"
+      "res": "1k",
+      "weight": 3
     },
     {
       "id": "island_tree_01",
-      "res": "1k"
+      "res": "1k",
+      "weight": 1
     },
     {
       "id": "island_tree_02",
-      "res": "1k"
+      "res": "1k",
+      "weight": 1
     },
     {
       "id": "jacaranda_tree",
-      "res": "1k"
+      "res": "1k",
+      "weight": 3
     }
   ],
   "shrubs": [

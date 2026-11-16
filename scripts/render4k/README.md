@@ -57,30 +57,41 @@ The worker stops with a non-zero exit code when one fails.
 | Preset | What it is |
 | --- | --- |
 | `gray-pass` | One gray material, a sun and a flat sky. Proves geometry, coordinates and cameras. |
-| `daylight` | A material for each slot, a clear sky, the sun for the job's date and hour, and a tree for each one in `planting.trees`. |
+| `daylight` | With the render kit: photographed materials, a photographed sky and scanned plants. Without it: simple built-in materials, a clear sky and stand-in trees. |
 
 The job names its preset. `--preset` overrides it.
 
-Material slots in the daylight preset: `brick` (modular brick with mortar joints),
-`siding` (lap boards), `glass`, `asphalt`, `concrete`, `grass`, `shingle`,
-`paint` (car bodies), `railing`. Any other slot takes the colour the model
-painted on it. Each mesh is named `owner__slot`, so a slot can be given a
-better material without touching the scene.
+## The render kit
 
-Trees are not in the GLB. The job lists where each stands and its crown
-radius, and the worker grows it from one of five shapes. The job's seed fixes
-which shape and which turn, so a revision renders the same trees every time.
+`assets.json` pins a kit of CC0 assets from Poly Haven. Nothing is committed:
+
+```sh
+python scripts/render4k/fetch_assets.py          # about 500 MB into out/assets
+```
+
+`out/assets/assets.lock.json` records what arrived. The worker uses the kit
+when it is there (`--assets` names another folder).
+
+| Part | What the worker does with it |
+| --- | --- |
+| Materials | Each slot (`brick`, `siding`, `plaster`, `asphalt`, `concrete`, `grass`, `shingle`) takes the photographed surface at its true size, in the colour the model painted. `tint` in the manifest says how much of that colour carries. |
+| Sky | The photographed sky lights the scene. It is turned so its sun stands on the job's sun bearing. The report gives the sky's sun height beside the job's, so pick a date and hour that match it. |
+| Plants | A scanned tree for each tree in `planting.trees`, sized to its crown radius, and a scanned shrub for each in `planting.shrubs`. The job's seed fixes which one and which way it faces. |
+
+Slots with no photographed surface yet (`glass`, `paint`, `plain`, `panel`,
+`railing`, `wood`) use the built-in materials. Cars are still the model's own
+simple shapes: the kit has no car models.
 
 ## Cost on 4 CPU cores, no GPU
 
 | Run | Size | Samples | Time |
 | --- | --- | --- | --- |
 | Gray pass, both cameras | 960 by 540 | 48 | 42 s |
-| Daylight, both cameras | 960 by 540 | 64 | 1 min 43 s |
+| Daylight with the kit, both cameras | 960 by 540 | 64 | 2 min 44 s |
+| Daylight with the kit, street only | 1920 by 1080 | 96 | about 5 min |
 
 ## Not yet
 
-- Shrubs and hedges are not exported.
-- No HDR sky file yet: the sky is Blender's own clear-sky model.
+- No real car models.
 - No CI smoke job yet.
 - "Render 4K" is not wired into the app. The export hook is dev only.
