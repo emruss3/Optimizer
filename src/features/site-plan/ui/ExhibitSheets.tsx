@@ -29,6 +29,8 @@ export const ExhibitSheets: React.FC<{
   renderUnderlay?: ((layout: SheetLayout, widthPx: number) => Promise<string>) | undefined;
   /** Renders the scheme from the air at the given size, for A-02. */
   renderView?: ((widthPx: number, heightPx: number) => Promise<string>) | undefined;
+  /** True when the rendered view stands on surveyed ground graded for the picture: A-02 then says the grading is assumed. */
+  groundGraded?: boolean | undefined;
   /** Repaints a rendering as a photograph (the photoreal pass), for A-02. */
   photoreal?: ((image: string) => Promise<string>) | undefined;
   /** The architectural style the pictures are rendered in: a change of it is a new picture. */
@@ -41,7 +43,7 @@ export const ExhibitSheets: React.FC<{
   printSetOnOpen?: boolean | undefined;
   /** The zoning height limit and plane, for the section. */
   heightControl?: HeightControl | null | undefined;
-}> = ({ scene, title, onClose, renderUnderlay, renderView, photoreal, look, initial, schemeName, printSetOnOpen, heightControl }) => {
+}> = ({ scene, title, onClose, renderUnderlay, renderView, groundGraded, photoreal, look, initial, schemeName, printSetOnOpen, heightControl }) => {
   const [which, setWhich] = useState<Which>(initial ?? 'plan');
   const [size, setSize] = useState<SheetSize>('slide');
   const [style, setStyle] = useState<'rendered' | 'drawn'>(renderUnderlay ? 'rendered' : 'drawn');
@@ -92,7 +94,7 @@ export const ExhibitSheets: React.FC<{
   const picture = style === 'rendered' && underlay?.key === key ? { href: underlay.href } : null;
   const planSheet = useMemo(() => renderSitePlanSheet(scene, title, size, picture), [scene, title, size, picture]);
   const rendering2 = view?.key === key ? view.href : null;
-  const viewPicture = painted2?.key === key && showPainted ? { href: painted2.href, ai: true } : rendering2 ? { href: rendering2 } : null;
+  const viewPicture = painted2?.key === key && showPainted ? { href: painted2.href, ai: true } : rendering2 ? { href: rendering2, graded: !!groundGraded } : null;
   const paint = useCallback(() => {
     if (!photoreal || !rendering2) return;
     setPainting(true);
@@ -178,7 +180,7 @@ export const ExhibitSheets: React.FC<{
         try {
           const href = await renderView(Math.round((image.w / 72) * 200), Math.round((image.h / 72) * 200));
           setView({ key, href });
-          aerial = { href };
+          aerial = { href, graded: !!groundGraded };
         } catch (err) {
           console.warn('[sheet] the view could not be rendered for the set.', err);
         }

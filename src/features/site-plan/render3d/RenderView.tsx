@@ -82,6 +82,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const canvas = useRef<HTMLCanvasElement>(null);
   const rig = useRef<Rig | null>(null);
   const [ready, setReady] = useState(false);
+  // true when the model stands on surveyed ground that was graded for the picture: the view says so
+  const [graded, setGraded] = useState(false);
   // counts the models built: a new one needs its sun and its selection set again
   const [built, setBuilt] = useState(0);
   const [present, setPresent] = useState(false);
@@ -250,6 +252,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     cv.addEventListener('pointerdown', onDown);
     cv.addEventListener('pointerup', onUp);
     rig.current = { lit: false, review: look === 'review' && !present, stage, model, camera, controls, request, highlight: null };
+    setGraded(!!model.grade?.grading);
     const was = stood.current;
     if (was && was.revision === revision.current) {
       camera.position.copy(was.position);
@@ -427,7 +430,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         </div>
       )}
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/85 rounded px-2 py-1 pointer-events-none">
-        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
+        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{graded ? ' · ground graded to 4% or less: assumed, not a grading plan' : ''}{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
       </div>
       {look === 'review' && !present && (
         <div className="absolute bottom-9 left-2 flex items-center gap-3 text-[11px] text-gray-700 bg-white/90 rounded px-2 py-1 pointer-events-none" data-testid="review-legend">

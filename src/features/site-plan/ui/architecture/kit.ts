@@ -185,17 +185,19 @@ export class Kit {
       this.pane(w, a, b, z0, z1, d + 0.04);
       return;
     }
-    const f = 0.055, p = 0.075;
+    // The frame stands 4 inches proud of the glass, so the opening has a reveal and casts its own
+    // shadow. Its head is a drip cap a little wider and deeper than the jambs, and its foot is a
+    // sill that sheds water past the wall: the two lines a real window draws on a facade.
+    const f = 0.055, p = 0.11;
     if (o.casing) this.panel(w, a - 0.11, b + 0.11, z0 - 0.1, z1 + 0.13, d + 0.015, o.casing);
-    this.box(w, a, b, d, d + p, z1 - f, f, o.frame);
-    this.box(w, a, b, d, d + p, z0, f, o.frame);
+    this.box(w, a - 0.03, b + 0.03, d, d + p + 0.04, z1 - f, f + 0.025, o.frame);
+    this.box(w, a - 0.05, b + 0.05, d, d + p + 0.055, z0 - 0.02, f + 0.02, o.sill ?? o.frame);
     this.box(w, a, a + f, d, d + p, z0 + f, z1 - z0 - 2 * f, o.frame);
     this.box(w, b - f, b, d, d + p, z0 + f, z1 - z0 - 2 * f, o.frame);
     this.pane(w, a + f, b - f, z0 + f, z1 - f, d + 0.02);
     const [cols, rows] = o.grid ?? [1, 1];
     for (let c = 1; c < cols; c++) { const x = a + (width * c) / cols; this.panel(w, x - 0.017, x + 0.017, z0 + f, z1 - f, d + 0.045, o.frame); }
     for (let r = 1; r < rows; r++) { const z = z0 + ((z1 - z0) * r) / rows; this.panel(w, a + f, b - f, z - 0.017, z + 0.017, d + 0.045, o.frame); }
-    if (o.sill) this.box(w, a - 0.08, b + 0.08, d, d + 0.12, z0 - 0.06, 0.06, o.sill);
     if (o.planter) {
       this.box(w, a + 0.04, b - 0.04, d, d + 0.26, z0 - 0.32, 0.22, PLANTER);
       this.box(w, a + 0.07, b - 0.07, d + 0.03, d + 0.23, z0 - 0.1, 0.13, pick(FLOWERS, this.seed >>> 3));

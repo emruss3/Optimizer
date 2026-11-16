@@ -107,7 +107,8 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
         const a = ring[i], b = ring[(i + 1) % ring.length], e = on(w, w.len);
         if (!a || !b) return;
         k.flat([[w.a[0], w.a[1], zB], [e[0], e[1], zB], [b[0], b[1], zc], [a[0], a[1], zc]], tone(p.crown, 1 - (i % 3) * 0.04));
-        k.box(w, -0.1, w.len + 0.1, 0, 0.14, zB - 0.1, 0.1, p.trim);
+        // the cornice under the mansard: a deep board the roof springs from, with its shadow under it
+        k.box(w, -0.16, w.len + 0.16, 0, 0.3, zB - 0.22, 0.22, p.trim);
       });
     });
     k.slabs.push({ id: k.id, building: true, polygon: tops.map(r => r.map(q => [q[0], q[1], zc])), elevation: 0.14, color: FLAT_ROOF.color, surface: FLAT_ROOF.surface, part: 'parapet', label: k.label });
@@ -144,6 +145,8 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
         if (lift) k.box(w, a - 0.04, b + 0.04, -0.3, 0.13, top + PARAPET + lift, 0.06, p.cap);
       }
     }
+    // a belt course where the ground story's cladding meets the one above: the line every such building draws
+    if (style !== 'heritage' && !lite && n >= 2 && first < zB) k.box(w, -0.04, w.len + 0.04, 0, 0.13, first - 0.1, 0.2, p.trim);
     if (style === 'heritage' && !lite) {
       // piers between the stretches, a stone band over the ground story, and a cornice
       for (let m = 0; m <= mods; m++) { const s = Math.min(w.len - 0.3, Math.max(0.3, Math.round(m * per) * step)); k.box(w, s - 0.3, s + 0.3, 0, 0.14, 0, top + PARAPET - 0.1, tone(p.body, 0.94)); }

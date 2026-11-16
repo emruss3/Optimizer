@@ -4299,7 +4299,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} groundGraded={!!topo} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} />
       )}
       {exportOpen && (
         <ExportReport
