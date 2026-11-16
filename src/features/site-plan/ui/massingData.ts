@@ -1,3 +1,5 @@
+import { makeTerrain } from '../render3d/terrain';
+import { point2274To3857 } from '../api/parcelTopo';
 import type { Element } from '../../../engine/types';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { pointsAlongSegment, type Segment } from '../../../components/site-planner/planRendering';
@@ -64,6 +66,8 @@ export function buildingHeightM(floors: number): number {
 export function buildMassingData(
   elements: Element[],
   ground?: {
+    /** The parcel's surveyed elevations (api/parcelTopo): the scene stands on them. */
+    topo?: import('../api/parcelTopo').ParcelTopo | null;
     parcelRing?: number[][];
     envelopeRing?: number[][];
     /** Existing neighborhood buildings (3857) — extruded white context */
@@ -125,6 +129,8 @@ export function buildMassingData(
   /** Scene origin (derived from the plan's own Mercator frame) — feeds the
    *  sun-study light; never a hardcoded city. */
   origin: { latDeg: number; lonDeg: number };
+  /** The surveyed ground under the plan, in this model's frame; null or absent where the parcel has no survey. */
+  terrain?: import('../render3d/terrain').Terrain | null;
 } {
   const drawable = elements.filter(
     e => TYPE_COLORS[e.type] && e.geometry?.coordinates?.[0]?.length >= 4
@@ -354,7 +360,8 @@ export function buildMassingData(
   const { lonDeg, latDeg } = frame;
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg },
+  const terrain = ground?.topo ? makeTerrain(ground.topo, q => { const v = m(point2274To3857(q)); return [v[0] ?? 0, v[1] ?? 0]; }) : null;
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg }, terrain,
     aerialAzimuth: clearestAzimuth(
       contextPolygons.filter(c => c.elevation > 1).map(c => {
         const r = c.polygon[0] ?? [];

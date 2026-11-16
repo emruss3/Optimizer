@@ -64,8 +64,10 @@ export async function renderAerialImage(req: { data: MassingData; widthPx: numbe
     const { x, y, radius } = model.built;
     const el = (20 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180;
     const dist = (radius * 1.25) / Math.sin((30 * Math.PI) / 360 * Math.min(1, widthPx / heightPx));
-    camera.position.set(x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), -y + dist * Math.cos(el) * Math.cos(az));
-    camera.lookAt(x, radius * 0.3, -y);
+    // where the model stands on surveyed ground, the picture centres on the level the buildings stand at
+    const base = [...model.ground.subjects].sort((p, q) => q.points.length - p.points.length)[0]?.base || model.groundAt(x, y);
+    camera.position.set(x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el) + base, -y + dist * Math.cos(el) * Math.cos(az));
+    camera.lookAt(x, radius * 0.3 + base, -y);
     camera.updateProjectionMatrix();
     const [dx, dy, dz] = sunPosition(80, 16.5, data.origin.latDeg).direction;
     stage.setSun([-dx, -dy, -dz]);

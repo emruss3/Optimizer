@@ -11,7 +11,7 @@ import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
-import { streetShot, FT } from './shots';
+import { streetShot, standOn, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 
@@ -26,6 +26,8 @@ export interface RenderViewProps {
   envelopeRing?: number[][] | undefined;
   selectedId?: string | null | undefined;
   onSelect?: ((id: string | null) => void) | undefined;
+  /** The parcel's surveyed elevations: the scene stands on them. */
+  topo?: import('../api/parcelTopo').ParcelTopo | null | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
@@ -54,7 +56,7 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   const [look, setLook] = useState<'review' | 'rendering'>('review');
@@ -71,8 +73,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         frontEdges: (edgeClassifications ?? []).filter(e => e.type === 'front' && e.edge.length >= 2).map(e => [e.edge[0], e.edge[1]] as never),
         treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
         style: archStyle,
+        ...(topo ? { topo } : {}),
       }),
-    [elements, parcelRing, neighbors, edgeClassifications, scene, archStyle],
+    [elements, parcelRing, neighbors, edgeClassifications, scene, archStyle, topo],
   );
 
   const host = useRef<HTMLDivElement>(null);
@@ -130,11 +133,13 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     // every camera centres on the parcel and stands far enough back to hold all of it:
     // the radius that holds the parcel, seen through half the lens's angle, with room to spare
     const { x, y, radius } = r.model.focus;
+    // the level a camera centres on: the main building's pad, or the ground at the middle of the parcel
+    const padOf = (c: { x: number; y: number }) => { const main = [...r.model.ground.subjects].sort((p, q) => q.points.length - p.points.length)[0]; return main?.base || r.model.groundAt(c.x, c.y); };
     const fits = (radius * 1.2) / Math.sin((r.camera.fov * Math.PI) / 360 * Math.min(1, r.camera.aspect));
     const t = r.controls.target;
     if (shot === 'fit') {
       const dir = r.camera.position.clone().sub(t).normalize();
-      t.set(x, radius * 0.06, -y);
+      t.set(x, radius * 0.06 + padOf(r.model.focus), -y);
       r.camera.position.copy(t).addScaledVector(dir, fits);
     } else {
       const review = r.review;
@@ -142,7 +147,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
-      const arrival = shot === 'street' ? streetShot(r.model.ground.subjects, r.model.ground.obstacles, r.model.ground.roads, picture, r.model.ground.trees) : null;
+      const found = shot === 'street' ? streetShot(r.model.ground.subjects, r.model.ground.obstacles, r.model.ground.roads, picture, r.model.ground.trees) : null;
+      // the eye stands on the ground where the camera is (render3d/shots)
+      const arrival = found ? standOn(found, r.model.groundAt, [...r.model.ground.subjects].sort((p, q) => q.points.length - p.points.length)[0]?.base ?? 0) : null;
       setShotNote(shot === 'street' && !arrival ? 'No clear street-level view of this building was found: neighbours stand in every line of sight. Showing the aerial.' : null);
       if (arrival) {
         // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
@@ -163,7 +170,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         const reach = (c.radius * 1.2) / Math.sin((BASE_FOV * Math.PI) / 360 * Math.min(1, r.camera.aspect));
         const [el, az, dist] = shot === 'top' ? [89.2, 0, reach] : [review ? 32 : 28, aerial.current, reach];
         const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
-        t.set(c.x, c.radius * 0.06, -c.y);
+        t.set(c.x, c.radius * 0.06 + padOf(c), -c.y);
         r.camera.position.set(t.x + dist * Math.cos(e) * Math.sin(a), t.y + dist * Math.sin(e), t.z + dist * Math.cos(e) * Math.cos(a));
         lastShot.current = { shot: shot === 'street' ? 'iso' : shot, basis: shot === 'top' ? 'Straight down on the parcel' : review ? 'Three-quarter view of the parcel' : `Three-quarter view of ${c === r.model.focus ? 'the parcel' : 'the built area'}, ${el} degrees down`, position: [r.camera.position.x, -r.camera.position.z, r.camera.position.y], target: [t.x, -t.z, t.y], fovDeg: BASE_FOV };
       }
@@ -292,6 +299,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     if (target) {
       const mesh = new THREE.Mesh(target.geometry, new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       mesh.scale.setScalar(1.003);
+      mesh.position.copy(target.position);
       r.model.root.add(mesh);
       r.highlight = mesh;
     }

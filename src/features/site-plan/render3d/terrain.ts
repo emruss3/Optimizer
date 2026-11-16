@@ -243,3 +243,126 @@ export function drape(g: THREE.BufferGeometry, terrain: Terrain, d = LATTICE_M):
   src.dispose();
   return out;
 }
+
+/** How far round the graded work the ground is eased back to the existing ground, metres. */
+export const GRADE_RUN_M = 12;
+/** How far round a building the graded surface is eased to its level pad, metres. */
+export const PAD_RUN_M = 5;
+/** The steepest the graded paved area may be. */
+export const GRADE_MAX = 0.04;
+
+export interface Grade {
+  /** The ground the scene stands on: the survey, graded where the work is. */
+  terrain: Terrain;
+  /** Each building's level pad, metres above the model's zero. */
+  pads: Map<string, number>;
+  /** The same, for a reader: elevations in feet, and the cut and fill at each pad. */
+  padList: Array<{ building: string; pad_elevation_ft: number; lowest_ground_ft: number; highest_ground_ft: number; deepest_cut_ft: number; deepest_fill_ft: number }>;
+  grading: { rule: string; existing_slope_pct: number; graded_slope_pct: number; deepest_cut_ft: number; deepest_fill_ft: number } | null;
+}
+
+/** Whether a point lies inside a ring. */
+export function within(x: number, y: number, ring: Array<[number, number]>): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]!, b = ring[j]!;
+    if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+/** How far a point is outside a ring, metres; 0 inside it. */
+export function awayFrom(x: number, y: number, ring: Array<[number, number]>): number {
+  if (within(x, y, ring)) return 0;
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[j]!, b = ring[i]!;
+    const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2));
+    best = Math.min(best, Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t)));
+  }
+  return best;
+}
+
+/**
+ * What a developer does with the ground, assumed for a picture and not a
+ * grading plan: the paved area and the buildings stand on one even surface
+ * fitted to the existing ground, no steeper than GRADE_MAX; each building's pad
+ * is level on it; and the graded ground is eased back to the existing ground
+ * over a short run round the work.
+ */
+export function gradeSite(survey: Terrain, buildings: Array<{ id: string; ring: Array<[number, number]> }>, paved: Array<Array<[number, number]>>): Grade {
+  const el = (v: number) => Math.round((survey.zeroFt + v / FT) * 10) / 10;
+  const tenth = (v: number) => Math.round((v / FT) * 10) / 10;
+  const under = buildings.map(b => {
+    const xs = b.ring.map(q => q[0]), ys = b.ring.map(q => q[1]);
+    const hs: number[] = [];
+    for (let x = Math.min(...xs); x <= Math.max(...xs); x += 2) for (let y = Math.min(...ys); y <= Math.max(...ys); y += 2) if (within(x, y, b.ring)) hs.push(survey.heightAt(x, y));
+    if (!hs.length) hs.push(survey.heightAt(xs.reduce((a, v) => a + v, 0) / xs.length, ys.reduce((a, v) => a + v, 0) / ys.length));
+    return { low: Math.min(...hs), high: Math.max(...hs) };
+  });
+  const work = [...paved, ...buildings.map(b => b.ring)].filter(r => r.length >= 3);
+  const pads = new Map<string, number>();
+  if (!work.length) return { terrain: survey, pads, padList: [], grading: null };
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const r of work) for (const q of r) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+  const pts: Array<[number, number, number]> = [];
+  for (let x = x0; x <= x1; x += 2) for (let y = y0; y <= y1; y += 2) if (work.some(r => within(x, y, r))) pts.push([x, y, survey.heightAt(x, y)]);
+  if (pts.length < 3) return { terrain: survey, pads, padList: [], grading: null };
+  const n = pts.length;
+  const mx = pts.reduce((a, q) => a + q[0], 0) / n, my = pts.reduce((a, q) => a + q[1], 0) / n, mz = pts.reduce((a, q) => a + q[2], 0) / n;
+  let sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0;
+  for (const q of pts) { const dx = q[0] - mx, dy = q[1] - my, dz = q[2] - mz; sxx += dx * dx; sxy += dx * dy; syy += dy * dy; sxz += dx * dz; syz += dy * dz; }
+  const det = sxx * syy - sxy * sxy;
+  let a = Math.abs(det) > 1e-6 ? (sxz * syy - syz * sxy) / det : 0, b = Math.abs(det) > 1e-6 ? (syz * sxx - sxz * sxy) / det : 0;
+  const natural = Math.hypot(a, b);
+  if (natural > GRADE_MAX) { a *= GRADE_MAX / natural; b *= GRADE_MAX / natural; }
+  const plane = (x: number, y: number) => mz + a * (x - mx) + b * (y - my);
+  let cut = 0, fill = 0;
+  for (const q of pts) { const dz = q[2] - plane(q[0], q[1]); cut = Math.max(cut, dz); fill = Math.max(fill, -dz); }
+  const level = buildings.map(bd => plane(bd.ring.reduce((t, q) => t + q[0], 0) / bd.ring.length, bd.ring.reduce((t, q) => t + q[1], 0) / bd.ring.length));
+  buildings.forEach((bd, i) => pads.set(bd.id, level[i]!));
+  const padList = buildings.map((bd, i) => ({
+    building: bd.id, pad_elevation_ft: el(level[i]!), lowest_ground_ft: el(under[i]!.low), highest_ground_ft: el(under[i]!.high),
+    deepest_cut_ft: tenth(Math.max(0, under[i]!.high - level[i]!)), deepest_fill_ft: tenth(Math.max(0, level[i]! - under[i]!.low)),
+  }));
+  const bx0 = x0 - GRADE_RUN_M, bx1 = x1 + GRADE_RUN_M, by0 = y0 - GRADE_RUN_M, by1 = y1 + GRADE_RUN_M;
+  const ease = (t: number) => t * t * (3 - 2 * t);
+  const boxes = work.map(r => [Math.min(...r.map(q => q[0])), Math.max(...r.map(q => q[0])), Math.min(...r.map(q => q[1])), Math.max(...r.map(q => q[1]))] as const);
+  const shaped = (x: number, y: number): number => {
+    let h = survey.heightAt(x, y);
+    if (x < bx0 || x > bx1 || y < by0 || y > by1) return h;
+    let d = GRADE_RUN_M;
+    for (let i = 0; i < work.length && d > 0; i++) {
+      const bb = boxes[i]!;
+      if (x < bb[0] - d || x > bb[1] + d || y < bb[2] - d || y > bb[3] + d) continue;
+      d = Math.min(d, awayFrom(x, y, work[i]!));
+    }
+    if (d < GRADE_RUN_M) { const k = ease(d / GRADE_RUN_M); h = plane(x, y) * (1 - k) + h * k; }
+    buildings.forEach((bd, i) => {
+      const db = awayFrom(x, y, bd.ring);
+      if (db < PAD_RUN_M) { const k = ease(db / PAD_RUN_M); h = level[i]! * (1 - k) + h * k; }
+    });
+    return h;
+  };
+  const memo = new Map<number, number>();
+  const terrain: Terrain = {
+    ...survey,
+    heightAt: (x, y) => {
+      const key = Math.round(x * 100) * 4_000_037 + Math.round(y * 100);
+      let h = memo.get(key);
+      if (h === undefined) { h = shaped(x, y); if (memo.size < 3_000_000) memo.set(key, h); }
+      return h;
+    },
+    elevationFt: (x, y) => survey.zeroFt + shaped(x, y) / FT,
+  };
+  return {
+    terrain, pads, padList,
+    grading: {
+      rule: `Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than ${Math.round(GRADE_MAX * 100)}%; each building's pad is level on it; the graded ground meets the existing ground over ${Math.round(GRADE_RUN_M / FT)} ft round the work.`,
+      existing_slope_pct: Math.round(natural * 1000) / 10,
+      graded_slope_pct: Math.round(Math.hypot(a, b) * 1000) / 10,
+      deepest_cut_ft: tenth(cut), deepest_fill_ft: tenth(fill),
+    },
+  };
+}
