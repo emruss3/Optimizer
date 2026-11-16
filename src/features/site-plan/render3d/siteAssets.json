@@ -1,0 +1,110 @@
+{
+  "version": "site-daylight-v1",
+  "sky": {
+    "file": "daylight.hdr",
+    "sha256": "cf7ff4bab60967a61e6fc8c0384072705dd2f24e90037d1a508f8ee3f3be93b3",
+    "source": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+    "license": "CC0",
+    "rotation_deg": 0
+  },
+  "textures": {
+    "brick": {
+      "source": "https://polyhaven.com/a/red_brick_03",
+      "license": "CC0",
+      "tile_m": [
+        1.016,
+        0.948
+      ],
+      "roughness": 0.84,
+      "normal_strength": 0.8,
+      "color": "brick.jpg",
+      "normal": "brick_n.jpg",
+      "color_sha256": "70932d44e7767a5e1e97ba5fb2c4b301fda1aee118837790b8e0164f3d93ee2e",
+      "normal_sha256": "70b5aa75582dc07a756bd04a778a652dfba13e9106050fb2bb2c3cc6cd18e63f"
+    },
+    "asphalt": {
+      "source": "https://polyhaven.com/a/asphalt_02",
+      "license": "CC0",
+      "tile_m": [
+        6.4,
+        6.4
+      ],
+      "roughness": 0.89,
+      "normal_strength": 0.44,
+      "color": "asphalt.jpg",
+      "normal": "asphalt_n.jpg",
+      "color_sha256": "ec7ac7402ba67879b3a444bbbda7d26abbb4376b961a06916ebdd5d8b36500a3",
+      "normal_sha256": "869233c7955f1097b61f76f18e0eea0e9e9c56bcfa79ab627968d3a6af5edcc3"
+    },
+    "grass": {
+      "source": "https://polyhaven.com/a/sparse_grass",
+      "license": "CC0",
+      "tile_m": [
+        5.5,
+        5.5
+      ],
+      "roughness": 0.93,
+      "normal_strength": 0.76,
+      "color": "grass.jpg",
+      "normal": "grass_n.jpg",
+      "color_sha256": "00b392009b66a752e694292d04dbad83b79d96d27d8f40775d04e28e06c3a831",
+      "normal_sha256": "fcaf6911cccb1cfaeaffe3eb23e4881ab165b30ff91e336ec47328d202d8fe8a"
+    },
+    "plaster": {
+      "source": "https://polyhaven.com/a/white_plaster_02",
+      "license": "CC0",
+      "tile_m": [
+        2.6,
+        2.6
+      ],
+      "roughness": 0.75,
+      "normal_strength": 0.72,
+      "color": "plaster.jpg",
+      "normal": "plaster_n.jpg",
+      "color_sha256": "37631b244756de7d3f93fd220a3c9a2ae81925f666a165d63c8d649f173ff476",
+      "normal_sha256": "4bd6e0e6406293468bbb3b86bf477e3e8e6021e5b507add41e950876e4ef2ce9"
+    },
+    "shingle": {
+      "source": "https://polyhaven.com/a/grey_roof_01",
+      "license": "CC0",
+      "tile_m": [
+        2.2,
+        2.2
+      ],
+      "roughness": 0.81,
+      "normal_strength": 0.83,
+      "color": "shingle.jpg",
+      "normal": "shingle_n.jpg",
+      "color_sha256": "5b4903dc821f1ea508f7dff70662d47872dfac7abe07825812db82f516dc39b6",
+      "normal_sha256": "a42daed4fb96527a74b4e98d058fa378bf6d65b15d61d0e7b717dc2132abfb6b"
+    },
+    "concrete": {
+      "source": "https://polyhaven.com/a/concrete_pavement",
+      "license": "CC0",
+      "tile_m": [
+        2.8,
+        2.8
+      ],
+      "roughness": 0.77,
+      "normal_strength": 0.8,
+      "color": "concrete.jpg",
+      "normal": "concrete_n.jpg",
+      "color_sha256": "e9ad147f3f0bac6e5a9f329fc0d116e4b6d3f24b29ae94089aa2cfcd8ddaa231",
+      "normal_sha256": "b146f46536d2a9d8f29563810536fcc625c7e7409c259c249c0c6b6991673e34"
+    },
+    "wood": {
+      "source": "https://polyhaven.com/a/oak_wood_planks",
+      "license": "CC0",
+      "tile_m": [
+        2.2,
+        2.2
+      ],
+      "roughness": 0.63,
+      "normal_strength": 0.72,
+      "color": "wood.jpg",
+      "normal": "wood_n.jpg",
+      "color_sha256": "44aef5346031794d8506154a79a3a370095adf4ea749acd8bd67f234cd3b7699",
+      "normal_sha256": "004e7515ae96b86bcc3262d915a8cdb1699b23dc2a113588f29645e81fcb2867"
+    }
+  }
+}

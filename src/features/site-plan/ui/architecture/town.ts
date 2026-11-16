@@ -40,13 +40,15 @@ function entry(r: Row, o: { leaf: Mat; frame: Mat; win: WindowSpec; sidelight?: 
   if (W >= 5) k.windows(f.w, (doorS + 1.0 + W - 0.55) / 2, W >= 5.6 ? 2 : 1, 0.85, SLAB + 0.8, SLAB + 2.15, o.win, d);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 0, 1.0, 0, SLAB, PORCH);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 1.0, 1.32, 0, SLAB * 0.5, PORCH);
-  if (toPavement != null && toPavement > 2.6 && toPavement <= 12) k.box(f.w, doorS - 0.55, doorS + 0.55, 1.32, toPavement + 0.3, 0, 0.2, WALK);
+  if (toPavement != null && toPavement > 1.55 && toPavement <= 12) {
+    k.approach(f.w, doorS, 1.32, toPavement, 1.14, SLAB * 0.5, 'walk', WALK, 0.31);
+  }
   else if (toPavement == null || toPavement > 12) {
     // No pavement lies ahead of the door: the home fronts a green or a mews. A walk runs out from the
     // stoop to a path along the front of the row. Each home lays its own stretch of that path, so a
     // row's stretches join, and an end home carries it on past its open side toward the lane there.
     const out = 3.3, wide = 1.3;
-    k.box(f.w, doorS - 0.55, doorS + 0.55, 1.32, out + 0.05, 0, 0.2, WALK);
+    k.approach(f.w, doorS, 1.32, out + 0.05, 1.14, SLAB * 0.5, 'walk', WALK, 0.22);
     // past an open side the path runs on only as far as the lane there, and not at all where none is near:
     // a path that stops in a lawn is worse than one that stops at the last door
     const side = (s0: number): number => { const d = r.sideReach(s0); return d != null && d <= 7 ? d + 0.3 : 0; };
@@ -63,7 +65,7 @@ function rear(r: Row, back: Wall, o: { frame: Mat; trim: Mat; leaf: Mat; lites: 
     const gw = W >= 6 ? 4.9 : Math.min(2.75, W - 1.1);
     k.garage(back, W / 2 - gw / 2, W / 2 + gw / 2, 0.04, 2.15, { frame: o.trim, leaf: o.leaf, lites: o.lites });
     // the apron: a car has to get from the lane to the door
-    if (r.driveGap != null && r.driveGap > 0.25) k.box(back, W / 2 - gw / 2 - 0.2, W / 2 + gw / 2 + 0.2, 0, Math.min(r.driveGap + 0.35, 16.3), 0, 0.26, WALK);
+    if (r.driveGap != null && r.driveGap > 0.25) k.approach(back, W / 2, 0, r.driveGap, gw + 0.4, 0.04, 'apron', WALK, 0.305);
   } else {
     k.window(back, W / 2, Math.min(1.8, W - 1.4), SLAB + 0.05, SLAB + 2.15, { frame: o.frame, grid: [2, 1] });
     k.box(back, 0.3, W - 0.3, 0.02, 2.4, 0, 0.2, PORCH);

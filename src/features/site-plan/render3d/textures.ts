@@ -4,6 +4,7 @@
 // pattern: the colour of a wall or a roof comes from the geometry's own vertex
 // colour, so one material serves every house on the street.
 import * as THREE from 'three';
+import siteAssets from './siteAssets.json';
 import type { Surface } from '../ui/renderModel';
 
 export type { Surface };
@@ -245,12 +246,7 @@ const DRAW: Record<Drawn, () => Tile> = {
 };
 
 // Surfaces that have a photograph (public/textures/site, from Poly Haven, CC0), and the metres one tile covers.
-const PHOTOS: Record<string, [number, number]> = {
-  // The photo shows five nominal 8 in. units across by fourteen 2 2/3 in. courses high.
-  brick: [1.016, 0.948],
-  asphalt: [6.4, 6.4], grass: [5.5, 5.5], plaster: [2.6, 2.6],
-  shingle: [2.2, 2.2], concrete: [2.8, 2.8], wood: [2.2, 2.2],
-};
+const PHOTOS: Record<string, (typeof siteAssets.textures)[keyof typeof siteAssets.textures]> = siteAssets.textures;
 
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
 export class Surfaces {
@@ -262,26 +258,27 @@ export class Surfaces {
 
   /** Put the photograph of a surface, and its normal map, in place of the drawn pattern once they have loaded. */
   private photograph(kind: string, m: THREE.MeshStandardMaterial): void {
-    const size = PHOTOS[kind];
-    if (!size || typeof document === 'undefined') return;
+    const entry = PHOTOS[kind];
+    if (!entry || typeof document === 'undefined') return;
+    const { tile_m: size, normal_strength: relief } = entry;
     const loader = new THREE.TextureLoader();
     const one = (file: string, colour: boolean) => new Promise<THREE.Texture | null>(resolve => {
       loader.load(`/textures/site/${file}`, t => {
         t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
-        t.repeat.set(1 / size[0], 1 / size[1]);
+        t.repeat.set(1 / size[0]!, 1 / size[1]!);
         t.anisotropy = 8;
         if (colour) t.colorSpace = THREE.SRGBColorSpace;
         this.photos.push(t);
         resolve(t);
       }, undefined, () => resolve(null));
     });
-    this.pending.push(Promise.all([one(`${kind}.jpg`, true), one(`${kind}_n.jpg`, false)]).then(([map, normal]) => {
+    this.pending.push(Promise.all([one(entry.color, true), one(entry.normal, false)]).then(([map, normal]) => {
       if (!map || !normal) return;       // the drawn pattern stays
       m.map = map;
       m.bumpMap = null;
       m.normalMap = normal;
-      const relief = kind === 'asphalt' ? 0.44 : 0.9;
       m.normalScale.set(relief, relief);
+      m.roughness = entry.roughness;
       m.needsUpdate = true;
     }));
   }
@@ -303,8 +300,24 @@ export class Surfaces {
       m = new THREE.MeshPhysicalMaterial({ color: 0xcfe2e0, transparent: true, opacity: 0.3, depthWrite: false, roughness: 0.04, metalness: 0, envMapIntensity: 1.3, side: THREE.DoubleSide });
     } else if (kind === 'water') {
       m = new THREE.MeshPhysicalMaterial({ color: 0x3f8fa8, roughness: 0.06, metalness: 0.1, envMapIntensity: 1.2, clearcoat: 1, clearcoatRoughness: 0.05 });
+    } else if (kind === 'site-hatch') {
+      const [c, x] = canvas(64);
+      x.fillStyle = '#e0edec';
+      x.fillRect(0, 0, 64, 64);
+      x.strokeStyle = '#5c9797';
+      x.lineWidth = 7;
+      x.beginPath();
+      x.moveTo(-4, 4); x.lineTo(4, -4);
+      x.moveTo(0, 64); x.lineTo(64, 0);
+      x.moveTo(60, 68); x.lineTo(68, 60);
+      x.stroke();
+      const map = finish(c, 2.7, 2.7, true);
+      this.tiles.set(kind, { map, bump: map, bumpScale: 0, roughness: 1 });
+      m = new THREE.MeshBasicMaterial({ vertexColors: true, map, transparent: true, opacity: 0.69, depthWrite: false });
     } else if (kind === 'plain') {
       m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
+    } else if (kind === 'metalwork') {
+      m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.47, metalness: 0.38 });
     } else {
       const t = DRAW[kind]();
       this.tiles.set(kind, t);
@@ -320,8 +333,11 @@ export class Surfaces {
             }`)
           .replace('#include <map_fragment>', `#include <map_fragment>
             #ifdef USE_MAP
-              float growth = lawnNoise(vMapUv * 0.27) * 0.72 + lawnNoise(vMapUv * 0.77) * 0.28;
-              diffuseColor.rgb *= mix(vec3(0.75, 0.82, 0.73), vec3(1.06, 1.02, 0.93), growth);
+              vec2 p = vMapUv;
+              float growth = lawnNoise(p * 0.2) * 0.7 + lawnNoise(p * 1.1) * 0.3;
+              vec2 rotated = mat2(0.72, -0.69, 0.69, 0.72) * p * 0.74 + vec2(0.47, 0.21);
+              diffuseColor.rgb *= mix(texture2D(map, p).rgb, texture2D(map, rotated).rgb, smoothstep(0.23, 0.77, growth));
+              diffuseColor.rgb *= mix(vec3(0.70, 0.77, 0.64), vec3(1.17, 1.09, 0.95), growth);
             #endif`);
       };
       this.photograph(kind, drawn);

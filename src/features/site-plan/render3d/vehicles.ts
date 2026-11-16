@@ -75,14 +75,15 @@ export async function parkedVehicles(spots: CarSpot[]): Promise<THREE.Group> {
     { style: 'sedan' as const, spots: spots.filter(spot => spot.seed % 5 < 3) },
     { style: 'suv' as const, spots: spots.filter(spot => spot.seed % 5 >= 3) },
   ].filter(item => item.spots.length);
-  const models = await Promise.all(styles.map(async item => ({ spots: item.spots, model: await vehicle(item.style) })));
-  for (const { spots: places, model } of models) {
+  const models = await Promise.all(styles.map(async item => ({ ...item, model: await vehicle(item.style) })));
+  for (const { style, spots: places, model } of models) {
     const transforms = places.map(spot => new THREE.Matrix4()
       .makeTranslation(spot.x, spot.y, spot.z)
       .multiply(new THREE.Matrix4().makeRotationZ(spot.heading))
       .scale(new THREE.Vector3(Math.min(1, spot.length / model.length), Math.min(1, spot.width / model.width), 1)));
-    for (const part of model.parts) {
+    for (const [partIndex, part] of model.parts.entries()) {
       const mesh = new THREE.InstancedMesh(part.geometry.clone(), part.material, places.length);
+      mesh.userData = { partId: `${style}-${partIndex}`, spots: places.map(spot => spot.seed) };
       transforms.forEach((transform, i) => mesh.setMatrixAt(i, transform));
       if (part.paint) places.forEach((spot, i) => mesh.setColorAt(i, new THREE.Color().setRGB(
         (spot.color[0] ?? 128) / 255, (spot.color[1] ?? 128) / 255, (spot.color[2] ?? 128) / 255, THREE.SRGBColorSpace,

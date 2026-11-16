@@ -9,6 +9,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import siteAssets from './siteAssets.json';
 
 // The last touch, after the tone curve: a little more contrast and colour,
 // warm lights against cool shadows, and the corners let fall away.
@@ -175,7 +176,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
     }
     if ((window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] sun and sky light set in ${Math.round(performance.now() - started)} ms`);
   };
-  const ready = opts.studio ? Promise.resolve() : new RGBELoader().loadAsync('/textures/site/daylight.hdr').then(texture => {
+  const ready = opts.studio ? Promise.resolve() : new RGBELoader().loadAsync(`/textures/site/${siteAssets.sky.file}`).then(texture => {
     if (disposed) { texture.dispose(); return; }
     try {
       texture.mapping = THREE.EquirectangularReflectionMapping;
