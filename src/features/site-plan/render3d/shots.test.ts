@@ -97,6 +97,21 @@ describe('streetShot', () => {
     expect(Math.hypot(moved.position[0] - x, moved.position[1] - y)).toBeGreaterThanOrEqual(6.25);
   });
 
+  it('changes the viewpoint when a foreground object fills the side of the frame', () => {
+    const open = streetShot([building], [], street)!;
+    const [x, y] = open.position;
+    const distance = Math.hypot(x, y);
+    // 2 m ahead and 1.5 m to one side of the sight line.
+    const obstacle: [number, number, number] = [
+      x - (2 * x + 1.5 * y) / distance,
+      y - (2 * y - 1.5 * x) / distance,
+      1,
+    ];
+    const moved = streetShot([building], [], street, 16 / 9, [], () => 0, [obstacle]);
+    expect(moved).not.toBeNull();
+    expect(moved!.position).not.toEqual(open.position);
+  });
+
   it('has no shot without a building', () => {
     expect(streetShot([], [], street)).toBeNull();
   });

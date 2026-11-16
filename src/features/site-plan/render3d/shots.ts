@@ -29,6 +29,8 @@ export interface Shot {
   basis: string;
 }
 
+export type ForegroundObstacle = [x: number, y: number, radius: number];
+
 /** The model is built in metres; everything said or stored for a reader is in feet. */
 export const FT = 0.3048;
 const EYE = 5.5 * FT;     // a person on the sidewalk
@@ -93,6 +95,24 @@ function nearCanopy(a: [number, number], b: [number, number], tree: [number, num
   return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t) < radius * widen;
 }
 
+/** Leave room between the lens and the first visible planting or parked vehicle. */
+function foregroundBlocks(
+  eye: [number, number], target: [number, number], aspect: number, fov: number,
+  foreground: readonly ForegroundObstacle[],
+): boolean {
+  const dx = target[0] - eye[0], dy = target[1] - eye[1];
+  const length = Math.hypot(dx, dy) || 1;
+  const ux = dx / length, uy = dy / length;
+  const spread = aspect * Math.tan(fov * Math.PI / 360);
+  const near = Math.min(5, length * 0.5);
+  return foreground.some(([x, y, radius]) => {
+    const ox = x - eye[0], oy = y - eye[1];
+    const depth = ox * ux + oy * uy;
+    if (Math.hypot(ox, oy) < radius + 0.55) return true;
+    return depth > 0 && depth - radius < near && Math.abs(ox * uy - oy * ux) < depth * spread + radius;
+  });
+}
+
 function terrainBlocks(a: [number, number], eye: number, b: [number, number], target: number, groundAt: (x: number, y: number) => number): boolean {
   const samples = Math.min(60, Math.max(6, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2)));
   for (let i = 1; i < samples; i++) {
@@ -106,11 +126,13 @@ function terrainBlocks(a: [number, number], eye: number, b: [number, number], ta
 export function approachShot(
   approaches: ApproachAnchor[], subjects: Subject[], obstacles: number[][][],
   trees: Array<[number, number, number]>, groundAt: (x: number, y: number) => number,
+  foreground: readonly ForegroundObstacle[] = [], aspect = 16 / 9,
 ): Shot | null {
   const main = prominentSubject(subjects);
   const ranked = approaches.filter(a => a.kind === 'walk').sort((a, b) =>
     Number(b.building === main?.id) - Number(a.building === main?.id));
   const blockers = [...obstacles, ...subjects.map(s => s.points)];
+  let fallback: Shot | null = null;
   for (const a of ranked) {
     const [x, y, z] = a.threshold;
     const dx = a.connection[0] - x, dy = a.connection[1] - y;
@@ -123,20 +145,26 @@ export function approachShot(
       if (trees.some(tree => nearCanopy(point, [x, y], tree, 1.55))) continue;
       const eye = groundAt(...point) + EYE, targetHeight = z + 0.95;
       if (terrainBlocks(point, eye, [x, y], targetHeight, groundAt)) continue;
-      return {
+      const shot: Shot = {
         position: [...point, eye], target: [x - tx * 0.65, y - ty * 0.65, targetHeight],
         fovDeg: 46, lift: 1, basis: `Eye level at the entrance walk of ${a.building}`,
       };
+      if (!foregroundBlocks(point, [x, y], aspect, 46, foreground)) return shot;
+      fallback ??= shot;
     }
   }
-  return null;
+  return fallback;
 }
 
 /**
  * Street arrival at eye level. Try the largest building first, then buildings
  * closer to the street if the main building is hidden inside the development.
  */
-export function streetShot(subjects: Subject[], obstacles: number[][][], roads: number[][][], aspect = 16 / 9, trees: Array<[number, number, number]> = [], groundAt: (x: number, y: number) => number = () => 0): Shot | null {
+export function streetShot(
+  subjects: Subject[], obstacles: number[][][], roads: number[][][], aspect = 16 / 9,
+  trees: Array<[number, number, number]> = [], groundAt: (x: number, y: number) => number = () => 0,
+  foreground: readonly ForegroundObstacle[] = [],
+): Shot | null {
   const ordered = subjects.filter(s => s.points.length >= 3).map(subject => ({
     subject, size: extent(subject.points), road: nearestRoad(centre(subject.points), roads),
   })).sort((a, b) => b.size - a.size);
@@ -150,7 +178,7 @@ export function streetShot(subjects: Subject[], obstacles: number[][][], roads: 
   rest.sort((a, b) => a.road === b.road ? b.size - a.size : a.road - b.road);
   for (const { subject } of [main, ...rest.slice(0, 7)]) {
     const blockers = [...obstacles, ...subjects.filter(s => s !== subject).map(s => s.points)];
-    const shot = frameStreetSubject(subject, blockers, roads, aspect, trees, groundAt);
+    const shot = frameStreetSubject(subject, blockers, roads, aspect, trees, groundAt, foreground);
     if (shot) return shot;
   }
   return null;
@@ -159,6 +187,7 @@ export function streetShot(subjects: Subject[], obstacles: number[][][], roads: 
 function frameStreetSubject(
   main: Subject, blockers: number[][][], roads: number[][][], aspect: number,
   trees: Array<[number, number, number]>, groundAt: (x: number, y: number) => number,
+  foreground: readonly ForegroundObstacle[],
 ): Shot | null {
   const [cx, cy] = centre(main.points);
   const reach = Math.max(6, ...main.points.map(p => Math.hypot(p[0] - cx, p[1] - cy)));
@@ -216,7 +245,8 @@ function frameStreetSubject(
       const inTheWay = trees.filter(tree => sights.some(s => nearCanopy(p, s, tree, 1.35))).length;
       // a person stands beside the street, not on its centre line: about a sidewalk's distance off it
       const beside = roads.length ? Math.abs(road - 23 * FT) : 0;
-      const score = -beside / Math.max(10, reach) + off * 0.6 - k * 0.25 - inTheWay * 1.25 + frontage * 0.75;
+      const crowded = foregroundBlocks(p, [cx, cy], aspect, STREET_FOV, foreground);
+      const score = -beside / Math.max(10, reach) + off * 0.6 - k * 0.25 - inTheWay * 1.25 + frontage * 0.75 - (crowded ? 4 : 0);
       if (!pick || score > pick.score) pick = { p, eye, lift, score, why: `${roads.length ? `${Math.round(road / FT)} ft from the nearest street line` : 'no street lines in the record'}; ${inTheWay} tree${inTheWay === 1 ? '' : 's'} in the line of sight` };
     }
   }

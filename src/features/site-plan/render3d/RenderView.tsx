@@ -152,9 +152,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
-      const { subjects, obstacles, roads, trees, approaches } = r.model.ground;
-      const arrival = shot === 'approach' ? approachShot(approaches, subjects, obstacles, trees, r.model.groundAt)
-        : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt) : null;
+      const { subjects, obstacles, roads, trees, approaches, foreground } = r.model.ground;
+      const arrival = shot === 'approach' ? approachShot(approaches, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
+        : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground) : null;
       r.controls.minDistance = arrival && shot === 'approach' ? 0.55 : 8;
       r.controls.maxPolarAngle = arrival && shot === 'approach' ? 2.05 : Math.PI / 2;
       setShotNote((shot === 'street' || shot === 'approach') && !arrival ? 'A clear entrance view is unavailable for this scheme. Showing the aerial.' : null);

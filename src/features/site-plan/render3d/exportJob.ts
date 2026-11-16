@@ -221,7 +221,7 @@ export async function buildRenderJob(
     const focal = (vfovDeg: number) => SENSOR_MM / (2 * Math.tan(Math.atan(Math.tan((vfovDeg * Math.PI) / 360) * aspect)));
     const far = ft(Math.max(2000, data.extent * 40));
     const groundAt = model.groundAt;
-    const { subjects, obstacles, roads, trees, approaches } = model.ground;
+    const { subjects, obstacles, roads, trees, approaches, foreground } = model.ground;
     const main = prominentSubject(subjects);
     const padZ = main?.base ?? groundAt(model.built.x, model.built.y);
     const add = (id: RenderCameraId, shot: Shot | null) => {
@@ -236,9 +236,9 @@ export async function buildRenderJob(
         clip_ft: [id === 'drone' ? 5 : 1, far], aspect, resolution,
       });
     };
-    add('street', streetShot(subjects, obstacles, roads, aspect, trees, groundAt));
+    add('street', streetShot(subjects, obstacles, roads, aspect, trees, groundAt, foreground));
     add('drone', aerialShot(model.built, data.aerialAzimuth, aspect, padZ));
-    add('approach', approachShot(approaches, subjects, obstacles, trees, groundAt));
+    add('approach', approachShot(approaches, subjects, obstacles, trees, groundAt, foreground, aspect));
 
     // anchors: the corners of the main building, at the ground and at its top
     const anchors: RenderJob['anchors'] = [];

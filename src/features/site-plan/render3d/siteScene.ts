@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MassingData } from '../ui/massingData';
 import { convexHull, type RenderSlab, type RGBA, type Surface } from '../ui/renderModel';
-import type { Subject } from './shots';
+import type { ForegroundObstacle, Subject } from './shots';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
@@ -36,7 +36,7 @@ export interface SiteModel {
   /** The built part of the plan, where it is much smaller than the parcel; otherwise the parcel. */
   built: Focus;
   /** What a street camera needs (render3d/shots): the scheme's buildings, the neighbours that can stand in the way, and the street lines. */
-  ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]>; approaches: ApproachAnchor[] };
+  ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]>; foreground: ForegroundObstacle[]; approaches: ApproachAnchor[] };
   plants: ModelPlant[];
   /** The height of the ground the model is drawn on at a point, metres: 0 everywhere on flat ground. */
   groundAt(x: number, y: number): number;
@@ -823,31 +823,23 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       put('concrete|solid', prism([ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], 0.6), [150, 148, 142, 255]);
     }
   }
-  owner = 'cars';
   const detailedCars = real && !opts.light && data.cars.length <= 160;
   const parked: CarSpot[] = [];
   const carFallback = new THREE.Group();
   const carKey = (key: string) => detailedCars ? `${key}|car` : key;
-  // Cars. On a device that draws on its processor a car is two boxes; otherwise it is a shaped
-  // one (render3d/cars). The plan data gives each car a body and a cabin footprint: the body places it.
-  if (opts.light) {
-    for (const c of data.cars) put(carKey(c.elevation > 0.6 ? 'paint|solid' : 'glass|solid'), prism(c.polygon, c.elevation), c.color);
-  } else {
-    (data.cars as RenderSlab[]).forEach((c, n) => {
-      if (c.elevation <= 0.6) return;
-      const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${n}`));
-      if (!spot) return;
-      owner = `car:${n}`;
-      if (laid) seat.set(owner, groundAt(spot.x, spot.y));
-      for (const part of carParts(spot)) put(carKey(part.key), part.geometry, part.color);
-    });
-  }
-  if (detailedCars) data.cars.forEach((c, i) => {
+  const foreground: ForegroundObstacle[] = opts.review ? [] : data.shrubs.map(([x, y, r]) => [x, y, r * 1.7]);
+  // The body footprint sets the car's placement. Use the shaped car on both
+  // viewing tiers, and swap in the detailed model where available.
+  data.cars.forEach((c, i) => {
     if (c.elevation <= 0.6) return;
     const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${i}`));
     if (!spot) return;
-    if (laid) spot.z += latticeHeight(laid, spot.x, spot.y, lattice);
-    parked.push(spot);
+    owner = `car:${i}`;
+    const datum = groundAt(spot.x, spot.y);
+    if (laid) seat.set(owner, datum);
+    for (const part of carParts(spot)) put(carKey(part.key), part.geometry, part.color);
+    foreground.push([spot.x, spot.y, Math.hypot(spot.length, spot.width) / 2]);
+    if (detailedCars) parked.push({ ...spot, z: spot.z + datum });
   });
 
   lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
@@ -1135,6 +1127,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       ...data.polygons.flatMap(p => p.kind && ['street', 'drive', 'circulation', 'parking-aisle'].includes(p.kind) ? p.polygon.slice(0, 1) : []),
     ],
     trees: opts.review ? [] : standing,
+    foreground,
     approaches,
   };
   const built = builtFocus(focus, [...byBuilding.values()]);
