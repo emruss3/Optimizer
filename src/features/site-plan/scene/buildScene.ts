@@ -47,6 +47,7 @@ const ROLE: Record<string, [FeatureRole, StyleRole]> = {
 /** A plan's own street, a house's driveway, or any other drive. */
 export function pavementKind(el: Pick<Element, 'type' | 'name'>): 'street' | 'driveway' | 'drive' | null {
   if (el.type === 'road') return 'street';
+  if (el.type === 'circulation' && el.name === 'Walk') return null;
   if (el.type !== 'circulation' && el.type !== 'parking-aisle') return null;
   if (el.name === 'Driveway') return 'driveway';
   if (/^(Street|Private drive|Shared private drive)$/.test(el.name ?? '')) return 'street';
@@ -59,6 +60,8 @@ function roleOf(el: Element): [FeatureRole, StyleRole] {
   if (pave === 'driveway') return ['drive', 'driveway'];
   // a parking structure reads differently from a surface lot
   if (el.type === 'parking' && (el.properties as Record<string, unknown> | undefined)?.structured === true) return ['parking', 'garage'];
+  // a walk is pavement for people: its own style, not a drive
+  if (el.type === 'circulation' && el.name === 'Walk') return ['other', 'walk'];
   const r = ROLE[el.type];
   if (r) return r;
   if (/^Lot \d+$/.test(el.name ?? '')) return ['lot', 'lot'];
@@ -138,13 +141,15 @@ function toPolygons(geom: Polygon | MultiPolygon | null | undefined, frame: Grou
 }
 
 function describe(b: Omit<SceneBuilding, 'display'>): BuildingDisplay {
+  // an amenity says what it is when the plan names it (a pool, a clubhouse)
+  const named = b.use === 'amenity' && b.label ? b.label : null;
   const floors = `${b.floors.value} ${b.floors.value === 1 ? 'story' : 'stories'}`;
   const footprint = b.footprintSqFt ? `${fmt(b.footprintSqFt.value)} sf` : 'not reported';
   const gross = b.grossSqFt ? `${fmt(b.grossSqFt.value)} sf` : 'not reported';
   const units = b.units ? fmt(b.units.value) : 'not reported';
   const height = `${fmt(b.height.aboveGradeFt)} ft`;
   const heightShort = b.height.basis === 'estimated' ? `est. ${height}` : height;
-  const use = USE_LABEL[b.use];
+  const use = named ?? USE_LABEL[b.use];
   return {
     title: `Building ${b.tag}`,
     use,
@@ -190,6 +195,7 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
       role,
       styleRole,
       name: el.name ?? el.id,
+      label: typeof p.label === 'string' && p.label.trim() ? p.label.trim() : null,
       polygons,
       stalls: role === 'parking' ? num(p.parkingSpaces) ?? num(p.stalls) : null,
       reportedAreaSqFt: num(p.areaSqFt),

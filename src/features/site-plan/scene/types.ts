@@ -29,7 +29,7 @@ export interface SceneIdentity {
 }
 
 export type FeatureRole = 'building' | 'parking' | 'drive' | 'street' | 'open-space' | 'lot' | 'other';
-export type StyleRole = 'building' | 'amenity' | 'house' | 'parking' | 'garage' | 'drive' | 'driveway' | 'street' | 'open-space' | 'lot' | 'other';
+export type StyleRole = 'building' | 'amenity' | 'house' | 'parking' | 'garage' | 'walk' | 'drive' | 'driveway' | 'street' | 'open-space' | 'lot' | 'other';
 
 /** Polygons of one feature in local ground feet: polygon, ring (0 is the outer, the rest are holes), point. */
 export type ScenePolygons = Pt[][][];
@@ -41,6 +41,8 @@ export interface SceneFeature {
   styleRole: StyleRole;
   name: string;
   polygons: ScenePolygons;
+  /** The element's own on-plan label (`properties.label`), as the plan view shows it, or null. */
+  label: string | null;
   /** Stalls on a parking feature, as the plan reports them. */
   stalls: number | null;
   /** The feature's area as the plan reports it, square feet. Never measured here. */

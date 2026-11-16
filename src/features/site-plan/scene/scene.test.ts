@@ -415,3 +415,21 @@ describe('cars and the floor plate', () => {
     if (withMix) expect(sheet.plated.length).toBeGreaterThan(0);
   });
 });
+
+describe('walks and an element\'s own label', () => {
+  it('draws a walk as a walk and prints the label a drive or an open space carries', () => {
+    const walkEl = el('w', 'circulation', to3857(rect2274(120, 5, 0)), {}, 'Walk');
+    const entry = el('d', 'circulation', to3857(rect2274(60, 24, 0, X0, Y0 + 100)), { label: 'Garage entry' }, 'Drive');
+    const court = el('c', 'greenspace', to3857(rect2274(80, 60, 0, X0, Y0 + 200)), { label: 'Pool courtyard' }, 'Open space');
+    const pool = el('pool', 'building', to3857(rect2274(40, 20, 0, X0 + 200, Y0 + 200)), { floors: 1, use: 'amenity', label: 'Pool' });
+    const scene = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [walkEl, entry, court, pool] })!;
+    expect(scene.features.find(f => f.id === 'w')?.styleRole).toBe('walk');
+    expect(scene.features.find(f => f.id === 'd')?.styleRole).toBe('drive');
+    expect(must(scene.buildings[0]).display.use).toBe('Pool');
+    const sheet = renderSitePlanSheet(scene, { project: 'T', date: 'd' });
+    expect(sheet.svg).toContain('data-role="walk" data-feature-id="w"');
+    expect(sheet.svg).toContain('>Garage entry<');
+    expect(sheet.svg).toContain('>Pool courtyard<');
+    expect(sheet.svg).toContain('data-legend="walk"');
+  });
+});

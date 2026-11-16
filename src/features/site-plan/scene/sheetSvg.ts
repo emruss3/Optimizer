@@ -14,7 +14,7 @@
 // so the sheet still reads in greyscale.
 import { builtFocus } from './builtFocus';
 import type { DrawingScene, ScenePolygons } from './types';
-import type { Pt } from './frame';
+import { interiorPoint, type Pt } from './frame';
 import { computeFloorplate } from '../../../components/site-planner/unitLayout';
 import { LABEL_PRIORITY, placeLabels, type LabelCandidate, type PlacedLabel } from './labels';
 
@@ -249,12 +249,13 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     driveway: `fill="${C.driveway}" stroke="${C.parkingEdge}" stroke-width="0.35"`,
     parking: `fill="${C.parking}" stroke="${C.parkingEdge}" stroke-width="0.5"`,
     garage: `fill="${C.garage}" stroke="${C.garageEdge}" stroke-width="0.9"`,
+    walk: `fill="${C.walk}" stroke="${C.walkEdge}" stroke-width="0.4"`,
     other: `fill="none" stroke="${C.lot}" stroke-width="0.4"`,
     house: `fill="${C.house}" stroke="${C.roofEdge}" stroke-width="0.7"`,
     amenity: `fill="${C.amenity}" stroke="${C.roofEdge}" stroke-width="0.9"`,
     building: `fill="${C.roof}" stroke="${C.roofEdge}" stroke-width="1.3"`,
   } as const;
-  const FLAT = ['open-space', 'lot', 'street', 'drive', 'driveway', 'parking', 'garage', 'other'] as const;
+  const FLAT = ['open-space', 'lot', 'walk', 'street', 'drive', 'driveway', 'parking', 'garage', 'other'] as const;
   const striped: SheetModel['striped'] = [];
   // walks: along the plan's own streets (a planted strip, then the walk) and
   // round each tagged building, drawn as strokes under what they follow
@@ -436,6 +437,16 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
       text.set(`home:${b.id}`, { lines: [s], kind: 'home', size: 6.5 });
     }
   }
+  // a drive, a walk or an open space that carries its own label says it
+  for (const f of scene.features) {
+    if (!f.label || f.role === 'building' || f.role === 'parking' || f.role === 'lot') continue;
+    // a point inside the shape: the middle of a bent drive can lie outside it
+    const c = interiorPoint(f.polygons[0] ?? []) ?? centre(f.polygons);
+    if (!c) continue;
+    const [x, y] = P(c);
+    cands.push({ id: `feat:${f.id}`, priority: LABEL_PRIORITY.featureLabel, x, y, w: f.label.length * 3.4 + 8, h: 11 });
+    text.set(`feat:${f.id}`, { lines: [f.label], kind: 'feature', size: 6.5 });
+  }
   // lot numbers: a plan of lots is read by them
   for (const f of scene.features) {
     const m = f.role === 'lot' ? /^Lot (\d+)$/.exec(f.name) : null;
@@ -597,7 +608,7 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['open-space', 'Open space', STYLE['open-space']],
     ['context', 'Existing building', `fill="${C.contextBuilding}" stroke="${C.contextBuildingEdge}" stroke-width="0.4"`],
   ];
-  const items = LEGEND.filter(([key]) => (key === 'parcel' ? !!scene.parcel : key === 'envelope' ? !!scene.envelope : key === 'context' ? scene.context.buildings.length > 0 : key === 'walk' ? walks > 0 : present.has(key)));
+  const items = LEGEND.filter(([key]) => (key === 'parcel' ? !!scene.parcel : key === 'envelope' ? !!scene.envelope : key === 'context' ? scene.context.buildings.length > 0 : key === 'walk' ? walks > 0 || present.has('walk') : present.has(key)));
   items.forEach(([key, label, style], i) => {
     const lx = tx + (i % 2) * (tw / 2), ly = y + Math.floor(i / 2) * 12;
     if (key === 'parcel' || key === 'envelope' || key === 'lot') out.push(`<line x1="${r2(lx)}" y1="${r2(ly - 2.5)}" x2="${r2(lx + 16)}" y2="${r2(ly - 2.5)}" ${style}/>`);
