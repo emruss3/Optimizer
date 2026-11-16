@@ -1,0 +1,32 @@
+{"samples": [
+  {"drives": [[[147.0, -20.0], [-140.0, -20.0]]],
+   "buildings": [
+     {"type": "detached", "cx": -140.0, "cy": -60.0, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": -70.0, "cy": -60.0, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 0.0, "cy": -60.0, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 70.0, "cy": -60.0, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 0.0, "cy": 20.0, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 70.0, "cy": 20.0, "length": 45, "depth": 30, "angle_deg": 90, "units": 1}
+   ],
+   "parking": []},
+  {"drives": [[[30.0, 134.0], [30.0, -70.0]]],
+   "buildings": [
+     {"type": "detached", "cx": 68.0, "cy": -65.0, "length": 45, "depth": 30, "angle_deg": 0, "units": 1},
+     {"type": "detached", "cx": 68.0, "cy": -20.0, "length": 45, "depth": 30, "angle_deg": 0, "units": 1},
+     {"type": "detached", "cx": 68.0, "cy": 25.0, "length": 45, "depth": 30, "angle_deg": 0, "units": 1},
+     {"type": "detached", "cx": -8.0, "cy": -65.0, "length": 45, "depth": 30, "angle_deg": 0, "units": 1},
+     {"type": "detached", "cx": -8.0, "cy": -20.0, "length": 45, "depth": 30, "angle_deg": 0, "units": 1},
+     {"type": "detached", "cx": -8.0, "cy": 25.0, "length": 45, "depth": 30, "angle_deg": 0, "units": 1}
+   ],
+   "parking": []},
+  {"drives": [[[116.0, -90.0], [116.0, -62.0], [-140.0, -62.0]]],
+   "buildings": [
+     {"type": "detached", "cx": -165.0, "cy": -62.0, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": -110.0, "cy": -22.5, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": -60.0, "cy": -22.5, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": -10.0, "cy": -22.5, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 40.0, "cy": -22.5, "length": 45, "depth": 30, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 90.0, "cy": -22.5, "length": 45, "depth": 30, "angle_deg": 90, "units": 1}
+   ],
+   "parking": []}
+]}

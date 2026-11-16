@@ -1,0 +1,27 @@
+{"samples": [
+  {"drives": [[[0.0, -77.7], [0.0, 20.0]], [[-92.0, 20.0], [92.0, 20.0]]],
+   "buildings": [
+     {"type": "townhome_row", "cx": -50.0, "cy": -20.0, "length": 62.5, "depth": 45.0, "angle_deg": 0, "units": 3},
+     {"type": "townhome_row", "cx": 52.0, "cy": -20.0, "length": 62.5, "depth": 45.0, "angle_deg": 0, "units": 3},
+     {"type": "detached", "cx": -50.0, "cy": 53.0, "length": 40.0, "depth": 30.0, "angle_deg": 0, "units": 1},
+     {"type": "detached", "cx": 52.0, "cy": 53.0, "length": 40.0, "depth": 30.0, "angle_deg": 0, "units": 1}],
+   "parking": [{"cx": 0.0, "cy": 42.5, "length": 26.0, "depth": 18.0, "angle_deg": 0}]},
+  {"drives": [[[85.0, -77.7], [85.0, 60.0]], [[85.0, 0.0], [-85.0, 0.0]]],
+   "buildings": [
+     {"type": "detached", "cx": -66.0, "cy": -36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": -32.0, "cy": -36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 2.0, "cy": -36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 36.0, "cy": -36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": -66.0, "cy": 36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": -32.0, "cy": 36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 2.0, "cy": 36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+     {"type": "detached", "cx": 36.0, "cy": 36.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1}],
+   "parking": []},
+  {"drives": [[[60.0, -77.7], [60.0, 0.0]], [[60.0, 0.0], [-90.0, 0.0]]],
+   "buildings": [
+     {"type": "townhome_row", "cx": -62.0, "cy": 34.0, "length": 43.5, "depth": 39.5, "angle_deg": 0, "units": 2},
+     {"type": "townhome_row", "cx": -8.0, "cy": 34.0, "length": 43.5, "depth": 39.5, "angle_deg": 0, "units": 2},
+     {"type": "townhome_row", "cx": -62.0, "cy": -34.0, "length": 43.5, "depth": 39.5, "angle_deg": 0, "units": 2},
+     {"type": "townhome_row", "cx": -8.0, "cy": -34.0, "length": 43.5, "depth": 39.5, "angle_deg": 0, "units": 2}],
+   "parking": []}
+]}
