@@ -95,6 +95,8 @@ export interface SheetModel {
   figures: Array<{ label: string; value: string }>;
   /** Parking features drawn with stripes, and the stalls the stripes show. */
   striped: Array<{ id: string; stalls: number }>;
+  /** Rows of homes drawn with their party walls, and the unit count each shows. */
+  divided: Array<{ id: string; units: number }>;
   labels: PlacedLabel[];
   svg: string;
 }
@@ -111,23 +113,25 @@ const C = {
   contextBuildingEdge: '#cdc8bb',
   road: '#ffffff',
   roadEdge: '#d8d3c6',
-  lawn: '#dde8cc',
+  lawn: '#eef2e4',
   open: '#c7dcae',
   openEdge: '#8fae72',
   walk: '#ece8dc',
   walkEdge: '#cfc9b9',
-  driveway: '#dcd9d0',
-  drive: '#c9c8c3',
-  driveEdge: '#a09e97',
-  parking: '#e4e3de',
-  parkingEdge: '#8d8b84',
+  driveway: '#b8bcc2',
+  drive: '#8f959c',
+  driveEdge: '#4f555c',
+  parking: '#bcd0ea',
+  parkingEdge: '#3f6aa0',
+  garage: '#b9b2d6',
+  garageEdge: '#5a4f8f',
   stripe: '#ffffff',
   lot: '#6b6f66',
-  street: '#d2d1cb',
-  roof: '#ffffff',
+  street: '#8f959c',
+  roof: '#f3b29c',
   roofEdge: '#2a2e33',
   amenity: '#f0e2bd',
-  house: '#f7f3ea',
+  house: '#f7d77a',
   tree: '#a5c78a',
   treeEdge: '#6c9856',
   shadow: '#1c2430',
@@ -171,6 +175,29 @@ export function stallStripes(input: Pt[], stalls: number | null): { lines: Array
     return { lines, rows, stalls: quads };
   }
   return null;
+}
+
+/**
+ * Party walls of a row of homes, or null. Only for a four-cornered footprint
+ * with more than one unit: the row is cut across its long side into that many
+ * equal homes, so the lines show exactly the reported count. Where the homes
+ * differ in width the lines are a drawing convention, not a survey.
+ */
+export function unitDividers(input: Pt[], units: number | null): Array<[Pt, Pt]> | null {
+  if (!units || units < 2 || !Number.isInteger(units)) return null;
+  const open = input.slice(0, -1);
+  const corners = open.filter((p, i) => {
+    const a = open[(i + open.length - 1) % open.length], b = open[(i + 1) % open.length];
+    if (!a || !b) return true;
+    const cross = (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]);
+    return Math.abs(cross) > 0.02 * Math.hypot(p[0] - a[0], p[1] - a[1]) * Math.hypot(b[0] - p[0], b[1] - p[1]);
+  });
+  if (corners.length !== 4) return null;
+  const [a, b, c, d] = corners as [Pt, Pt, Pt, Pt];
+  const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+  const [p0, p1, q0, q1] = l1 >= l2 ? [a, b, d, c] : [b, c, a, d];
+  const mix = (u: Pt, v: Pt, t: number): Pt => [u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t];
+  return Array.from({ length: units - 1 }, (_, i) => [mix(p0, p1, (i + 1) / units), mix(q0, q1, (i + 1) / units)] as [Pt, Pt]);
 }
 
 export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize = 'tabloid', underlay?: SheetUnderlay | null): SheetModel {
@@ -218,12 +245,13 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     drive: `fill="${C.drive}" stroke="${C.driveEdge}" stroke-width="0.4"`,
     driveway: `fill="${C.driveway}" stroke="${C.parkingEdge}" stroke-width="0.35"`,
     parking: `fill="${C.parking}" stroke="${C.parkingEdge}" stroke-width="0.5"`,
+    garage: `fill="${C.garage}" stroke="${C.garageEdge}" stroke-width="0.9"`,
     other: `fill="none" stroke="${C.lot}" stroke-width="0.4"`,
     house: `fill="${C.house}" stroke="${C.roofEdge}" stroke-width="0.7"`,
     amenity: `fill="${C.amenity}" stroke="${C.roofEdge}" stroke-width="0.9"`,
     building: `fill="${C.roof}" stroke="${C.roofEdge}" stroke-width="1.3"`,
   } as const;
-  const FLAT = ['open-space', 'lot', 'street', 'drive', 'driveway', 'parking', 'other'] as const;
+  const FLAT = ['open-space', 'lot', 'street', 'drive', 'driveway', 'parking', 'garage', 'other'] as const;
   const striped: SheetModel['striped'] = [];
   // walks: along the plan's own streets (a planted strip, then the walk) and
   // round each tagged building, drawn as strokes under what they follow
@@ -282,6 +310,16 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
       if (f.styleRole !== role) continue;
       out.push(`<path d="${path(f.polygons)}" ${STYLE[role]} fill-rule="evenodd" data-role="${role}" data-feature-id="${esc(f.id)}"/>`);
     }
+  }
+  // party walls: a row of homes with a unit count is cut into its homes
+  const divided: SheetModel['divided'] = [];
+  for (const b of scene.buildings) {
+    if (b.use !== 'townhome' && b.use !== 'house') continue;
+    const ring = b.polygons.length === 1 ? b.polygons[0]?.[0] : undefined;
+    const walls = ring ? unitDividers(ring, b.units?.value ?? null) : null;
+    if (!walls || !b.units) continue;
+    divided.push({ id: b.id, units: b.units.value });
+    out.push(`<path d="${walls.map(([u, v]) => `M${P(u).join(' ')}L${P(v).join(' ')}`).join('')}" fill="none" stroke="${C.roofEdge}" stroke-width="0.7" data-role="unit-walls" data-for="${esc(b.id)}"/>`);
   }
   if (trees.length) {
     out.push('<g data-role="trees" data-illustration="true">');
@@ -342,9 +380,30 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     const c = centre(f.polygons);
     if (!c) continue;
     const [x, y] = P(c);
-    const s = `${f.stalls} stalls`;
+    const s = f.styleRole === 'garage' ? `Garage · ${f.stalls} stalls` : `${f.stalls} stalls`;
     cands.push({ id: `park:${f.id}`, priority: LABEL_PRIORITY.parkingCount, x, y, w: s.length * 3.4 + 8, h: 11 });
     text.set(`park:${f.id}`, { lines: [s], kind: 'parking', size: 6.5 });
+  }
+  // a garage with no stall count still says what it is
+  for (const f of scene.features) {
+    if (f.styleRole !== 'garage' || (f.stalls != null && f.stalls > 0)) continue;
+    const c = centre(f.polygons);
+    if (!c) continue;
+    const [x, y] = P(c);
+    cands.push({ id: `park:${f.id}`, priority: LABEL_PRIORITY.parkingCount, x, y, w: 6 * 3.4 + 8, h: 11 });
+    text.set(`park:${f.id}`, { lines: ['Garage'], kind: 'parking', size: 6.5 });
+  }
+  // houses and townhome rows say what they are when the sheet has no lots to
+  // read them by; on a plan of lots the lot numbers do that job
+  if (!scene.features.some(f => f.role === 'lot')) {
+    for (const b of scene.buildings) {
+      if (b.tagOnPlan) continue;
+      const [x, y] = P(b.labelPoint);
+      const n = b.units?.value ?? null;
+      const s = n != null && n > 1 ? `${b.display.use} · ${n} units` : b.display.use;
+      cands.push({ id: `home:${b.id}`, priority: LABEL_PRIORITY.homeCaption, x, y, w: s.length * 3.4 + 8, h: 11 });
+      text.set(`home:${b.id}`, { lines: [s], kind: 'home', size: 6.5 });
+    }
   }
   // lot numbers: a plan of lots is read by them
   for (const f of scene.features) {
@@ -497,7 +556,8 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['building', 'Building', STYLE.building],
     ['amenity', 'Amenity', STYLE.amenity],
     ['house', 'House or townhome', STYLE.house],
-    ['parking', 'Parking', STYLE.parking],
+    ['parking', 'Surface parking', STYLE.parking],
+    ['garage', 'Parking garage', STYLE.garage],
     ['drive', 'Drive', STYLE.drive],
     ['driveway', 'Driveway', STYLE.driveway],
     ['walk', 'Walk', `fill="${C.walk}" stroke="${C.walkEdge}" stroke-width="0.5"`],
@@ -561,7 +621,7 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   out.push(`<text x="${tx + tw}" y="${r2(by - 12)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-01</text>`);
   out.push('</svg>');
 
-  return { size, widthPt: W, heightPt: H, ftPerInch, numericScale, scaleBarFt: barFt, schedule, figures: shown, striped, labels, svg: out.join('\n') };
+  return { size, widthPt: W, heightPt: H, ftPerInch, numericScale, scaleBarFt: barFt, schedule, figures: shown, striped, divided, labels, svg: out.join('\n') };
 }
 
 function centre(polys: ScenePolygons): Pt | null {

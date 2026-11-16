@@ -13,7 +13,7 @@ import {
   pointInPolygon, polygonArea, renderSitePlanSheet, sceneEvidence, sceneRevision, selectionFor, LABEL_PRIORITY,
   STORY_ASSUMPTIONS, type Pt,
 } from './index';
-import { crossings, renderSectionSheet } from './sheetSvg';
+import { crossings, renderSectionSheet, unitDividers } from './sheetSvg';
 
 // The engine draws in EPSG:2274 (Tennessee state plane, feet): a true ground
 // frame. The app reprojects that to EPSG:3857 for the canvas. These tests take
@@ -337,5 +337,46 @@ describe('label placement', () => {
   it('keeps labels inside the drawing', () => {
     const out = placeLabels([box('edge', 1, 95, 0, { alternates: [[80, 0]] })], { bounds: { minX: 0, minY: -50, maxX: 100, maxY: 50 } });
     expect(out[0]).toMatchObject({ placed: true, x: 80 });
+  });
+});
+
+describe('what the plan says about parking structures and small homes', () => {
+  const apt = el('apt', 'building', to3857(rect2274(200, 70, 0)), { floors: 4, areaSqFt: 14000, units: 80 });
+  const garage = el('g', 'parking', to3857(rect2274(120, 90, 0, X0 + 300)), { structured: true, stalls: 240 });
+  const lot = el('p', 'parking', to3857(rect2274(120, 60, 0, X0 + 300, Y0 + 200)), { stalls: 20 });
+  const row = el('th', 'building', to3857(rect2274(100, 40, 0, X0, Y0 + 300)), { floors: 3, townhome: true, units: 5 });
+  const house = el('h', 'building', to3857(rect2274(40, 30, 0, X0 + 200, Y0 + 300)), { floors: 2, house: true });
+
+  it('draws a garage apart from a surface lot and names it', () => {
+    const scene = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [apt, garage, lot] })!;
+    expect(scene.features.find(f => f.id === 'g')?.styleRole).toBe('garage');
+    expect(scene.features.find(f => f.id === 'p')?.styleRole).toBe('parking');
+    const sheet = renderSitePlanSheet(scene, { project: 'T', date: 'd' });
+    expect(sheet.svg).toContain('Garage · 240 stalls');
+    expect(sheet.svg).toContain('data-legend="garage"');
+  });
+
+  it('captions houses and townhome rows when there are no lots to read them by', () => {
+    const scene = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [row, house] })!;
+    const sheet = renderSitePlanSheet(scene, { project: 'T', date: 'd' });
+    expect(sheet.svg).toContain('Townhome · 5 units');
+    expect(sheet.svg).toContain('data-label="home"');
+    const lotted = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [house, el('l1', 'other', to3857(rect2274(60, 100, 0, X0 + 200, Y0 + 300)), {}, 'Lot 1')] })!;
+    expect(renderSitePlanSheet(lotted, { project: 'T', date: 'd' }).svg).not.toContain('data-label="home"');
+  });
+});
+
+describe('party walls in a row of homes', () => {
+  it('cuts a townhome row into the homes it reports and leaves a single home whole', () => {
+    const row = el('th', 'building', to3857(rect2274(100, 40, 0)), { floors: 3, townhome: true, units: 5 });
+    const one = el('h', 'building', to3857(rect2274(40, 30, 0, X0 + 200)), { floors: 2, house: true });
+    const apt = el('apt', 'building', to3857(rect2274(200, 70, 0, X0, Y0 + 300)), { floors: 4, units: 80 });
+    const sheet = renderSitePlanSheet(buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [row, one, apt] })!, { project: 'T', date: 'd' });
+    expect(sheet.divided).toEqual([{ id: 'th', units: 5 }]);
+    expect(sheet.svg).toContain('data-role="unit-walls" data-for="th"');
+    const walls = must(unitDividers([[0, 0], [100, 0], [100, 40], [0, 40], [0, 0]], 5));
+    expect(walls).toHaveLength(4);
+    expect(must(walls[0])[0]).toEqual([20, 0]);
+    expect(unitDividers([[0, 0], [100, 0], [100, 40], [50, 60], [0, 40], [0, 0]], 5)).toBeNull();
   });
 });
