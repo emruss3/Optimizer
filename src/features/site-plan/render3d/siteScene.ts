@@ -15,8 +15,8 @@ import { pointInPolygon } from '../scene/frame';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
-import { carParts, carSpot } from './cars';
-import { drape, gradeSite, lift, type Grade } from './terrain';
+import { carParts, carSpot, type CarSpot } from './cars';
+import { drape, gradeMassingSite, latticeHeight, lift, type Grade } from './terrain';
 import { Tree } from '@dgreenheck/ez-tree';
 
 /** One part of the model as it is handed to an exporter: local metres, z up. */
@@ -283,7 +283,6 @@ const NEIGHBOUR_STYLE: ArchStyle = 'heritage';
 
 const linear = (c: readonly number[]): THREE.Color => new THREE.Color().setRGB((c[0] ?? 0) / 255, (c[1] ?? 0) / 255, (c[2] ?? 0) / 255, THREE.SRGBColorSpace);
 /** A tint that may be brighter than white: a plain multiplier on what it colours. */
-const bright = (c: readonly number[]): THREE.Color => new THREE.Color((c[0] ?? 0) / 255, (c[1] ?? 0) / 255, (c[2] ?? 0) / 255);
 
 function paint(g: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry {
   const n = g.getAttribute('position').count;
@@ -307,14 +306,14 @@ function box(q: Array<[number, number]>, z0: number, h: number): THREE.BufferGeo
     uv[v * 2] = s; uv[v * 2 + 1] = t;
     v++;
   };
-  let run = 0;
   for (let i = 0; i < 4; i++) {
     const a = r[i] as [number, number], b = r[(i + 1) % 4] as [number, number];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-6;
     const nx = (b[1] - a[1]) / len, ny = -(b[0] - a[0]) / len;
+    // Project onto the wall direction so brick courses run through adjacent facade pieces.
+    const run = -ny * a[0] + nx * a[1];
     vert(a[0], a[1], z0, nx, ny, 0, run, z0); vert(b[0], b[1], z0, nx, ny, 0, run + len, z0); vert(b[0], b[1], z1, nx, ny, 0, run + len, z1);
     vert(a[0], a[1], z0, nx, ny, 0, run, z0); vert(b[0], b[1], z1, nx, ny, 0, run + len, z1); vert(a[0], a[1], z1, nx, ny, 0, run, z1);
-    run += len;
   }
   const [a, b, c, d] = r as [[number, number], [number, number], [number, number], [number, number]];
   for (const [p0, p1, p2] of [[a, b, c], [a, c, d]] as Array<Array<[number, number]>>) {
@@ -520,23 +519,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // The ground. Where the parcel has a survey the model stands on it: graded where the work is
   // (render3d/terrain), each building level on its pad. A building, a neighbour's building and a
   // car are raised whole; every other part is laid over the ground point by point.
-  const footprints = new Map<string, Array<[number, number]>>();
-  for (const sl of data.slabs as RenderSlab[]) {
-    if (sl.part === 'detail') continue;
-    const list = footprints.get(sl.id) ?? [];
-    for (const p of sl.polygon[0] ?? []) list.push([p[0] ?? 0, p[1] ?? 0]);
-    footprints.set(sl.id, list);
-  }
-  const grade: Grade | null = data.terrain
-    ? gradeSite(
-      data.terrain,
-      [...footprints.entries()].map(([id, pts]) => ({ id: String(id), ring: convexHull(pts) as Array<[number, number]> })).filter(b => b.ring.length >= 3),
-      data.polygons
-        .filter(q => !q.building && ['drive', 'parking-aisle', 'circulation', 'parking', 'parking-bay', 'driveway'].includes(q.kind ?? ''))
-        .map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number]))
-        .filter(r => r.length >= 3),
-    )
-    : null;
+  const grade = gradeMassingSite(data);
   const laid = grade && !opts.flatParts ? grade.terrain : null;
   // the live view lays its parts on a coarser lattice than a still does: the survey is sampled every
   // 6 m, so nothing of the ground is lost, and the view opens sooner
@@ -612,10 +595,11 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
         put('plain|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), [226, 224, 218, 255]);
         return;
       }
-      // far from the site, and everywhere on a device that draws on its processor, a neighbour
-      // is its footprint at its height under a dark roof
+      // The immediate neighbours establish scale and street context. Farther
+      // away, a simpler footprint and roof keeps the model responsive.
       const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-      if (opts.light || Math.max(Math.abs(cx), Math.abs(cy)) > detailReach) {
+      const reach = opts.light ? 68 : detailReach;
+      if (Math.max(Math.abs(cx), Math.abs(cy)) > reach) {
         const wall = FAR_WALLS[hashId(`existing-${n}`) % FAR_WALLS.length] ?? [196, 190, 182, 255];
         put(`${wall[0] === 150 ? 'brick' : 'siding'}|solid`, prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), wall);
         put('shingle|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, c.elevation])], 0.4), [84, 82, 84, 255]);
@@ -667,6 +651,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   }
   // a subdivision's lots: each yard its own shade of lawn, and a board fence round the back of it.
   // Illustration: the plan draws a lot line, not a fence.
+  const fences: Array<[[number, number], [number, number]]> = [];
   if (data.lots.length && !opts.review) {
     const pads = data.polygons.filter(p => p.building).map(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
     const paved: Array<[number, number]> = data.polygons.filter(p => !p.building && SITE[p.kind ?? ''] && SITE[p.kind ?? '']?.surface !== 'grass').flatMap(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
@@ -699,6 +684,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
           const key = `${Math.round(mx * 2)},${Math.round(my * 2)}`;
           if (built.has(key)) continue;
           built.add(key);
+          fences.push([p0, p1]);
           put('wood|solid', prism([[[p0[0] + nx, p0[1] + ny, 0.17], [p1[0] + nx, p1[1] + ny, 0.17], [p1[0] - nx, p1[1] - ny, 0.17], [p0[0] - nx, p0[1] - ny, 0.17]]], 1.75), FENCE);
         }
       }
@@ -727,7 +713,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // buildings: walls and roofs in their materials, glass apart
   for (const s of data.slabs) { owner = `building:${s.id}`; put(`${s.surface ?? 'plain'}|solid`, prism(s.polygon, s.elevation), s.color); }
   for (const f of data.roofs) { owner = `building:${f.id}`; put(`${f.surface ?? 'plain'}|sheet`, plane(f.polygon), f.color); }
-  for (const w of data.windows) { owner = `building:${w.id}`; put('glass|sheet', plane(w.polygon), w.color); }
+  for (const w of data.windows) {
+    owner = `building:${w.id}`;
+    put(w.clear ? 'glazing|sheet' : 'glass|sheet', plane(w.polygon), w.color);
+  }
   // a plain foundation: the foot of each building's walls carried a little below its pad
   if (grade) {
     for (const sl of data.slabs as RenderSlab[]) {
@@ -740,10 +729,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     }
   }
   owner = 'cars';
+  const detailedCars = real && !opts.keepParts && data.cars.length <= 160;
+  const parked: CarSpot[] = [];
+  const carFallback = new THREE.Group();
+  const carKey = (key: string) => detailedCars ? `${key}|car` : key;
   // Cars. On a device that draws on its processor a car is two boxes; otherwise it is a shaped
   // one (render3d/cars). The plan data gives each car a body and a cabin footprint: the body places it.
   if (opts.light) {
-    for (const c of data.cars) put(c.elevation > 0.6 ? 'paint|solid' : 'glass|solid', prism(c.polygon, c.elevation), c.color);
+    for (const c of data.cars) put(carKey(c.elevation > 0.6 ? 'paint|solid' : 'glass|solid'), prism(c.polygon, c.elevation), c.color);
   } else {
     (data.cars as RenderSlab[]).forEach((c, n) => {
       if (c.elevation <= 0.6) return;
@@ -751,21 +744,30 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       if (!spot) return;
       owner = `car:${n}`;
       if (laid) { const ring = c.polygon[0] ?? []; seat.set(owner, laid.heightAt(ring.reduce((t, p) => t + (p[0] ?? 0), 0) / Math.max(1, ring.length), ring.reduce((t, p) => t + (p[1] ?? 0), 0) / Math.max(1, ring.length))); }
-      for (const part of carParts(spot)) put(part.key, part.geometry, part.color);
+      for (const part of carParts(spot)) put(carKey(part.key), part.geometry, part.color);
     });
   }
+  if (detailedCars) data.cars.forEach((c, i) => {
+    if (c.elevation <= 0.6) return;
+    const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${i}`));
+    if (!spot) return;
+    if (laid) spot.z += latticeHeight(laid, spot.x, spot.y, lattice);
+    parked.push(spot);
+  });
 
   lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
   for (const [key, list] of bins) {
-    const [kind, mode] = key.split('|') as [string, string];
+    const [kind, mode, batch] = key.split('|');
     const merged = mergeGeometries(list, false);
     list.forEach(g => g.dispose());
     if (!merged) continue;
-    let material = kind === 'glass' ? surfaces.glass() : kind === 'paint' ? surfaces.paint() : surfaces.get(kind as Surface);
+    let material = kind === 'glass' || kind === 'glazing' ? surfaces.glass(kind === 'glazing') : kind === 'paint' ? surfaces.paint() : surfaces.get(kind as Surface);
     const see = kind === 'railing' || kind === 'glassrail';
     if (mode === 'sheet' && !see) {
       const single = material as THREE.MeshStandardMaterial, both = material.clone() as THREE.MeshStandardMaterial;
       both.side = THREE.DoubleSide;
+      both.onBeforeCompile = single.onBeforeCompile;
+      both.customProgramCacheKey = single.customProgramCacheKey;
       material = both;
       // the two-sided copy takes the photographed surface when the one it was copied from does
       void Promise.all(surfaces.pending).then(() => {
@@ -776,12 +778,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       });
     }
     const mesh = new THREE.Mesh(merged, material);
-    mesh.castShadow = !see && (mode === 'solid' || mode === 'sheet');
-    if (see) mesh.renderOrder = 2;
+    mesh.castShadow = kind !== 'glassrail' && kind !== 'glazing' && (mode === 'solid' || mode === 'sheet');
+    if (kind === 'glazing' || see) mesh.userData.noOcclusion = true;
+    if (kind === 'glassrail') mesh.renderOrder = 2;
     mesh.receiveShadow = true;
     mesh.name = key;
-    root.add(mesh);
+    (batch === 'car' ? carFallback : root).add(mesh);
   }
+  if (carFallback.children.length) root.add(carFallback);
 
   lap('parts merged');
   // planting: a few grown trees (ez-tree), each placed many times, turned and
@@ -789,10 +793,21 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // crown stands in.
   const opacity = opts.canopyOpacity ?? 1;
   const kinds = ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
-  const cardsOnly = !!opts.light && typeof document !== 'undefined';
-  const bushes = cardsOnly ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
+  const plantBudget = opts.light ? 48 : Infinity;
+  const bushes = opts.review ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
   // the leaves and bark are pictures that arrive after the trees are grown
   const waits: Array<Promise<unknown>> = [...kinds, ...bushes].flatMap(t => [arrived((t.leaf as THREE.MeshStandardMaterial).map), arrived((t.bark as THREE.MeshStandardMaterial).map)]);
+  let disposed = false;
+  if (parked.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(parked)).then(group => {
+    if (disposed) {
+      group.children.forEach(child => (child as THREE.InstancedMesh).geometry.dispose());
+      return;
+    }
+    root.remove(carFallback);
+    carFallback.children.forEach(child => (child as THREE.Mesh).geometry.dispose());
+    root.add(group);
+    root.updateMatrixWorld(true);
+  }).catch(err => { console.warn('[render] detailed vehicles could not load.', err); }));
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
   const place = (forms: TreeForm[], items: Array<{ x: number; y: number; r: number; tint?: readonly number[] }>, z: number, shadows = true) => {
     forms.forEach((form, k) => {
@@ -819,8 +834,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // planted this way everywhere, and the site's own trees too on a device that draws on its processor.
   let sat: Array<{ form: TreeForm; picture: THREE.DataTexture }> | null = null;
   const sitters = () => (sat ??= kinds.flatMap(form => { const made = portrait(form); if (made) waits.push(made.painted); return made ? [{ form, picture: made.picture }] : []; }));
-  // cards are lit as flat ground is, which under a low sun is less than a crown catches: the tints make up for it
-  const TINTS: Array<readonly number[]> = [[255, 255, 255], [214, 236, 204], [232, 232, 200], [196, 226, 196], [236, 244, 216], [204, 222, 190], [182, 214, 182]].map(c => c.map(v => v * 1.12));
+  const TINTS: Array<readonly number[]> = [[229, 233, 213], [207, 224, 197], [222, 219, 187], [182, 207, 170], [212, 223, 194], [195, 212, 183], [175, 199, 162]];
+  const distance = ([x, y]: [number, number, number]) => Math.hypot(x, y);
   const plant = (spots: Array<[number, number, number]>, name: string, shadows: boolean) => {
     const all = sitters();
     all.forEach(({ form, picture }, k) => {
@@ -831,7 +846,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
         const sc = ((r * 1.25) / form.radius) * (0.9 + ((i * 37) % 21) / 100);
         q.setFromAxisAngle(up, (i * 2.399 + k) % (Math.PI * 2));
         mesh.setMatrixAt(i, m4.compose(new THREE.Vector3(x, y, 0.02), q, new THREE.Vector3(sc, sc, sc * (0.92 + ((i * 13) % 17) / 100))));
-        mesh.setColorAt(i, bright((i * 31) % 100 < 2 ? [300, 250, 170] : TINTS[(i * 7) % TINTS.length] ?? [280, 280, 280]));
+        mesh.setColorAt(i, linear((i * 31) % 100 < 2 ? [238, 205, 144] : TINTS[(i * 7) % TINTS.length] ?? TINTS[0]!));
       });
       mesh.castShadow = shadows;
       mesh.receiveShadow = false;
@@ -845,13 +860,17 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   };
   if (opts.review) {
     // no planting in review: nothing stands between the reader and the proposal
-  } else if (kinds.length && cardsOnly && sitters().length) {
-    plant(data.trees.map(t => [t.position[0], t.position[1], (t.radiusM ?? 2.8) * 1.12]), 'site-trees', true);
   } else if (kinds.length) {
-    // no two trees on a street are the same green
+    // Keep the proposal's nearest crowns volumetric at either quality.
     const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
-    place(kinds, data.trees.map((t, i) => ({ x: t.position[0], y: t.position[1], r: (t.radiusM ?? 2.8) * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
-    if (bushes.length) place(bushes, data.shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25);
+    const ranked = standing.length > plantBudget && sitters().length ? [...standing].sort((a, b) => distance(a) - distance(b)) : standing;
+    const detail = ranked === standing ? standing : ranked.slice(0, plantBudget);
+    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
+    if (ranked !== standing) plant(ranked.slice(plantBudget).map(([x, y, r]) => [x, y, r * 1.12]), 'site-trees', true);
+    if (bushes.length) {
+      const shrubs = opts.light && data.shrubs.length > 144 ? [...data.shrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : data.shrubs;
+      place(bushes, shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25);
+    }
   } else {
     const crownG = crown();
     const leavesM = surfaces.foliage(opacity) as THREE.MeshStandardMaterial;
@@ -965,7 +984,12 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     standing.push(...nearby);
     const beyond = scatter(half * 4, half * 13, 22, 0.7, opts.light ? 5000 : 11000);
     if (sitters().length) {
-      plant(nearby, 'surrounding-trees', true);
+      const detailRadius = Math.min(135, Math.max(65, half * 2));
+      const foreground = nearby.filter(p => distance(p) < detailRadius)
+        .sort((a, b) => distance(a) - distance(b)).slice(0, opts.light ? 28 : 56);
+      const nearSet = new Set(foreground);
+      place(kinds, foreground.map(([x, y, r]) => ({ x, y, r, tint: [221, 230, 205] })), 0.02);
+      plant(nearby.filter(p => !nearSet.has(p)), 'surrounding-trees', true);
       plant(beyond, 'far-trees', false);
     } else {
       stand(nearby.filter((_, i) => i % 2 === 0), canopy([[0, 0, 0, 1], [0.58, 0.2, 0.06, 0.68], [-0.46, 0.36, -0.04, 0.64], [0.05, -0.55, 0.1, 0.6]], 1), 'surrounding-trees', true);
@@ -982,16 +1006,26 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // what a picture of the scheme centres on (scene/builtFocus): the buildings or their densest group on a large parcel
   const byBuilding = new Map<string, Array<[number, number]>>();
   const tops = new Map<string, number>();
+  const roofs = new Map<string, number>();
   for (const sl of data.slabs as RenderSlab[]) {
+    const top = (sl.polygon[0]?.[0]?.[2] ?? 0) + sl.elevation;
+    roofs.set(sl.id, Math.max(roofs.get(sl.id) ?? 0, top));
     if (sl.part === 'detail') continue;
     const list = byBuilding.get(sl.id) ?? [];
     for (const p of sl.polygon[0] ?? []) list.push([p[0] ?? 0, p[1] ?? 0]);
     byBuilding.set(sl.id, list);
-    tops.set(sl.id, Math.max(tops.get(sl.id) ?? 0, ((sl.polygon[0]?.[0]?.[2]) ?? 0) + sl.elevation));
+    tops.set(sl.id, Math.max(tops.get(sl.id) ?? 0, top));
+  }
+  for (const roof of data.roofs) {
+    const top = Math.max(...roof.polygon.map(p => p[2] ?? 0));
+    roofs.set(roof.id, Math.max(roofs.get(roof.id) ?? 0, top));
   }
   const ground = {
-    subjects: [...byBuilding.entries()].map(([id, pts]) => ({ id: String(id), points: convexHull(pts) as Array<[number, number]>, height: tops.get(id) ?? 3, base: (laid && grade?.pads.get(String(id))) || 0 })),
-    obstacles: neighbours.map(n => n.ring),
+    subjects: [...byBuilding.entries()].map(([id, pts]) => ({
+      id: String(id), points: convexHull(pts), height: tops.get(id) ?? 3,
+      roofHeight: roofs.get(id) ?? 3, base: grade?.pads.get(String(id)) ?? 0,
+    })),
+    obstacles: [...neighbours.map(n => n.ring), ...fences],
     roads: data.roads.map(r => r.path),
     trees: opts.review ? [] : standing,
   };
@@ -1003,7 +1037,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const s of data.slabs as RenderSlab[]) {
     if (s.part === 'detail') continue;
     const g = prism(s.polygon, s.elevation);
-    if (g) byId.set(s.id, [...(byId.get(s.id) ?? []), g]);
+    if (!g) continue;
+    const list = byId.get(s.id);
+    if (list) list.push(g);
+    else byId.set(s.id, [g]);
   }
   const pick: THREE.Mesh[] = [];
   for (const [id, list] of byId) {
@@ -1052,6 +1089,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     surfaces,
     ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),
     dispose() {
+      disposed = true;
       root.traverse(o => {
         const mesh = o as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();

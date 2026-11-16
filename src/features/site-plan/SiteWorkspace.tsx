@@ -11,7 +11,7 @@ import type { Element, FeasibilityViolation } from '../../engine/types';
 import type { EdgeClassification } from '../../engine/setbacks';
 import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2, buffer, intersection, polygons, areaM2 } from '../../engine/geometry';
 import { feature4326To3857, feature3857To4326 } from '../../utils/reproject';
-import { feetToMeters } from '../../engine/units';
+import { feetToMeters, METERS_PER_FOOT } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount, type BuildingSpec } from '../../engine/model';
 import { placeBarsAlongEdges } from '../../engine/edgePlacement';
 import { buildBuildingFootprint } from '../../engine/buildingGeometry';
@@ -3310,6 +3310,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ...(topo ? { topo } : {}),
     });
   }, [scene, displayElements, neighbors, archStyle, topo]);
+  const readSectionGround = useCallback(async (): Promise<import('./scene/sheetSvg').SectionGround | null> => {
+    if (!scene) return null;
+    const [{ gradeMassingSite, latticeHeight }, data] = await Promise.all([import('./render3d/terrain'), sheetModelData()]);
+    const existing = data.terrain;
+    if (!existing) return null;
+    const grade = gradeMassingSite(data);
+    return {
+      at: point => {
+        const [x = 0, y = 0] = data.toLocal(scene.frame.fromFeet(point));
+        if (existing.outside(x, y) > 0) return null;
+        return {
+          existing: existing.heightAt(x, y) / METERS_PER_FOOT,
+          assumed: grade?.grading ? latticeHeight(grade.terrain, x, y) / METERS_PER_FOOT : null,
+        };
+      },
+      padsFt: new Map([...(grade?.pads ?? [])].map(([id, elevation]) => [id, elevation / METERS_PER_FOOT])),
+      source: existing.source,
+      grading: grade?.grading ?? null,
+    };
+  }, [scene, sheetModelData]);
   const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
     if (!scene) throw new Error('no scene');
     const [{ renderPlanImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
@@ -4301,7 +4321,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} groundGraded={sheetGraded} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} />
+        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} groundGraded={sheetGraded} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} readSectionGround={topo && scene.buildings.length > 0 ? readSectionGround : undefined} />
       )}
       {exportOpen && (
         <ExportReport

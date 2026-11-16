@@ -8,6 +8,8 @@
 // distance, and that is said in the job file. Nothing here is a design grade.
 import * as THREE from 'three';
 import type { ParcelTopo } from '../api/parcelTopo';
+import type { MassingData } from '../ui/massingData';
+import { convexHull } from '../ui/renderModel';
 import { FT } from './shots';
 
 /** How far past the sampled grid the ground eases to one level, metres. */
@@ -259,6 +261,26 @@ export interface Grade {
   /** The same, for a reader: elevations in feet, and the cut and fill at each pad. */
   padList: Array<{ building: string; pad_elevation_ft: number; lowest_ground_ft: number; highest_ground_ft: number; deepest_cut_ft: number; deepest_fill_ft: number }>;
   grading: { rule: string; existing_slope_pct: number; graded_slope_pct: number; deepest_cut_ft: number; deepest_fill_ft: number } | null;
+}
+
+/** Shared grading inputs for the section, interactive model and render export. */
+export function gradeMassingSite(data: MassingData): Grade | null {
+  if (!data.terrain) return null;
+  const footprints = new Map<string, Array<[number, number]>>();
+  for (const slab of data.slabs) {
+    if (slab.part === 'detail') continue;
+    const points = footprints.get(slab.id) ?? [];
+    for (const p of slab.polygon[0] ?? []) points.push([p[0] ?? 0, p[1] ?? 0]);
+    footprints.set(slab.id, points);
+  }
+  const buildings = [...footprints]
+    .map(([id, points]) => ({ id: String(id), ring: convexHull(points) }))
+    .filter(b => b.ring.length >= 3);
+  const paved = data.polygons
+    .filter(q => !q.building && ['drive', 'parking-aisle', 'circulation', 'parking', 'parking-bay', 'driveway'].includes(q.kind ?? ''))
+    .map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number]))
+    .filter(r => r.length >= 3);
+  return gradeSite(data.terrain, buildings, paved);
 }
 
 /** Whether a point lies inside a ring. */

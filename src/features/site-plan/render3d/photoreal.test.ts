@@ -102,7 +102,8 @@ describe('the photoreal function', () => {
     // the style the view is drawn in is named, so the picture keeps it; an unknown one is the default
     expect(fn.buildPrompt({ style: 'farmhouse' })).toContain('board-and-batten siding, steep gabled roofs');
     expect(fn.buildPrompt({ style: 'modern' })).toContain('flat roofs, white stucco');
-    expect(fn.buildPrompt({ style: 'a castle with a moat' })).toContain('steep shingled mansard top floors');
+    expect(fn.buildPrompt({ style: 'mansard' })).toContain('steep shingled mansard top floors');
+    expect(fn.buildPrompt({ style: 'a castle with a moat' })).toContain('Nashville infill in clay brick and fiber-cement');
     expect(fn.buildPrompt({ style: 'a castle with a moat' })).not.toContain('castle');
     expect(p).toContain('Do not redesign any building');
     // anything outside the lists falls back to the defaults

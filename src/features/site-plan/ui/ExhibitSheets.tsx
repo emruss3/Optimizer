@@ -3,7 +3,7 @@ import { ArchStylePicker } from './ArchStylePicker';
 import type { DrawingScene } from '../scene/types';
 import {
   renderSectionSheet, renderSitePlanSheet, renderViewSheet, sheetLayout, viewSheetLayout, SHEET_SIZES,
-  type SheetLayout, type SheetSize, type SheetTitle, type HeightControl,
+  type SheetLayout, type SheetSize, type SheetTitle, type HeightControl, type SectionGround,
 } from '../scene/sheetSvg';
 
 type Which = 'plan' | 'view' | 'section';
@@ -43,7 +43,8 @@ export const ExhibitSheets: React.FC<{
   printSetOnOpen?: boolean | undefined;
   /** The zoning height limit and plane, for the section. */
   heightControl?: HeightControl | null | undefined;
-}> = ({ scene, title, onClose, renderUnderlay, renderView, groundGraded, photoreal, look, initial, schemeName, printSetOnOpen, heightControl }) => {
+  readSectionGround?: (() => Promise<SectionGround | null>) | undefined;
+}> = ({ scene, title, onClose, renderUnderlay, renderView, groundGraded, photoreal, look, initial, schemeName, printSetOnOpen, heightControl, readSectionGround }) => {
   const [which, setWhich] = useState<Which>(initial ?? 'plan');
   const [size, setSize] = useState<SheetSize>('slide');
   const [style, setStyle] = useState<'rendered' | 'drawn'>(renderUnderlay ? 'rendered' : 'drawn');
@@ -56,6 +57,24 @@ export const ExhibitSheets: React.FC<{
   const [paintError, setPaintError] = useState<string | null>(null);
   const [showPainted, setShowPainted] = useState(true);
   const key = `${scene.identity.key}|${scene.identity.revision}|${size}|${look ?? ''}`;
+  const [ground, setGround] = useState<{ read: NonNullable<typeof readSectionGround>; profile: SectionGround | null } | null>(null);
+  const sectionGround = ground?.read === readSectionGround ? ground?.profile ?? null : null;
+  const sectionReady = !readSectionGround || ground?.read === readSectionGround;
+  const sheetReady = which !== 'section' || sectionReady;
+
+  useEffect(() => {
+    if (!readSectionGround) return;
+    let active = true;
+    readSectionGround().then(profile => {
+      if (active) setGround({ read: readSectionGround, profile });
+    }).catch(err => {
+      if (active) {
+        console.warn('[sheet] terrain could not be loaded for the section.', err);
+        setGround({ read: readSectionGround, profile: null });
+      }
+    });
+    return () => { active = false; };
+  }, [readSectionGround]);
 
   useEffect(() => {
     if (which !== 'plan' || style !== 'rendered' || !renderUnderlay || underlay?.key === key) return;
@@ -105,7 +124,7 @@ export const ExhibitSheets: React.FC<{
       .finally(() => setPainting(false));
   }, [photoreal, rendering2, key]);
   const viewSheet = useMemo(() => renderViewSheet(scene, title, size, viewPicture), [scene, title, size, viewPicture]);
-  const sectionSheet = useMemo(() => renderSectionSheet(scene, title, size, heightControl ?? null), [scene, title, size, heightControl]);
+  const sectionSheet = useMemo(() => renderSectionSheet(scene, title, size, heightControl, sectionGround), [scene, title, size, heightControl, sectionGround]);
   const sheet = which === 'plan' ? planSheet : which === 'view' ? viewSheet : sectionSheet;
   const number = which === 'plan' ? 'A-01' : which === 'view' ? 'A-02' : 'A-03';
   const name = which === 'plan' ? 'site-plan' : which === 'view' ? 'aerial-view' : 'section';
@@ -196,12 +215,12 @@ export const ExhibitSheets: React.FC<{
   }, [viewPicture, renderView, viewFailed, size, key, planSheet.svg, scene, title, sectionSheet.svg, printSheets]);
   const setAsked = useRef(false);
   useEffect(() => {
-    if (!printSetOnOpen || setAsked.current) return;
+    if (!printSetOnOpen || setAsked.current || !sectionReady) return;
     // wait for the rendered plan so the set carries the same sheet the screen shows
     if (style === 'rendered' && renderUnderlay && !picture) return;
     setAsked.current = true;
     void printSet();
-  }, [printSetOnOpen, style, renderUnderlay, picture, printSet]);
+  }, [printSetOnOpen, style, renderUnderlay, picture, printSet, sectionReady]);
 
   // what a full set will contain, and why a sheet is missing from it
   const sheetList = [
@@ -210,12 +229,12 @@ export const ExhibitSheets: React.FC<{
       ? { number: 'A-02', included: !viewFailed, state: viewFailed ? 'left out: the aerial view could not be rendered' : viewPicture ? 'ready' : 'renders on export' }
       : { number: 'A-02', included: false, state: 'left out: no 3D view for this plan' },
     scene.buildings.length > 0
-      ? { number: 'A-03', included: true, state: 'ready' }
+      ? { number: 'A-03', included: true, state: sectionReady ? 'ready' : 'loading terrain' }
       : { number: 'A-03', included: false, state: 'left out: no building to cut' },
   ];
 
   const seg = (on: boolean, first: boolean) => `px-2.5 py-1 ${on ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'} ${first ? '' : 'border-l border-gray-200'}`;
-  const scaleNote = which === 'section' ? 'Schematic section · graphic scale' : which === 'view'
+  const scaleNote = which === 'section' ? `${sectionGround ? 'Concept section' : 'Schematic section'} · graphic scale` : which === 'view'
     ? 'A rendering: not to scale'
     : planSheet.numericScale ? `Scale ${planSheet.numericScale} at full size` : size === 'slide' ? 'Slide, 16:9 · graphic scale' : 'Graphic scale only';
 
@@ -271,12 +290,12 @@ export const ExhibitSheets: React.FC<{
           <details className="relative" data-testid="sheet-more-formats">
             <summary className="list-none cursor-pointer px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 select-none">More formats</summary>
             <div className="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg p-1 flex flex-col w-44">
-              <button type="button" onClick={downloadPng} disabled={pngBusy} data-testid="sheet-download-png" title="A picture of this sheet at 200 dpi, for a slide" className="text-left px-3 py-1.5 rounded text-gray-700 hover:bg-gray-50 disabled:opacity-50">PNG image of this sheet</button>
-              <button type="button" onClick={download} data-testid="sheet-download" title="The sheet as a vector drawing" className="text-left px-3 py-1.5 rounded text-gray-700 hover:bg-gray-50">SVG drawing of this sheet</button>
+              <button type="button" onClick={downloadPng} disabled={pngBusy || !sheetReady} data-testid="sheet-download-png" title="A picture of this sheet at 200 dpi, for a slide" className="text-left px-3 py-1.5 rounded text-gray-700 hover:bg-gray-50 disabled:opacity-50">PNG image of this sheet</button>
+              <button type="button" onClick={download} disabled={!sheetReady} data-testid="sheet-download" title="The sheet as a vector drawing" className="text-left px-3 py-1.5 rounded text-gray-700 hover:bg-gray-50 disabled:opacity-50">SVG drawing of this sheet</button>
             </div>
           </details>
-          <button type="button" onClick={() => { void printSet(); }} disabled={setBusy} data-testid="sheet-print-set" title="Opens the print dialog with every sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">{sheetList.some(x => x.state === 'renders on export') ? 'Save PDF · all sheets' : (n => `Save PDF · ${n} sheet${n === 1 ? '' : 's'}`)(sheetList.filter(x => x.included).length)}</button>
-          <button type="button" onClick={print} data-testid="sheet-print" title="Opens the print dialog with this sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save PDF · {number}</button>
+          <button type="button" onClick={() => { void printSet(); }} disabled={setBusy || !sectionReady} data-testid="sheet-print-set" title="Opens the print dialog with every sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50">{sheetList.some(x => x.state === 'renders on export') ? 'Save PDF · all sheets' : (n => `Save PDF · ${n} sheet${n === 1 ? '' : 's'}`)(sheetList.filter(x => x.included).length)}</button>
+          <button type="button" onClick={print} disabled={!sheetReady} data-testid="sheet-print" title="Opens the print dialog with this sheet. Choose Save as PDF there." className="px-3 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">Save PDF · {number}</button>
           <button type="button" onClick={onClose} aria-label="Close sheets" className="px-2 py-1 text-gray-500 hover:text-gray-900">Close</button>
         </div>
       </div>

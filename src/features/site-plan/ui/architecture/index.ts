@@ -16,6 +16,7 @@ import { DEFAULT_STYLE, type ArchStyle } from './styles';
 import { house } from './house';
 import { rowHome } from './town';
 import { block, cottage } from './block';
+import { infillBlock } from './infillBlock';
 
 export { hashId, wallsOf } from './kit';
 export type { Architecture } from './kit';
@@ -33,7 +34,7 @@ export const surfaceOf = (part: { surface?: Surface; color?: RGBA }): Surface =>
  */
 export function buildArchitecture(
   id: string, label: string, rings: number[][][], use: BuildingUse, height: SceneHeight,
-  pavement: V2[] = [], bayScale = 1, style: ArchStyle = DEFAULT_STYLE, neighbours: number[][][] = [],
+  pavement: V2[] = [], bayScale = 1, style: ArchStyle = DEFAULT_STYLE, neighbours: number[][][] = [], frontage: V2[] = [],
 ): Architecture {
   const kit = new Kit(id, label);
   kit.lite = bayScale > 1.6;
@@ -48,6 +49,9 @@ export function buildArchitecture(
   const plain = new Kit(id, label);
   // an existing house the record draws with more corners than four
   if (use === 'existing') { cottage(plain, rings, height); return plain.done(); }
+  if (use === 'apartments' && (style === 'infill' || style === 'urban-brick')) {
+    if (infillBlock(plain, rings, height, pavement, frontage, style === 'urban-brick', bayScale)) return plain.done();
+  }
   block(plain, rings, use === 'house' || use === 'townhome' ? 'other' : use, height, pavement, style, bayScale);
   return plain.done();
 }

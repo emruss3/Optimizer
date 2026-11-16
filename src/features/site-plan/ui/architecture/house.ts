@@ -15,7 +15,7 @@ export const levelsM = (h: SceneHeight): number[] => h.levelsFt.map(f => f * MET
 export const FOUND = 0.32;
 export const PORCH = mat(206, 202, 194, 'concrete');
 export const WALK = mat(212, 208, 198, 'concrete');
-export const FLAT_ROOF = mat(104, 106, 110);
+export const FLAT_ROOF = mat(104, 106, 110, 'membrane');
 export const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
 export const spec = (p: HousePalette, planter = false): WindowSpec => ({ frame: p.frame, grid: p.grid, casing: p.casing, sill: p.sill, planter: planter && p.planters });

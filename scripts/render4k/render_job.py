@@ -267,6 +267,20 @@ def slot_material(slot):
         link(tint, bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.6
         _bump(nt, bsdf, wave.outputs[0], 1.0, 0.012)
+    elif slot == "glazing":
+        # The model exports a single surface for each pane. A smooth dielectric
+        # reflection and straight-through transmission represent thin glazing.
+        fresnel = nt.nodes.new("ShaderNodeFresnel")
+        fresnel.inputs["IOR"].default_value = 1.5
+        transmission = nt.nodes.new("ShaderNodeBsdfTransparent")
+        transmission.inputs["Color"].default_value = (0.96, 0.98, 0.99, 1)
+        reflection = nt.nodes.new("ShaderNodeBsdfGlossy")
+        reflection.inputs["Roughness"].default_value = 0.065
+        glazing = nt.nodes.new("ShaderNodeMixShader")
+        link(fresnel.outputs["Fac"], glazing.inputs[0])
+        link(transmission.outputs[0], glazing.inputs[1])
+        link(reflection.outputs[0], glazing.inputs[2])
+        link(glazing.outputs[0], nt.nodes.get("Material Output").inputs["Surface"])
     elif slot == "glass":
         room = nt.nodes.new("ShaderNodeMix"); room.data_type = "RGBA"; room.blend_type = "MULTIPLY"; room.inputs["Factor"].default_value = 1.0
         link(tint, room.inputs["A"])

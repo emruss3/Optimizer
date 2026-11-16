@@ -3,19 +3,21 @@
 // positions, story counts and heights are the plan's in every one.
 import { BLACK, CONCRETE, WHITE, mat, pick, tone, type Mat } from './kit';
 
-export type ArchStyle = 'mansard' | 'farmhouse' | 'modern' | 'heritage';
+export type ArchStyle = 'infill' | 'urban-brick' | 'mansard' | 'farmhouse' | 'modern' | 'heritage';
 
 export const ARCH_STYLES: Array<{ key: ArchStyle; name: string; blurb: string }> = [
+  { key: 'infill', name: 'Nashville infill', blurb: 'Clay brick and painted fiber cement. Gables and metal porch roofs on homes, panel-clad balcony bays and a low-slope roof on apartments.' },
+  { key: 'urban-brick', name: 'Urban brick', blurb: 'Masonry-led elevations with punched windows and stone sills. Rowhouses and apartments use simple metal coping and dark metal guards.' },
   { key: 'mansard', name: 'Urban mansard', blurb: 'Brick ground floor, coloured siding, a shingled mansard top with boxed dormers, black windows and railings, window boxes.' },
   { key: 'farmhouse', name: 'Modern farmhouse', blurb: 'White board and batten, steep gables, black windows, metal porch roofs, timber posts.' },
   { key: 'modern', name: 'Contemporary', blurb: 'Flat roofs, white stucco over charcoal, cedar accents, large glass, roof decks with glass rails.' },
   { key: 'heritage', name: 'Craftsman and brick', blurb: 'Earth-tone siding, deep eaves and porches on brick piers for houses; brick with steel windows for larger buildings.' },
 ];
-export const DEFAULT_STYLE: ArchStyle = 'mansard';
+export const DEFAULT_STYLE: ArchStyle = 'infill';
 export const isArchStyle = (v: unknown): v is ArchStyle => typeof v === 'string' && ARCH_STYLES.some(s => s.key === v);
 
 export const CEDAR = mat(158, 112, 70, 'wood');
-export const MEMBRANE = mat(206, 206, 202, 'plain');
+export const MEMBRANE = mat(206, 206, 202, 'membrane');
 const CHARCOAL_SHINGLE = mat(74, 72, 72, 'shingle');
 
 export interface HousePalette {
@@ -46,6 +48,22 @@ export interface HousePalette {
 /** The materials of one house or row home: the style's palette, varied by the building's own seed. */
 export function housePalette(style: ArchStyle, seed: number): HousePalette {
   const a = seed >>> 4, b = seed >>> 9, c = seed >>> 14;
+  if (style === 'infill' || style === 'urban-brick') {
+    const masonry = style === 'urban-brick';
+    const brick = pick([mat(159, 107, 88, 'brick'), mat(175, 147, 125, 'brick'), mat(132, 108, 96, 'brick')], b);
+    const siding = pick([mat(215, 207, 192, 'siding'), mat(172, 176, 161, 'siding'), mat(188, 193, 194, 'siding')], a);
+    const body = masonry ? brick : siding;
+    const trim = masonry ? mat(192, 184, 169) : tone(siding, 1.04);
+    return {
+      found: masonry ? CONCRETE : brick,
+      base: body, body, gable: { ...siding, surface: 'batten' },
+      roof: CHARCOAL_SHINGLE, roof2: mat(69, 65, 61, 'metal'),
+      fascia: trim, trim, frame: BLACK, casing: null, sill: masonry ? CONCRETE : null, grid: [1, 2],
+      door: pick([mat(99, 72, 53, 'wood'), mat(56, 67, 64), mat(98, 68, 63)], c),
+      garage: mat(76, 74, 71), garageLites: false,
+      post: masonry ? BLACK : mat(108, 85, 66, 'wood'), rail: BLACK, railKind: 'bars', planters: false,
+    };
+  }
   if (style === 'mansard') {
     const body = pick([mat(200, 174, 140, 'siding'), mat(112, 134, 158, 'siding'), mat(178, 194, 172, 'siding'), mat(228, 220, 202, 'siding'), mat(92, 98, 106, 'siding'), mat(236, 234, 228, 'batten'), mat(150, 160, 150, 'batten')], a);
     return {
@@ -129,6 +147,22 @@ export interface BlockPalette {
 /** The materials of one apartment or larger building. */
 export function blockPalette(style: ArchStyle, seed: number): BlockPalette {
   const a = seed >>> 5, b = seed >>> 11;
+  if (style === 'infill' || style === 'urban-brick') {
+    const masonry = style === 'urban-brick';
+    const brick = masonry
+      ? pick([mat(144, 89, 72, 'brick'), mat(130, 103, 91, 'brick'), mat(161, 106, 85, 'brick')], a)
+      : pick([mat(165, 118, 96, 'brick'), mat(174, 136, 111, 'brick'), mat(149, 108, 93, 'brick')], a);
+    const panel = pick([mat(106, 113, 104, 'panel'), mat(102, 108, 111, 'panel'), mat(138, 128, 109, 'panel')], b);
+    const cap = mat(74, 69, 64);
+    return {
+      base: brick, body: masonry ? brick : mat(209, 203, 191, 'siding'),
+      body2: masonry ? tone(brick, 0.84) : panel,
+      accent: mat(119, 90, 67, 'wood'),
+      crown: masonry ? brick : mat(78, 76, 72, 'metal'), cap,
+      trim: mat(194, 185, 169, 'concrete'), frame: BLACK, grid: masonry ? [1, 1] : [1, 2],
+      slab: mat(172, 167, 156, 'concrete'), rail: BLACK, railKind: 'bars', module: 3,
+    };
+  }
   if (style === 'mansard') {
     return {
       base: pick([mat(170, 142, 118, 'brick'), mat(148, 92, 74, 'brick'), mat(196, 190, 180, 'brick')], a),

@@ -116,8 +116,8 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
     k.parapet(rings, top, PARAPET, { wall: p.body, coping: p.cap, roof: MEMBRANE });
   }
 
-  const win: WindowSpec = { frame: p.frame, grid: lite ? undefined : p.grid };
-  const door: WindowSpec = { frame: p.frame, grid: lite ? undefined : [2, 1] };
+  const win: WindowSpec = { frame: p.frame, grid: lite ? undefined : p.grid, glazed: use === 'apartments' };
+  const door: WindowSpec = { ...win, grid: lite ? undefined : [2, 1] };
   const BAY = (style === 'heritage' ? 4.0 : 3.6) * bayScale;
   walls.forEach((w, wi) => {
     if (w.len < 2.6) return;

@@ -14,7 +14,7 @@ import type { MassingData } from '../ui/massingData';
 import type { DrawingScene } from '../scene/types';
 import { sunPosition, SUN_DATES } from '../ui/sunPosition';
 import { buildSiteModel } from './siteScene';
-import { streetShot, standOn, FT } from './shots';
+import { streetShot, FT } from './shots';
 import { drape, lift } from './terrain';
 
 export const RENDER_JOB_SCHEMA = 1;
@@ -191,18 +191,15 @@ export async function buildRenderJob(
     const groundAt = (x: number, y: number) => (terrain ? terrain.heightAt(x, y) : 0);
     const main = [...model.ground.subjects].sort((p, q) => span(q.points) - span(p.points))[0];
     const padZ = (main?.id ? seat.get(`building:${main.id}`) : undefined) ?? 0;
-    const arrival = streetShot(model.ground.subjects, model.ground.obstacles, model.ground.roads, aspect, model.ground.trees);
+    const arrival = streetShot(model.ground.subjects, model.ground.obstacles, model.ground.roads, aspect, model.ground.trees, groundAt);
     if (arrival) {
-      // the eye stands on the ground where the camera is, and stays level (render3d/shots): the same
-      // adjustment the live view makes, so the two frame the building alike
-      const stood = standOn(arrival, groundAt, padZ);
       cameras.push({
-        id: 'street', basis: stood.basis,
-        position_ft: [ft(stood.position[0]), ft(stood.position[1]), ft(stood.position[2])],
-        target_ft: [ft(stood.target[0]), ft(stood.target[1]), ft(stood.target[2])],
-        focal_length_mm: Math.round(focal(stood.fovDeg) * 1000) / 1000,
+        id: 'street', basis: arrival.basis,
+        position_ft: [ft(arrival.position[0]), ft(arrival.position[1]), ft(arrival.position[2])],
+        target_ft: [ft(arrival.target[0]), ft(arrival.target[1]), ft(arrival.target[2])],
+        focal_length_mm: Math.round(focal(arrival.fovDeg) * 1000) / 1000,
         sensor_width_mm: SENSOR_MM,
-        shift_y: Math.round(((stood.lift - 1) / 2 / aspect) * 100000) / 100000,
+        shift_y: Math.round(((arrival.lift - 1) / 2 / aspect) * 100000) / 100000,
         clip_ft: [1, far], aspect, resolution,
       });
     }
