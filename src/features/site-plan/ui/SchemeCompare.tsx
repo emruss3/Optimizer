@@ -58,7 +58,7 @@ const SchemeDrawing: React.FC<{ ring: number[][]; elements: Drawing; frame: { x:
         <text x={frame.w / 2} y={frame.h / 2} textAnchor="middle" fontSize={hair * 11} fill="#6b7280">Drawing…</text>
       )}
       {elements === null && (
-        <text x={frame.w / 2} y={frame.h / 2} textAnchor="middle" fontSize={hair * 11} fill="#6b7280">Drawing not available</text>
+        <text x={frame.w / 2} y={frame.h / 2} textAnchor="middle" fontSize={hair * 11} fill="#6b7280">Metrics only · drawing not saved</text>
       )}
     </svg>
   );
@@ -140,7 +140,8 @@ const SchemeCompare: React.FC<{
                         <td className="py-1 text-right tabular-nums font-medium text-gray-900" data-testid={`compare-${r.key}-${i}`}>
                           {v != null ? r.show(v) : 'not reported'}
                         </td>
-                        <td className={`py-1 pl-2 w-20 text-right tabular-nums ${d == null || d === 0 ? 'text-gray-400' : d > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                        {/* more is not better for every figure: only the margin is coloured by direction */}
+                        <td className={`py-1 pl-2 w-20 text-right tabular-nums ${d == null || d === 0 ? 'text-gray-400' : r.key !== 'margin' ? 'text-gray-700' : d > 0 ? 'text-green-700' : 'text-red-600'}`}>
                           {i === 0 ? '' : d == null ? '' : d === 0 ? 'same' : r.diff(d)}
                         </td>
                       </tr>

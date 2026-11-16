@@ -165,7 +165,7 @@ const KpiStrip: React.FC<{
   const pctMax = metrics.parkingPctOfMaxNeed;
 
   return (
-    <div className="flex flex-wrap lg:flex-nowrap items-center gap-x-5 gap-y-1 overflow-x-auto min-w-0 max-w-full">
+    <div className="flex flex-wrap xl:flex-nowrap items-center gap-x-5 gap-y-1 overflow-x-auto min-w-0 max-w-full">
       <Stat label="Units" value={`${metrics.totalUnits ?? 0}`} />
       {/* FAR/Coverage/Open at exactly 0 mean "not reported by this engine"
           (the seed payload carries none and the client never re-measures) —

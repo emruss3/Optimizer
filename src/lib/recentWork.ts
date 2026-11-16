@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 // What this browser has worked on, so a returning user can pick up where they
 // left off. Kept in this browser only: a parcel id, its address and zoning,
 // when it was last opened and whether the planner was opened on it.
@@ -11,6 +12,7 @@ export interface RecentParcel {
 }
 
 const RECENT_KEY = 'pp.recent';
+const RECENT_EVENT = 'pp:recent-changed';
 const VISITED_KEY = 'pp.visited';
 const MAX = 8;
 
@@ -39,6 +41,7 @@ export function recordRecent(entry: { ogcFid: string | number; address?: string 
       at: Date.now(),
     };
     localStorage.setItem(RECENT_KEY, JSON.stringify([next, ...before.filter(r => r.ogcFid !== ogcFid)].slice(0, MAX)));
+    window.dispatchEvent(new Event(RECENT_EVENT));
   } catch {
     // storage is unavailable: nothing to remember
   }
@@ -55,4 +58,16 @@ export function hasVisited(): boolean {
 
 export function markVisited(): void {
   try { localStorage.setItem(VISITED_KEY, '1'); } catch { /* nothing to remember */ }
+}
+
+/** The recent list, kept current: it changes when a parcel is opened here or in another tab. */
+export function useRecent(): RecentParcel[] {
+  const [list, setList] = useState<RecentParcel[]>(() => listRecent());
+  useEffect(() => {
+    const refresh = () => setList(listRecent());
+    window.addEventListener(RECENT_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => { window.removeEventListener(RECENT_EVENT, refresh); window.removeEventListener('storage', refresh); };
+  }, []);
+  return list;
 }

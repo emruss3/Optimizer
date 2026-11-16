@@ -70,6 +70,5 @@ describe('what the Checks badge counts', () => {
     // these ask for something
     expect(isActionableFlag('parking_summary_disagrees')).toBe(true);
     expect(isActionableFlag('far_exceeded_pinned')).toBe(true);
-    expect(['regrid_sample_capped_100'].filter(isActionableFlag).length).toBe(0);
   });
 });

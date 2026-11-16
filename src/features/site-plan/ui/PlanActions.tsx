@@ -46,7 +46,10 @@ const PlanActions: React.FC<{
   busy: boolean;
   onRecalculate: () => void;
   onAnotherOption: () => void;
-  onSaveVersion: () => void;
+  /** Saves the plan on the sheet under the given name. */
+  onSaveVersion: (name: string) => void;
+  /** The name offered in the field: the user can change it. */
+  suggestedName?: string;
   /** The name of the saved option on the sheet; null when the sheet is not a saved option. */
   savedAs: string | null;
   /** Set after Save version: the name it was saved under. */
@@ -60,8 +63,10 @@ const PlanActions: React.FC<{
   onUnlockAll: () => void;
   change: PlanChange | null;
   onDismissChange: () => void;
-}> = ({ busy, onRecalculate, onAnotherOption, onSaveVersion, savedAs, justSaved, saveFailed, signIn, locked, free, onUnlockAll, change, onDismissChange }) => {
+}> = ({ busy, onRecalculate, onAnotherOption, onSaveVersion, savedAs, suggestedName, justSaved, saveFailed, signIn, locked, free, onUnlockAll, change, onDismissChange }) => {
   const [locksOpen, setLocksOpen] = useState(false);
+  const [naming, setNaming] = useState<string | null>(null);
+  const commit = () => { if (naming != null) { onSaveVersion(naming); setNaming(null); } };
   const btn = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed';
   return (
     <div className="flex flex-col items-start gap-1.5" data-testid="plan-actions">
@@ -72,7 +77,7 @@ const PlanActions: React.FC<{
           className={`${btn} border-gray-200 bg-white text-gray-800 hover:bg-gray-50`}
         >
           <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
-          <span>Recalculate<span className="hidden sm:inline"> this design</span></span>
+          <span>Recalculate<span className="hidden xl:inline"> this design</span></span>
         </button>
         <button
           type="button" onClick={onAnotherOption} disabled={busy} data-testid="plan-another-option"
@@ -80,18 +85,18 @@ const PlanActions: React.FC<{
           className={`${btn} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`}
         >
           <CopyPlus className="w-3.5 h-3.5" />
-          <span className="sm:hidden">New option</span><span className="hidden sm:inline">Create another option</span>
+          <span className="xl:hidden">New option</span><span className="hidden xl:inline">Create another option</span>
         </button>
         <button
-          type="button" onClick={onSaveVersion} disabled={busy} data-testid="plan-save-version"
+          type="button" onClick={() => setNaming(n => (n == null ? (suggestedName ?? '') : null))} disabled={busy} aria-expanded={naming != null} data-testid="plan-save-version"
           title="Keep the plan on the sheet as a named version you can reopen."
           className={`${btn} border-gray-200 bg-white text-gray-800 hover:bg-gray-50`}
         >
           <Save className="w-3.5 h-3.5" />
-          <span>Save<span className="hidden sm:inline"> version</span></span>
+          <span>Save<span className="hidden xl:inline"> version</span></span>
         </button>
         <span className="px-1.5 text-[11px] text-gray-500" data-testid="plan-saved-state">
-          {saveFailed ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><span>Not saved. {saveFailed}</span>{signIn && <span className="text-gray-700" data-testid="plan-sign-in">{signIn}</span>}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? <span><span className="hidden md:inline">On the sheet: </span>{savedAs}</span> : <span className="hidden md:inline">Not a saved option</span>}
+          {saveFailed ? <span className="inline-flex items-center gap-2 text-red-700" role="alert"><span>Not saved. {saveFailed}</span>{signIn && <span className="text-gray-700" data-testid="plan-sign-in">{signIn}</span>}</span> : justSaved ? <span className="inline-flex items-center gap-1 text-green-700"><Check className="w-3 h-3" />Saved as {justSaved}</span> : savedAs ? <span><span className="hidden xl:inline">On the sheet: </span>{savedAs}</span> : <span className="hidden xl:inline">Not a saved option</span>}
         </span>
         <button
           type="button" onClick={() => setLocksOpen(o => !o)} aria-expanded={locksOpen} data-testid="plan-locks"
@@ -101,6 +106,23 @@ const PlanActions: React.FC<{
           {locked} locked · {free} free
         </button>
       </div>
+      {naming != null && (
+        <form
+          onSubmit={e => { e.preventDefault(); commit(); }}
+          className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs max-w-full"
+          data-testid="plan-save-form"
+        >
+          <label htmlFor="plan-version-name" className="text-gray-600">Name</label>
+          <input
+            id="plan-version-name" data-testid="plan-version-name" autoFocus
+            value={naming} onChange={e => setNaming(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setNaming(null); } }}
+            className="w-56 max-w-full px-2 py-1 rounded border border-gray-300"
+          />
+          <button type="submit" data-testid="plan-save-confirm" className={`${btn} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`}>Save</button>
+          <button type="button" onClick={() => setNaming(null)} className={`${btn} border-gray-200 bg-white text-gray-700 hover:bg-gray-50`}>Cancel</button>
+        </form>
+      )}
       {locksOpen && (
         <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs text-gray-700 max-w-sm space-y-1.5" data-testid="plan-locks-detail">
           <p>

@@ -521,7 +521,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // the saved-plans error belongs to this save only once a save has been asked for: the hook clears it at the start of each save
   const saveVersionAskedRef = useRef(false);
   setVersionSavedRef.current = setVersionSaved;
-  const handleSaveVersion = useCallback(() => {
+  const handleSaveVersion = useCallback((given?: string) => {
     if (draftModeRef.current || compileBlockedRef.current) {
       setViolations(v => [...v, {
         code: 'draft-not-saved',
@@ -531,7 +531,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return;
     }
     const option = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Plan';
-    const name = `${option}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+    const name = given?.trim() || `${option}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
     saveVersionAskedRef.current = true;
     savePlanToDb({ parcel_id: parcelIdStr, name, config, elements, metrics, violations, investment: investmentAnalysis })
       .then(saved => {
@@ -3682,7 +3682,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       )}
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
       {/* on a narrow screen the figures and the controls each take a line, so neither runs off the side */}
-      <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+      <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip
           metrics={metrics}
           investment={investmentAnalysis}
@@ -3719,7 +3719,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               : null
           }
         />
-        <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 max-w-full lg:flex-shrink-0">
+        <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 max-w-full xl:flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
             onClick={undo}
@@ -3751,6 +3751,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
+          {!classicDrawing && scene && scene.buildings.length > 0 && (
+            <button
+              data-testid="view-section"
+              onClick={() => { setSheetsAsk({ initial: 'section', printSet: false }); setSheetsOpen(true); }}
+              disabled={draftMode || !!compileBlocked}
+              title="Section A–A: a schematic cut through the building, with the setbacks and the zoning height control"
+              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Section
+            </button>
+          )}
           {quickMassingAvailable && (
             <button
               data-testid="seed-toggle"
@@ -4014,6 +4025,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 onAnotherOption={() => { void handleGenerate(); }}
                 onSaveVersion={handleSaveVersion}
                 savedAs={(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || null}
+                suggestedName={`${(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Plan'}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric' })}`}
                 justSaved={versionSaved?.ok ? versionSaved.name : null}
                 saveFailed={versionSaved && !versionSaved.ok
                   ? (needsSignIn ? 'Sign in to save this plan. It stays on the sheet while you do; then press Save version again.' : ((saveVersionAskedRef.current ? savedPlansError : null) ?? 'The save did not go through. Check the connection and try again.'))

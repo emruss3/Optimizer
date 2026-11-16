@@ -7,6 +7,7 @@ import { Parcel, supabase } from './lib/supabase';
 import Header from './components/Header';
 import LandingPage from './components/LandingPage';
 import StartPage from './components/StartPage';
+import ActiveFilters from './components/ActiveFilters';
 import { hasVisited, markVisited, recordRecent } from './lib/recentWork';
 import { openParcel } from './lib/parcelSearch';
 import { SAMPLE_PARCEL } from './lib/sampleParcel';
@@ -349,6 +350,7 @@ function App() {
               role="main" 
               aria-label="Interactive parcel map"
             >
+              <ActiveFilters />
               <MapPanel 
                 onParcelClick={handleParcelClick} 
                 activeProjectName={useActiveProject.getState().name}
