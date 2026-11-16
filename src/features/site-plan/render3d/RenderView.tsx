@@ -102,7 +102,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // where the camera stood, so a change of style redraws the same view of the same plan
   const revision = useRef(scene.identity.revision);
   revision.current = scene.identity.revision;
-  const stood = useRef<{ revision: string; position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const stood = useRef<{ revision: string; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -262,10 +262,13 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     setGraded(!!model.grade?.grading);
     // what ground this model stands on, for a reader of the page and for the regression runner
     setGround(model.grade ? { kind: model.grade.grading ? 'graded' : 'survey', ...(model.grade.grading ?? {}), pads: model.grade.padList.length } : { kind: 'flat' });
+    const modelRevision = revision.current;
     const was = stood.current;
-    if (was && was.revision === revision.current) {
+    if (was && was.revision === modelRevision) {
       camera.position.copy(was.position);
       controls.target.copy(was.target);
+      camera.fov = was.fov;
+      lens(camera, Math.max(2, el.clientWidth), Math.max(2, el.clientHeight));
       controls.update();
     } else {
       frame('iso');
@@ -283,7 +286,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     return () => {
       active = false;
       clearTimeout(settle);
-      stood.current = { revision: revision.current, position: camera.position.clone(), target: controls.target.clone() };
+      stood.current = { revision: modelRevision, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
       setReady(false);
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();

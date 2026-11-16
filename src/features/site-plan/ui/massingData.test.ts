@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Element } from '../../../engine/types';
+import type { ArchStyle } from './architecture';
 import { buildMassingData, buildingHeightM } from './massingData';
 
 const el = (
@@ -105,11 +106,11 @@ describe('what the rendered view is given', () => {
   const building = el('b1', 'building', square(X, Y, 30), 3);
 
   it('draws the buildings in the style asked for, and in the first style when none is', () => {
-    const surfaces = (style?: 'mansard' | 'farmhouse' | 'modern' | 'heritage') => {
+    const surfaces = (style?: ArchStyle) => {
       const d = buildMassingData([building], style ? { style } : undefined);
       return new Set([...d.slabs, ...d.roofs].map(p => p.surface ?? 'plain'));
     };
-    expect(surfaces()).toEqual(surfaces('mansard'));
+    expect(surfaces()).toEqual(surfaces('infill'));
     expect(surfaces('farmhouse').has('batten')).toBe(true);
     expect(surfaces('farmhouse').has('metal')).toBe(true);
     expect(surfaces('modern').has('glassrail')).toBe(true);
@@ -117,11 +118,12 @@ describe('what the rendered view is given', () => {
   });
 
   it('keeps the same footprints and heights whatever the style', () => {
-    const tops = (style: 'mansard' | 'modern') => {
+    const tops = (style: ArchStyle) => {
       const d = buildMassingData([building], { style });
       return [d.polygons.map(p => p.elevation), d.roofLines.map(r => r.path.map(p => p.map(v => Math.round(v * 1000))))];
     };
     expect(tops('modern')).toEqual(tops('mansard'));
+    expect(tops('infill')).toEqual(tops('urban-brick'));
   });
 
   it('passes on the lots of a subdivision, in the same local metres as the buildings', () => {

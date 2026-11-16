@@ -106,6 +106,8 @@ export interface WindowSpec {
   planter?: boolean | undefined;
   /** Fit glazing and a shaded window interior into the full-detail frame. */
   glazed?: boolean;
+  /** Depth of the interior, behind an actual opening in the exterior wall. */
+  interiorDepth?: number;
 }
 
 export interface Architecture {
@@ -159,6 +161,13 @@ export class Kit {
     const p0 = on(w, s0, d), p1 = on(w, s1, d);
     this.flats.push({ id: this.id, polygon: [[p0[0], p0[1], z0], [p1[0], p1[1], z0], [p1[0], p1[1], z1], [p0[0], p0[1], z1]], color: m.color, surface: m.surface });
   }
+  /** A shallow room behind an opening, with a ceiling, floor and side returns. */
+  recess(w: Wall, a: number, b: number, z0: number, z1: number, front: number, back: number, wall: Mat, floor: Mat): void {
+    const point = (s: number, d: number, z: number) => [...on(w, s, d), z];
+    this.panel(w, a, b, z0, z1, back, wall);
+    for (const s of [a, b]) this.flat([point(s, front, z0), point(s, back, z0), point(s, back, z1), point(s, front, z1)], wall);
+    for (const z of [z0, z1]) this.flat([point(a, front, z), point(b, front, z), point(b, back, z), point(a, back, z)], floor);
+  }
   /** A pane of glass on a wall. */
   pane(w: Wall, s0: number, s1: number, z0: number, z1: number, d: number, clear = false): void {
     if (s1 - s0 < 0.02 || z1 - z0 < 0.02) return;
@@ -203,7 +212,9 @@ export class Kit {
     if (o.glazed) {
       // The glass, shade and interior sit at three different depths in the jamb.
       const seed = hashId(`${this.seed}|${w.a}|${s.toFixed(2)}|${z0.toFixed(2)}`);
-      this.panel(w, a + f, b - f, z0 + f, z1 - f, d + 0.008, pick(WINDOW_INTERIORS, seed));
+      const backing = pick(WINDOW_INTERIORS, seed);
+      if (o.interiorDepth) this.recess(w, a + f, b - f, z0 + f, z1 - f, d + 0.008, d - o.interiorDepth, backing, tone(backing, 0.9));
+      else this.panel(w, a + f, b - f, z0 + f, z1 - f, d + 0.008, backing);
       if (seed % 4 === 0) {
         const shadeBottom = z1 - f - (z1 - z0 - 2 * f) * (0.35 + (seed % 7) * 0.075);
         this.panel(w, a + f, b - f, shadeBottom, z1 - f, d + 0.037, ROLLER_SHADE);

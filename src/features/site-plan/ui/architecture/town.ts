@@ -120,14 +120,14 @@ function mansard(r: Row): void {
 }
 
 /** The farmhouse row home: board and batten under a gable that faces the street, metal awnings over the doors. */
-function gabled(r: Row): void {
+function gabled(r: Row, roofPitch = 0.83): void {
   const { k, f, W, D, lv, p, party } = r;
   const n = lv.length, zT = lv[n - 1] ?? 9, z1 = lv[0] ?? 3;
   const ring = f.ring(0, W, 0, D), faces = f.faces(0, W, 0, D);
   const [pl, pr] = party;
   k.prism(ring, 0, SLAB, p.found, 'base');
   k.prism(ring, SLAB, zT - SLAB, p.body, 'body');
-  const pitch = Math.min(0.83, 2.9 / (W / 2));
+  const pitch = Math.min(roofPitch, 2.9 / (W / 2));
   const rise = k.gable(f, 0, W, 0, D, zT, pitch, 'd', { over: [pl && pr ? 0 : 0.3, 0.3], roof: p.roof, wall: p.body, fascia: p.fascia });
   const win = spec(p), ends: Wall[] = [f.w, faces.back];
   entry(r, { leaf: p.door, frame: p.frame, win, sidelight: W >= 6 ? 0.3 : 0 });
@@ -277,8 +277,9 @@ export function rowHome(k: Kit, rings: number[][][], height: SceneHeight, paveme
     },
   };
   if (style === 'modern') modern(row);
+  else if (style === 'infill') gabled(row, 0.5);
   else if (style === 'farmhouse') gabled(row);
-  else if (style === 'heritage') brick(row);
+  else if (style === 'heritage' || style === 'urban-brick') brick(row);
   else mansard(row);
   return true;
 }

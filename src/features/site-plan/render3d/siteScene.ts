@@ -306,14 +306,14 @@ function box(q: Array<[number, number]>, z0: number, h: number): THREE.BufferGeo
     uv[v * 2] = s; uv[v * 2 + 1] = t;
     v++;
   };
-  let run = 0;
   for (let i = 0; i < 4; i++) {
     const a = r[i] as [number, number], b = r[(i + 1) % 4] as [number, number];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-6;
     const nx = (b[1] - a[1]) / len, ny = -(b[0] - a[0]) / len;
+    // Project onto the wall direction so brick courses run through adjacent facade pieces.
+    const run = -ny * a[0] + nx * a[1];
     vert(a[0], a[1], z0, nx, ny, 0, run, z0); vert(b[0], b[1], z0, nx, ny, 0, run + len, z0); vert(b[0], b[1], z1, nx, ny, 0, run + len, z1);
     vert(a[0], a[1], z0, nx, ny, 0, run, z0); vert(b[0], b[1], z1, nx, ny, 0, run + len, z1); vert(a[0], a[1], z1, nx, ny, 0, run, z1);
-    run += len;
   }
   const [a, b, c, d] = r as [[number, number], [number, number], [number, number], [number, number]];
   for (const [p0, p1, p2] of [[a, b, c], [a, c, d]] as Array<Array<[number, number]>>) {
@@ -764,6 +764,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (mode === 'sheet' && !see) {
       const single = material as THREE.MeshStandardMaterial, both = material.clone() as THREE.MeshStandardMaterial;
       both.side = THREE.DoubleSide;
+      both.onBeforeCompile = single.onBeforeCompile;
+      both.customProgramCacheKey = single.customProgramCacheKey;
       material = both;
       // the two-sided copy takes the photographed surface when the one it was copied from does
       void Promise.all(surfaces.pending).then(() => {
@@ -774,9 +776,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       });
     }
     const mesh = new THREE.Mesh(merged, material);
-    mesh.castShadow = !see && kind !== 'glazing' && (mode === 'solid' || mode === 'sheet');
-    if (kind === 'glazing') mesh.userData.noOcclusion = true;
-    if (see) mesh.renderOrder = 2;
+    mesh.castShadow = kind !== 'glassrail' && kind !== 'glazing' && (mode === 'solid' || mode === 'sheet');
+    if (kind === 'glazing' || see) mesh.userData.noOcclusion = true;
+    if (kind === 'glassrail') mesh.renderOrder = 2;
     mesh.receiveShadow = true;
     mesh.name = key;
     (batch === 'car' ? carFallback : root).add(mesh);
@@ -1028,7 +1030,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const s of data.slabs as RenderSlab[]) {
     if (s.part === 'detail') continue;
     const g = prism(s.polygon, s.elevation);
-    if (g) byId.set(s.id, [...(byId.get(s.id) ?? []), g]);
+    if (!g) continue;
+    const list = byId.get(s.id);
+    if (list) list.push(g);
+    else byId.set(s.id, [g]);
   }
   const pick: THREE.Mesh[] = [];
   for (const [id, list] of byId) {

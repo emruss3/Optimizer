@@ -68,6 +68,14 @@ describe('streetShot', () => {
     expect(streetShot([building], ring, street)).toBeNull();
   });
 
+  it('frames another home when the main building has no clear approach', () => {
+    const ring = [rect(-200, -200, 400, 185), rect(-200, 15, 400, 185), rect(-200, -15, 165, 30), rect(35, -15, 165, 30)];
+    const home = { points: rect(240, -50, 12, 18), height: 9 };
+    const s = streetShot([building, home], ring, [[[220, -60], [300, -60]]]);
+    expect(s?.target.slice(0, 2)).toEqual([246, -41]);
+    expect(s?.position[2]).toBeCloseTo(5.5 * 0.3048);
+  });
+
   it('moves off a place where a tree stands between the eye and the building', () => {
     const open = streetShot([building], [], street)!;
     // a big tree halfway between that place and the building
@@ -75,6 +83,12 @@ describe('streetShot', () => {
     const moved = streetShot([building], [], street, 16 / 9, [tree])!;
     expect(Math.hypot(moved.position[0] - open.position[0], moved.position[1] - open.position[1])).toBeGreaterThan(1);
     expect(moved.basis).toMatch(/0 trees in the line of sight/);
+  });
+
+  it('keeps the camera outside a crown at the original view point', () => {
+    const [x, y] = streetShot([building], [], street)!.position;
+    const moved = streetShot([building], [], street, 16 / 9, [[x, y, 5]])!;
+    expect(Math.hypot(moved.position[0] - x, moved.position[1] - y)).toBeGreaterThanOrEqual(6.25);
   });
 
   it('has no shot without a building', () => {

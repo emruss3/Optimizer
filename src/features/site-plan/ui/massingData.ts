@@ -256,6 +256,8 @@ export function buildMassingData(
     .filter(el => el.type === 'circulation' || el.type === 'parking-aisle')
     .flatMap(el => densify((el.geometry.coordinates[0] ?? []).map(m)));
   const style = ground?.style ?? DEFAULT_STYLE;
+  const roadFrontage = (ground?.contextRoads ?? []).flatMap(road => densify((road.line?.coordinates ?? []).map(m)));
+  const frontage = roadFrontage.length ? roadFrontage : (ground?.frontEdges ?? []).flatMap(edge => densify(edge.map(m)));
   const outlines = buildings.map(el => (el.geometry.coordinates[0] ?? []).map(m));
   const draw = (scale: number) => {
     const slabs: RenderSlab[] = [], windows: RenderWindow[] = [], roofs: RenderWindow[] = [];
@@ -263,7 +265,7 @@ export function buildMassingData(
     buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
       const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
-      const a = buildArchitecture(el.id, label, rings, buildingUse(el), heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i));
+      const a = buildArchitecture(el.id, label, rings, buildingUse(el), heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i), frontage);
       slabs.push(...a.slabs);
       windows.push(...a.glass);
       roofs.push(...a.flats);

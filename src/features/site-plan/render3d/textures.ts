@@ -245,7 +245,12 @@ const DRAW: Record<Drawn, () => Tile> = {
 };
 
 // Surfaces that have a photograph (public/textures/site, from Poly Haven, CC0), and the metres one tile covers.
-const PHOTOS: Record<string, number> = { brick: 1.7, asphalt: 3.2, grass: 5.5, plaster: 2.6, shingle: 2.2, concrete: 2.8, wood: 2.2 };
+const PHOTOS: Record<string, [number, number]> = {
+  // The photo shows five nominal 8 in. units across by fourteen 2 2/3 in. courses high.
+  brick: [1.016, 0.948],
+  asphalt: [6.4, 6.4], grass: [5.5, 5.5], plaster: [2.6, 2.6],
+  shingle: [2.2, 2.2], concrete: [2.8, 2.8], wood: [2.2, 2.2],
+};
 
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
 export class Surfaces {
@@ -263,7 +268,7 @@ export class Surfaces {
     const one = (file: string, colour: boolean) => new Promise<THREE.Texture | null>(resolve => {
       loader.load(`/textures/site/${file}`, t => {
         t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
-        t.repeat.set(1 / size, 1 / size);
+        t.repeat.set(1 / size[0], 1 / size[1]);
         t.anisotropy = 8;
         if (colour) t.colorSpace = THREE.SRGBColorSpace;
         this.photos.push(t);
@@ -275,7 +280,8 @@ export class Surfaces {
       m.map = map;
       m.bumpMap = null;
       m.normalMap = normal;
-      m.normalScale = new THREE.Vector2(0.9, 0.9);
+      const relief = kind === 'asphalt' ? 0.44 : 0.9;
+      m.normalScale.set(relief, relief);
       m.needsUpdate = true;
     }));
   }
@@ -292,7 +298,7 @@ export class Surfaces {
       x.fillStyle = '#ffffff'; x.fillRect(13, 0, 6, 32);
       const map = finish(c, 0.11, 1, true);
       this.tiles.set(kind, { map, bump: map, bumpScale: 0, roughness: 0.6 });
-      m = new THREE.MeshStandardMaterial({ vertexColors: true, map, transparent: true, depthWrite: false, roughness: 0.55, metalness: 0.3, side: THREE.DoubleSide });
+      m = new THREE.MeshStandardMaterial({ vertexColors: true, map, alphaTest: 0.5, roughness: 0.55, metalness: 0.24, side: THREE.DoubleSide });
     } else if (kind === 'glassrail') {
       m = new THREE.MeshPhysicalMaterial({ color: 0xcfe2e0, transparent: true, opacity: 0.3, depthWrite: false, roughness: 0.04, metalness: 0, envMapIntensity: 1.3, side: THREE.DoubleSide });
     } else if (kind === 'water') {
@@ -325,14 +331,21 @@ export class Surfaces {
     return m;
   }
 
-  /** Window glass: dark, smooth, reflecting the sky. A pane's own tint shows through: a room with its blinds down is paler. */
+  /** Thin glazing reflects more at grazing angles while letting the room read head-on. */
   glass(clear = false): THREE.Material {
     const slot = clear ? 'glazing' : 'glass';
     const hit = this.made.get(slot);
     if (hit) return hit;
     const m = new THREE.MeshPhysicalMaterial(clear
-      ? { color: 0xb9d2d4, roughness: 0.07, metalness: 0, ior: 1.5, transparent: true, opacity: 0.30, depthWrite: false, envMapIntensity: 1.5 }
+      ? { color: 0x6e7a79, roughness: 0.12, metalness: 0, ior: 1.5, transparent: true, opacity: 0.28, depthWrite: false, envMapIntensity: 1.6 }
       : { vertexColors: true, color: 0xffffff, roughness: 0.07, metalness: 0.82, envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.05 });
+    if (clear) m.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+        float edgeReflection = pow(1.0 - saturate(dot(normal, geometryViewDir)), 4.0);
+        diffuseColor.a = mix(0.26, 0.8, edgeReflection);
+        #include <opaque_fragment>
+      `);
+    };
     this.made.set(slot, m);
     return m;
   }
