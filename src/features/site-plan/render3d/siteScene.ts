@@ -7,7 +7,8 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MassingData } from '../ui/massingData';
-import type { RenderSlab, RGBA, Surface } from '../ui/renderModel';
+import { convexHull, type RenderSlab, type RGBA, type Surface } from '../ui/renderModel';
+import type { Subject } from './shots';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
@@ -27,6 +28,8 @@ export interface SiteModel {
   focus: { x: number; y: number; radius: number };
   /** The built part of the plan, where it is much smaller than the parcel; otherwise the parcel. */
   built: Focus;
+  /** What a street camera needs (render3d/shots): the scheme's buildings, the neighbours that can stand in the way, and the street lines. */
+  ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]> };
   surfaces: Surfaces;
   /** Settles when the pictures the trees are made of have arrived (or after a few seconds without them): a still waits for it. */
   ready: Promise<void>;
@@ -520,6 +523,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     ])) put(streetKey, plane(q.map(p => [p[0] ?? 0, p[1] ?? 0, -0.005])), streetColor);
   }
   const neighbours: Array<{ ring: number[][]; minX: number; minY: number; maxX: number; maxY: number }> = [];
+  // every tree that stands in the model, as [x, y, crown radius]: a camera keeps them out of its line of sight
+  const standing: Array<[number, number, number]> = data.trees.map(t => [t.position[0] ?? 0, t.position[1] ?? 0, t.radiusM ?? 2.8]);
   // how far from the middle of the site a neighbour is still drawn with its windows and roof
   const detailReach = Math.max(110, data.extent * 0.95);
   const FAR_WALLS: RGBA[] = [[206, 196, 176, 255], [186, 180, 170, 255], [150, 104, 88, 255], [198, 192, 184, 255], [164, 170, 172, 255], [214, 206, 188, 255]];
@@ -873,7 +878,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     };
     // the surrounding trees are portraits of the site's own, on crossed cards; where a portrait
     // cannot be painted (no leaf picture), lumpy crowns stand in
-    const nearby = scatter(0, half * 4, 12, 0.62, opts.light ? 2200 : 4500), beyond = scatter(half * 4, half * 13, 22, 0.7, opts.light ? 5000 : 11000);
+    const nearby = scatter(0, half * 4, 12, 0.62, opts.light ? 2200 : 4500);
+    standing.push(...nearby);
+    const beyond = scatter(half * 4, half * 13, 22, 0.7, opts.light ? 5000 : 11000);
     if (sitters().length) {
       plant(nearby, 'surrounding-trees', true);
       plant(beyond, 'far-trees', false);
@@ -891,12 +898,20 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const focus = { x: fx, y: fy, radius: Math.max(15, ...held.map(p => Math.hypot(p[0] - fx, p[1] - fy))) };
   // what a picture of the scheme centres on (scene/builtFocus): the buildings or their densest group on a large parcel
   const byBuilding = new Map<string, Array<[number, number]>>();
+  const tops = new Map<string, number>();
   for (const sl of data.slabs as RenderSlab[]) {
     if (sl.part === 'detail') continue;
     const list = byBuilding.get(sl.id) ?? [];
     for (const p of sl.polygon[0] ?? []) list.push([p[0] ?? 0, p[1] ?? 0]);
     byBuilding.set(sl.id, list);
+    tops.set(sl.id, Math.max(tops.get(sl.id) ?? 0, ((sl.polygon[0]?.[0]?.[2]) ?? 0) + sl.elevation));
   }
+  const ground = {
+    subjects: [...byBuilding.entries()].map(([id, pts]) => ({ points: convexHull(pts) as Array<[number, number]>, height: tops.get(id) ?? 3 })),
+    obstacles: neighbours.map(n => n.ring),
+    roads: data.roads.map(r => r.path),
+    trees: opts.review ? [] : standing,
+  };
   const built = builtFocus(focus, [...byBuilding.values()]);
   // picking: one unseen solid a building
   const pickGroup = new THREE.Group();
@@ -927,6 +942,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     extent: Math.max(20, data.extent / 2),
     focus,
     built,
+    ground,
     surfaces,
     ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),
     dispose() {
