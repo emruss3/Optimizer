@@ -37,12 +37,19 @@ const centre = (pts: Array<[number, number]>): [number, number] => {
   return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
 };
 
-/** Does the straight line from a to b pass through a ring? Sampled: rings here are buildings, metres across. */
+/** Does the sight line cross a wall or a fence between the eye and the subject? */
 function crosses(a: [number, number], b: [number, number], ring: number[][]): boolean {
-  const steps = Math.max(8, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 2));
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    if (pointInPolygon(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, [ring as never])) return true;
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  for (let i = 0; i < ring.length; i++) {
+    const [x = 0, y = 0] = ring[i]!;
+    const [endX = 0, endY = 0] = ring[(i + 1) % ring.length]!;
+    const ex = endX - x, ey = endY - y;
+    const det = dx * ey - dy * ex;
+    if (Math.abs(det) < 1e-8) continue;
+    const ax = x - a[0], ay = y - a[1];
+    const t = (ax * ey - ay * ex) / det;
+    const u = (ax * dy - ay * dx) / det;
+    if (t > 1e-6 && t < 1 - 1e-6 && u >= 0 && u <= 1) return true;
   }
   return false;
 }

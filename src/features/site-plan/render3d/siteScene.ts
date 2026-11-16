@@ -651,6 +651,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   }
   // a subdivision's lots: each yard its own shade of lawn, and a board fence round the back of it.
   // Illustration: the plan draws a lot line, not a fence.
+  const fences: Array<[[number, number], [number, number]]> = [];
   if (data.lots.length && !opts.review) {
     const pads = data.polygons.filter(p => p.building).map(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
     const paved: Array<[number, number]> = data.polygons.filter(p => !p.building && SITE[p.kind ?? ''] && SITE[p.kind ?? '']?.surface !== 'grass').flatMap(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
@@ -683,6 +684,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
           const key = `${Math.round(mx * 2)},${Math.round(my * 2)}`;
           if (built.has(key)) continue;
           built.add(key);
+          fences.push([p0, p1]);
           put('wood|solid', prism([[[p0[0] + nx, p0[1] + ny, 0.17], [p1[0] + nx, p1[1] + ny, 0.17], [p1[0] - nx, p1[1] - ny, 0.17], [p0[0] - nx, p0[1] - ny, 0.17]]], 1.75), FENCE);
         }
       }
@@ -1023,7 +1025,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       id: String(id), points: convexHull(pts), height: tops.get(id) ?? 3,
       roofHeight: roofs.get(id) ?? 3, base: grade?.pads.get(String(id)) ?? 0,
     })),
-    obstacles: neighbours.map(n => n.ring),
+    obstacles: [...neighbours.map(n => n.ring), ...fences],
     roads: data.roads.map(r => r.path),
     trees: opts.review ? [] : standing,
   };

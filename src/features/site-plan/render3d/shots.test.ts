@@ -63,6 +63,12 @@ describe('streetShot', () => {
     expect(behind).toBe(false);
   });
 
+  it('also clears a thin fence in front of the building', () => {
+    const fence = [[[-150, -30], [150, -30]]];
+    const shot = streetShot([building], fence, street)!;
+    expect(shot.position[1] < -30 && Math.abs(shot.position[0]) < 150).toBe(false);
+  });
+
   it('has no shot when the building is walled in on every side', () => {
     const ring = [rect(-200, -200, 400, 185), rect(-200, 15, 400, 185), rect(-200, -15, 165, 30), rect(35, -15, 165, 30)];
     expect(streetShot([building], ring, street)).toBeNull();
