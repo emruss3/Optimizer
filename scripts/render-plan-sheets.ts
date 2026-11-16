@@ -13,7 +13,10 @@ let n = 0;
 for (const s of sheets) {
   const scene = buildDrawingScene(s.input);
   if (!scene) { console.log('no scene', s.sid, s.kind); continue; }
-  writeFileSync(`${outDir}/${s.sid}_${s.kind}.svg`, renderSitePlanSheet(scene, s.title, 'tabloid', null).svg);
+  const sheet = renderSitePlanSheet(scene, s.title, 'tabloid', null);
+  writeFileSync(`${outDir}/${s.sid}_${s.kind}.svg`, sheet.svg);
+  const bays = scene.features.filter(f => f.styleRole === 'parking');
+  console.log(s.sid, s.kind, `parking bays ${bays.length}, with a stall count ${bays.filter(f => f.stalls).length}, drawn as lined stalls ${sheet.striped.length}; rows of homes ${scene.buildings.filter(b => (b.units?.value ?? 0) > 1 && (b.use === "townhome" || b.use === "house")).length}, drawn with unit walls ${sheet.divided.length}`);
   n++;
 }
 console.log('sheets', n);

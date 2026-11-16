@@ -13,7 +13,7 @@ import {
   pointInPolygon, polygonArea, renderSitePlanSheet, sceneEvidence, sceneRevision, selectionFor, LABEL_PRIORITY,
   STORY_ASSUMPTIONS, type Pt,
 } from './index';
-import { crossings, renderSectionSheet } from './sheetSvg';
+import { crossings, renderSectionSheet, unitDividers } from './sheetSvg';
 
 // The engine draws in EPSG:2274 (Tennessee state plane, feet): a true ground
 // frame. The app reprojects that to EPSG:3857 for the canvas. These tests take
@@ -363,5 +363,20 @@ describe('what the plan says about parking structures and small homes', () => {
     expect(sheet.svg).toContain('data-label="home"');
     const lotted = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [house, el('l1', 'other', to3857(rect2274(60, 100, 0, X0 + 200, Y0 + 300)), {}, 'Lot 1')] })!;
     expect(renderSitePlanSheet(lotted, { project: 'T', date: 'd' }).svg).not.toContain('data-label="home"');
+  });
+});
+
+describe('party walls in a row of homes', () => {
+  it('cuts a townhome row into the homes it reports and leaves a single home whole', () => {
+    const row = el('th', 'building', to3857(rect2274(100, 40, 0)), { floors: 3, townhome: true, units: 5 });
+    const one = el('h', 'building', to3857(rect2274(40, 30, 0, X0 + 200)), { floors: 2, house: true });
+    const apt = el('apt', 'building', to3857(rect2274(200, 70, 0, X0, Y0 + 300)), { floors: 4, units: 80 });
+    const sheet = renderSitePlanSheet(buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [row, one, apt] })!, { project: 'T', date: 'd' });
+    expect(sheet.divided).toEqual([{ id: 'th', units: 5 }]);
+    expect(sheet.svg).toContain('data-role="unit-walls" data-for="th"');
+    const walls = must(unitDividers([[0, 0], [100, 0], [100, 40], [0, 40], [0, 0]], 5));
+    expect(walls).toHaveLength(4);
+    expect(must(walls[0])[0]).toEqual([20, 0]);
+    expect(unitDividers([[0, 0], [100, 0], [100, 40], [50, 60], [0, 40], [0, 0]], 5)).toBeNull();
   });
 });

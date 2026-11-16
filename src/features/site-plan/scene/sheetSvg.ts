@@ -95,6 +95,8 @@ export interface SheetModel {
   figures: Array<{ label: string; value: string }>;
   /** Parking features drawn with stripes, and the stalls the stripes show. */
   striped: Array<{ id: string; stalls: number }>;
+  /** Rows of homes drawn with their party walls, and the unit count each shows. */
+  divided: Array<{ id: string; units: number }>;
   labels: PlacedLabel[];
   svg: string;
 }
@@ -173,6 +175,29 @@ export function stallStripes(input: Pt[], stalls: number | null): { lines: Array
     return { lines, rows, stalls: quads };
   }
   return null;
+}
+
+/**
+ * Party walls of a row of homes, or null. Only for a four-cornered footprint
+ * with more than one unit: the row is cut across its long side into that many
+ * equal homes, so the lines show exactly the reported count. Where the homes
+ * differ in width the lines are a drawing convention, not a survey.
+ */
+export function unitDividers(input: Pt[], units: number | null): Array<[Pt, Pt]> | null {
+  if (!units || units < 2 || !Number.isInteger(units)) return null;
+  const open = input.slice(0, -1);
+  const corners = open.filter((p, i) => {
+    const a = open[(i + open.length - 1) % open.length], b = open[(i + 1) % open.length];
+    if (!a || !b) return true;
+    const cross = (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]);
+    return Math.abs(cross) > 0.02 * Math.hypot(p[0] - a[0], p[1] - a[1]) * Math.hypot(b[0] - p[0], b[1] - p[1]);
+  });
+  if (corners.length !== 4) return null;
+  const [a, b, c, d] = corners as [Pt, Pt, Pt, Pt];
+  const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+  const [p0, p1, q0, q1] = l1 >= l2 ? [a, b, d, c] : [b, c, a, d];
+  const mix = (u: Pt, v: Pt, t: number): Pt => [u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t];
+  return Array.from({ length: units - 1 }, (_, i) => [mix(p0, p1, (i + 1) / units), mix(q0, q1, (i + 1) / units)] as [Pt, Pt]);
 }
 
 export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize = 'tabloid', underlay?: SheetUnderlay | null): SheetModel {
@@ -285,6 +310,16 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
       if (f.styleRole !== role) continue;
       out.push(`<path d="${path(f.polygons)}" ${STYLE[role]} fill-rule="evenodd" data-role="${role}" data-feature-id="${esc(f.id)}"/>`);
     }
+  }
+  // party walls: a row of homes with a unit count is cut into its homes
+  const divided: SheetModel['divided'] = [];
+  for (const b of scene.buildings) {
+    if (b.use !== 'townhome' && b.use !== 'house') continue;
+    const ring = b.polygons.length === 1 ? b.polygons[0]?.[0] : undefined;
+    const walls = ring ? unitDividers(ring, b.units?.value ?? null) : null;
+    if (!walls || !b.units) continue;
+    divided.push({ id: b.id, units: b.units.value });
+    out.push(`<path d="${walls.map(([u, v]) => `M${P(u).join(' ')}L${P(v).join(' ')}`).join('')}" fill="none" stroke="${C.roofEdge}" stroke-width="0.7" data-role="unit-walls" data-for="${esc(b.id)}"/>`);
   }
   if (trees.length) {
     out.push('<g data-role="trees" data-illustration="true">');
@@ -586,7 +621,7 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   out.push(`<text x="${tx + tw}" y="${r2(by - 12)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-01</text>`);
   out.push('</svg>');
 
-  return { size, widthPt: W, heightPt: H, ftPerInch, numericScale, scaleBarFt: barFt, schedule, figures: shown, striped, labels, svg: out.join('\n') };
+  return { size, widthPt: W, heightPt: H, ftPerInch, numericScale, scaleBarFt: barFt, schedule, figures: shown, striped, divided, labels, svg: out.join('\n') };
 }
 
 function centre(polys: ScenePolygons): Pt | null {
