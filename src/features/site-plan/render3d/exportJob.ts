@@ -53,7 +53,10 @@ export interface RenderJob {
    */
   known: { id: string; mesh_prefix: string; top_ft: number; span_ft: [number, number]; drawing_height_ft: number } | null;
   /** Every tree that stands in the model. The worker grows each one; the GLB does not carry them. */
-  planting: { trees: Array<{ id: string; position_ft: [number, number, number]; crown_radius_ft: number }> };
+  planting: {
+    trees: Array<{ id: string; position_ft: [number, number, number]; crown_radius_ft: number }>;
+    shrubs: Array<{ id: string; position_ft: [number, number, number]; radius_ft: number }>;
+  };
   omitted: string[];
   cameras: JobCamera[];
   lighting: { sun_azimuth_deg: number; sun_altitude_deg: number; sun_date: string; solar_hour: number; exposure_ev: number; seed: number; sky: string };
@@ -205,12 +208,14 @@ export async function buildRenderJob(
         if (!main?.id || !e) return null;
         return { id: main.id, mesh_prefix: `building:${main.id}__`, top_ft: ft(e.max.z), span_ft: [ft(e.max.x - e.min.x), ft(e.max.y - e.min.y)] as [number, number], drawing_height_ft: ft(main.height) };
       })(),
-      planting: { trees: model.ground.trees.map((t, i) => ({ id: `tree-${i + 1}`, position_ft: [ft(t[0]), ft(t[1]), 0] as [number, number, number], crown_radius_ft: ft(t[2]) })) },
-      omitted: ['shrubs and hedges (instanced in the live view; not yet exported)'],
+      planting: { trees: model.ground.trees.map((t, i) => ({ id: `tree-${i + 1}`, position_ft: [ft(t[0]), ft(t[1]), 0] as [number, number, number], crown_radius_ft: ft(t[2]) })),
+        shrubs: data.shrubs.map((b, i) => ({ id: `shrub-${i + 1}`, position_ft: [ft(b[0] ?? 0), ft(b[1] ?? 0), 0] as [number, number, number], radius_ft: ft((b[2] ?? 0.45) * 1.7) })),
+      },
+      omitted: [],
       cameras,
       lighting: { sun_azimuth_deg: Math.round(sun.azimuthDeg * 100) / 100, sun_altitude_deg: Math.round(sun.altitudeDeg * 100) / 100, sun_date: sunKey, solar_hour: solarHour, exposure_ev: 0, seed: 1, sky: 'clear' },
       anchors,
-      renderer: { preset: opts.preset ?? 'daylight', style: opts.style, asset_version: 'kit-1' },
+      renderer: { preset: opts.preset ?? 'daylight', style: opts.style, asset_version: 'kit-2' },
     };
     return { glb, job };
   } finally {

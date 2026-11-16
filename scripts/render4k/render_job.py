@@ -43,6 +43,7 @@ def parse_args():
     p.add_argument("--samples", type=int, default=256)
     p.add_argument("--cameras", default="", help="comma list of camera ids; default all")
     p.add_argument("--preset", default="", choices=["", "gray-pass", "daylight"], help="default: the job's own")
+    p.add_argument("--assets", default="", help="the render kit's cache (fetch_assets.py); default: out/assets when it exists")
     p.add_argument("--check-only", action="store_true", help="run the checks, render nothing")
     p.add_argument("--exr", action="store_true", help="also write a 32-bit EXR master")
     p.add_argument("--allow-version", action="store_true", help="run on a Blender other than the pinned 4.5 LTS")
@@ -428,6 +429,187 @@ def daylight_pass(job, meshes):
     return sorted(made)
 
 
+# ---------------------------------------------------------------------------
+# The render kit: photographed materials, a photographed sky, scanned plants.
+# Fetched by fetch_assets.py into a cache; assets.lock.json there says what is in it.
+
+WALL_SLOTS = {"brick", "siding", "plaster", "shingle"}
+GROUND_SLOTS = {"asphalt", "concrete", "grass"}
+
+
+def _mean_colour(path):
+    """The average colour of a picture, in linear light."""
+    import numpy as np
+    img = bpy.data.images.load(path)
+    small = img.copy()
+    small.scale(64, 64)
+    px = np.empty(64 * 64 * 4, dtype=np.float32)
+    small.pixels.foreach_get(px)
+    rgb = px.reshape(-1, 4)[:, :3]
+    lin = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+    bpy.data.images.remove(small)
+    return img, [float(max(1e-3, v)) for v in lin.mean(axis=0)]
+
+
+def kit_material(slot, entry, root):
+    """A photographed surface at its true size, taking the colour the model painted."""
+    mat, nt, bsdf = _nodes(f"kit:{slot}")
+    link = nt.links.new
+    sx, sy = entry["size_m"]
+    if slot in GROUND_SLOTS:
+        geo = nt.nodes.new("ShaderNodeNewGeometry")
+        mp = nt.nodes.new("ShaderNodeMapping")
+        mp.inputs["Scale"].default_value = (1 / sx, 1 / sy, 1)
+        link(geo.outputs["Position"], mp.inputs["Vector"])
+        coords = mp.outputs["Vector"]
+    else:
+        mp = nt.nodes.new("ShaderNodeMapping")
+        mp.inputs["Scale"].default_value = (1 / sx, 1 / sy, 1)
+        link(_wall_coords(nt), mp.inputs["Vector"])
+        coords = mp.outputs["Vector"]
+
+    def image(name, colour):
+        node = nt.nodes.new("ShaderNodeTexImage")
+        if colour:
+            node.image, mean = _mean_colour(os.path.join(root, entry["maps"][name]))
+        else:
+            node.image, mean = bpy.data.images.load(os.path.join(root, entry["maps"][name])), None
+            node.image.colorspace_settings.name = "Non-Color"
+        link(coords, node.inputs["Vector"])
+        return node, mean
+
+    diff, mean = image("diff", True)
+    # the photograph's light and dark, in the model's colour: photo / its average * the painted colour
+    rel = nt.nodes.new("ShaderNodeMix"); rel.data_type = "RGBA"; rel.blend_type = "DIVIDE"; rel.inputs["Factor"].default_value = 1.0
+    link(diff.outputs["Color"], rel.inputs["A"])
+    rel.inputs["B"].default_value = (*mean, 1)
+    painted = nt.nodes.new("ShaderNodeMix"); painted.data_type = "RGBA"; painted.blend_type = "MULTIPLY"; painted.inputs["Factor"].default_value = 1.0
+    link(rel.outputs["Result"], painted.inputs["A"])
+    link(_tint(nt), painted.inputs["B"])
+    blend = nt.nodes.new("ShaderNodeMix"); blend.data_type = "RGBA"; blend.inputs["Factor"].default_value = float(entry.get("tint", 1.0))
+    link(diff.outputs["Color"], blend.inputs["A"])
+    link(painted.outputs["Result"], blend.inputs["B"])
+    link(blend.outputs["Result"], bsdf.inputs["Base Color"])
+    rough, _ = image("rough", False)
+    link(rough.outputs["Color"], bsdf.inputs["Roughness"])
+    nor, _ = image("nor", False)
+    nm = nt.nodes.new("ShaderNodeNormalMap")
+    nm.inputs["Strength"].default_value = 1.0
+    link(nor.outputs["Color"], nm.inputs["Color"])
+    link(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    return mat
+
+
+def kit_sky(job, lock, root):
+    """The photographed sky, turned so its sun stands where the job's sun stands."""
+    import numpy as np
+    scene = bpy.context.scene
+    img = bpy.data.images.load(os.path.join(root, lock["sky"]["file"]))
+    w, h = img.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    lum = px.reshape(h, w, 4)[..., :3].sum(axis=2)
+    y, x = divmod(int(np.argmax(lum)), w)
+    del px, lum
+    lon, lat = ((x + 0.5) / w - 0.5) * math.tau, ((y + 0.5) / h - 0.5) * math.pi
+    # measured against cast shadows: unturned, this sky's sun stands at lon + 180 degrees from east,
+    # and turning the lookup by t moves it by -t
+    sky_sun = lon + math.pi
+    light = job["lighting"]
+    az = math.radians(light["sun_azimuth_deg"])
+    want = math.atan2(math.cos(az), math.sin(az))          # compass bearing to an angle from east
+    world = bpy.data.worlds.new("sky")
+    world.use_nodes = True
+    nt = world.node_tree
+    env = nt.nodes.new("ShaderNodeTexEnvironment")
+    env.image = img
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.vector_type = "POINT"
+    mp.inputs["Rotation"].default_value = (0, 0, sky_sun - want)
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    nt.links.new(tc.outputs["Generated"], mp.inputs["Vector"])
+    nt.links.new(mp.outputs["Vector"], env.inputs["Vector"])
+    bg = nt.nodes.get("Background")
+    nt.links.new(env.outputs["Color"], bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = 1.0
+    scene.world = world
+    return {"id": lock["sky"]["id"], "sun_altitude_deg": round(math.degrees(lat), 1), "job_sun_altitude_deg": light["sun_altitude_deg"]}
+
+
+def _import_plants(entries, root, split):
+    """Each scanned plant as one mesh standing on the ground at the origin, with its radius and height."""
+    out = []
+    for entry in entries:
+        before = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=os.path.join(root, entry["file"]))
+        new = [o for o in bpy.data.objects if o not in before]
+        for obj in [o for o in new if o.type == "MESH"] if split else [None]:
+            group = [obj] if split else [o for o in new if o.type == "MESH"]
+            if not group:
+                continue
+            lo, hi = world_bounds(group)
+            cx, cy = (lo.x + hi.x) / 2, (lo.y + hi.y) / 2
+            for o in group:
+                me = o.data
+                me.transform(o.matrix_world)
+                from mathutils import Matrix
+                me.transform(Matrix.Translation((-cx, -cy, -lo.z)))
+            out.append({"meshes": [o.data for o in group], "radius": max(hi.x - lo.x, hi.y - lo.y) / 2, "height": hi.z - lo.z})
+        for o in new:
+            bpy.data.objects.remove(o, do_unlink=True)
+    return out
+
+
+def kit_plants(job, lock, root):
+    """A scanned tree for each tree in the job and a scanned shrub for each shrub, as instances."""
+    import random
+    rng = random.Random(int(job["lighting"].get("seed", 1)))
+    coll = bpy.data.collections.new("planting")
+    bpy.context.scene.collection.children.link(coll)
+    planting = job.get("planting", {})
+    count = {"trees": 0, "shrubs": 0}
+
+    def stand(kind, shapes, items, size_of, fit):
+        if not shapes:
+            return
+        for item in items:
+            shape = rng.choice(shapes)
+            k = fit(size_of(item) * FT, shape)
+            turn = rng.uniform(0, math.tau)
+            for mesh in shape["meshes"]:
+                obj = bpy.data.objects.new(item["id"], mesh)
+                obj.location = (item["position_ft"][0] * FT, item["position_ft"][1] * FT, 0)
+                obj.scale = (k, k, k)
+                obj.rotation_euler = (0, 0, turn)
+                coll.objects.link(obj)
+            count[kind] += 1
+
+    stand("trees", _import_plants(lock.get("trees", []), root, False), planting.get("trees", []),
+          lambda t: t["crown_radius_ft"], lambda r, s: max(1.2, r) / max(0.1, s["radius"]))
+    # a foundation shrub stands about twice as tall as its radius
+    stand("shrubs", [s for s in _import_plants(lock.get("shrubs", []), root, True) if s["height"] > 0.25], planting.get("shrubs", []),
+          lambda b: b["radius_ft"], lambda r, s: min(2.0 * r / max(0.05, s["height"]), 2.2 * r / max(0.05, s["radius"])))
+    return count
+
+
+def kit_pass(job, meshes, root, report):
+    with open(os.path.join(root, "assets.lock.json")) as f:
+        lock = json.load(f)
+    made = {}
+    for obj in meshes.values():
+        slot = obj.get("slot") or obj.name.rsplit("__", 1)[-1]
+        if slot not in made:
+            entry = lock["materials"].get(slot)
+            made[slot] = kit_material(slot, entry, root) if entry else slot_material(slot)
+        obj.data.materials.clear()
+        obj.data.materials.append(made[slot])
+    report["kit"] = {"version": lock["version"], "source": lock["source"],
+                     "photographed_slots": sorted(s for s in made if s in lock["materials"]),
+                     "other_slots": sorted(s for s in made if s not in lock["materials"])}
+    report["sky"] = kit_sky(job, lock, root)
+    report["planting"] = kit_plants(job, lock, root)
+
+
 def setup_cycles(job, args):
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
@@ -447,6 +629,8 @@ def setup_cycles(job, args):
     scene.view_settings.look = "None"
     scene.view_settings.exposure = float(job["lighting"].get("exposure_ev", 0))
     scene.render.film_transparent = False
+    c.transparent_max_bounces = 24
+    c.max_bounces = 6
 
 
 def render(job, cams, job_dir, args, report):
@@ -496,7 +680,10 @@ def main():
     if not failures and not args.check_only:
         preset = args.preset or job["renderer"]["preset"]
         report["preset"] = preset
-        if preset == "daylight":
+        kit = args.assets or ("out/assets" if os.path.exists("out/assets/assets.lock.json") else "")
+        if preset == "daylight" and kit:
+            kit_pass(job, meshes, os.path.abspath(kit), report)
+        elif preset == "daylight":
             report["material_slots"] = daylight_pass(job, meshes)
             report["trees_grown"] = grow_trees(job)
         else:
