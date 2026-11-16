@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "units": "ft",
+  "blender": "4.5.16 LTS",
+  "site": {
+    "parcel_id": "488278",
+    "scheme_id": "mf:seed_v2",
+    "revision": "de87f8d2"
+  },
+  "glb_sha256": "24ddb8dbb8f9888f91bd887134d79a81a025fc38186d735a8223b57a4f9091ef",
+  "preset": "daylight",
+  "bounds_ft": {
+    "job": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -0.066
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        67.15
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        67.216
+      ]
+    },
+    "blender": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -0.066
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        67.15
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        67.216
+      ]
+    },
+    "worst_difference_ft": 0.0,
+    "axes": [
+      "east",
+      "north",
+      "up"
+    ]
+  },
+  "known_dimensions": {
+    "what": "building mfgen-bldg-1: top, extent east, extent north",
+    "job_ft": [
+      53.514,
+      158.524,
+      214.163
+    ],
+    "blender_ft": [
+      53.514,
+      158.524,
+      214.163
+    ]
+  },
+  "camera_parity_at_1920x1080": {
+    "street": {
+      "points": 14,
+      "worst_error_px": 0.006,
+      "tolerance_px": 2.0
+    },
+    "drone": {
+      "points": 14,
+      "worst_error_px": 0.006,
+      "tolerance_px": 2.0
+    }
+  },
+  "checks_passed": true,
+  "failures": [],
+  "material_slots": [
+    "asphalt",
+    "brick",
+    "concrete",
+    "glass",
+    "grass",
+    "paint",
+    "panel",
+    "plain",
+    "plaster",
+    "railing",
+    "shingle",
+    "siding",
+    "wood"
+  ],
+  "trees_grown": 727,
+  "images": {
+    "street": {
+      "file": "daylight-street-960.png",
+      "width": 960,
+      "height": 540,
+      "samples": 64
+    },
+    "drone": {
+      "file": "daylight-drone-960.png",
+      "width": 960,
+      "height": 540,
+      "samples": 64
+    }
+  }
+}

@@ -38,6 +38,7 @@ Options after the job path: `--scale` (fraction of the job's resolution),
 | `bounds_ft`, `known` | the model's extent on three axes and the main building's top and spans |
 | `cameras` | `street` and `drone`: position, target, focal length on a 36 mm wide sensor, lens shift, clipping, aspect, resolution |
 | `lighting` | sun azimuth and altitude for the date and hour, exposure, seed |
+| `planting` | every standing tree: position and crown radius |
 | `anchors` | building corners and where each camera puts them at 1920 by 1080 in the browser |
 | `omitted` | what the live view draws that this file does not carry yet |
 
@@ -51,8 +52,35 @@ The worker stops with a non-zero exit code when one fails.
 4. The main building's top and its east and north spans match, within 0.05 ft.
 5. Each camera puts every anchor within 2 px of where the browser puts it at 1920 by 1080.
 
-## Current state
+## Presets
 
-This is the gray pass: one gray material, a sun and a flat sky. It proves the
-geometry, the coordinates and the two cameras. Materials, an HDR sky, planting
-and the 3840 by 2160 preset come next.
+| Preset | What it is |
+| --- | --- |
+| `gray-pass` | One gray material, a sun and a flat sky. Proves geometry, coordinates and cameras. |
+| `daylight` | A material for each slot, a clear sky, the sun for the job's date and hour, and a tree for each one in `planting.trees`. |
+
+The job names its preset. `--preset` overrides it.
+
+Material slots in the daylight preset: `brick` (modular brick with mortar joints),
+`siding` (lap boards), `glass`, `asphalt`, `concrete`, `grass`, `shingle`,
+`paint` (car bodies), `railing`. Any other slot takes the colour the model
+painted on it. Each mesh is named `owner__slot`, so a slot can be given a
+better material without touching the scene.
+
+Trees are not in the GLB. The job lists where each stands and its crown
+radius, and the worker grows it from one of five shapes. The job's seed fixes
+which shape and which turn, so a revision renders the same trees every time.
+
+## Cost on 4 CPU cores, no GPU
+
+| Run | Size | Samples | Time |
+| --- | --- | --- | --- |
+| Gray pass, both cameras | 960 by 540 | 48 | 42 s |
+| Daylight, both cameras | 960 by 540 | 64 | 1 min 43 s |
+
+## Not yet
+
+- Shrubs and hedges are not exported.
+- No HDR sky file yet: the sky is Blender's own clear-sky model.
+- No CI smoke job yet.
+- "Render 4K" is not wired into the app. The export hook is dev only.

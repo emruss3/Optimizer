@@ -52,6 +52,8 @@ export interface RenderJob {
    * its top (roof included) and its extent east and north. The worker reads the same three from the GLB.
    */
   known: { id: string; mesh_prefix: string; top_ft: number; span_ft: [number, number]; drawing_height_ft: number } | null;
+  /** Every tree that stands in the model. The worker grows each one; the GLB does not carry them. */
+  planting: { trees: Array<{ id: string; position_ft: [number, number, number]; crown_radius_ft: number }> };
   omitted: string[];
   cameras: JobCamera[];
   lighting: { sun_azimuth_deg: number; sun_altitude_deg: number; sun_date: string; solar_hour: number; exposure_ev: number; seed: number; sky: string };
@@ -88,7 +90,7 @@ export function projectPx(cam: THREE.PerspectiveCamera, p_ft: [number, number, n
 export async function buildRenderJob(
   data: MassingData,
   scene: DrawingScene,
-  opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null },
+  opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null; preset?: 'gray-pass' | 'daylight' },
 ): Promise<{ glb: ArrayBuffer; job: RenderJob }> {
   const model = buildSiteModel(data, { keepParts: true });
   try {
@@ -203,11 +205,12 @@ export async function buildRenderJob(
         if (!main?.id || !e) return null;
         return { id: main.id, mesh_prefix: `building:${main.id}__`, top_ft: ft(e.max.z), span_ft: [ft(e.max.x - e.min.x), ft(e.max.y - e.min.y)] as [number, number], drawing_height_ft: ft(main.height) };
       })(),
-      omitted: ['trees and shrubs (instanced in the live view; not yet exported)'],
+      planting: { trees: model.ground.trees.map((t, i) => ({ id: `tree-${i + 1}`, position_ft: [ft(t[0]), ft(t[1]), 0] as [number, number, number], crown_radius_ft: ft(t[2]) })) },
+      omitted: ['shrubs and hedges (instanced in the live view; not yet exported)'],
       cameras,
-      lighting: { sun_azimuth_deg: Math.round(sun.azimuthDeg * 100) / 100, sun_altitude_deg: Math.round(sun.altitudeDeg * 100) / 100, sun_date: sunKey, solar_hour: solarHour, exposure_ev: 0, seed: 1, sky: 'uniform (gray pass)' },
+      lighting: { sun_azimuth_deg: Math.round(sun.azimuthDeg * 100) / 100, sun_altitude_deg: Math.round(sun.altitudeDeg * 100) / 100, sun_date: sunKey, solar_hour: solarHour, exposure_ev: 0, seed: 1, sky: 'clear' },
       anchors,
-      renderer: { preset: 'gray-pass', style: opts.style, asset_version: 'gray-1' },
+      renderer: { preset: opts.preset ?? 'daylight', style: opts.style, asset_version: 'kit-1' },
     };
     return { glb, job };
   } finally {
