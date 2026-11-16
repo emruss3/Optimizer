@@ -435,8 +435,8 @@ export function streetConnection(paved: Array<Array<[number, number]>>, roads: A
   };
   let best: { a: [number, number]; b: [number, number]; n: [number, number]; d: number } | null = null;
   for (const ring of paved) {
-    // pavement that already lies on the street's pavement needs no apron
-    if (byLine && ring.some(p => reaches(p[0], p[1]).d < STREET_HALF_M + 0.3)) return null;
+    // pavement that already lies on the street's pavement needs no apron; another piece still may
+    if (byLine && ring.some(p => reaches(p[0], p[1]).d < STREET_HALF_M + 0.3)) continue;
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);

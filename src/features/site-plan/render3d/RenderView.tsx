@@ -364,7 +364,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const showy = look === 'rendering' || present;
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-ground={JSON.stringify(ground)} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-buildings={scene.buildings.length} data-ground={JSON.stringify(ground)} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
       {/* Review reads the site data; light, style and photoreal belong to showing it */}
       {!showy && (
@@ -411,7 +411,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         </button>}
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
       </div>
-      {shotNote && (
+      {scene.buildings.length === 0 && (
+        <div className="absolute top-11 left-1/2 -translate-x-1/2 bg-white/95 border border-gray-300 text-gray-800 rounded-lg px-3 py-1.5 text-[11px] shadow-sm max-w-md" data-testid="empty-scheme" role="status">
+          No building is drawn here: the current plan places none on this parcel. The view shows the land and what surrounds it. The plan's own reason is in the workspace.
+        </div>
+      )}
+      {shotNote && scene.buildings.length > 0 && (
         <div className="absolute top-11 left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 text-[11px] shadow-sm max-w-md" data-testid="shot-note" role="status">{shotNote}</div>
       )}
       {onSelect && tagged.length > 0 && (

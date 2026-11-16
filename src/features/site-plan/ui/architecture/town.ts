@@ -26,6 +26,8 @@ interface Row {
   party: [boolean, boolean];
   /** How far straight out from a point on the door end the pavement is, or null. */
   reach: (s: number) => number | null;
+  /** How far the pavement is off the home's open side, at the line the row's path runs on: -1 the left side, 1 the right. Null where none is near. */
+  sideReach: (side: number) => number | null;
 }
 
 /** The door end's ground story: a door to one side with a window beside it, a stoop and a walk. Returns where the door stands. */
@@ -45,7 +47,10 @@ function entry(r: Row, o: { leaf: Mat; frame: Mat; win: WindowSpec; sidelight?: 
     // row's stretches join, and an end home carries it on past its open side toward the lane there.
     const out = 3.3, wide = 1.3;
     k.box(f.w, doorS - 0.55, doorS + 0.55, 1.32, out + 0.05, 0, 0.2, WALK);
-    k.box(f.w, r.party[0] ? -0.05 : -4.5, r.party[1] ? W + 0.05 : W + 4.5, out, out + wide, 0, 0.2, WALK);
+    // past an open side the path runs on only as far as the lane there, and not at all where none is near:
+    // a path that stops in a lawn is worse than one that stops at the last door
+    const side = (s0: number): number => { const d = r.sideReach(s0); return d != null && d <= 7 ? d + 0.3 : 0; };
+    k.box(f.w, r.party[0] ? -0.05 : -side(-1), r.party[1] ? W + 0.05 : W + side(1), out, out + wide, 0, 0.2, WALK);
   }
   if (W >= 5) k.bed(f.w, doorS + 1.0, W - 0.2, 0.12, 0.95);
   return doorS;
@@ -258,6 +263,18 @@ export function rowHome(k: Kit, rings: number[][][], height: SceneHeight, paveme
     driveGap: near.dist != null && near.dist < 16 ? near.dist : null,
     party: [attached(faces.left), attached(faces.right)],
     reach: s => reachOf(front, pavement, s),
+    sideReach: side => {
+      // along the front wall's own direction, out past the home's corner, at the path's distance from the wall
+      let best = Infinity;
+      for (const q of pavement) {
+        const vx = q[0] - front.a[0], vy = q[1] - front.a[1];
+        const along = vx * front.t[0] + vy * front.t[1], off = vx * front.n[0] + vy * front.n[1];
+        if (Math.abs(off - 3.95) > 2.2) continue;
+        const d = side < 0 ? -along : along - front.len;
+        if (d > 0 && d < best) best = d;
+      }
+      return best < 40 ? best : null;
+    },
   };
   if (style === 'modern') modern(row);
   else if (style === 'farmhouse') gabled(row);

@@ -157,6 +157,12 @@ describe('streetConnection', () => {
     expect(streetConnection([[[-3, 2], [3, 2], [3, 40], [-3, 40]]], [street])).toBeNull();
   });
 
+  it('still joins a lane that stops short when a parking field elsewhere already touches the street', () => {
+    const field: Array<[number, number]> = [[20, 2], [50, 2], [50, 20], [20, 20]];
+    const apron = streetConnection([field, lane], [street])!;
+    expect(apron[0]).toEqual([-3, 12]);
+  });
+
   it('lays nothing where no street is near, or none is known', () => {
     expect(streetConnection([lane], [])).toBeNull();
     expect(streetConnection([[[-3, 112], [3, 112], [3, 140], [-3, 140]]], [street])).toBeNull();
