@@ -1,0 +1,1626 @@
+{
+  "schema_version": 1,
+  "units": "ft",
+  "frame": "local east, north, up; origin at the centre of the plan",
+  "origin": {
+    "lat_deg": 36.168941171571944,
+    "lon_deg": -86.80429898888063
+  },
+  "site": {
+    "parcel_id": "488278",
+    "scheme_id": "mf:seed_v2",
+    "revision": "de87f8d2"
+  },
+  "quantities": {
+    "buildings": 1,
+    "stories": [
+      4
+    ],
+    "units": 30,
+    "stalls": 52,
+    "gross_sf": 54244
+  },
+  "glb": {
+    "file": "scene.glb",
+    "sha256": "24ddb8dbb8f9888f91bd887134d79a81a025fc38186d735a8223b57a4f9091ef",
+    "bytes": 7779904,
+    "units": "metres (the glTF format requires them)",
+    "axes": "x east, y up, z south"
+  },
+  "mesh_groups": [
+    {
+      "id": "building:mfgen-bldg-1__brick",
+      "owner": "building:mfgen-bldg-1",
+      "slot": "brick",
+      "triangles": 32
+    },
+    {
+      "id": "building:mfgen-bldg-1__concrete",
+      "owner": "building:mfgen-bldg-1",
+      "slot": "concrete",
+      "triangles": 192
+    },
+    {
+      "id": "building:mfgen-bldg-1__glass",
+      "owner": "building:mfgen-bldg-1",
+      "slot": "glass",
+      "triangles": 610
+    },
+    {
+      "id": "building:mfgen-bldg-1__plain",
+      "owner": "building:mfgen-bldg-1",
+      "slot": "plain",
+      "triangles": 18110
+    },
+    {
+      "id": "building:mfgen-bldg-1__railing",
+      "owner": "building:mfgen-bldg-1",
+      "slot": "railing",
+      "triangles": 96
+    },
+    {
+      "id": "building:mfgen-bldg-1__shingle",
+      "owner": "building:mfgen-bldg-1",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "building:mfgen-bldg-1__siding",
+      "owner": "building:mfgen-bldg-1",
+      "slot": "siding",
+      "triangles": 464
+    },
+    {
+      "id": "cars__glass",
+      "owner": "cars",
+      "slot": "glass",
+      "triangles": 1408
+    },
+    {
+      "id": "cars__paint",
+      "owner": "cars",
+      "slot": "paint",
+      "triangles": 7040
+    },
+    {
+      "id": "cars__plain",
+      "owner": "cars",
+      "slot": "plain",
+      "triangles": 13824
+    },
+    {
+      "id": "context-building:100__shingle",
+      "owner": "context-building:100",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:100__siding",
+      "owner": "context-building:100",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:101__shingle",
+      "owner": "context-building:101",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:101__siding",
+      "owner": "context-building:101",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:102__brick",
+      "owner": "context-building:102",
+      "slot": "brick",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:102__shingle",
+      "owner": "context-building:102",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:103__shingle",
+      "owner": "context-building:103",
+      "slot": "shingle",
+      "triangles": 44
+    },
+    {
+      "id": "context-building:103__siding",
+      "owner": "context-building:103",
+      "slot": "siding",
+      "triangles": 44
+    },
+    {
+      "id": "context-building:104__brick",
+      "owner": "context-building:104",
+      "slot": "brick",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:104__shingle",
+      "owner": "context-building:104",
+      "slot": "shingle",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:105__brick",
+      "owner": "context-building:105",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:105__concrete",
+      "owner": "context-building:105",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:105__glass",
+      "owner": "context-building:105",
+      "slot": "glass",
+      "triangles": 38
+    },
+    {
+      "id": "context-building:105__plain",
+      "owner": "context-building:105",
+      "slot": "plain",
+      "triangles": 224
+    },
+    {
+      "id": "context-building:105__shingle",
+      "owner": "context-building:105",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:105__siding",
+      "owner": "context-building:105",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:106__shingle",
+      "owner": "context-building:106",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:106__siding",
+      "owner": "context-building:106",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:107__shingle",
+      "owner": "context-building:107",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:107__siding",
+      "owner": "context-building:107",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:108__shingle",
+      "owner": "context-building:108",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:108__siding",
+      "owner": "context-building:108",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:109__shingle",
+      "owner": "context-building:109",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:109__siding",
+      "owner": "context-building:109",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:110__shingle",
+      "owner": "context-building:110",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:110__siding",
+      "owner": "context-building:110",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:111__shingle",
+      "owner": "context-building:111",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:111__siding",
+      "owner": "context-building:111",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:112__shingle",
+      "owner": "context-building:112",
+      "slot": "shingle",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:112__siding",
+      "owner": "context-building:112",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:113__shingle",
+      "owner": "context-building:113",
+      "slot": "shingle",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:113__siding",
+      "owner": "context-building:113",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:114__shingle",
+      "owner": "context-building:114",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:114__siding",
+      "owner": "context-building:114",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:115__shingle",
+      "owner": "context-building:115",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:115__siding",
+      "owner": "context-building:115",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:116__shingle",
+      "owner": "context-building:116",
+      "slot": "shingle",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:116__siding",
+      "owner": "context-building:116",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:117__brick",
+      "owner": "context-building:117",
+      "slot": "brick",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:117__shingle",
+      "owner": "context-building:117",
+      "slot": "shingle",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:118__shingle",
+      "owner": "context-building:118",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:118__siding",
+      "owner": "context-building:118",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:60__glass",
+      "owner": "context-building:60",
+      "slot": "glass",
+      "triangles": 400
+    },
+    {
+      "id": "context-building:60__panel",
+      "owner": "context-building:60",
+      "slot": "panel",
+      "triangles": 52
+    },
+    {
+      "id": "context-building:60__plain",
+      "owner": "context-building:60",
+      "slot": "plain",
+      "triangles": 656
+    },
+    {
+      "id": "context-building:60__plaster",
+      "owner": "context-building:60",
+      "slot": "plaster",
+      "triangles": 164
+    },
+    {
+      "id": "context-building:61__brick",
+      "owner": "context-building:61",
+      "slot": "brick",
+      "triangles": 144
+    },
+    {
+      "id": "context-building:61__glass",
+      "owner": "context-building:61",
+      "slot": "glass",
+      "triangles": 64
+    },
+    {
+      "id": "context-building:61__plain",
+      "owner": "context-building:61",
+      "slot": "plain",
+      "triangles": 248
+    },
+    {
+      "id": "context-building:62__shingle",
+      "owner": "context-building:62",
+      "slot": "shingle",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:62__siding",
+      "owner": "context-building:62",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:63__brick",
+      "owner": "context-building:63",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:63__concrete",
+      "owner": "context-building:63",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:63__glass",
+      "owner": "context-building:63",
+      "slot": "glass",
+      "triangles": 82
+    },
+    {
+      "id": "context-building:63__plain",
+      "owner": "context-building:63",
+      "slot": "plain",
+      "triangles": 286
+    },
+    {
+      "id": "context-building:63__shingle",
+      "owner": "context-building:63",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:63__siding",
+      "owner": "context-building:63",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:63__wood",
+      "owner": "context-building:63",
+      "slot": "wood",
+      "triangles": 2
+    },
+    {
+      "id": "context-building:64__brick",
+      "owner": "context-building:64",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:64__concrete",
+      "owner": "context-building:64",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:64__glass",
+      "owner": "context-building:64",
+      "slot": "glass",
+      "triangles": 70
+    },
+    {
+      "id": "context-building:64__plain",
+      "owner": "context-building:64",
+      "slot": "plain",
+      "triangles": 266
+    },
+    {
+      "id": "context-building:64__shingle",
+      "owner": "context-building:64",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:64__siding",
+      "owner": "context-building:64",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:65__glass",
+      "owner": "context-building:65",
+      "slot": "glass",
+      "triangles": 72
+    },
+    {
+      "id": "context-building:65__plain",
+      "owner": "context-building:65",
+      "slot": "plain",
+      "triangles": 72
+    },
+    {
+      "id": "context-building:65__shingle",
+      "owner": "context-building:65",
+      "slot": "shingle",
+      "triangles": 196
+    },
+    {
+      "id": "context-building:65__siding",
+      "owner": "context-building:65",
+      "slot": "siding",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:66__glass",
+      "owner": "context-building:66",
+      "slot": "glass",
+      "triangles": 38
+    },
+    {
+      "id": "context-building:66__plain",
+      "owner": "context-building:66",
+      "slot": "plain",
+      "triangles": 38
+    },
+    {
+      "id": "context-building:66__shingle",
+      "owner": "context-building:66",
+      "slot": "shingle",
+      "triangles": 246
+    },
+    {
+      "id": "context-building:66__siding",
+      "owner": "context-building:66",
+      "slot": "siding",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:67__brick",
+      "owner": "context-building:67",
+      "slot": "brick",
+      "triangles": 44
+    },
+    {
+      "id": "context-building:67__glass",
+      "owner": "context-building:67",
+      "slot": "glass",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:67__plain",
+      "owner": "context-building:67",
+      "slot": "plain",
+      "triangles": 148
+    },
+    {
+      "id": "context-building:68__shingle",
+      "owner": "context-building:68",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:68__siding",
+      "owner": "context-building:68",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:69__glass",
+      "owner": "context-building:69",
+      "slot": "glass",
+      "triangles": 30
+    },
+    {
+      "id": "context-building:69__plain",
+      "owner": "context-building:69",
+      "slot": "plain",
+      "triangles": 30
+    },
+    {
+      "id": "context-building:69__shingle",
+      "owner": "context-building:69",
+      "slot": "shingle",
+      "triangles": 180
+    },
+    {
+      "id": "context-building:69__siding",
+      "owner": "context-building:69",
+      "slot": "siding",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:70__glass",
+      "owner": "context-building:70",
+      "slot": "glass",
+      "triangles": 8
+    },
+    {
+      "id": "context-building:70__plain",
+      "owner": "context-building:70",
+      "slot": "plain",
+      "triangles": 8
+    },
+    {
+      "id": "context-building:70__shingle",
+      "owner": "context-building:70",
+      "slot": "shingle",
+      "triangles": 84
+    },
+    {
+      "id": "context-building:70__siding",
+      "owner": "context-building:70",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:71__glass",
+      "owner": "context-building:71",
+      "slot": "glass",
+      "triangles": 42
+    },
+    {
+      "id": "context-building:71__plain",
+      "owner": "context-building:71",
+      "slot": "plain",
+      "triangles": 42
+    },
+    {
+      "id": "context-building:71__shingle",
+      "owner": "context-building:71",
+      "slot": "shingle",
+      "triangles": 328
+    },
+    {
+      "id": "context-building:71__siding",
+      "owner": "context-building:71",
+      "slot": "siding",
+      "triangles": 52
+    },
+    {
+      "id": "context-building:72__brick",
+      "owner": "context-building:72",
+      "slot": "brick",
+      "triangles": 68
+    },
+    {
+      "id": "context-building:72__glass",
+      "owner": "context-building:72",
+      "slot": "glass",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:72__plain",
+      "owner": "context-building:72",
+      "slot": "plain",
+      "triangles": 180
+    },
+    {
+      "id": "context-building:73__shingle",
+      "owner": "context-building:73",
+      "slot": "shingle",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:73__siding",
+      "owner": "context-building:73",
+      "slot": "siding",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:74__brick",
+      "owner": "context-building:74",
+      "slot": "brick",
+      "triangles": 120
+    },
+    {
+      "id": "context-building:74__concrete",
+      "owner": "context-building:74",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:74__glass",
+      "owner": "context-building:74",
+      "slot": "glass",
+      "triangles": 54
+    },
+    {
+      "id": "context-building:74__plain",
+      "owner": "context-building:74",
+      "slot": "plain",
+      "triangles": 370
+    },
+    {
+      "id": "context-building:74__shingle",
+      "owner": "context-building:74",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:74__siding",
+      "owner": "context-building:74",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:74__wood",
+      "owner": "context-building:74",
+      "slot": "wood",
+      "triangles": 2
+    },
+    {
+      "id": "context-building:75__shingle",
+      "owner": "context-building:75",
+      "slot": "shingle",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:75__siding",
+      "owner": "context-building:75",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:76__shingle",
+      "owner": "context-building:76",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:76__siding",
+      "owner": "context-building:76",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:77__brick",
+      "owner": "context-building:77",
+      "slot": "brick",
+      "triangles": 160
+    },
+    {
+      "id": "context-building:77__glass",
+      "owner": "context-building:77",
+      "slot": "glass",
+      "triangles": 106
+    },
+    {
+      "id": "context-building:77__plain",
+      "owner": "context-building:77",
+      "slot": "plain",
+      "triangles": 302
+    },
+    {
+      "id": "context-building:78__shingle",
+      "owner": "context-building:78",
+      "slot": "shingle",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:78__siding",
+      "owner": "context-building:78",
+      "slot": "siding",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:79__shingle",
+      "owner": "context-building:79",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:79__siding",
+      "owner": "context-building:79",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:80__shingle",
+      "owner": "context-building:80",
+      "slot": "shingle",
+      "triangles": 68
+    },
+    {
+      "id": "context-building:80__siding",
+      "owner": "context-building:80",
+      "slot": "siding",
+      "triangles": 68
+    },
+    {
+      "id": "context-building:81__shingle",
+      "owner": "context-building:81",
+      "slot": "shingle",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:81__siding",
+      "owner": "context-building:81",
+      "slot": "siding",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:82__shingle",
+      "owner": "context-building:82",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:82__siding",
+      "owner": "context-building:82",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:83__shingle",
+      "owner": "context-building:83",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:83__siding",
+      "owner": "context-building:83",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:84__shingle",
+      "owner": "context-building:84",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:84__siding",
+      "owner": "context-building:84",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:85__brick",
+      "owner": "context-building:85",
+      "slot": "brick",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:85__shingle",
+      "owner": "context-building:85",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:86__shingle",
+      "owner": "context-building:86",
+      "slot": "shingle",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:86__siding",
+      "owner": "context-building:86",
+      "slot": "siding",
+      "triangles": 28
+    },
+    {
+      "id": "context-building:87__shingle",
+      "owner": "context-building:87",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:87__siding",
+      "owner": "context-building:87",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:88__brick",
+      "owner": "context-building:88",
+      "slot": "brick",
+      "triangles": 84
+    },
+    {
+      "id": "context-building:88__concrete",
+      "owner": "context-building:88",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:88__glass",
+      "owner": "context-building:88",
+      "slot": "glass",
+      "triangles": 40
+    },
+    {
+      "id": "context-building:88__plain",
+      "owner": "context-building:88",
+      "slot": "plain",
+      "triangles": 286
+    },
+    {
+      "id": "context-building:88__shingle",
+      "owner": "context-building:88",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:88__siding",
+      "owner": "context-building:88",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:89__brick",
+      "owner": "context-building:89",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:89__concrete",
+      "owner": "context-building:89",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:89__glass",
+      "owner": "context-building:89",
+      "slot": "glass",
+      "triangles": 22
+    },
+    {
+      "id": "context-building:89__plain",
+      "owner": "context-building:89",
+      "slot": "plain",
+      "triangles": 206
+    },
+    {
+      "id": "context-building:89__shingle",
+      "owner": "context-building:89",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:89__siding",
+      "owner": "context-building:89",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:89__wood",
+      "owner": "context-building:89",
+      "slot": "wood",
+      "triangles": 2
+    },
+    {
+      "id": "context-building:90__brick",
+      "owner": "context-building:90",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:90__concrete",
+      "owner": "context-building:90",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:90__glass",
+      "owner": "context-building:90",
+      "slot": "glass",
+      "triangles": 64
+    },
+    {
+      "id": "context-building:90__plain",
+      "owner": "context-building:90",
+      "slot": "plain",
+      "triangles": 260
+    },
+    {
+      "id": "context-building:90__shingle",
+      "owner": "context-building:90",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:90__siding",
+      "owner": "context-building:90",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:91__brick",
+      "owner": "context-building:91",
+      "slot": "brick",
+      "triangles": 72
+    },
+    {
+      "id": "context-building:91__concrete",
+      "owner": "context-building:91",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:91__glass",
+      "owner": "context-building:91",
+      "slot": "glass",
+      "triangles": 78
+    },
+    {
+      "id": "context-building:91__plain",
+      "owner": "context-building:91",
+      "slot": "plain",
+      "triangles": 306
+    },
+    {
+      "id": "context-building:91__shingle",
+      "owner": "context-building:91",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:91__siding",
+      "owner": "context-building:91",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:91__wood",
+      "owner": "context-building:91",
+      "slot": "wood",
+      "triangles": 2
+    },
+    {
+      "id": "context-building:92__brick",
+      "owner": "context-building:92",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:92__concrete",
+      "owner": "context-building:92",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:92__glass",
+      "owner": "context-building:92",
+      "slot": "glass",
+      "triangles": 30
+    },
+    {
+      "id": "context-building:92__plain",
+      "owner": "context-building:92",
+      "slot": "plain",
+      "triangles": 226
+    },
+    {
+      "id": "context-building:92__shingle",
+      "owner": "context-building:92",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:92__siding",
+      "owner": "context-building:92",
+      "slot": "siding",
+      "triangles": 20
+    },
+    {
+      "id": "context-building:92__wood",
+      "owner": "context-building:92",
+      "slot": "wood",
+      "triangles": 2
+    },
+    {
+      "id": "context-building:93__shingle",
+      "owner": "context-building:93",
+      "slot": "shingle",
+      "triangles": 76
+    },
+    {
+      "id": "context-building:93__siding",
+      "owner": "context-building:93",
+      "slot": "siding",
+      "triangles": 76
+    },
+    {
+      "id": "context-building:94__brick",
+      "owner": "context-building:94",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:94__concrete",
+      "owner": "context-building:94",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:94__glass",
+      "owner": "context-building:94",
+      "slot": "glass",
+      "triangles": 46
+    },
+    {
+      "id": "context-building:94__plain",
+      "owner": "context-building:94",
+      "slot": "plain",
+      "triangles": 240
+    },
+    {
+      "id": "context-building:94__shingle",
+      "owner": "context-building:94",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:94__siding",
+      "owner": "context-building:94",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:94__wood",
+      "owner": "context-building:94",
+      "slot": "wood",
+      "triangles": 2
+    },
+    {
+      "id": "context-building:95__shingle",
+      "owner": "context-building:95",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:95__siding",
+      "owner": "context-building:95",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:96__shingle",
+      "owner": "context-building:96",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:96__siding",
+      "owner": "context-building:96",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:97__shingle",
+      "owner": "context-building:97",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:97__siding",
+      "owner": "context-building:97",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:98__shingle",
+      "owner": "context-building:98",
+      "slot": "shingle",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:98__siding",
+      "owner": "context-building:98",
+      "slot": "siding",
+      "triangles": 12
+    },
+    {
+      "id": "context-building:99__brick",
+      "owner": "context-building:99",
+      "slot": "brick",
+      "triangles": 60
+    },
+    {
+      "id": "context-building:99__concrete",
+      "owner": "context-building:99",
+      "slot": "concrete",
+      "triangles": 36
+    },
+    {
+      "id": "context-building:99__glass",
+      "owner": "context-building:99",
+      "slot": "glass",
+      "triangles": 54
+    },
+    {
+      "id": "context-building:99__plain",
+      "owner": "context-building:99",
+      "slot": "plain",
+      "triangles": 248
+    },
+    {
+      "id": "context-building:99__shingle",
+      "owner": "context-building:99",
+      "slot": "shingle",
+      "triangles": 16
+    },
+    {
+      "id": "context-building:99__siding",
+      "owner": "context-building:99",
+      "slot": "siding",
+      "triangles": 32
+    },
+    {
+      "id": "context-building:99__wood",
+      "owner": "context-building:99",
+      "slot": "wood",
+      "triangles": 2
+    },
+    {
+      "id": "context-parcels__grass",
+      "owner": "context-parcels",
+      "slot": "grass",
+      "triangles": 976
+    },
+    {
+      "id": "curbs__concrete",
+      "owner": "curbs",
+      "slot": "concrete",
+      "triangles": 188
+    },
+    {
+      "id": "ground__plain",
+      "owner": "ground",
+      "slot": "plain",
+      "triangles": 2
+    },
+    {
+      "id": "pavement:drive__asphalt",
+      "owner": "pavement:drive",
+      "slot": "asphalt",
+      "triangles": 128
+    },
+    {
+      "id": "pavement:parking__asphalt",
+      "owner": "pavement:parking",
+      "slot": "asphalt",
+      "triangles": 60
+    },
+    {
+      "id": "site__grass",
+      "owner": "site",
+      "slot": "grass",
+      "triangles": 32
+    },
+    {
+      "id": "streets__asphalt",
+      "owner": "streets",
+      "slot": "asphalt",
+      "triangles": 683
+    },
+    {
+      "id": "streets__concrete",
+      "owner": "streets",
+      "slot": "concrete",
+      "triangles": 495
+    },
+    {
+      "id": "streets__grass",
+      "owner": "streets",
+      "slot": "grass",
+      "triangles": 504
+    },
+    {
+      "id": "streets__plain",
+      "owner": "streets",
+      "slot": "plain",
+      "triangles": 573
+    },
+    {
+      "id": "stripes__plain",
+      "owner": "stripes",
+      "slot": "plain",
+      "triangles": 432
+    },
+    {
+      "id": "walks__concrete",
+      "owner": "walks",
+      "slot": "concrete",
+      "triangles": 56
+    }
+  ],
+  "bounds_ft": {
+    "min": [
+      -6916.789,
+      -6916.789,
+      -0.066
+    ],
+    "max": [
+      6916.789,
+      6916.789,
+      67.15
+    ],
+    "size": [
+      13833.578,
+      13833.578,
+      67.216
+    ]
+  },
+  "known": {
+    "id": "mfgen-bldg-1",
+    "mesh_prefix": "building:mfgen-bldg-1__",
+    "top_ft": 53.514,
+    "span_ft": [
+      158.524,
+      214.163
+    ],
+    "drawing_height_ft": 44
+  },
+  "omitted": [
+    "trees and shrubs (instanced in the live view; not yet exported)"
+  ],
+  "cameras": [
+    {
+      "id": "street",
+      "basis": "Street arrival at eye level (5.5 ft), clear line of sight; 29 ft from the nearest street line; 0 trees in the line of sight",
+      "position_ft": [
+        152.477,
+        -22.365,
+        5.5
+      ],
+      "target_ft": [
+        -40.045,
+        88.787,
+        5.5
+      ],
+      "focal_length_mm": 29.405,
+      "sensor_width_mm": 36,
+      "shift_y": 0.09,
+      "clip_ft": [
+        1,
+        17291.972
+      ],
+      "aspect": 1.7777777777777777,
+      "resolution": [
+        3840,
+        2160
+      ]
+    },
+    {
+      "id": "drone",
+      "basis": "Three-quarter view of the built area, 28 degrees down",
+      "position_ft": [
+        388.34,
+        -245.904,
+        297.02
+      ],
+      "target_ft": [
+        -40.045,
+        88.787,
+        7.968
+      ],
+      "focal_length_mm": 37.787,
+      "sensor_width_mm": 36,
+      "shift_y": 0,
+      "clip_ft": [
+        5,
+        17291.972
+      ],
+      "aspect": 1.7777777777777777,
+      "resolution": [
+        3840,
+        2160
+      ]
+    }
+  ],
+  "lighting": {
+    "sun_azimuth_deg": 255.93,
+    "sun_altitude_deg": 17.74,
+    "sun_date": "mar21",
+    "solar_hour": 16.5,
+    "exposure_ev": 0,
+    "seed": 1,
+    "sky": "uniform (gray pass)"
+  },
+  "anchors": [
+    {
+      "id": "main-base-0",
+      "position_ft": [
+        -117.781,
+        161.196,
+        0
+      ],
+      "expected_px": {
+        "street": [
+          1074.75,
+          739.27
+        ],
+        "drone": [
+          986.01,
+          419.42
+        ]
+      }
+    },
+    {
+      "id": "main-top-0",
+      "position_ft": [
+        -117.781,
+        161.196,
+        44
+      ],
+      "expected_px": {
+        "street": [
+          1074.75,
+          527.49
+        ],
+        "drone": [
+          986.78,
+          302.72
+        ]
+      }
+    },
+    {
+      "id": "main-base-1",
+      "position_ft": [
+        -21.418,
+        -15.803,
+        0
+      ],
+      "expected_px": {
+        "street": [
+          131.79,
+          768.85
+        ],
+        "drone": [
+          699.85,
+          701.91
+        ]
+      }
+    },
+    {
+      "id": "main-top-1",
+      "position_ft": [
+        -21.418,
+        -15.803,
+        44
+      ],
+      "expected_px": {
+        "street": [
+          131.79,
+          320.42
+        ],
+        "drone": [
+          689.69,
+          560.22
+        ]
+      }
+    },
+    {
+      "id": "main-base-2",
+      "position_ft": [
+        37.691,
+        16.377,
+        0
+      ],
+      "expected_px": {
+        "street": [
+          645.22,
+          785.42
+        ],
+        "drone": [
+          924.75,
+          757.33
+        ]
+      }
+    },
+    {
+      "id": "main-top-2",
+      "position_ft": [
+        37.691,
+        16.377,
+        44
+      ],
+      "expected_px": {
+        "street": [
+          645.22,
+          204.47
+        ],
+        "drone": [
+          923.31,
+          611.28
+        ]
+      }
+    },
+    {
+      "id": "main-base-3",
+      "position_ft": [
+        30.571,
+        29.46,
+        0
+      ],
+      "expected_px": {
+        "street": [
+          768.32,
+          778.4
+        ],
+        "drone": [
+          947.73,
+          728.43
+        ]
+      }
+    },
+    {
+      "id": "main-top-3",
+      "position_ft": [
+        30.571,
+        29.46,
+        44
+      ],
+      "expected_px": {
+        "street": [
+          768.32,
+          253.6
+        ],
+        "drone": [
+          947.24,
+          584.63
+        ]
+      }
+    },
+    {
+      "id": "main-base-4",
+      "position_ft": [
+        -29.803,
+        140.353,
+        0
+      ],
+      "expected_px": {
+        "street": [
+          1286.34,
+          748.86
+        ],
+        "drone": [
+          1107.73,
+          527.16
+        ]
+      }
+    },
+    {
+      "id": "main-top-4",
+      "position_ft": [
+        -29.803,
+        140.353,
+        44
+      ],
+      "expected_px": {
+        "street": [
+          1286.34,
+          460.4
+        ],
+        "drone": [
+          1112.66,
+          400.39
+        ]
+      }
+    },
+    {
+      "id": "main-base-5",
+      "position_ft": [
+        -52.485,
+        182.015,
+        0
+      ],
+      "expected_px": {
+        "street": [
+          1377.83,
+          743.64
+        ],
+        "drone": [
+          1155.38,
+          467.22
+        ]
+      }
+    },
+    {
+      "id": "main-top-5",
+      "position_ft": [
+        -52.485,
+        182.015,
+        44
+      ],
+      "expected_px": {
+        "street": [
+          1377.83,
+          496.93
+        ],
+        "drone": [
+          1161.51,
+          345.97
+        ]
+      }
+    },
+    {
+      "id": "main-base-6",
+      "position_ft": [
+        -58.671,
+        193.378,
+        0
+      ],
+      "expected_px": {
+        "street": [
+          1398.36,
+          742.47
+        ],
+        "drone": [
+          1167.46,
+          452.03
+        ]
+      }
+    },
+    {
+      "id": "main-top-6",
+      "position_ft": [
+        -58.671,
+        193.378,
+        44
+      ],
+      "expected_px": {
+        "street": [
+          1398.36,
+          505.12
+        ],
+        "drone": [
+          1173.86,
+          332.21
+        ]
+      }
+    }
+  ],
+  "renderer": {
+    "preset": "gray-pass",
+    "style": "gray",
+    "asset_version": "gray-1"
+  }
+}

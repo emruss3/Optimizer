@@ -3,7 +3,9 @@
 // is displayed as a figure.
 import { pointInPolygon } from '../scene/frame';
 
-export interface Subject { points: Array<[number, number]>; height: number }
+export interface Subject {
+  /** The building this outline belongs to. */
+  id?: string; points: Array<[number, number]>; height: number }
 
 export interface Shot {
   /** Where the camera is: ground position and height above the ground. */

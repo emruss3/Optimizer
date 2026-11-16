@@ -18,6 +18,9 @@ import { Surfaces } from './textures';
 import { carParts, carSpot } from './cars';
 import { Tree } from '@dgreenheck/ez-tree';
 
+/** One part of the model as it is handed to an exporter: local metres, z up. */
+export interface ModelPart { owner: string; slot: string; geometry: THREE.BufferGeometry }
+
 export interface SiteModel {
   root: THREE.Group;
   /** One unseen solid a building, for picking: `userData.id` is the plan element's id. */
@@ -30,6 +33,8 @@ export interface SiteModel {
   built: Focus;
   /** What a street camera needs (render3d/shots): the scheme's buildings, the neighbours that can stand in the way, and the street lines. */
   ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]> };
+  /** With `keepParts`: every part before merging, with the feature it belongs to and its material slot. Empty otherwise. */
+  parts: ModelPart[];
   surfaces: Surfaces;
   /** Settles when the pictures the trees are made of have arrived (or after a few seconds without them): a still waits for it. */
   ready: Promise<void>;
@@ -259,6 +264,8 @@ export interface SiteModelOptions {
   /** A lighter model of the same plan, for a device that draws on its processor
    *  (render3d/quality): the site's trees as painted cards, no shrubs, plain neighbours. */
   light?: boolean;
+  /** Keep each part with its feature and material slot, for an export (render3d/exportJob). */
+  keepParts?: boolean;
   /** A picture for a sheet, where the reader must see at once which land is the scheme's: the
    *  parcel line drawn on the ground, and the existing buildings as quiet pale solids. */
   markSite?: boolean;
@@ -499,11 +506,17 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const root = new THREE.Group();
   root.rotation.x = -Math.PI / 2;          // z up in the model, y up on the stage
   const bins = new Map<string, THREE.BufferGeometry[]>();
+  // For an export (render3d/exportJob) each part is also kept with the feature it belongs to and
+  // the material slot it takes, before the parts of a slot are merged for drawing.
+  let owner = 'ground';
+  const parts: ModelPart[] = [];
   const put = (key: string, g: THREE.BufferGeometry | null, color: readonly number[]) => {
     if (!g) return;
     const list = bins.get(key) ?? [];
-    list.push(paint(g.index ? g.toNonIndexed() : g, linear(color)));
+    const painted = paint(g.index ? g.toNonIndexed() : g, linear(color));
+    list.push(painted);
     bins.set(key, list);
+    if (opts.keepParts) parts.push({ owner, slot: key.split('|')[0] ?? 'plain', geometry: painted.clone() });
   };
 
   // ground: a wide plate that runs out into the haze, then the neighbourhood on it
@@ -514,6 +527,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // between two parcels is right of way. A road-coloured strip is laid across each such gap, so
   // the streets read even where no line was sent. Open land beside a parcel is not a street: a
   // strip is laid only where another parcel faces the edge within a street's width.
+  owner = 'streets';
   if (!opts.noContext) {
     const streetColor = opts.review || opts.clayContext ? [176, 178, 180, 255] : [120, 120, 122, 255];
     const streetKey = opts.review || opts.clayContext ? 'plain|flat' : 'asphalt|flat';
@@ -533,6 +547,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     data.contextPolygons.forEach((c, n) => {
       const ring = c.polygon[0];
       if (!ring) return;
+      owner = c.elevation < 1 ? 'context-parcels' : `context-building:${n}`;
       const flat = ring.map(p => [p[0] ?? 0, p[1] ?? 0]);
       if (c.elevation < 1) {
         put('grass|flat', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.03), real ? [126, 144, 98, 255] : [170, 184, 142, 255]);
@@ -585,6 +600,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       for (const w of large.glass) put('glass|sheet', plane(w.polygon), w.color);
     });
   }
+  owner = 'streets';
   for (const r of data.roads) {
     put('concrete|flat', ribbon(r.path, 13.4, 0.05), WALK);
     put('grass|flat', ribbon(r.path, 10.6, 0.09), [130, 148, 100, 255]);
@@ -593,6 +609,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   }
 
   // the site
+  owner = 'site';
   for (const l of data.lawn) {
     const ring = l.polygon[0];
     // in review the parcel is lighter than the land round it, so there is no doubt which one it is
@@ -614,6 +631,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const FENCE: RGBA = [156, 132, 104, 255];
     const built = new Set<string>();
     data.lots.forEach((lot, i) => {
+      owner = `lot:${i + 1}`;
       const ring = lot.map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]);
       const t = 0.94 + ((i * 37) % 13) / 100;
       put('grass|flat', prism([ring.map(q => [q[0], q[1], 0])], 0.19), [LAWN[0] * t, LAWN[1] * (t + ((i * 11) % 5 - 2) / 100), LAWN[2] * t, 255]);
@@ -643,6 +661,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       }
     });
   }
+  owner = 'walks';
   for (const w of data.walks) {
     put('concrete|flat', ribbon(w.path, w.widthM, 0.21), WALK);
     if (w.strip) put('grass|flat', ribbon(w.path, w.widthM / 2, 0.25), LAWN);
@@ -651,18 +670,22 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (p.building) continue;
     const m = SITE[p.kind ?? ''];
     if (!m) continue;
+    owner = `pavement:${p.kind ?? 'other'}`;
     put(`${m.surface}|flat`, prism(p.polygon.map(r => r.map(q => [q[0] ?? 0, q[1] ?? 0, 0])), m.surface === 'grass' ? 0.27 : 0.3), m.color);
   }
   // in review the edges of the streets and drives are drawn in amber: the access is what is being checked
+  owner = 'curbs';
   for (const c of data.curbs) put(opts.review ? 'plain|flat' : 'concrete|flat', ribbon(c.path, opts.review ? 0.45 : 0.2, 0.36), opts.review ? [234, 138, 30, 255] : [226, 223, 214, 255]);
   // and the parcel line and the buildable envelope are drawn on the ground
   if (opts.review) for (const g of data.groundPaths) put('plain|flat', ribbon(g.path, Math.max(0.5, g.widthM * 1.1), 0.42), g.color);
+  owner = 'stripes';
   for (const s of data.stripes) put('plain|flat', ribbon(s.path, 0.12, 0.33), [244, 244, 240, 255]);
 
   // buildings: walls and roofs in their materials, glass apart
-  for (const s of data.slabs) put(`${s.surface ?? 'plain'}|solid`, prism(s.polygon, s.elevation), s.color);
-  for (const f of data.roofs) put(`${f.surface ?? 'plain'}|sheet`, plane(f.polygon), f.color);
-  for (const w of data.windows) put('glass|sheet', plane(w.polygon), w.color);
+  for (const s of data.slabs) { owner = `building:${s.id}`; put(`${s.surface ?? 'plain'}|solid`, prism(s.polygon, s.elevation), s.color); }
+  for (const f of data.roofs) { owner = `building:${f.id}`; put(`${f.surface ?? 'plain'}|sheet`, plane(f.polygon), f.color); }
+  for (const w of data.windows) { owner = `building:${w.id}`; put('glass|sheet', plane(w.polygon), w.color); }
+  owner = 'cars';
   // Cars. On a device that draws on its processor a car is two boxes; otherwise it is a shaped
   // one (render3d/cars). The plan data gives each car a body and a cabin footprint: the body places it.
   if (opts.light) {
@@ -907,7 +930,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     tops.set(sl.id, Math.max(tops.get(sl.id) ?? 0, ((sl.polygon[0]?.[0]?.[2]) ?? 0) + sl.elevation));
   }
   const ground = {
-    subjects: [...byBuilding.entries()].map(([id, pts]) => ({ points: convexHull(pts) as Array<[number, number]>, height: tops.get(id) ?? 3 })),
+    subjects: [...byBuilding.entries()].map(([id, pts]) => ({ id: String(id), points: convexHull(pts) as Array<[number, number]>, height: tops.get(id) ?? 3 })),
     obstacles: neighbours.map(n => n.ring),
     roads: data.roads.map(r => r.path),
     trees: opts.review ? [] : standing,
@@ -943,6 +966,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     focus,
     built,
     ground,
+    parts,
     surfaces,
     ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),
     dispose() {
