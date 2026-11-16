@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "units": "ft",
+  "blender": "4.5.16 LTS",
+  "site": {
+    "parcel_id": "488278",
+    "scheme_id": "mf:seed_v2",
+    "revision": "de87f8d2"
+  },
+  "glb_sha256": "24ddb8dbb8f9888f91bd887134d79a81a025fc38186d735a8223b57a4f9091ef",
+  "preset": "daylight",
+  "bounds_ft": {
+    "job": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -0.066
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        67.15
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        67.216
+      ]
+    },
+    "blender": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -0.066
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        67.15
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        67.216
+      ]
+    },
+    "worst_difference_ft": 0.0,
+    "axes": [
+      "east",
+      "north",
+      "up"
+    ]
+  },
+  "known_dimensions": {
+    "what": "building mfgen-bldg-1: top, extent east, extent north",
+    "job_ft": [
+      53.514,
+      158.524,
+      214.163
+    ],
+    "blender_ft": [
+      53.514,
+      158.524,
+      214.163
+    ]
+  },
+  "camera_parity_at_1920x1080": {
+    "street": {
+      "points": 14,
+      "worst_error_px": 0.006,
+      "tolerance_px": 2.0
+    }
+  },
+  "checks_passed": true,
+  "failures": [],
+  "kit": {
+    "version": "kit-2",
+    "source": "Poly Haven (polyhaven.com), CC0",
+    "photographed_slots": [
+      "asphalt",
+      "brick",
+      "concrete",
+      "grass",
+      "plaster",
+      "shingle",
+      "siding"
+    ],
+    "other_slots": [
+      "glass",
+      "paint",
+      "panel",
+      "plain",
+      "railing",
+      "wood"
+    ]
+  },
+  "sky": {
+    "id": "kloofendal_48d_partly_cloudy_puresky",
+    "sun_altitude_deg": 47.9,
+    "job_sun_altitude_deg": 49.34
+  },
+  "planting": {
+    "trees": 727,
+    "shrubs": 120,
+    "grass_clumps": 283735
+  },
+  "images": {
+    "street": {
+      "file": "kit-street-1920.png",
+      "width": 1920,
+      "height": 1080,
+      "samples": 96
+    }
+  }
+}

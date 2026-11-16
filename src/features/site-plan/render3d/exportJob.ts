@@ -15,10 +15,17 @@ import type { DrawingScene } from '../scene/types';
 import { sunPosition, SUN_DATES } from '../ui/sunPosition';
 import { buildSiteModel } from './siteScene';
 import { streetShot, FT } from './shots';
+import { drape, lift, type Terrain } from './terrain';
 
 export const RENDER_JOB_SCHEMA = 1;
 const SENSOR_MM = 36;
 const DRONE_FOV = 30, DRONE_DOWN = 28;
+/** How far round a building the ground is eased to its pad, metres. */
+const GRADE_RUN_M = 12;
+/** How far round a building the graded surface is eased to its level pad, metres. */
+const PAD_RUN_M = 5;
+/** The steepest the graded paved area may be. */
+const GRADE_MAX = 0.04;
 
 export interface JobCamera {
   id: 'street' | 'drone';
@@ -52,7 +59,25 @@ export interface RenderJob {
    * its top (roof included) and its extent east and north. The worker reads the same three from the GLB.
    */
   known: { id: string; mesh_prefix: string; top_ft: number; span_ft: [number, number]; drawing_height_ft: number } | null;
+  /** Every tree that stands in the model. The worker grows each one; the GLB does not carry them. */
+  planting: {
+    trees: Array<{ id: string; position_ft: [number, number, number]; crown_radius_ft: number }>;
+    shrubs: Array<{ id: string; position_ft: [number, number, number]; radius_ft: number }>;
+  };
   omitted: string[];
+  /**
+   * The ground the scene stands on, or null when it is drawn flat. Elevations are the survey's own;
+   * a building's pad is an assumption of the picture, not a design grade.
+   */
+  terrain: {
+    source: string; datum: string; samples: number;
+    /** The elevation of the frame's zero height. */
+    zero_elevation_ft: number;
+    sampled_range_ft: [number, number];
+    coverage: string;
+    grading: { rule: string; existing_slope_pct: number; graded_slope_pct: number; deepest_cut_ft: number; deepest_fill_ft: number } | null;
+    pads: Array<{ building: string; pad_elevation_ft: number; lowest_ground_ft: number; highest_ground_ft: number; deepest_cut_ft: number; deepest_fill_ft: number }>;
+  } | null;
   cameras: JobCamera[];
   lighting: { sun_azimuth_deg: number; sun_altitude_deg: number; sun_date: string; solar_hour: number; exposure_ev: number; seed: number; sky: string };
   /** Points on the main building, and where each camera must put them at 1920 by 1080. */
@@ -88,7 +113,7 @@ export function projectPx(cam: THREE.PerspectiveCamera, p_ft: [number, number, n
 export async function buildRenderJob(
   data: MassingData,
   scene: DrawingScene,
-  opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null },
+  opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null; preset?: 'gray-pass' | 'daylight'; terrain?: Terrain | null },
 ): Promise<{ glb: ArrayBuffer; job: RenderJob }> {
   const model = buildSiteModel(data, { keepParts: true });
   try {
@@ -101,6 +126,130 @@ export async function buildRenderJob(
       b.union(part.geometry.boundingBox!);
       extents.set(part.owner, b);
     }
+    // where each piece stands. A building sits level on a pad at the highest ground under it, so no
+    // floor is buried; a neighbour's building at the lowest ground under it, so none floats; a car
+    // on the ground under its middle. Everything else is laid over the ground point by point.
+    const survey = opts.terrain ?? null;
+    const seat = new Map<string, number>();
+    const pads: NonNullable<RenderJob['terrain']>['pads'] = [];
+    const plinths: Array<{ owner: string; geometry: THREE.BufferGeometry }> = [];
+    // the ground under each of the site's buildings
+    const hulls: Array<{ id: string; ring: Array<[number, number]>; low: number; high: number }> = [];
+    if (survey) {
+      for (const sub of model.ground.subjects) {
+        if (!sub.id || sub.points.length < 3) continue;
+        const xs = sub.points.map(q => q[0]), ys = sub.points.map(q => q[1]);
+        const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+        const under: number[] = [];
+        for (let x = x0; x <= x1; x += 2) for (let y = y0; y <= y1; y += 2) if (within(x, y, sub.points)) under.push(survey.heightAt(x, y));
+        if (!under.length) under.push(survey.heightAt((x0 + x1) / 2, (y0 + y1) / 2));
+        hulls.push({ id: sub.id, ring: sub.points, low: Math.min(...under), high: Math.max(...under) });
+      }
+    }
+    // What a developer does with the ground: the paved area is graded to one even surface, no steeper
+    // than GRADE_MAX, fitted to the ground it replaces; each building's pad is level on it; and the
+    // graded ground is eased back to the existing ground over a short run round the work.
+    let graded: Array<{ ring: Array<[number, number]>; z: number }> = [];
+    let grading: NonNullable<RenderJob['terrain']>['grading'] = null;
+    let terrain: Terrain | null = survey;
+    if (survey && hulls.length) {
+      const paved: Array<Array<[number, number]>> = data.polygons
+        .filter(q => !q.building && ['drive', 'parking-aisle', 'circulation', 'parking', 'parking-bay', 'driveway'].includes(q.kind ?? ''))
+        .map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number]))
+        .filter(r => r.length >= 3);
+      const work = [...paved, ...hulls.map(hl => hl.ring)];
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const r of work) for (const q of r) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+      // the ground under the work, sampled every 2 m
+      const pts: Array<[number, number, number]> = [];
+      for (let x = x0; x <= x1; x += 2) for (let y = y0; y <= y1; y += 2) if (work.some(r => within(x, y, r))) pts.push([x, y, survey.heightAt(x, y)]);
+      if (pts.length >= 3) {
+        const n = pts.length;
+        const mx = pts.reduce((a, q) => a + q[0], 0) / n, my = pts.reduce((a, q) => a + q[1], 0) / n, mz = pts.reduce((a, q) => a + q[2], 0) / n;
+        let sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0;
+        for (const q of pts) { const dx = q[0] - mx, dy = q[1] - my, dz = q[2] - mz; sxx += dx * dx; sxy += dx * dy; syy += dy * dy; sxz += dx * dz; syz += dy * dz; }
+        const det = sxx * syy - sxy * sxy;
+        let a = Math.abs(det) > 1e-6 ? (sxz * syy - syz * sxy) / det : 0, b = Math.abs(det) > 1e-6 ? (syz * sxx - sxz * sxy) / det : 0;
+        const natural = Math.hypot(a, b);
+        if (natural > GRADE_MAX) { a *= GRADE_MAX / natural; b *= GRADE_MAX / natural; }
+        const plane = (x: number, y: number) => mz + a * (x - mx) + b * (y - my);
+        let cut = 0, fill = 0;
+        for (const q of pts) { const dz = q[2] - plane(q[0], q[1]); cut = Math.max(cut, dz); fill = Math.max(fill, -dz); }
+        graded = hulls.map(hl => {
+          const cx = hl.ring.reduce((t, q) => t + q[0], 0) / hl.ring.length, cy = hl.ring.reduce((t, q) => t + q[1], 0) / hl.ring.length;
+          return { ring: hl.ring, z: plane(cx, cy) };
+        });
+        grading = {
+          rule: `Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than ${Math.round(GRADE_MAX * 100)}%; each building's pad is level on it; the graded ground meets the existing ground over ${Math.round(GRADE_RUN_M / FT)} ft round the work.`,
+          existing_slope_pct: Math.round(natural * 1000) / 10,
+          graded_slope_pct: Math.round(Math.hypot(a, b) * 1000) / 10,
+          deepest_cut_ft: Math.round((cut / FT) * 10) / 10,
+          deepest_fill_ft: Math.round((fill / FT) * 10) / 10,
+        };
+        const bx0 = x0 - GRADE_RUN_M, bx1 = x1 + GRADE_RUN_M, by0 = y0 - GRADE_RUN_M, by1 = y1 + GRADE_RUN_M;
+        const ease = (t: number) => t * t * (3 - 2 * t);
+        const memo = new Map<number, number>();
+        const shaped = (x: number, y: number): number => {
+          let h = survey.heightAt(x, y);
+          if (x < bx0 || x > bx1 || y < by0 || y > by1) return h;
+          let d = Infinity;
+          for (const r of work) { d = Math.min(d, awayFrom(x, y, r)); if (d === 0) break; }
+          if (d < GRADE_RUN_M) { const k = ease(d / GRADE_RUN_M); h = plane(x, y) * (1 - k) + h * k; }
+          for (const g of graded) {
+            const db = awayFrom(x, y, g.ring);
+            if (db < PAD_RUN_M) { const k = ease(db / PAD_RUN_M); h = g.z * (1 - k) + h * k; }
+          }
+          return h;
+        };
+        terrain = {
+          ...survey,
+          heightAt: (x, y) => {
+            const key = Math.round(x * 100) * 4_000_037 + Math.round(y * 100);
+            let h = memo.get(key);
+            if (h === undefined) { h = shaped(x, y); if (memo.size < 3_000_000) memo.set(key, h); }
+            return h;
+          },
+        };
+      }
+    }
+    for (const g of graded) {
+      const hl = hulls.find(q => q.ring === g.ring)!;
+      seat.set(`building:${hl.id}`, g.z);
+      const el = (v: number) => Math.round((survey!.zeroFt + v / FT) * 10) / 10;
+      pads.push({ building: hl.id, pad_elevation_ft: el(g.z), lowest_ground_ft: el(hl.low), highest_ground_ft: el(hl.high), deepest_cut_ft: Math.round((Math.max(0, hl.high - g.z) / FT) * 10) / 10, deepest_fill_ft: Math.round((Math.max(0, g.z - hl.low) / FT) * 10) / 10 });
+      // a plain foundation: the foot of the wall carried a little below the pad
+      for (const sl of data.slabs) {
+        const ring = sl.polygon[0];
+        if (sl.id !== hl.id || !ring || ring.length < 3 || (ring[0]?.[2] ?? 0) > 0.05 || sl.elevation < 1.5) continue;
+        const shape = new THREE.Shape(ring.map(q => new THREE.Vector2(q[0] ?? 0, q[1] ?? 0)));
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.6, bevelEnabled: false }).toNonIndexed();
+        geo.translate(0, 0, g.z - 0.6);
+        const count = geo.getAttribute('position').count;
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: count }, () => [0.42, 0.41, 0.39, 1]).flat(), 4));
+        plinths.push({ owner: `plinth:${hl.id}`, geometry: geo });
+      }
+    }
+    if (terrain) {
+      const boxes = new Map<string, THREE.Box3>();
+      for (const part of model.parts) {
+        if (!/^(context-building|car):/.test(part.owner)) continue;
+        part.geometry.computeBoundingBox();
+        boxes.set(part.owner, (boxes.get(part.owner) ?? new THREE.Box3()).union(part.geometry.boundingBox!));
+      }
+      for (const [owner, box] of boxes) {
+        const cx = (box.min.x + box.max.x) / 2, cy = (box.min.y + box.max.y) / 2;
+        // a neighbour's building at the lowest ground under it, so it never floats; a car on the ground under its middle
+        seat.set(owner, owner.startsWith('car:') ? terrain.heightAt(cx, cy)
+          : Math.min(terrain.heightAt(cx, cy), terrain.heightAt(box.min.x, box.min.y), terrain.heightAt(box.max.x, box.min.y), terrain.heightAt(box.min.x, box.max.y), terrain.heightAt(box.max.x, box.max.y)));
+      }
+    }
+    const place = (g: THREE.BufferGeometry, owner: string): THREE.BufferGeometry => {
+      if (!terrain) return g;
+      const dz = seat.get(owner);
+      const out = dz != null ? lift(g, dz) : drape(g, terrain);
+      g.dispose();
+      return out;
+    };
     // one mesh for each feature and material slot, named for both
     const groups = new Map<string, { owner: string; slot: string; list: THREE.BufferGeometry[] }>();
     for (const part of model.parts) {
@@ -115,7 +264,7 @@ export async function buildRenderJob(
     const toYUp = new THREE.Matrix4().makeRotationX(-Math.PI / 2);   // the model's z up to glTF's y up
     const mesh_groups: RenderJob['mesh_groups'] = [];
     for (const [id, g] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const pieces = dissolveFlat(g.list);
+      const pieces = dissolveFlat(g.list).map(x => place(x, g.owner));
       const merged = mergeGeometries(pieces, false);
       [...g.list, ...pieces].forEach(x => x.dispose());
       if (!merged) continue;
@@ -128,6 +277,26 @@ export async function buildRenderJob(
       out.add(mesh);
       mesh_groups.push({ id, owner: g.owner, slot: g.slot, triangles: merged.getAttribute('position').count / 3 });
     }
+    // a foundation under each building, where the ground falls away from its pad
+    for (const pl of plinths) {
+      const g = pl.geometry;
+      g.applyMatrix4(toYUp);
+      let mat = materials.get('concrete');
+      if (!mat) { mat = new THREE.MeshStandardMaterial({ name: 'concrete', color: 0xb4b4b4, roughness: 0.9, metalness: 0 }); materials.set('concrete', mat); }
+      const id = `${pl.owner}__concrete`;
+      const prior = out.getObjectByName(id) as THREE.Mesh | undefined;
+      if (prior) {
+        const both = mergeGeometries([prior.geometry, g], false);
+        if (both) { prior.geometry.dispose(); g.dispose(); prior.geometry = both; const row = mesh_groups.find(r => r.id === id); if (row) row.triangles = both.getAttribute('position').count / 3; }
+        continue;
+      }
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.name = id;
+      mesh.userData = { id, owner: pl.owner, slot: 'concrete' };
+      out.add(mesh);
+      mesh_groups.push({ id, owner: pl.owner, slot: 'concrete', triangles: g.getAttribute('position').count / 3 });
+    }
+    mesh_groups.sort((a, b) => a.id.localeCompare(b.id));
     const box = new THREE.Box3().setFromObject(out);
     // back from y up to east, north, up
     const lo: [number, number, number] = [ft(box.min.x), ft(-box.max.z), ft(box.min.y)];
@@ -142,15 +311,23 @@ export async function buildRenderJob(
     const cameras: JobCamera[] = [];
     const focal = (vfovDeg: number) => SENSOR_MM / (2 * Math.tan(Math.atan(Math.tan((vfovDeg * Math.PI) / 360) * aspect)));
     const far = ft(Math.max(2000, data.extent * 40));
+    const groundAt = (x: number, y: number) => (terrain ? terrain.heightAt(x, y) : 0);
+    const main = [...model.ground.subjects].sort((p, q) => span(q.points) - span(p.points))[0];
+    const padZ = (main?.id ? seat.get(`building:${main.id}`) : undefined) ?? 0;
     const arrival = streetShot(model.ground.subjects, model.ground.obstacles, model.ground.roads, aspect, model.ground.trees);
     if (arrival) {
+      // the eye stands on the ground where the camera is, and stays level; where the building's pad is
+      // above or below that ground, the lens shifts by the difference so the building stays in the frame
+      const stand = groundAt(arrival.position[0], arrival.position[1]);
+      const away = Math.hypot(arrival.target[0] - arrival.position[0], arrival.target[1] - arrival.position[1]) || 1;
+      const mm = focal(arrival.fovDeg);
       cameras.push({
         id: 'street', basis: arrival.basis,
-        position_ft: [ft(arrival.position[0]), ft(arrival.position[1]), ft(arrival.position[2])],
-        target_ft: [ft(arrival.target[0]), ft(arrival.target[1]), ft(arrival.target[2])],
-        focal_length_mm: Math.round(focal(arrival.fovDeg) * 1000) / 1000,
+        position_ft: [ft(arrival.position[0]), ft(arrival.position[1]), ft(arrival.position[2] + stand)],
+        target_ft: [ft(arrival.target[0]), ft(arrival.target[1]), ft(arrival.target[2] + stand)],
+        focal_length_mm: Math.round(mm * 1000) / 1000,
         sensor_width_mm: SENSOR_MM,
-        shift_y: Math.round(((arrival.lift - 1) / 2 / aspect) * 100000) / 100000,
+        shift_y: Math.round(((arrival.lift - 1) / 2 / aspect + ((padZ - stand) / away) * (mm / SENSOR_MM)) * 100000) / 100000,
         clip_ft: [1, far], aspect, resolution,
       });
     }
@@ -161,19 +338,18 @@ export async function buildRenderJob(
     const dx = reach * Math.cos(el) * Math.sin(az), dz = reach * Math.cos(el) * Math.cos(az);
     cameras.push({
       id: 'drone', basis: `Three-quarter view of ${b.kind === 'parcel' ? 'the parcel' : 'the built area'}, ${DRONE_DOWN} degrees down`,
-      position_ft: [ft(b.x + dx), ft(b.y - dz), ft(b.radius * 0.06 + reach * Math.sin(el))],
-      target_ft: [ft(b.x), ft(b.y), ft(b.radius * 0.06)],
+      position_ft: [ft(b.x + dx), ft(b.y - dz), ft(b.radius * 0.06 + reach * Math.sin(el) + padZ)],
+      target_ft: [ft(b.x), ft(b.y), ft(b.radius * 0.06 + padZ)],
       focal_length_mm: Math.round(focal(DRONE_FOV) * 1000) / 1000,
       sensor_width_mm: SENSOR_MM, shift_y: 0, clip_ft: [5, far], aspect, resolution,
     });
 
     // anchors: the corners of the main building, at the ground and at its top
-    const main = [...model.ground.subjects].sort((p, q) => q.points.length * 0 + (span(q.points) - span(p.points)))[0];
     const anchors: RenderJob['anchors'] = [];
     if (main) {
       const cams = cameras.map(c => ({ id: c.id, cam: browserCamera(c) }));
       main.points.forEach((pt, i) => {
-        for (const [tag, z] of [['base', 0], ['top', main.height]] as Array<[string, number]>) {
+        for (const [tag, z] of [['base', padZ], ['top', main.height + padZ]] as Array<[string, number]>) {
           const position_ft: [number, number, number] = [ft(pt[0]), ft(pt[1]), ft(z)];
           anchors.push({ id: `main-${tag}-${i}`, position_ft, expected_px: Object.fromEntries(cams.map(c => [c.id, projectPx(c.cam, position_ft)])) });
         }
@@ -201,13 +377,24 @@ export async function buildRenderJob(
       known: (() => {
         const e = main?.id ? extents.get(`building:${main.id}`) : undefined;
         if (!main?.id || !e) return null;
-        return { id: main.id, mesh_prefix: `building:${main.id}__`, top_ft: ft(e.max.z), span_ft: [ft(e.max.x - e.min.x), ft(e.max.y - e.min.y)] as [number, number], drawing_height_ft: ft(main.height) };
+        return { id: main.id, mesh_prefix: `building:${main.id}__`, top_ft: ft(e.max.z + padZ), span_ft: [ft(e.max.x - e.min.x), ft(e.max.y - e.min.y)] as [number, number], drawing_height_ft: ft(main.height) };
       })(),
-      omitted: ['trees and shrubs (instanced in the live view; not yet exported)'],
+      planting: { trees: model.ground.trees.map((t, i) => ({ id: `tree-${i + 1}`, position_ft: [ft(t[0]), ft(t[1]), ft(groundAt(t[0], t[1]))] as [number, number, number], crown_radius_ft: ft(t[2]) })),
+        shrubs: data.shrubs.map((b, i) => ({ id: `shrub-${i + 1}`, position_ft: [ft(b[0] ?? 0), ft(b[1] ?? 0), ft(padZ)] as [number, number, number], radius_ft: ft((b[2] ?? 0.45) * 1.7) })),
+      },
+      omitted: [],
+      terrain: terrain ? {
+        source: terrain.source, datum: 'NAVD88', samples: terrain.samples,
+        zero_elevation_ft: terrain.zeroFt,
+        sampled_range_ft: terrain.rangeFt,
+        coverage: `Sampled on a 20 ft grid over the parcel and a 100 ft margin. Past that there are no elevations: the edge is held and eased to one level over ${Math.round(60 / FT)} ft.`,
+        grading,
+        pads,
+      } : null,
       cameras,
-      lighting: { sun_azimuth_deg: Math.round(sun.azimuthDeg * 100) / 100, sun_altitude_deg: Math.round(sun.altitudeDeg * 100) / 100, sun_date: sunKey, solar_hour: solarHour, exposure_ev: 0, seed: 1, sky: 'uniform (gray pass)' },
+      lighting: { sun_azimuth_deg: Math.round(sun.azimuthDeg * 100) / 100, sun_altitude_deg: Math.round(sun.altitudeDeg * 100) / 100, sun_date: sunKey, solar_hour: solarHour, exposure_ev: 0, seed: 1, sky: 'clear' },
       anchors,
-      renderer: { preset: 'gray-pass', style: opts.style, asset_version: 'gray-1' },
+      renderer: { preset: opts.preset ?? 'daylight', style: opts.style, asset_version: 'kit-2' },
     };
     return { glb, job };
   } finally {
@@ -289,4 +476,27 @@ export function dissolveFlat(list: THREE.BufferGeometry[]): THREE.BufferGeometry
     }
   }
   return out;
+}
+
+/** Whether a point lies inside a ring. */
+function within(x: number, y: number, ring: Array<[number, number]>): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i]!, b = ring[j]!;
+    if ((a[1] > y) !== (b[1] > y) && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) inside = !inside;
+  }
+  return inside;
+}
+
+/** How far a point is outside a ring, metres; 0 inside it. */
+function awayFrom(x: number, y: number, ring: Array<[number, number]>): number {
+  if (within(x, y, ring)) return 0;
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[j]!, b = ring[i]!;
+    const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2));
+    best = Math.min(best, Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t)));
+  }
+  return best;
 }

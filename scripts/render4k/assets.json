@@ -1,0 +1,95 @@
+{
+  "version": "kit-2",
+  "source": "Poly Haven (polyhaven.com), CC0",
+  "sky": {
+    "id": "kloofendal_48d_partly_cloudy_puresky",
+    "res": "4k"
+  },
+  "materials": {
+    "brick": {
+      "id": "red_brick_03",
+      "res": "2k",
+      "tint": 0.6
+    },
+    "siding": {
+      "id": "white_planks_clean",
+      "res": "2k",
+      "tint": 1.0
+    },
+    "plaster": {
+      "id": "painted_plaster_wall",
+      "res": "2k",
+      "tint": 1.0
+    },
+    "asphalt": {
+      "id": "asphalt_02",
+      "res": "2k",
+      "tint": 0.35
+    },
+    "concrete": {
+      "id": "concrete_pavement",
+      "res": "2k",
+      "tint": 0.5
+    },
+    "grass": {
+      "id": "leafy_grass",
+      "res": "2k",
+      "tint": 0.85
+    },
+    "shingle": {
+      "id": "roof_slates_03",
+      "res": "2k",
+      "tint": 0.8
+    }
+  },
+  "trees": [
+    {
+      "id": "tree_small_02",
+      "res": "1k",
+      "weight": 3
+    },
+    {
+      "id": "island_tree_01",
+      "res": "1k",
+      "weight": 1
+    },
+    {
+      "id": "island_tree_02",
+      "res": "1k",
+      "weight": 1
+    },
+    {
+      "id": "jacaranda_tree",
+      "res": "1k",
+      "weight": 3
+    }
+  ],
+  "shrubs": [
+    {
+      "id": "shrub_01",
+      "res": "1k"
+    },
+    {
+      "id": "shrub_02",
+      "res": "1k"
+    },
+    {
+      "id": "shrub_03",
+      "res": "1k"
+    }
+  ],
+  "grass": [
+    {
+      "id": "grass_bermuda_01",
+      "res": "1k"
+    },
+    {
+      "id": "grass_medium_01",
+      "res": "1k"
+    },
+    {
+      "id": "grass_medium_02",
+      "res": "1k"
+    }
+  ]
+}

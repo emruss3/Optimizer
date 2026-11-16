@@ -38,8 +38,30 @@ Options after the job path: `--scale` (fraction of the job's resolution),
 | `bounds_ft`, `known` | the model's extent on three axes and the main building's top and spans |
 | `cameras` | `street` and `drone`: position, target, focal length on a 36 mm wide sensor, lens shift, clipping, aspect, resolution |
 | `lighting` | sun azimuth and altitude for the date and hour, exposure, seed |
+| `planting` | every standing tree: position and crown radius |
+| `terrain` | the ground: survey source, zero elevation, grading assumed, each building's pad |
 | `anchors` | building corners and where each camera puts them at 1920 by 1080 in the browser |
 | `omitted` | what the live view draws that this file does not carry yet |
+
+## The ground
+
+Where the parcel has surveyed elevations (USGS 3DEP, a 20 ft grid over the
+parcel and a 100 ft margin, NAVD88 feet), the scene stands on them. The job's
+`terrain` block records the source, the elevation of the frame's zero height,
+and what was assumed:
+
+- **Existing ground** is the survey's own, interpolated. Past the surveyed
+  margin there are no elevations: the edge is held and eased to one level.
+- **Graded ground** is an assumption of the picture, not a grading plan. The
+  paved area and the buildings stand on one even surface fitted to the existing
+  ground, no steeper than 4%. Each building's pad is level on it. The graded
+  ground meets the existing ground over 39 ft round the work. The block lists
+  the slope before and after and the deepest cut and fill this implies.
+- Roads, walks, lawns and kerbs are laid over the ground on one shared lattice,
+  so a layer an inch above another stays an inch above it. Buildings and cars
+  are raised whole. Trees, shrubs and the street camera stand on the ground.
+
+A parcel with no survey renders on flat ground and `terrain` is null.
 
 ## Checks before any pixel is rendered
 
@@ -51,8 +73,47 @@ The worker stops with a non-zero exit code when one fails.
 4. The main building's top and its east and north spans match, within 0.05 ft.
 5. Each camera puts every anchor within 2 px of where the browser puts it at 1920 by 1080.
 
-## Current state
+## Presets
 
-This is the gray pass: one gray material, a sun and a flat sky. It proves the
-geometry, the coordinates and the two cameras. Materials, an HDR sky, planting
-and the 3840 by 2160 preset come next.
+| Preset | What it is |
+| --- | --- |
+| `gray-pass` | One gray material, a sun and a flat sky. Proves geometry, coordinates and cameras. |
+| `daylight` | With the render kit: photographed materials, a photographed sky and scanned plants. Without it: simple built-in materials, a clear sky and stand-in trees. |
+
+The job names its preset. `--preset` overrides it.
+
+## The render kit
+
+`assets.json` pins a kit of CC0 assets from Poly Haven. Nothing is committed:
+
+```sh
+python scripts/render4k/fetch_assets.py          # about 500 MB into out/assets
+```
+
+`out/assets/assets.lock.json` records what arrived. The worker uses the kit
+when it is there (`--assets` names another folder).
+
+| Part | What the worker does with it |
+| --- | --- |
+| Materials | Each slot (`brick`, `siding`, `plaster`, `asphalt`, `concrete`, `grass`, `shingle`) takes the photographed surface at its true size, in the colour the model painted. `tint` in the manifest says how much of that colour carries. |
+| Sky | The photographed sky lights the scene. It is turned so its sun stands on the job's sun bearing. The report gives the sky's sun height beside the job's, so pick a date and hour that match it. |
+| Lawn | Scanned grass on the lawns within about 90 ft of a camera that stands on the ground, and only where no road, walk or building lies over it. Farther out the photographed lawn surface carries on alone. |
+| Plants | A scanned tree for each tree in `planting.trees`, sized to its crown radius, and a scanned shrub for each in `planting.shrubs`. The job's seed fixes which one and which way it faces. |
+
+Slots with no photographed surface yet (`glass`, `paint`, `plain`, `panel`,
+`railing`, `wood`) use the built-in materials. Cars are still the model's own
+simple shapes: the kit has no car models.
+
+## Cost on 4 CPU cores, no GPU
+
+| Run | Size | Samples | Time |
+| --- | --- | --- | --- |
+| Gray pass, both cameras | 960 by 540 | 48 | 42 s |
+| Daylight with the kit, both cameras | 960 by 540 | 64 | 2 min 44 s |
+| Daylight with the kit and lawn, street only | 1920 by 1080 | 96 | 6 min 44 s |
+
+## Not yet
+
+- No real car models.
+- No CI smoke job yet.
+- "Render 4K" is not wired into the app. The export hook is dev only.
