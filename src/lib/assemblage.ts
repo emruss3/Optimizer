@@ -21,7 +21,6 @@ const REFUSALS: Record<string, string> = {
   not_adjacent: 'These parcels do not all touch, so they cannot be planned as one site. Remove the one that stands apart, or add the parcel between them.',
   mixed_zoning: 'These parcels are in different zoning districts. One site needs one district, so this set would need a rezoning first.',
   not_found: 'One of these parcels is no longer on record.',
-  too_many: 'That is more parcels than one assemblage can hold.',
 };
 
 const missingFunction = (e: { code?: string; message?: string }): boolean =>
@@ -37,6 +36,9 @@ export async function assembleParcels(ids: Array<string | number>): Promise<Asse
       if (missingFunction(error)) {
         return { status: 'unavailable', message: 'The planning engine cannot combine parcels yet. Each parcel can still be planned on its own.' };
       }
+      if (error.code === '42501' || /permission denied/i.test(error.message ?? '')) {
+        return { status: 'refused', code: 'sign_in', message: 'Sign in to combine parcels. A combined site is saved to your account.' };
+      }
       return { status: 'failed', message: error.message ?? String(error) };
     }
     const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
@@ -46,7 +48,8 @@ export async function assembleParcels(ids: Array<string | number>): Promise<Asse
       return { status: 'refused', code: row.error, message: REFUSALS[row.error] ?? said ?? `The engine declined this set (${row.error}).` };
     }
     const ogcFid = Number(row.ogc_fid);
-    if (!Number.isInteger(ogcFid) || ogcFid <= 0) return { status: 'failed', message: 'The engine did not return a combined site.' };
+    // a combined site carries a negative id: it is not a row of the parcel table
+    if (!Number.isInteger(ogcFid) || ogcFid === 0) return { status: 'failed', message: 'The engine did not return a combined site.' };
     const acres = Number(row.acres);
     return {
       status: 'ready',

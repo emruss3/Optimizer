@@ -396,5 +396,13 @@
       "stallsRequired": 92,
       "stallsReported": 85
     }
+  },
+  "-1": {
+    "mode": "server-plan",
+    "_basis": "Combined site -1 = 7412 Maroney Dr (315880) + 0 Hamilton Church Rd (674870), RS10, 3.83 ac, made by fn_assemble_parcels on 2026-11-17. The parcels plan as 4 and 2 lots apart; the combined site draws 6 lots on a shared private drive across both, and the competition's best is neighborhood at 7. No massing context is compiled for a combined site, so the by-right generator runs under that banner.",
+    "requireSfV1": {
+      "status": "done",
+      "basis": "by_right"
+    }
   }
 }

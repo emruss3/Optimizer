@@ -64,6 +64,8 @@ const PARCELS = [
   { ogc_fid: 680001, address: '0 UNION HILL RD', zoning: 'RS40' },
   { ogc_fid: 661661, address: '6404 EATONS CREEK RD', zoning: 'R40' },
   { ogc_fid: 672526, address: '0 HICKORY BEND DR', zoning: 'RS10' },
+  // a combined site (assemblage): two adjoining RS10 parcels planned as one, id from fn_assemble_parcels
+  { ogc_fid: -1, address: '0 HAMILTON CHURCH RD + 1 more', zoning: 'RS10' },
   // 2026-11-09 engine g14: the hillside hold as geometry (4255 Brick Church
   // Pike: 3.35 of 4.09 ac steeper than 25%, hatched beside the flood hold, 0
   // lots) and the competition's best at MORE lots (0 Hills Ln: the grid's 17
