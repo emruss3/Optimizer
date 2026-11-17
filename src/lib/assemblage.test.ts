@@ -15,10 +15,10 @@ describe('assembleParcels', () => {
   });
 
   it('sends the set sorted and returns the combined site', async () => {
-    rpc.mockResolvedValueOnce({ data: { ogc_fid: 9100001, address: 'A + 1 more', zoning: 'RM20', acres: 2.2 }, error: null });
+    rpc.mockResolvedValueOnce({ data: { ogc_fid: -12, address: 'A + 1 more', zoning: 'RM20', acres: 2.2 }, error: null });
     const r = await assembleParcels(['488279', 488278]);
     expect(rpc).toHaveBeenCalledWith('fn_assemble_parcels', { p_fids: [488278, 488279] });
-    expect(r).toEqual({ status: 'ready', ogcFid: 9100001, address: 'A + 1 more', zoning: 'RM20', acres: 2.2 });
+    expect(r).toEqual({ status: 'ready', ogcFid: -12, address: 'A + 1 more', zoning: 'RM20', acres: 2.2 });
   });
 
   it('reads an engine refusal as a reason, not an error', async () => {
@@ -38,6 +38,12 @@ describe('assembleParcels', () => {
     rpc.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.fn_assemble_parcels' } });
     const r = await assembleParcels([1, 2]);
     expect(r.status).toBe('unavailable');
+  });
+
+  it('asks for a sign-in when the caller is not allowed', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'permission denied for function fn_assemble_parcels' } });
+    const r = await assembleParcels([1, 2]);
+    expect(r.status === 'refused' && r.code).toBe('sign_in');
   });
 
   it('reports any other failure as a failure', async () => {
