@@ -123,8 +123,11 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
               <figure>
                 <img
                   src={'/home-designs/' + home.id + '.webp'}
-                  alt={home.name + ', photoreal exterior view'}
+                  alt={home.name + ', illustrative character exterior (not generated from this plan)'}
                 />
+                <figcaption className="home-exterior-note">
+                  Illustrative character image — not generated from this plan’s drawings, and not a photo of a built home.
+                </figcaption>
               </figure>
             ) : view === 'Plans' ? (
               <>
@@ -226,7 +229,8 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
             </section>
             <footer>
               * Approximate conditioned area from schematic room zones. Dimensions include wall allowances.
-              Exterior view is a photoreal impression of the concept for feasibility review.
+              These are concept studies for site fit — not publisher construction sets. For cited buildable
+              stock plans (e.g. America’s Best House Plans), use the housing catalogue.
             </footer>
           </main>
         </div>
