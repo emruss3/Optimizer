@@ -54,7 +54,10 @@ describe('two layouts of one parcel, side by side', () => {
   it('replaces a kind on revision change instead of keeping an omitted field from the earlier run', () => {
     let kept = retainLayoutFacts({}, 'multifamily', { parking: '42 drawn · 42 required', floorArea: '43,203 GSF' }, 'rev-1');
     kept = retainLayoutFacts(kept, 'multifamily', { parking: '40 drawn · 40 required', floorArea: null }, 'rev-2');
-    expect(kept.multifamily).toEqual({ parking: '40 drawn · 40 required', floorArea: null, revision: 'rev-2' });
+    expect(kept.multifamily).toEqual({
+      parking: '40 drawn · 40 required', floorArea: null, revision: 'rev-2',
+      guestSupply: null, guestTarget: null, guestBasis: null,
+    });
   });
 });
 
