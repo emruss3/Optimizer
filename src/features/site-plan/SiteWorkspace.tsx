@@ -3423,6 +3423,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       : null),
     [access, displayElements, parcelRing3857],
   );
+  // the download carries the unresolved connection too: marked on the sheet and said in its notes
+  const sheetsTitleWithAccess = useMemo(() => (routeBreak && scene
+    ? {
+        ...sheetsTitle,
+        notes: ['Access unresolved: no drive on this plan reaches the street. The break is marked in red.', ...(sheetsTitle.notes ?? [])],
+        routeBreak: { from: scene.frame.toFeet(routeBreak.from), to: scene.frame.toFeet(routeBreak.to) },
+      }
+    : sheetsTitle), [sheetsTitle, routeBreak, scene]);
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
     const withBreak = routeBreak
@@ -4346,7 +4354,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} groundGraded={sheetGraded} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} readSectionGround={topo && scene.buildings.length > 0 ? readSectionGround : undefined} />
+        <ExhibitSheets scene={scene} title={sheetsTitleWithAccess} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} groundGraded={sheetGraded} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} readSectionGround={topo && scene.buildings.length > 0 ? readSectionGround : undefined} />
       )}
       {exportOpen && (
         <ExportReport

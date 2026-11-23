@@ -34,6 +34,8 @@ export interface SheetTitle {
   subtitle?: string | null | undefined;
   date: string;
   notes?: string[] | undefined;
+  /** Where the route to the street breaks, scene feet: the end of the drive and the street edge it does not reach. */
+  routeBreak?: { from: Pt; to: Pt } | null | undefined;
   /** The site data table: figures of the scheme, as the workspace states them. */
   data?: Array<{ label: string; value: string }> | undefined;
 }
@@ -507,6 +509,15 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
       out.push(`<text x="${l.x}" y="${r2(ty)}" font-size="${t.size}" font-weight="${i === 0 && t.kind === 'caption' ? 700 : 500}" text-anchor="middle" fill="${i === 0 ? INK : '#4b5158'}">${esc(line)}</text>`);
     });
     out.push('</g>');
+  }
+  if (title.routeBreak) {
+    // an unresolved connection stays on the download: dashed between the two ends, a ring on each
+    const a = P(title.routeBreak.from), b = P(title.routeBreak.to);
+    out.push(`<g data-role="route-break" stroke="#dc2626" fill="#ffffff">`
+      + `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="1.4" stroke-dasharray="4 3"/>`
+      + `<circle cx="${a[0]}" cy="${a[1]}" r="4.5" stroke-width="1.4"/><circle cx="${b[0]}" cy="${b[1]}" r="4.5" stroke-width="1.4"/>`
+      + `<text x="${r2(a[0] + 8)}" y="${r2(a[1] - 7)}" font-size="6.6" font-weight="700" fill="#991b1b" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Drive stops here · no drawn connection to the street</text>`
+      + '</g>');
   }
   out.push('</g>');
 

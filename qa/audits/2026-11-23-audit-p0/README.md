@@ -124,5 +124,10 @@ parcel outline by 12% in the browser while leaving every engine answer as it
 was. That is a test device only. `route-break-2d.png` and
 `route-break-3d-top.png` are from that drive.
 
-Not done here: the marker is not yet on the exported sheets, and a bay that no
-drive touches is still only counted, not marked.
+The exported site plan sheet (A-01) carries the same marker and words, so a
+recipient sees the unresolved connection without the app: `route-break-sheet.png`.
+The sheet also adds an "Access unresolved" note when the title strip has room
+for notes. On the 16:9 slide for this parcel it does not, so the marker's own
+label carries it.
+
+Not done: a bay that no drive touches is still only counted, not marked.

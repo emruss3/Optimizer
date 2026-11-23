@@ -85,6 +85,17 @@ describe('the sheet', () => {
   })!;
   const title = { project: 'P', date: 'd', data: [{ label: 'Zoning', value: 'RM20' }, { label: 'Density', value: '11.2 per acre' }] };
 
+  it('keeps an unresolved route on the download, and draws none when the route is whole', () => {
+    const whole = new DOMParser().parseFromString(renderSitePlanSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    expect(whole.querySelector('[data-role="route-break"]')).toBeNull();
+    const broken = new DOMParser().parseFromString(
+      renderSitePlanSheet(scene, { ...title, routeBreak: { from: [0, 18], to: [0, -30] } }, 'tabloid').svg, 'image/svg+xml');
+    expect(broken.querySelector('parsererror')).toBeNull();
+    const mark = broken.querySelector('[data-role="route-break"]');
+    expect(mark?.querySelectorAll('circle').length).toBe(2);
+    expect(mark?.textContent).toMatch(/no drawn connection to the street/);
+  });
+
   it('prints the key figures, the site data and the stripes it could draw', () => {
     const sheet = renderSitePlanSheet(scene, title, 'tabloid');
     expect(sheet.figures.map(f => [f.label, f.value])).toEqual([['HOMES', '24'], ['BUILDING', '1'], ['STORIES', '3'], ['PARKING STALLS', '10']]);
