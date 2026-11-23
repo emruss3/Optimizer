@@ -6,12 +6,39 @@ import fixture from '../api/__fixtures__/delk-675423.json';
 import {
   designMatchesHouseTypology,
   eligibleHomeDesigns,
+  eligibleStockPlans,
   isApartmentMassingPlan,
   schemeAllowsHomeDesigns,
   showHomeDesignsControl,
   typologyEligibleHomeDesigns,
 } from './homeDesignsGate';
+import {
+  ABHP_4848_00368,
+  DELK_COTTAGE_1754_00010,
+  DELK_PARCEL_ID,
+  buildableStockPlans,
+} from './catalogue';
 import type { Element } from '../../../engine/types';
+
+const sfLot = (index: number, w: number, d: number): Element => ({
+  id: `sfv1:lot-${index}`,
+  type: 'other',
+  name: `Lot ${index}`,
+  geometry: {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 0],
+        [w, 0],
+        [w, d],
+        [0, d],
+        [0, 0],
+      ],
+    ],
+  },
+  properties: { lotKind: 'standard' },
+  metadata: { createdAt: '', updatedAt: '', source: 'ai-generated' },
+});
 
 const mfApartmentPad = (id: string): Element => ({
   id,
@@ -140,5 +167,67 @@ describe('homeDesignsGate — typology and fit', () => {
     expect(show).toBe(true);
     expect(enabled).toBe(false);
     expect(eligible).toEqual([]);
+  });
+});
+
+describe('homeDesignsGate — ABHP stock fit', () => {
+  it('withholds stock when no typed SF lots exist', () => {
+    expect(eligibleStockPlans(buildableStockPlans(), [])).toEqual([]);
+  });
+
+  it('keeps plans that clear a feet-ring lot and drops those that do not', () => {
+    const roomy = [sfLot(1, 70, 100)];
+    const roomyIds = eligibleStockPlans(buildableStockPlans(), roomy).map((d) => d.id);
+    expect(roomyIds.length).toBeGreaterThan(0);
+    expect(roomyIds).toContain(DELK_COTTAGE_1754_00010.id);
+
+    const tight = [sfLot(1, 28, 40)];
+    expect(eligibleStockPlans(buildableStockPlans(), tight)).toEqual([]);
+  });
+
+  it('places provisional 31×56 cottage on a narrow deep lot', () => {
+    const narrowDeep = [sfLot(1, 42, 120)];
+    const ids = eligibleStockPlans([ABHP_4848_00368], narrowDeep).map((d) => d.id);
+    expect(ids).toEqual([ABHP_4848_00368.id]);
+  });
+
+  it('uses Delk trial-cleared path for Delk parcel id', () => {
+    const delkLots = [sfLot(1, 65, 80), sfLot(2, 65, 80), sfLot(3, 65, 80)];
+    const ids = eligibleStockPlans(buildableStockPlans(), delkLots, {
+      parcelId: DELK_PARCEL_ID,
+    }).map((d) => d.id);
+    expect(ids).toContain(DELK_COTTAGE_1754_00010.id);
+  });
+
+  it('enables the control from fit stock even when concepts are empty', () => {
+    const house: Element = {
+      id: 'house-1',
+      type: 'building',
+      name: 'House',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [20, 0],
+            [20, 20],
+            [0, 20],
+            [0, 0],
+          ],
+        ],
+      },
+      properties: { use: 'residential', house: true, floors: 1 },
+      metadata: { createdAt: '', updatedAt: '', source: 'ai-generated' },
+    };
+    const { show, enabled, eligibleStock } = showHomeDesignsControl({
+      layoutShown: 'neighborhood',
+      product: 'apartments',
+      elements: [house, sfLot(1, 70, 100)],
+      designs: [],
+      stockPlans: buildableStockPlans(),
+    });
+    expect(show).toBe(true);
+    expect(enabled).toBe(true);
+    expect(eligibleStock.length).toBeGreaterThan(0);
   });
 });

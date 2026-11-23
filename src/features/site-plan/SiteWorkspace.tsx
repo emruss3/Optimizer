@@ -12,8 +12,10 @@ import {
   HOME_DESIGNS_NONE_FIT_TITLE,
   schemeAllowsHomeDesigns,
   eligibleHomeDesigns,
+  eligibleStockPlans,
   typologyEligibleHomeDesigns,
 } from './housing/homeDesignsGate';
+import type { HousingDesignRecord } from './housing/types';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
@@ -3350,6 +3352,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [scene]);
   const homeDesignsUi = useMemo(() => {
     const houses = residentialHomes(baseElements);
+    const emptyStock = [] as HousingDesignRecord[];
     if (
       !schemeAllowsHomeDesigns({
         layoutShown,
@@ -3357,17 +3360,25 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         houseCount: houses.length,
       })
     ) {
-      return { show: false as const, enabled: false as const, eligible: [] as typeof HOME_DESIGNS };
+      return {
+        show: false as const,
+        enabled: false as const,
+        eligible: [] as typeof HOME_DESIGNS,
+        eligibleStock: emptyStock,
+      };
     }
     const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
     const eligible = typed.length
       ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
       : ([] as typeof HOME_DESIGNS);
-    // Scheme allows homes: keep the control visible; enable when concepts fit
-    // or SF stock apply is available (R/RS gated via designsForParcel).
-    const enabled = eligible.length > 0 || sfStockDesigns.length > 0;
-    return { show: true as const, enabled, eligible };
-  }, [baseElements, layoutShown, product, homeStudioBoundary, sfStockDesigns.length]);
+    // R/RS zoning already withheld MF/CS stock; further filter ABHP by lot fit.
+    const eligibleStock = sfStockDesigns.length
+      ? eligibleStockPlans(sfStockDesigns, baseElements, { parcelId: parcelIdStr })
+      : emptyStock;
+    // Scheme allows homes: keep the control visible; disable when nothing fits.
+    const enabled = eligible.length > 0 || eligibleStock.length > 0;
+    return { show: true as const, enabled, eligible, eligibleStock };
+  }, [baseElements, layoutShown, product, homeStudioBoundary, sfStockDesigns, parcelIdStr]);
   useEffect(() => {
     if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
   }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
@@ -4131,8 +4142,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           siteBoundary={homeStudioBoundary}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
-          stockPlans={sfStockDesigns}
-          onApplyStock={sfStockDesigns.length > 0 ? handleHousingDesignSelect : undefined}
+          stockPlans={homeDesignsUi.eligibleStock}
+          onApplyStock={homeDesignsUi.eligibleStock.length > 0 ? handleHousingDesignSelect : undefined}
+          designs={homeDesignsUi.eligible}
           onClose={closeHomes}
           onPreview={study => {
             setHouseStudy({ parcel: parcelIdStr, base: baseElements, study });
