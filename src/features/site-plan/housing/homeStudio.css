@@ -259,3 +259,38 @@
   color: #5a6b60;
 }
 
+.home-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.home-browse {
+  display: flex;
+  gap: 6px;
+}
+.home-browse button {
+  border: 1px solid #bdc8b9;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: #fffefa;
+}
+.home-browse button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.home-empty-eligible {
+  margin: 8px;
+  font-size: 13px;
+  color: #56695d;
+  line-height: 1.45;
+}
+.home-fit-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #56695d;
+}
+.home-elevation-note {
+  font-size: 12px;
+  color: #56695d;
+  margin-top: 4px;
+}

@@ -6,10 +6,32 @@ import { bounds, normal, pointOn, wallsFor, wallSegments } from './drawings';
 
 function zone(name: string) {
   if (/garage/i.test(name)) return '#dedfd7';
+  if (/mech|hvac|utility/i.test(name)) return '#d8dde8';
   if (/bath|laundry|powder/i.test(name)) return '#dce9e5';
+  if (/kitchen/i.test(name)) return '#efe6d4';
   if (/bedroom|guest/i.test(name)) return '#f1e4d8';
   if (/closet|storage|pantry|linen|coats|dressing/i.test(name)) return '#eae6de';
   return '#f5f1e6';
+}
+
+/** Prefer a readable program name over a bare index when the zone is tight. */
+export function planRoomLabel(name: string, w: number, d: number): string {
+  const font = Math.min(1.45, w / (name.length * 0.52 + 1), d * 0.28);
+  if (font >= 0.89 && w >= 5.5 && d >= 3.5) return name;
+  if (/primary bath/i.test(name)) return 'P. Bath';
+  if (/shower bath/i.test(name)) return 'Bath';
+  if (/\bbath\b/i.test(name)) return 'Bath';
+  if (/laundry/i.test(name)) return 'Laundry';
+  if (/kitchen/i.test(name)) return 'Kitchen';
+  if (/powder/i.test(name)) return 'Pwd';
+  if (/mech|hvac|utility/i.test(name)) return 'HVAC';
+  if (/pantry/i.test(name)) return 'Pantry';
+  if (/primary bedroom/i.test(name)) return 'Primary BR';
+  if (/bedroom/i.test(name)) return name.replace(/bedroom/i, 'BR').trim();
+  if (/closet|linen|coats|dressing|storage/i.test(name)) return name.split(/\s+/)[0]!;
+  if (/garage/i.test(name)) return 'Garage';
+  if (/stair|landing|entry|foyer|hall|mud/i.test(name)) return name.split(/\s+/)[0]!;
+  return name.length > 9 ? name.slice(0, 8) + '…' : name;
 }
 const textStyle = { fontFamily: 'Arial, sans-serif', fill: '#344339' };
 export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number }) {
@@ -63,6 +85,49 @@ export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number
             />
           ))}
           <line x1={rx + w / 2} y1={yy + 2.3} x2={rx + w / 2} y2={yy + d - 0.55} />
+        </g>
+      );
+    if (/kitchen/i.test(r.name))
+      return (
+        <g fill="none" stroke="#8a7a5c" strokeWidth=".11">
+          <rect x={rx + 0.45} y={yy + 0.4} width={Math.min(2.2, w - 0.9)} height={d - 0.8} />
+          <rect x={rx + 0.45} y={yy + d - Math.min(2.2, d - 0.8) - 0.4} width={w - 0.9} height={Math.min(2.2, d - 0.8)} />
+          <circle cx={rx + Math.min(1.55, w / 2)} cy={yy + Math.min(1.4, d / 2)} r="0.35" />
+        </g>
+      );
+    if (/bath|powder/i.test(r.name))
+      return (
+        <g fill="none" stroke="#6f8f88" strokeWidth=".11">
+          <rect x={rx + 0.45} y={yy + 0.45} width={Math.min(2.6, w - 0.9)} height={Math.min(5, d - 0.9)} rx="0.35" />
+          <circle cx={rx + w - 1.1} cy={yy + 1.15} r="0.55" />
+          <rect x={rx + w - 2.1} y={yy + d - 1.55} width={1.55} height={0.95} />
+        </g>
+      );
+    if (/laundry/i.test(r.name))
+      return (
+        <g fill="none" stroke="#6f8f88" strokeWidth=".11">
+          <rect x={rx + 0.5} y={yy + 0.55} width={Math.min(2.4, (w - 1.2) / 2)} height={Math.min(2.4, d - 1.1)} />
+          <rect
+            x={rx + 0.5 + Math.min(2.4, (w - 1.2) / 2) + 0.25}
+            y={yy + 0.55}
+            width={Math.min(2.4, (w - 1.2) / 2)}
+            height={Math.min(2.4, d - 1.1)}
+          />
+        </g>
+      );
+    if (/mech|hvac|utility/i.test(r.name))
+      return (
+        <g fill="none" stroke="#6a7388" strokeWidth=".11">
+          <rect x={rx + 0.5} y={yy + 0.5} width={w - 1} height={d - 1} />
+          {Array.from({ length: 4 }, (_, i) => (
+            <line
+              key={i}
+              x1={rx + 0.7}
+              y1={yy + 0.85 + i * ((d - 1.5) / 3)}
+              x2={rx + w - 0.7}
+              y2={yy + 0.85 + i * ((d - 1.5) / 3)}
+            />
+          ))}
         </g>
       );
     return null;
@@ -145,12 +210,12 @@ export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number
           })}
         </g>
       ))}
-      {rooms.map((r, i) => {
+      {rooms.map((r) => {
         const [a, b, w, d] = r.rect,
           cx = a + w / 2,
           cy = sy(b + d / 2),
-          font = Math.min(1.45, w / (r.name.length * 0.52 + 1), d * 0.28);
-        const numbered = font < 0.89 || w < 5.5 || d < 3.5;
+          label = planRoomLabel(r.name, w, d),
+          font = Math.min(1.45, w / (label.length * 0.52 + 1), d * 0.28);
         return (
           <text
             key={r.name}
@@ -158,13 +223,13 @@ export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number
             y={cy}
             textAnchor="middle"
             dominantBaseline="middle"
-            fontSize={numbered ? 1.1 : font}
+            fontSize={Math.max(0.95, font)}
             {...textStyle}
             stroke={zone(r.name)}
             strokeWidth=".28"
             paintOrder="stroke"
           >
-            {numbered ? String(i + 1) : r.name}
+            {label}
           </text>
         );
       })}
