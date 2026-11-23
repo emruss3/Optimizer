@@ -131,6 +131,11 @@ describe('houses', () => {
     expect(apron?.start[0]).toBeCloseTo(4, 3);
     expect(apron?.end[1]).toBeCloseTo(-1.06, 2);
     expect(build(false).slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
+    // With a designId, unknown garage must not invent a door (Housing design brief).
+    // Legacy catalogued pads without a designId keep the pre-catalogue meeting rule.
+    expect(buildArchitecture('odd', 'House', ell, 'house', buildingHeight('house', 2),
+      [], 1, 'infill', [], [], { driveways: drives, garage: null, catalogued: true, designId: 'abhp:test' })
+      .slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
   });
 });
 
