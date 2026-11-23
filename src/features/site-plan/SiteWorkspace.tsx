@@ -53,7 +53,6 @@ import {
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import {
-  DELK_PARCEL_ID,
   applyHousingDesign,
   designsForParcel,
   type DesignFitResult,
@@ -3215,6 +3214,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const detachedSfOnSheet = displayElements.some(e => isDetachedSfPlanElement(e));
   const legacyLots = legacyLotCount > 0 ? legacyLotCount : null;
   const layoutZoningBase = plannerCtx?.context?.legal?.zoning_base ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
+  // Detached SF stock stamps only on R/RS by-right sessions — not MF/CS unless a rezone label is set.
+  const sfStockDesigns = useMemo(
+    () => designsForParcel(parcelIdStr, { zoningBase: layoutZoningBase }),
+    [parcelIdStr, layoutZoningBase],
+  );
   const isRmLayout = sfV1Route(layoutZoningBase) === 'th' && plannerCtx?.context.typology === 'multifamily' && sfV1Competition != null;
   const layoutShown: LayoutKind | null = displayElements.some(e => isMfPlanElement(e)) ? 'multifamily'
     : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
@@ -3363,8 +3367,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
       : ([] as typeof HOME_DESIGNS);
     // Scheme allows homes: keep the control visible; disable when nothing fits.
-    return { show: true as const, enabled: eligible.length > 0, eligible };
-  }, [baseElements, layoutShown, product, homeStudioBoundary]);
+    // SF stock can still open the studio when concept studies do not fit.
+    const stockOk = sfStockDesigns.length > 0;
+    return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
+  }, [baseElements, layoutShown, product, homeStudioBoundary, sfStockDesigns]);
   useEffect(() => {
     if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
   }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
@@ -4045,12 +4051,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               disabled={!homeDesignsUi.enabled}
               title={
                 homeDesignsUi.enabled
-                  ? 'Browse home designs that fit house lots on this plan'
+                  ? // Parcel-level stock can enable the control even when the selected lot has none —
+                    // studio empty state covers that; do not promise fits here.
+                    'Browse buildable stock plans and concept studies for house lots on this plan'
                   : HOME_DESIGNS_NONE_FIT_TITLE
               }
               className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Home designs
+              Buildable plans
             </button>
           )}
           {!classicDrawing && scene && scene.buildings.length > 0 && (
@@ -4124,17 +4132,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-      {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening home designs…</div>}>
+      {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
         <HomeStudio
           siteBoundary={homeStudioBoundary}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
           designs={homeDesignsUi.eligible}
+          stockPlans={sfStockDesigns}
+          onApplyStock={sfStockDesigns.length > 0 ? handleHousingDesignSelect : undefined}
           onClose={closeHomes}
           onPreview={study => {
             setHouseStudy({ parcel: parcelIdStr, base: baseElements, study });
             setHomesOpen(false);
-            // Home designs must land in the live 3D massing (same authored geometry as the gallery).
+            // Concept previews land in the live 3D massing (same authored geometry as the gallery).
             setViewMode('3d');
             handleSceneSelection([study.house]);
             setHomePreviewFocus(n => n + 1);
@@ -4271,10 +4281,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               autoBest={sfV1AutoBest}
               holeOverlap={sfV1HoleOverlap}
               frontageLandlocked={noStreetAccess}
-              housing={parcelIdStr === DELK_PARCEL_ID && designsForParcel(parcelIdStr).length > 0
+              housing={sfStockDesigns.length > 0
                 ? {
                     parcelId: parcelIdStr,
-                    designs: designsForParcel(parcelIdStr),
+                    designs: sfStockDesigns,
                     selectedId: housingDesignId,
                     fits: housingFits,
                     onSelect: handleHousingDesignSelect,

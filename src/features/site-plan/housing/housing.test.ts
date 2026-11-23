@@ -8,11 +8,16 @@ import { buildingHeight } from '../scene/heights';
 import { buildDrawingScene } from '../scene/buildScene';
 import { sfV1ToElements, type SfV1Response } from '../api/sfV1Plan';
 import {
+  ABHP_4848_00368,
   DELK_COTTAGE_1754_00010,
   DELK_COTTAGE_ID,
   DELK_PARCEL_ID,
+  HOUSING_CATALOGUE,
+  allowSfStockPlans,
   applyHousingDesign,
+  buildableStockPlans,
   clearHousingChoices,
+  designsForParcel,
   designToHouseAccess,
   fitDelkCottage,
   fitDesignToLot,
@@ -65,6 +70,57 @@ describe('housing design record — Delk cottage 1754-00010', () => {
   });
 });
 
+describe('buildable stock catalogue', () => {
+  it('lists multiple ABHP plans with footprints and publisher URLs', () => {
+    const stock = buildableStockPlans();
+    expect(stock.length).toBeGreaterThanOrEqual(10);
+    expect(HOUSING_CATALOGUE.every(d => d.source.rights === 'citation-only')).toBe(true);
+    for (const d of stock) {
+      expect(d.heatedSf).toBeGreaterThan(0);
+      expect(d.footprint.widthFt).toBeGreaterThan(0);
+      expect(d.footprintsByFloor.length).toBeGreaterThan(0);
+      expect(d.source.url).toMatch(/houseplans\.net/);
+      expect(d.attachedGarage).toBe(false);
+      expect(d.parking).toBe('pad');
+    }
+  });
+
+  it('offers the full stock list on SF parcels, Delk cottage first on Delk', () => {
+    const delk = designsForParcel(DELK_PARCEL_ID, { zoningBase: 'RS5' });
+    expect(delk[0]?.id).toBe(DELK_COTTAGE_ID);
+    expect(delk.length).toBe(buildableStockPlans().length);
+    expect(designsForParcel('999999', { zoningBase: 'R8' }).map(d => d.id)).toEqual(
+      buildableStockPlans().map(d => d.id),
+    );
+    // Legacy callers without zoning still see the catalogue (gate is at the session).
+    expect(designsForParcel('999999').map(d => d.id)).toEqual(buildableStockPlans().map(d => d.id));
+  });
+
+  it('withholds SF stock on MF/CS unless labeled rezone', () => {
+    expect(allowSfStockPlans('RM20')).toBe(false);
+    expect(allowSfStockPlans('CS')).toBe(false);
+    expect(allowSfStockPlans('RS5')).toBe(true);
+    expect(allowSfStockPlans('RM20', { rezoneLabeled: true })).toBe(true);
+    expect(designsForParcel(DELK_PARCEL_ID, { zoningBase: 'RM20' })).toEqual([]);
+    expect(designsForParcel('999999', { zoningBase: 'CS' })).toEqual([]);
+    expect(designsForParcel('999999', { zoningBase: 'RM40-A', rezoneLabeled: true }).length).toBe(
+      buildableStockPlans().length,
+    );
+  });
+
+  it('cites listing-overall Width×Depth on provisional ABHP pads', () => {
+    expect(ABHP_4848_00368.source.citation).toMatch(/listing overall/);
+    expect(ABHP_4848_00368.notes.some(n => /listing.*overall|may include porch/i.test(n))).toBe(true);
+  });
+
+  it('resolves each catalogue plan by id and plan number', () => {
+    for (const d of HOUSING_CATALOGUE) {
+      expect(housingDesignById(d.id)?.planNumber).toBe(d.planNumber);
+      expect(housingDesignById(d.planNumber)?.id).toBe(d.id);
+    }
+  });
+});
+
 describe('fit — Delk lots and Helen Street orientation', () => {
   it('places the cottage on lots 1–3 and rejects lots 4–5 with a reason', () => {
     const lots = [
@@ -102,6 +158,14 @@ describe('fit — Delk lots and Helen Street orientation', () => {
     expect(helen.status).toBe('placed');
     expect(helen.placement?.rotationDeg).toBe(90);
     expect(helen.reason).toMatch(/short-face|90/i);
+  });
+
+  it('places provisional 31×56 cottage on a narrow deep non-Delk lot', () => {
+    // Buildable ~32 × 80 after 5/20/20 setbacks — width clears 31′, depth clears 56′.
+    const narrowDeep = fitDesignToLot(ABHP_4848_00368, rectLot(42, 120, 0));
+    expect(narrowDeep.status).toBe('placed');
+    expect(narrowDeep.placement?.designId).toBe(ABHP_4848_00368.id);
+    expect(narrowDeep.reason).toMatch(/porch to frontage|short-face|90/i);
   });
 });
 

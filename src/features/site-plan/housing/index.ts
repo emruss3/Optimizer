@@ -39,12 +39,24 @@ export type {
 } from './types';
 
 export {
+  ABHP_110_00108,
+  ABHP_340_00011,
+  ABHP_4848_00368,
+  ABHP_526_00030,
+  ABHP_526_00035,
+  ABHP_526_00051,
+  ABHP_5633_00014,
+  ABHP_5633_00358,
+  ABHP_5633_00365,
+  ABHP_5633_00366,
   DELK_BASELINE_REVISION,
   DELK_COTTAGE_1754_00010,
   DELK_COTTAGE_ID,
   DELK_PARCEL_ID,
   HOUSING_CATALOGUE,
   LANES_UNIT_A_STUB,
+  allowSfStockPlans,
+  buildableStockPlans,
   designsForParcel,
   housingDesignById,
 } from './catalogue';

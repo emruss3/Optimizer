@@ -1,10 +1,11 @@
 /**
- * Middle Tennessee product catalogue — first vertical slice.
+ * Middle Tennessee product catalogue — buildable stock plans people can license.
  *
- * Demo 1: America’s Best House Plans 1754-00010 on 0 Delk Ave (675423).
- * Demo 2: The Lanes Unit A — stub only (no assets / fit yet).
+ * Records cite public listing facts from America’s Best House Plans (and stubs
+ * for other products). Construction drawings require a separate publisher
+ * license; this repo does not ship ABHP PDFs or copyrighted elevations.
  */
-import type { HousingDesignRecord } from './types';
+import type { HousingDesignRecord, ParkingArrangement, PorchFace } from './types';
 
 /** Parcel pinned for the Delk cottage baseline (RS5, five-lot rev 316a0d36). */
 export const DELK_PARCEL_ID = '675423';
@@ -13,11 +14,93 @@ export const DELK_BASELINE_REVISION = '316a0d36';
 /** America’s Best House Plans 1754-00010 — 3br/2ba ranch, no attached garage. */
 export const DELK_COTTAGE_ID = 'abhp:1754-00010';
 
-const W = 40;
+const ABHP = "America's Best House Plans";
+const ABHP_SITE = 'https://www.houseplans.net';
+
+function ring(widthFt: number, depthFt: number): Array<[number, number]> {
+  return [
+    [0, 0],
+    [widthFt, 0],
+    [widthFt, depthFt],
+    [0, depthFt],
+    [0, 0],
+  ];
+}
+
+/** Rectangular heated ranch/cottage from public ABHP listing facts (citation-only).
+ *  Width×Depth are the listing’s overall dimensions (often including porch). */
+function abhpPadRanch(input: {
+  planNumber: string;
+  name: string;
+  listingPath: string;
+  heatedSf: number;
+  beds: number;
+  baths: number;
+  widthFt: number;
+  depthFt: number;
+  porchSf?: number | null;
+  porchFace?: PorchFace;
+  verification?: HousingDesignRecord['verification'];
+  notes?: string[];
+}): HousingDesignRecord {
+  const W = input.widthFt;
+  const D = input.depthFt;
+  const porchSf = input.porchSf ?? null;
+  const porchFace = input.porchFace ?? 'width';
+  const parking: ParkingArrangement = 'pad';
+  return {
+    id: `abhp:${input.planNumber}`,
+    assetVersion: '2026-11-23.1',
+    name: input.name,
+    planNumber: input.planNumber,
+    source: {
+      publisher: ABHP,
+      url: `${ABHP_SITE}${input.listingPath}`,
+      citation: `${ABHP} plan ${input.planNumber} — ${input.beds} bed / ${input.baths} bath, ${input.heatedSf.toLocaleString()} heated sf, ${W}′ × ${D}′ listing overall (may include porch), no attached garage (public listing; construction license sold separately).`,
+      rights: 'citation-only',
+    },
+    stories: 1,
+    beds: input.beds,
+    baths: input.baths,
+    heatedSf: input.heatedSf,
+    attachedGarage: false,
+    garageSf: 0,
+    porchSf,
+    footprint: { widthFt: W, depthFt: D },
+    porchFace,
+    parking,
+    elevations: ['front', 'left', 'right', 'rear'],
+    mirrors: ['none', 'left-right'],
+    footprintsByFloor: [
+      {
+        floor: 1,
+        ringFt: ring(W, D),
+        heatedSf: input.heatedSf,
+        garageSf: 0,
+        porchSf,
+      },
+    ],
+    entry: {
+      alongFt: (porchFace === 'width' ? W : D) / 2,
+      facingDeg: 180,
+      widthFt: 3,
+      wall: 'front',
+    },
+    vehicle: null,
+    verification: input.verification ?? 'provisional',
+    notes: input.notes ?? [
+      'Public listing facts only — purchase the ABHP construction package before building.',
+      'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+      'No attached garage on the listing; use an independent parking pad or street stall.',
+    ],
+  };
+}
+
+const W_DELK = 40;
 /** 34′2″ */
-const D = 34 + 2 / 12;
-const HEATED = 1141;
-const PORCH_SF = 48; // schematic porch band on the 40-ft face; not a photographic claim
+const D_DELK = 34 + 2 / 12;
+const HEATED_DELK = 1141;
+const PORCH_DELK = 48;
 
 export const DELK_COTTAGE_1754_00010: HousingDesignRecord = {
   id: DELK_COTTAGE_ID,
@@ -25,19 +108,19 @@ export const DELK_COTTAGE_1754_00010: HousingDesignRecord = {
   name: 'ABHP 1754-00010 · three-bedroom cottage',
   planNumber: '1754-00010',
   source: {
-    publisher: "America's Best House Plans",
-    url: 'https://www.houseplans.com/',
-    citation: "America's Best House Plans plan 1754-00010 — 3 bed / 2 bath ranch, 1,141 heated sf, 40′ × 34′2″, porch on the 40-ft face, no attached garage (Housing design brief, Nov 22, 2026).",
+    publisher: ABHP,
+    url: `${ABHP_SITE}/floorplans/175400010`,
+    citation: `${ABHP} plan 1754-00010 — 3 bed / 2 bath ranch, 1,141 heated sf, 40′ × 34′2″, porch on the 40-ft face, no attached garage (Housing design brief, Nov 22, 2026).`,
     rights: 'citation-only',
   },
   stories: 1,
   beds: 3,
   baths: 2,
-  heatedSf: HEATED,
+  heatedSf: HEATED_DELK,
   attachedGarage: false,
   garageSf: 0,
-  porchSf: PORCH_SF,
-  footprint: { widthFt: W, depthFt: D },
+  porchSf: PORCH_DELK,
+  footprint: { widthFt: W_DELK, depthFt: D_DELK },
   porchFace: 'width',
   parking: 'pad',
   elevations: ['front', 'left', 'right', 'rear'],
@@ -45,29 +128,166 @@ export const DELK_COTTAGE_1754_00010: HousingDesignRecord = {
   footprintsByFloor: [
     {
       floor: 1,
-      ringFt: [
-        [0, 0],
-        [W, 0],
-        [W, D],
-        [0, D],
-        [0, 0],
-      ],
-      heatedSf: HEATED,
+      ringFt: ring(W_DELK, D_DELK),
+      heatedSf: HEATED_DELK,
       garageSf: 0,
-      porchSf: PORCH_SF,
+      porchSf: PORCH_DELK,
     },
   ],
-  // Entry centred on the porch (width) face at y = 0.
-  entry: { alongFt: W / 2, facingDeg: 180, widthFt: 3, wall: 'front' },
-  // No attached garage — parking is a pad independent of the entry.
+  entry: { alongFt: W_DELK / 2, facingDeg: 180, widthFt: 3, wall: 'front' },
   vehicle: null,
   verification: 'trial-cleared',
   notes: [
     'Trial cleared setbacks on Delk lots 1–3 with porch to the lane.',
     'Lots 4–5 need frontage edge resolution; report unplaced with constraint.',
     'Helen Street (Ashland City) is the orientation regression: porch on the short face.',
+    'Construction license sold separately by America’s Best House Plans.',
   ],
 };
+
+/** Compact 40×25 ranch — Mid-South starter product (1 ba, 0 cars). */
+export const ABHP_5633_00365 = abhpPadRanch({
+  planNumber: '5633-00365',
+  name: 'ABHP 5633-00365 · compact three-bedroom ranch',
+  listingPath: '/floorplans/563300365',
+  heatedSf: 1000,
+  beds: 3,
+  baths: 1,
+  widthFt: 40,
+  depthFt: 25,
+});
+
+/** 40×32 ranch with 1.5 baths — pad parking. */
+export const ABHP_5633_00366 = abhpPadRanch({
+  planNumber: '5633-00366',
+  name: 'ABHP 5633-00366 · three-bedroom ranch',
+  listingPath: '/floorplans/563300366',
+  heatedSf: 1120,
+  beds: 3,
+  baths: 1.5,
+  widthFt: 40,
+  depthFt: 32,
+});
+
+/** Narrower 34′6″ × 32′6″ ranch. */
+export const ABHP_110_00108 = abhpPadRanch({
+  planNumber: '110-00108',
+  name: 'ABHP 110-00108 · three-bedroom ranch',
+  listingPath: '/floorplans/11000108',
+  heatedSf: 1029,
+  beds: 3,
+  baths: 1.5,
+  widthFt: 34.5,
+  depthFt: 32.5,
+});
+
+/** Narrow 31×56 cottage — deep-lot / urban product. */
+export const ABHP_4848_00368 = abhpPadRanch({
+  planNumber: '4848-00368',
+  name: 'ABHP 4848-00368 · three-bedroom cottage',
+  listingPath: '/floorplans/484800368',
+  heatedSf: 1437,
+  beds: 3,
+  baths: 2,
+  widthFt: 31,
+  depthFt: 56,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    'Narrow heated width (31′) suits deep lots; porch faces the 31-ft front.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
+/** Wider 46×32 ranch, 1,288 heated sf. */
+export const ABHP_5633_00358 = abhpPadRanch({
+  planNumber: '5633-00358',
+  name: 'ABHP 5633-00358 · three-bedroom ranch',
+  listingPath: '/floorplans/563300358',
+  heatedSf: 1288,
+  beds: 3,
+  baths: 2,
+  widthFt: 46,
+  depthFt: 32,
+});
+
+/** Ultra-narrow 24×30 starter ranch — 2 bed / 1 ba, 720 heated sf (0 cars). */
+export const ABHP_5633_00014 = abhpPadRanch({
+  planNumber: '5633-00014',
+  name: 'ABHP 5633-00014 · narrow two-bedroom ranch',
+  listingPath: '/floorplans/563300014/ranch-plan-720-square-feet-2-bedrooms-1-bathroom',
+  heatedSf: 720,
+  beds: 2,
+  baths: 1,
+  widthFt: 24,
+  depthFt: 30,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '24′ width clears tight urban / flag-lot envelopes that wider ranches cannot.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
+/** 44×30 ranch, 1,200 heated sf, pad parking. */
+export const ABHP_340_00011 = abhpPadRanch({
+  planNumber: '340-00011',
+  name: 'ABHP 340-00011 · three-bedroom ranch',
+  listingPath: '/floorplans/34000011/ranch-plan-1200-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1200,
+  beds: 3,
+  baths: 2,
+  widthFt: 44,
+  depthFt: 30,
+});
+
+/** Narrow 31×42′5″ ranch — mid-depth urban product. */
+export const ABHP_526_00035 = abhpPadRanch({
+  planNumber: '526-00035',
+  name: 'ABHP 526-00035 · narrow three-bedroom ranch',
+  listingPath: '/floorplans/52600035/ranch-plan-1315-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1315,
+  beds: 3,
+  baths: 2,
+  widthFt: 31,
+  depthFt: 42 + 5 / 12,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '31′ width suits narrow lots that still have mid depth after setbacks.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
+/** 47′7″ × 35′4″ ranch, 1,438 heated sf. */
+export const ABHP_526_00030 = abhpPadRanch({
+  planNumber: '526-00030',
+  name: 'ABHP 526-00030 · three-bedroom ranch',
+  listingPath: '/floorplans/52600030/ranch-plan-1438-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1438,
+  beds: 3,
+  baths: 2,
+  widthFt: 47 + 7 / 12,
+  depthFt: 35 + 4 / 12,
+});
+
+/** Wide shallow 50×28 ranch — broad frontage, shallow depth. */
+export const ABHP_526_00051 = abhpPadRanch({
+  planNumber: '526-00051',
+  name: 'ABHP 526-00051 · wide three-bedroom ranch',
+  listingPath: '/floorplans/52600051/traditional-plan-1400-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1400,
+  beds: 3,
+  baths: 2,
+  widthFt: 50,
+  depthFt: 28,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '50′ × 28′ suits wide-shallow lots that reject deeper ranches.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
 
 /**
  * The Lanes Unit A — narrow urban product (second demo). Stub only: no
@@ -103,10 +323,24 @@ export const LANES_UNIT_A_STUB: HousingDesignRecord = {
   notes: ['Stub for the second demo wave — do not place or draw yet.'],
 };
 
+/** Buildable stock plans offered in Home Studio / pickers (stubs excluded). */
 export const HOUSING_CATALOGUE: HousingDesignRecord[] = [
   DELK_COTTAGE_1754_00010,
-  // LANES_UNIT_A_STUB intentionally omitted from selectable catalogue until assets exist.
+  ABHP_5633_00365,
+  ABHP_5633_00366,
+  ABHP_110_00108,
+  ABHP_4848_00368,
+  ABHP_5633_00358,
+  ABHP_5633_00014,
+  ABHP_340_00011,
+  ABHP_526_00035,
+  ABHP_526_00030,
+  ABHP_526_00051,
 ];
+
+export function buildableStockPlans(): HousingDesignRecord[] {
+  return HOUSING_CATALOGUE.filter(d => d.footprintsByFloor.length > 0 && d.heatedSf > 0);
+}
 
 export function housingDesignById(id: string): HousingDesignRecord | undefined {
   if (id === DELK_COTTAGE_ID || id === '1754-00010') return DELK_COTTAGE_1754_00010;
@@ -114,8 +348,35 @@ export function housingDesignById(id: string): HousingDesignRecord | undefined {
   return HOUSING_CATALOGUE.find(d => d.id === id || d.planNumber === id);
 }
 
-/** Designs offered in the Delk picker (session catalogue for parcel 675423). */
-export function designsForParcel(parcelId: string): HousingDesignRecord[] {
-  if (String(parcelId) === DELK_PARCEL_ID) return [DELK_COTTAGE_1754_00010];
-  return [];
+/**
+ * True when detached SF stock may stamp onto pads: R / RS by-right (or an
+ * explicitly labeled rezone). MF / CS / attached sessions stay empty so we do
+ * not treat apartment or commercial land as as-of-right SF product.
+ */
+export function allowSfStockPlans(
+  zoningBase: string | null | undefined,
+  opts?: { rezoneLabeled?: boolean },
+): boolean {
+  if (opts?.rezoneLabeled) return true;
+  const z = (zoningBase ?? '').trim().toUpperCase();
+  return /^RS?\d/.test(z);
+}
+
+/**
+ * Designs for a parcel session. Delk keeps the trial-cleared cottage first;
+ * other SF / neighborhood parcels see the full buildable stock list.
+ * Pass zoningBase (or rezoneLabeled) so MF/CS sessions get an empty list.
+ */
+export function designsForParcel(
+  parcelId: string,
+  opts?: { zoningBase?: string | null; rezoneLabeled?: boolean },
+): HousingDesignRecord[] {
+  if (opts && !allowSfStockPlans(opts.zoningBase, { rezoneLabeled: opts.rezoneLabeled })) {
+    return [];
+  }
+  const stock = buildableStockPlans();
+  if (String(parcelId) === DELK_PARCEL_ID) {
+    return [DELK_COTTAGE_1754_00010, ...stock.filter(d => d.id !== DELK_COTTAGE_ID)];
+  }
+  return stock;
 }
