@@ -4,7 +4,7 @@ Ship the database first. The new UI calls `find_planner_parcels` from the start 
 
 ## Build the indexes while imports can write
 
-On an empty development database apply the migration normally. On a populated database run the following from the repository root with an operator connection and psql. This takes the exact index definitions from the migration, builds each in its own autocommit transaction, and stops at the first error. The two B-trees serve exact and short-prefix lookups. The two GIN indexes serve contains searches on addresses and normalized parcel numbers. Budget disk and monitor load during backfills.
+On an empty development database apply the migration normally. On a populated database run the following from the repository root with an operator connection and psql. This takes the exact index definitions from the migration, builds each in its own autocommit transaction, and stops at the first error. The address B-tree serves exact and short-prefix address queries. A multicolumn trigram GIN index serves contains queries on both search keys and equality or prefix queries on normalized parcel numbers. Keeping both trigram keys in one index saves a separate scan of the live parcel heap. Budget disk and monitor load during backfills.
 
 ```sh
 migration=supabase/migrations/20261123010000_planner_parcel_search.sql
@@ -14,13 +14,14 @@ sed '/^create or replace function public.find_planner_parcels/,$d;
 psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f /tmp/planner-search-prebuild.sql
 ```
 
-Verify that the following returns four rows with both flags true. An interrupted concurrent build can leave an invalid index. Drop only the invalid index concurrently and rerun the prebuild before continuing.
+Verify that the following returns two rows with both flags true. An interrupted concurrent build can leave an invalid index. Drop only the invalid index concurrently and rerun the prebuild before continuing.
 
 ```sql
 select indexrelid::regclass, indisvalid, indisready
 from pg_index
 where indrelid = 'public.parcels'::regclass
-  and indexrelid::regclass::text like '%parcels_planner_%';
+  and indexrelid in (to_regclass('public.parcels_planner_address_prefix'),
+                     to_regclass('public.parcels_planner_keys_trgm'));
 ```
 
 Apply the migration through the project's migration runner and run `ANALYZE public.parcels;` after the index build. Verify the RPC using the same public client key and role as the app before shipping the UI.

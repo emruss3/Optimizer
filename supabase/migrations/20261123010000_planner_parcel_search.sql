@@ -1,4 +1,4 @@
--- On a live Regrid import, prebuild these four indexes CONCURRENTLY in
+-- On a live Regrid import, prebuild both indexes CONCURRENTLY in
 -- autocommit sessions before applying this migration. See the rollout notes.
 create extension if not exists pg_trgm with schema extensions;
 set local search_path = pg_catalog, public, extensions;
@@ -11,12 +11,8 @@ $$;
 
 create index if not exists parcels_planner_address_prefix on public.parcels
   (upper(address) text_pattern_ops);
-create index if not exists parcels_planner_apn_prefix on public.parcels
-  (public.planner_apn_key(parcelnumb_no_formatting, parcelnumb) text_pattern_ops);
-create index if not exists parcels_planner_address_trgm on public.parcels using gin
-  (upper(address) gin_trgm_ops);
-create index if not exists parcels_planner_apn_trgm on public.parcels using gin
-  (public.planner_apn_key(parcelnumb_no_formatting, parcelnumb) gin_trgm_ops);
+create index if not exists parcels_planner_keys_trgm on public.parcels using gin
+  (upper(address) gin_trgm_ops, public.planner_apn_key(parcelnumb_no_formatting, parcelnumb) gin_trgm_ops);
 
 create or replace function public.find_planner_parcels(p_query text, p_limit integer default 10)
 returns table (ogc_fid integer, address text, parcelnumb text, zoning text)
@@ -42,7 +38,7 @@ begin
   if found then return; end if;
 
   -- A two-character contains search cannot narrow a trigram index. Prefix
-  -- matching uses the B-trees for early keystrokes and punctuation-only terms.
+  -- matching gives early address keystrokes a B-tree prefix and APNs an anchored pattern.
   address_pattern := case when term ~ '[[:alnum:]]{3}' then '%' else '' end || term || '%';
   apn_pattern := case when length(apn) >= 3 then '%' else '' end || apn || '%';
   return query
