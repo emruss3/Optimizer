@@ -597,10 +597,19 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
     }
     // 3D massing
     await page.getByText('3D Massing', { exact: true }).first().click({ timeout: 10000 });
-    await page.waitForTimeout(5000);
-    await page.screenshot({ path: `${OUT}/${p.ogc_fid}_3d.png` });
+    // The largest plan (0 Martingale Dr) is still building its model 5 s after the click, and a
+    // screenshot asked for then waits on a page that cannot paint: it timed out at 30 s on two
+    // runs of five. Wait for the view to say it is ready, then take the picture.
+    const t3d = Date.now();
+    const ready3d = await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 120000 }).then(() => true).catch(() => false);
+    const ready3dMs = Date.now() - t3d;
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${OUT}/${p.ogc_fid}_3d.png`, timeout: 60000 });
 
     const verdictErrs = p.advisory ? [] : judge(expectations[String(p.ogc_fid)], evidence);
+    // a 3D view that never says it is ready is a finding, not a pass
+    if (!ready3d && !p.advisory) verdictErrs.push(`the 3D view was not ready ${Math.round(ready3dMs / 1000)} s after it was opened`);
+    console.log(`  3D ready ${ready3d ? `in ${(ready3dMs / 1000).toFixed(1)} s` : 'NOT REACHED'} — ${p.ogc_fid}`);
     results[p.ogc_fid] = {
       ok: verdictErrs.length === 0,
       advisory: p.advisory ?? false,
