@@ -77,6 +77,8 @@ export function buildMassingData(
     topo?: import('../api/parcelTopo').ParcelTopo | null;
     parcelRing?: number[][];
     envelopeRing?: number[][];
+    /** Where the route to the street breaks: the end of the drive and the street edge it does not reach (EPSG:3857). */
+    accessBreak?: { from: number[]; to: number[] } | null;
     /** Existing neighborhood buildings (3857) — extruded white context */
     contextBuildings?: Array<{ polygon: { coordinates: number[][][] }; stories: number }>;
     /** Neighbor parcel outlines (3857) — flat ground plates */
@@ -196,6 +198,15 @@ export function buildMassingData(
   }
   if (ground?.envelopeRing && ground.envelopeRing.length >= 4) {
     groundPaths.push({ path: toLocal(ground.envelopeRing), color: [37, 99, 235, 200], widthM: 0.5 });
+  }
+  // the unresolved connection sits at the same place the plan marks it
+  if (ground?.accessBreak) {
+    groundPaths.push({ path: toLocal([ground.accessBreak.from, ground.accessBreak.to]), color: [220, 38, 38, 255], widthM: 1.4 });
+    // a ring round the end of the drive, so a short break still reads from across the site
+    const [bx, by] = m(ground.accessBreak.from);
+    const ring: number[][] = [];
+    for (let i = 0; i <= 24; i++) ring.push([(bx ?? 0) + 6 * Math.cos((i / 24) * Math.PI * 2), (by ?? 0) + 6 * Math.sin((i / 24) * Math.PI * 2), 0.05]);
+    groundPaths.push({ path: ring, color: [220, 38, 38, 255], widthM: 1.1 });
   }
 
   // Neighborhood context in the SAME centred frame: existing buildings as

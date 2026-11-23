@@ -84,6 +84,45 @@ Not done: the 49,600 GSF bound against the 72,000 sq ft that three full
 floors would imply. No floor plates are supplied, so that needs the engine's
 basis for the bound before either number is shown as comparable.
 
+## 535 Main St (469303, MUG-A): two ceilings, one claim
+
+The plan is 232,425 GSF on a two-level garage. The app measured it against
+`max_gsf`, which is the surface-parking bound (199,950), and said "116%
+capture" beside the engine's own "54.8% of 423,765 structured ceiling".
+
+Now one rule (`captureBasis`) decides the denominator from how the plan
+parks. A plan that parks in a structure is measured against the structured
+ceiling, and the surface bound rides along by name:
+
+"423,765 GSF structured-parking ceiling · 55% capture · surface-parking
+bound 199,950 GSF (116%: this plan parks in a structure)"
+
+The header's utilization figure uses the same rule. A surface-parked plan
+reads as before.
+
+The battery's floor for this parcel was 110, read against the surface
+frontier. It is re-based to 54 against the structured ceiling: the same
+plan and floor area, a different denominator.
+
+Not done: the exported sheets still need the same wording checked, and the
+garage and residential levels in a section (delivery 3).
+
 ## Still to do in part 1
 
-W Heiman access route, Main St comparison basis, Mt View floor area.
+W Heiman access route, Mt View floor area.
+
+## Where the route to the street breaks (W Heiman)
+
+When no drive reaches the parcel line, the plan now marks the place: a red
+ring at the end of the drive nearest the street, a dashed line to the street
+edge, and the words "Drive stops here · no drawn connection to the street".
+The 3D review marks the same two points with a red ring and names it in the
+legend. The marker is a place, not a length: the app does not measure the gap.
+
+The committed W Heiman fixture reaches the street, so the proof drive grew the
+parcel outline by 12% in the browser while leaving every engine answer as it
+was. That is a test device only. `route-break-2d.png` and
+`route-break-3d-top.png` are from that drive.
+
+Not done here: the marker is not yet on the exported sheets, and a bay that no
+drive touches is still only counted, not marked.

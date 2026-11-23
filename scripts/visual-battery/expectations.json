@@ -111,8 +111,8 @@
   },
   "469303": {
     "mode": "server-plan",
-    "minCapturePct": 110,
-    "_basis": "535 Main St (MUG-A, 3.24 ac, corner lot, structured parking regime) - the Texas wrap, wrap_v1 (2026-10-07, exemplar The Caroline, 101 Cool Springs Blvd): one 323 x 280 ft block to the setbacks (64% of the site), four 67-ft bars round a 188 x 145 court on a 2-level garage (185 stalls per level; 238 built for the 226 required, the top level partial), 5 stories = 2 garage + 3 residential, 131 units, 232,425 GSF. The basis line states capture against the STRUCTURED ceiling (54.8% of 423,765); the number this gate reads is the KPI utilization against the surface frontier (232,425 / 199,950 = 116%) - a garage plan clears the surface-parked frontier by construction, and the floor ratchets UP from here.",
+    "minCapturePct": 54,
+    "_basis": "535 Main St (MUG-A, 3.24 ac, corner lot, structured parking regime) - the Texas wrap, wrap_v1 (2026-10-07, exemplar The Caroline, 101 Cool Springs Blvd): one 323 x 280 ft block to the setbacks (64% of the site), four 67-ft bars round a 188 x 145 court on a 2-level garage (185 stalls per level; 238 built for the 226 required, the top level partial), 5 stories = 2 garage + 3 residential, 131 units, 232,425 GSF. The basis line states capture against the STRUCTURED ceiling (54.8% of 423,765); the number this gate reads is the KPI utilization against the surface frontier (232,425 / 199,950 = 116%) - a garage plan clears the surface-parked frontier by construction, and the floor ratchets UP from here. 2026-11-23 (audit 2026-11-22, one claim one denominator): the KPI utilization is now measured against the ceiling that applies to how the plan parks. This plan parks in a structure, so the gate reads 232,425 / 423,765 = 54.8% and the floor is re-based from 110 (against the surface frontier) to 54 (against the structured ceiling). Same plan, same floor area: a change of denominator, not a lower bar.",
     "requireBriefEnvelope": true,
     "requireNeighborLayers": {
       "parcels": true,

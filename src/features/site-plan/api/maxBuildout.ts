@@ -380,3 +380,54 @@ export function fetchMaxBuildout(
 export function __clearMaxBuildoutCache(): void {
   cache.clear();
 }
+
+/**
+ * Which ceiling a plan's floor area is measured against, and under what name.
+ * `max_gsf` is the SURFACE-parking bound: land not used by parking is what
+ * buildings may stand on. A plan that parks in a structure is not bound by it,
+ * so measuring it against that bound gives more than 100% (535 Main St, audit
+ * 2026-11-22: 232,425 GSF read "116% of a 199,950 GSF upper bound" beside
+ * "54.8% of a 423,765 GSF structured ceiling"). One claim, one denominator:
+ * a structure-parked plan is measured against the structured ceiling, and the
+ * surface bound rides along as a named comparison.
+ */
+export interface CaptureBasis {
+  /** the floor area the plan is measured against */
+  denominatorGsf: number;
+  /** what that ceiling is */
+  label: 'structured-parking ceiling' | 'upper bound';
+  /** plan floor area over the denominator, in percent */
+  pct: number;
+  /** the other ceiling, named, when the plan is not bound by it */
+  comparison: { gsf: number; label: 'surface-parking bound'; pct: number } | null;
+}
+
+/** A plan parks in a structure when its strategy says so. */
+export const parksInStructure = (strategy: string | null | undefined): boolean =>
+  /garage|podium|structur|wrap|deck|tuck/i.test(strategy ?? '');
+
+export function captureBasis(
+  builtGsf: number | null | undefined,
+  buildout: Pick<MaxBuildout, 'max_gsf' | 'structured_parking_ceiling'> | null | undefined,
+  parkingStrategy: string | null | undefined,
+): CaptureBasis | null {
+  if (!buildout || !(buildout.max_gsf > 0) || builtGsf == null || !(builtGsf > 0)) return null;
+  const ceiling = buildout.structured_parking_ceiling?.gsf;
+  if (parksInStructure(parkingStrategy) && typeof ceiling === 'number' && ceiling > 0) {
+    return {
+      denominatorGsf: ceiling,
+      label: 'structured-parking ceiling',
+      pct: (builtGsf / ceiling) * 100,
+      comparison: { gsf: buildout.max_gsf, label: 'surface-parking bound', pct: (builtGsf / buildout.max_gsf) * 100 },
+    };
+  }
+  return { denominatorGsf: buildout.max_gsf, label: 'upper bound', pct: (builtGsf / buildout.max_gsf) * 100, comparison: null };
+}
+
+/** The basis strip's words for it. */
+export function captureBasisParts(c: CaptureBasis): string[] {
+  const n = (v: number) => Math.round(v).toLocaleString();
+  const parts = [`${n(c.denominatorGsf)} GSF ${c.label}`, `${Math.round(c.pct)}% capture`];
+  if (c.comparison) parts.push(`${c.comparison.label} ${n(c.comparison.gsf)} GSF (${Math.round(c.comparison.pct)}%: this plan parks in a structure)`);
+  return parts;
+}

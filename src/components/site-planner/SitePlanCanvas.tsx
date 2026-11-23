@@ -1720,6 +1720,29 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10.5, weight: 700, fill: '#9A3412', pill: 'rgba(255,247,237,0.96)' });
         continue;
       }
+      if (a.kind === 'gap') {
+        // a connection the plan does not draw: dashed between the two ends, a ring on each, the reason beside it
+        const [from, to] = a.line ?? [];
+        if (from && to) {
+          ctx.strokeStyle = '#DC2626';
+          ctx.lineWidth = 2.5 / zoom;
+          ctx.setLineDash([7 / zoom, 5 / zoom]);
+          ctx.beginPath();
+          ctx.moveTo(from[0] ?? 0, from[1] ?? 0);
+          ctx.lineTo(to[0] ?? 0, to[1] ?? 0);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (const p of [from, to]) {
+            ctx.beginPath();
+            ctx.arc(p[0] ?? 0, p[1] ?? 0, 5 / zoom, 0, Math.PI * 2);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+        if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10.5, weight: 700, fill: '#991B1B', pill: 'rgba(254,242,242,0.97)', dy: -14 / zoom, baseline: 'bottom' });
+        continue;
+      }
       if (a.kind === 'station') {
         const nx = -Math.sin(angle);
         const ny = Math.cos(angle);

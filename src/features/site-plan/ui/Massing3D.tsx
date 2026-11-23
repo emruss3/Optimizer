@@ -72,11 +72,13 @@ type Massing3DProps = {
   topo?: import('../api/parcelTopo').ParcelTopo | null;
   grossSf?: number | null | undefined;
   savedPlanId?: string | undefined;
+  /** Where the route to the street breaks, in the plan's frame; marked in the review view. */
+  accessBreak?: { from: number[]; to: number[] } | null | undefined;
   onSelect?: (id: string | null) => void;
 };
 
 /** The deck.gl view: the original massing, and the fallback for the rendering. */
-const DeckMassing: React.FC<Massing3DProps> = ({ elements, parcelGeometry, envelope, neighbors, edgeClassifications, scene, selectedId, onSelect }) => {
+const DeckMassing: React.FC<Massing3DProps> = ({ elements, parcelGeometry, envelope, neighbors, edgeClassifications, scene, selectedId, onSelect, accessBreak }) => {
   // Order-6 item 5b (second head of the same bug): during a resize/teardown
   // race, luma's device probe reads `limits.maxTextureDimension2D` off an
   // undefined device and throws UNCAUGHT — it never reaches DeckGL's onError
@@ -99,6 +101,7 @@ const DeckMassing: React.FC<Massing3DProps> = ({ elements, parcelGeometry, envel
         style: archStyle,
         parcelRing: ringIn3857(parcelGeometry),
         envelopeRing: envelope?.coordinates?.[0],
+        ...(accessBreak ? { accessBreak } : {}),
         contextBuildings: neighbors?.buildings,
         contextParcels: neighbors?.parcels,
         ...(scene && neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
@@ -107,7 +110,7 @@ const DeckMassing: React.FC<Massing3DProps> = ({ elements, parcelGeometry, envel
           .map(e => [e.edge[0], e.edge[1]] as [number[], number[]]),
         ...(scene ? { treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })) } : {}),
       }),
-    [elements, parcelGeometry, envelope, neighbors, edgeClassifications, scene, archStyle]
+    [elements, parcelGeometry, envelope, accessBreak, neighbors, edgeClassifications, scene, archStyle]
   );
 
   const [viewState, setViewState] = useState<Record<string, unknown> | null>(null);
@@ -692,6 +695,7 @@ const Massing3D: React.FC<Massing3DProps> = props => {
         topo={props.topo}
         grossSf={props.grossSf}
         savedPlanId={props.savedPlanId}
+        accessBreak={props.accessBreak}
         onFail={onFail}
       />
     );

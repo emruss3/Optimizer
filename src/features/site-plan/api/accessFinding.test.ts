@@ -55,7 +55,7 @@ describe('accessFinding', () => {
   it('says when the drawn drive stops short of the street', () => {
     const f = accessFinding({ frontage: frontage(), engineAccess: null, flags: [], drives: { curb: false, bays: 4, served: 4, drives: 2 } });
     expect(f?.headline).toBe('The drive does not reach the street');
-    expect(f?.clears[0]).toMatch(/highlighted frontage/);
+    expect(f?.clears[0]).toMatch(/marked in red on the plan/);
   });
 
   it('has nothing to say before any access data arrives', () => {
