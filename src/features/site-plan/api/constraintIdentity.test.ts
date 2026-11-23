@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { constraintSourceOf, hazardKindOf, sfV1ToElements, type SfV1Response } from './sfV1Plan';
+import { constraintSourceOf, hazardKindOf, isConstraintSource, sfV1ToElements, type SfV1Response } from './sfV1Plan';
 
 // Audit 2026-11-22: a hillside came out as hazardKind=wetland, a deep-fill
 // hold as floodplain with no identity of its own, and the 3D model planted
@@ -52,5 +52,13 @@ describe('constraint identity: what held land is, apart from how it is drawn', (
   it('maps every source to one hatch', () => {
     expect(hazardKindOf(constraintSourceOf('natural: floodway fringe'))).toBe('floodway');
     expect(hazardKindOf('pond')).toBeUndefined();
+  });
+});
+
+describe('isConstraintSource', () => {
+  it('accepts the known sources and nothing else', () => {
+    expect(isConstraintSource('deep_fill_hold')).toBe(true);
+    expect(isConstraintSource('swamp')).toBe(false);
+    expect(isConstraintSource(undefined)).toBe(false);
   });
 });

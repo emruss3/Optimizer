@@ -13,12 +13,13 @@
 import { useState } from 'react';
 import type { LayoutChoice, LayoutKind } from '../api/layoutChoice';
 import { homesPhrase } from '../api/layoutChoice';
-import type { ThV3Summary } from '../api/thV3Plan';
+import { guestParkingLine, type ThV3Summary } from '../api/thV3Plan';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
 
 const fmt = (v: number | null | undefined, d = 0) => (v == null ? '—' : (Math.round(v * 10 ** d) / 10 ** d).toLocaleString());
 
 function ThV3Facts({ s }: { s: ThV3Summary }) {
+  const guest = guestParkingLine(s);
   return (
     <div data-testid="layout-thv3" data-homes={s.homes} className="mt-2 rounded-md border border-sky-200 bg-sky-50/60 p-2 text-[11px] leading-snug text-slate-700">
       <div className="font-semibold text-slate-800">
@@ -29,7 +30,7 @@ function ThV3Facts({ s }: { s: ThV3Summary }) {
         <dt className="text-slate-500">Access</dt>
         <dd>{s.streetFt != null && s.streetFt > 0 ? `${fmt(s.streetFt)} ft of new street` : 'no new street'}{s.alleys != null ? ` · ${s.alleys} alle${s.alleys === 1 ? 'y' : 'ys'}` : ''}</dd>
         {(s.usableOpenPct != null || s.greens > 0) && (<><dt className="text-slate-500">Open</dt><dd>{s.usableOpenPct != null ? `${fmt(s.usableOpenPct)}% usable` : ''}{s.greens > 0 ? `${s.usableOpenPct != null ? ' · ' : ''}${s.greens} green${s.greens === 1 ? '' : 's'}` : ''}</dd></>)}
-        {s.guestStalls != null && (<><dt className="text-slate-500">Guest parking</dt><dd className={s.guestTarget != null && s.guestStalls < s.guestTarget ? 'text-amber-800' : ''}>{s.guestStalls}{s.guestTarget != null ? ` of ${s.guestTarget}` : ''} stalls</dd></>)}
+        {guest && (<><dt className="text-slate-500">Guest parking</dt><dd data-testid="layout-thv3-guest" className={guest.short ? 'text-amber-800' : ''}>{guest.text}</dd></>)}
         {s.stormwaterSf != null && (<><dt className="text-slate-500">Stormwater</dt><dd>{fmt(s.stormwaterSf)} SF{s.stormwaterNeededSf != null ? ` (${fmt(s.stormwaterNeededSf)} needed)` : ''}</dd></>)}
       </dl>
       {s.requiredFails.length > 0 ? (

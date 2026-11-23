@@ -604,6 +604,12 @@ export function openStyle(kind: string): { name: string; kind: string; color: st
 export type ConstraintSource =
   | 'wetland' | 'wetland_buffer' | 'floodplain' | 'floodway' | 'slope' | 'deep_fill_hold' | 'pond' | 'natural_unspecified';
 
+const CONSTRAINT_SOURCES: ReadonlySet<string> = new Set<ConstraintSource>([
+  'wetland', 'wetland_buffer', 'floodplain', 'floodway', 'slope', 'deep_fill_hold', 'pond', 'natural_unspecified',
+]);
+/** A value read off an element is a source only when it is one of the known ones. */
+export const isConstraintSource = (v: unknown): v is ConstraintSource => typeof v === 'string' && CONSTRAINT_SOURCES.has(v);
+
 /** The source of an open piece the engine calls natural, from the engine's own name for it. */
 export function constraintSourceOf(kind: string): ConstraintSource {
   const k = kind.toLowerCase();
