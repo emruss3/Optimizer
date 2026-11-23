@@ -64,8 +64,12 @@ Prompts asked for Middle Tennessee residential character matching each concept�
 stated setting (stories, porch/garage presence) and an orthographic facade view
 per face. Existing exterior WebPs were passed as style references. The images may
 still disagree with schematic room drawings in Home Studio — the Elevations tab
-defaults to photoreal with honesty labeling; a secondary **Diagram** control keeps
-the schematic SVG from plan volumes.
+defaults to the plan-derived **Diagram**; **Photoreal** is an opt-in character
+view offered only for the eight `tn-*` concept ids that ship elevation WebPs
+(stock / ABHP rows fall back to Diagram).
+
+**Size:** the 32 elevation WebPs total about **4.03 MiB** (4,226,732 bytes) on
+disk as of 2026-11-23.
 
 For **buildable** stock plans with publisher citations, see
 `src/features/site-plan/housing/catalogue.ts` (e.g. America’s Best House Plans

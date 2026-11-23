@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Element } from '../../../engine/types';
 import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
+import { hasPhotorealElevation, photorealElevationSrc } from './elevationAssets';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import './homeStudio.css';
@@ -30,7 +31,8 @@ export default function HomeStudio({
     [level, setLevel] = useState(0),
     [view, setView] = useState<'Exterior' | 'Plans' | 'Elevations'>('Exterior');
   const [side, setSide] = useState<Face>('front'),
-    [elevationMode, setElevationMode] = useState<'photo' | 'diagram'>('photo'),
+    // Diagram is the plan-derived default; Photoreal is an opt-in character view.
+    [elevationMode, setElevationMode] = useState<'photo' | 'diagram'>('diagram'),
     [houseId, setHouseId] = useState(() => houses.find((e) => e.id === selected)?.id ?? houses[0]?.id ?? '');
   const [fit, setFit] = useState<{ key: string; result: FitResult } | null>(null),
     root = useRef<HTMLElement>(null);
@@ -40,6 +42,11 @@ export default function HomeStudio({
   const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))],
     selectedHouse = houses.find((e) => e.id === houseId),
     key = (home?.id ?? '') + '|' + houseId;
+  const canShowPhotoreal = !!home && hasPhotorealElevation(home.id);
+  const showPhotoreal = elevationMode === 'photo' && canShowPhotoreal;
+  useEffect(() => {
+    if (elevationMode === 'photo' && home && !hasPhotorealElevation(home.id)) setElevationMode('diagram');
+  }, [elevationMode, home]);
   const current = fit?.key === key ? fit.result : null;
   const info = home ? program(home) : null;
   const [, , width, depth] = home ? designBounds(home) : [0, 0, 0, 0];
@@ -196,29 +203,33 @@ export default function HomeStudio({
                 <div className="home-options" role="group" aria-label="Elevation presentation">
                   <button
                     type="button"
-                    aria-pressed={elevationMode === 'photo'}
-                    onClick={() => setElevationMode('photo')}
-                  >
-                    Photoreal
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={elevationMode === 'diagram'}
+                    aria-pressed={!showPhotoreal}
                     onClick={() => setElevationMode('diagram')}
                   >
                     Diagram
                   </button>
+                  {canShowPhotoreal ? (
+                    <button
+                      type="button"
+                      aria-pressed={showPhotoreal}
+                      onClick={() => setElevationMode('photo')}
+                      data-testid="home-elevation-photoreal"
+                    >
+                      Photoreal
+                    </button>
+                  ) : null}
                 </div>
-                {elevationMode === 'photo' ? (
-                  <figure>
+                {showPhotoreal ? (
+                  <figure data-testid="home-elevation-photo">
                     <img
-                      src={'/home-designs/' + home.id + '-elevation-' + side + '-v2.webp'}
+                      src={photorealElevationSrc(home.id, side)}
                       alt={
                         home.name +
                         ', illustrative character ' +
                         (side === 'back' ? 'rear' : side) +
                         ' elevation (not generated from this plan)'
                       }
+                      onError={() => setElevationMode('diagram')}
                     />
                     <figcaption className="home-exterior-note">
                       Illustrative character elevation — not generated from this plan’s drawings, not a
@@ -226,7 +237,7 @@ export default function HomeStudio({
                     </figcaption>
                   </figure>
                 ) : (
-                  <figure className="home-elevation">
+                  <figure className="home-elevation" data-testid="home-elevation-diagram">
                     <Elevation home={home} side={side} />
                     <figcaption className="home-exterior-note">
                       Schematic diagram from plan volumes — not a construction elevation.
