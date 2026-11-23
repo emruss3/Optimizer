@@ -1066,7 +1066,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
     ctx.clip('evenodd');
     ctx.strokeStyle = p.hazardKind === 'slope' ? 'rgba(180, 83, 9, 0.5)'
-      : p.hazardKind === 'wetland' ? 'rgba(13, 148, 136, 0.55)' : 'rgba(29, 78, 216, 0.45)';
+      : p.hazardKind === 'wetland' ? 'rgba(13, 148, 136, 0.55)'
+      // natural land with no named source: its own hatch, not the wetland's or the floodplain's
+      : p.hazardKind === 'natural' ? 'rgba(77, 124, 15, 0.45)' : 'rgba(29, 78, 216, 0.45)';
     ctx.lineWidth = 0.8 / zoom;
     const h = maxY - minY;
     const step = Math.max(8 / zoom, 2);
@@ -1087,7 +1089,9 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''}${p.bufferFt ? ` · ${p.bufferFt}-ft buffer` : ''}`
         : p.hazardKind === 'floodway'
           ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
-          : `${p.zone ? `${p.zone} ` : ''}floodplain`;
+          : p.hazardKind === 'natural'
+            ? 'Natural land'
+            : `${p.zone ? `${p.zone} ` : ''}floodplain`;
     const fontSize = 11 / zoom;
     ctx.save();
     ctx.translate(cx, cy);
@@ -1526,6 +1530,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (elements.some(e => e.id.startsWith('sfv1-hillside-'))) heldRows.push(['Hillside · held out (over 25% slope)', '#FDE68A']);
     else if (elements.some(e => /hillside/i.test(String(propsOf(e).openKind ?? '')))) heldRows.push(['Hillside · held out (over 25% slope)', '#99F6E4']);
     if (elements.some(e => e.id.startsWith('sfv1-nobuild-') || (propsOf(e).hazardKind === 'wetland' && !/hillside/i.test(String(propsOf(e).openKind ?? ''))))) heldRows.push(['Wetland / natural land · held out', '#99F6E4']);
+    if (elements.some(e => propsOf(e).constraintSource === 'natural_unspecified')) heldRows.push(['Natural land · held out', '#D9F99D']);
     if (elements.some(e => e.id.startsWith('sfv1-deep-fill-hold-'))) heldRows.push(['Deep-fill hold (fill over the cap)', '#FECACA']);
     const entries: Array<[string, string]> = isSubdivision
       ? [

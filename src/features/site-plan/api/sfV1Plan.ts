@@ -595,6 +595,42 @@ export function openStyle(kind: string): { name: string; kind: string; color: st
 }
 
 /**
+ * What a held or natural piece of land IS, apart from how it is drawn.
+ * The drawing style had one bucket for all natural land ("wetland"), so a
+ * hillside got wetland hatching and sedges in the 3D view, and a deep-fill
+ * hold read as floodplain (audit 2026-11-22). The source travels on the
+ * element as `constraintSource`; `hazardKind` stays the display style.
+ */
+export type ConstraintSource =
+  | 'wetland' | 'wetland_buffer' | 'floodplain' | 'floodway' | 'slope' | 'deep_fill_hold' | 'pond' | 'natural_unspecified';
+
+/** The source of an open piece the engine calls natural, from the engine's own name for it. */
+export function constraintSourceOf(kind: string): ConstraintSource {
+  const k = kind.toLowerCase();
+  if (/hillside|slope|steep/.test(k)) return 'slope';
+  // land beside a wetland is not the wetland
+  if (/beside|adjacent|next to/.test(k)) return 'natural_unspecified';
+  if (/floodway/.test(k)) return 'floodway';
+  if (/flood/.test(k)) return 'floodplain';
+  if (/buffer/.test(k)) return 'wetland_buffer';
+  if (/wetland|stream|creek|water/.test(k)) return 'wetland';
+  if (/pond/.test(k)) return 'pond';
+  return 'natural_unspecified';
+}
+
+/** The hatch a source is drawn with. Unspecified natural land gets its own, never the wetland's. */
+export function hazardKindOf(source: ConstraintSource): 'wetland' | 'floodplain' | 'floodway' | 'slope' | 'natural' | undefined {
+  switch (source) {
+    case 'wetland': case 'wetland_buffer': return 'wetland';
+    case 'floodplain': case 'deep_fill_hold': return 'floodplain';
+    case 'floodway': return 'floodway';
+    case 'slope': return 'slope';
+    case 'natural_unspecified': return 'natural';
+    default: return undefined;
+  }
+}
+
+/**
  * Map the generator payload to canvas elements.
  *   lots                    → 'other'        (parcel-line style, below everything; "Lot N" carries the lot tag with the server's area)
  *   pads                    → 'building'     (one house footprint each; coloured by fill depth in the earthwork view)
@@ -622,7 +658,8 @@ export function sfV1ToElements(
   // lays anything out. Drawn first, under everything — without it a by-right
   // plan that keeps out of the floodplain leaves an unexplained blank
   // (930 Morton Mill Rd: 2.71 of 4.47 ac held, 0 lots on the rest).
-  const holdLabel = str(resp.flood_hold) === 'floodway' ? 'Regulatory floodway · held out' : 'Flood hazard area · held out';
+  const holdIsFloodway = str(resp.flood_hold) === 'floodway';
+  const holdLabel = holdIsFloodway ? 'Regulatory floodway · held out' : 'Flood hazard area · held out';
   polys3857(opts.holdWkt).forEach((poly, i) => {
     elements.push({
       id: `${SFV1_ID_PREFIX}hold-${i + 1}`,
@@ -630,7 +667,7 @@ export function sfV1ToElements(
       name: holdLabel,
       geometry: poly,
       properties: props({
-        kind: 'greenway', hazardKind: 'floodplain', label: holdLabel,
+        kind: 'greenway', hazardKind: holdIsFloodway ? 'floodway' : 'floodplain', constraintSource: holdIsFloodway ? 'floodway' : 'floodplain', label: holdLabel,
         styleOverride: true, color: '#DBEAFE', opacity: 0.45, strokeColor: '#3B82F6',
       }),
       metadata: meta,
@@ -650,7 +687,7 @@ export function sfV1ToElements(
         name: hillsideLabel,
         geometry: poly,
         properties: props({
-          kind: 'greenway', hazardKind: 'slope', label: hillsideLabel,
+          kind: 'greenway', hazardKind: 'slope', constraintSource: 'slope', label: hillsideLabel,
           styleOverride: true, color: '#FDE68A', opacity: 0.45, strokeColor: '#B45309',
         }),
         metadata: meta,
@@ -867,7 +904,9 @@ export function sfV1ToElements(
       properties: props({
         kind: style.kind,
         openKind: kind,
-        hazardKind: style.greenway ? 'wetland' : undefined,
+        // the source, from the engine's own name for the piece; the hatch follows it
+        constraintSource: style.greenway ? constraintSourceOf(kind) : style.kind === 'pond' ? 'pond' : undefined,
+        hazardKind: style.greenway ? hazardKindOf(constraintSourceOf(kind)) : undefined,
         label: style.label,
         areaSqFt: acres != null ? Math.round(acres * 43560) : undefined,
         styleOverride: true, color: style.color, opacity: style.opacity, strokeColor: style.strokeColor,
@@ -908,7 +947,7 @@ export function sfV1ToElements(
   polys3857(resp.deep_fill_hold_wkt).forEach((poly, i) => {
     elements.push({
       id: `${SFV1_ID_PREFIX}deep-fill-hold-${i + 1}`, type: 'greenspace', name: 'Deep-fill hold', geometry: poly,
-      properties: props({ kind: 'greenway', hazardKind: 'floodplain', label: 'Deep-fill hold (fill over the cap)', styleOverride: true, color: '#FECACA', opacity: 0.5, strokeColor: '#B91C1C' }), metadata: meta,
+      properties: props({ kind: 'greenway', hazardKind: 'floodplain', constraintSource: 'deep_fill_hold', label: 'Deep-fill hold (fill over the cap)', styleOverride: true, color: '#FECACA', opacity: 0.5, strokeColor: '#B91C1C' }), metadata: meta,
     });
   });
 
@@ -921,7 +960,7 @@ export function sfV1ToElements(
         type: 'greenspace',
         name: 'Wetland',
         geometry: poly,
-        properties: props({ kind: 'greenway', hazardKind: 'wetland', styleOverride: true, color: '#99F6E4', opacity: 0.5, strokeColor: '#0D9488' }),
+        properties: props({ kind: 'greenway', hazardKind: 'wetland', constraintSource: 'wetland', styleOverride: true, color: '#99F6E4', opacity: 0.5, strokeColor: '#0D9488' }),
         metadata: meta,
       });
     });
