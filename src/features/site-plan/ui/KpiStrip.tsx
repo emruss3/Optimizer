@@ -54,6 +54,8 @@ const KpiStrip: React.FC<{
     label?: string; densityLabel?: string;
     /** the ids of the checks the verdict covers, so "all pass" names its scope (4727 Post Rd, 2026-11-09) */
     tests?: string[];
+    /** how many of `tests` are measurements with no pass or fail verdict: listed, not counted as passing */
+    measuredOnly?: number | null;
     /** a plan from a legacy generator: provisional, its inputs unverified */
     legacy?: boolean;
     /** lots drawn partly on land inside the outline that is not this parcel (other owners' lots in its holes):
@@ -98,6 +100,8 @@ const KpiStrip: React.FC<{
   if (subdivision) {
     const n = subdivision.fails.length;
     const checks = subdivision.tests ?? [];
+    // a measurement with no verdict is not a passing check (0 Delk Ave: 16 listed, 15 graded)
+    const graded = Math.max(0, checks.length - Math.max(0, subdivision.measuredOnly ?? 0));
     const offParcel = subdivision.offParcelLots ?? 0;
     const unplanned = subdivision.unplannedAcres != null && subdivision.unplannedAcres >= 1 ? Math.round(subdivision.unplannedAcres * 10) / 10 : null;
     const chip =
@@ -106,11 +110,11 @@ const KpiStrip: React.FC<{
       : subdivision.status === 'skipped' ? { tone: 'bg-amber-50 text-amber-700', text: 'Skipped by the generator', ok: false }
       : subdivision.lots === 0 ? { tone: 'bg-slate-100 text-slate-700', text: 'No new lots by right', ok: false }
       : offParcel > 0 ? { tone: 'bg-red-50 text-red-700', text: `Cannot be built as drawn · ${offParcel} lot${offParcel === 1 ? '' : 's'} off the parcel`, ok: false }
-      : n > 0 ? { tone: 'bg-red-50 text-red-700', text: checks.length > 0 ? `${n} of ${checks.length} check${checks.length === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
+      : n > 0 ? { tone: 'bg-red-50 text-red-700', text: graded > 0 ? `${n} of ${graded} check${graded === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
       // "All tests pass" named no scope (4727 Post Rd): the count and the list travel with it
       // every check passes and most of the land is not planned: say both (0 Brittany Park Dr, 13 lots on 29 ac)
-      : unplanned != null ? { tone: 'bg-amber-50 text-amber-700', text: `${checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass'} · ${unplanned} ac not planned`, ok: false }
-      : { tone: 'bg-green-50 text-green-700', text: checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass', ok: true };
+      : unplanned != null ? { tone: 'bg-amber-50 text-amber-700', text: `${graded > 0 ? `All ${graded} checks pass` : 'All tests pass'} · ${unplanned} ac not planned`, ok: false }
+      : { tone: 'bg-green-50 text-green-700', text: graded > 0 ? `All ${graded} checks pass` : 'All tests pass', ok: true };
     // the amber "passes, and part of the land is not planned" chip carries a warning, not a cross
     const passesUnplanned = unplanned != null && !chip.ok && chip.text.endsWith('not planned');
     const title = offParcel > 0

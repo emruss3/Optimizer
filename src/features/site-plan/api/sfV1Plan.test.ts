@@ -390,7 +390,7 @@ describe('engine g18: the fail list is the engine\'s, and the holding answer is 
     expect(summary.fails).toEqual([]);
     expect(summary.tests.find(t => t.id === 'access.lane_on_held_land')).toMatchObject({ pass: false, figure: true });
     expect(summary.tests.find(t => t.id === 'lot.min_area')!.figure).toBeUndefined();
-    expect(summary.basisLine).toContain('1 tests pass');
+    expect(summary.basisLine).toContain('1 checks pass');
   });
 
   it('a listed fail is kept; a row the list leaves out is a figure', () => {

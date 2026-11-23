@@ -38,7 +38,7 @@ import {
   fetchSfV1DeepSearch, deepSearchOpt, deepWinnerPrecedent,
   fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
   parcelHoles3857, lotsOnParcelHoles, chooseAutoBest, candidateOpt, RM_COMPETITION_TH_BUDGET_MS,
-  accessBanner, isNoStreetAccess,
+  accessBanner, isNoStreetAccess, checkCounts,
   type HoleOverlap, type SfV1AutoBest, type SfV1DeepProgress,
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
@@ -1852,6 +1852,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (d.plan && (d.best_try ?? 0) > 0 && (d.best_lots ?? 0) > sheetLots && !userChose && !seedDrawn && renderSfV1Ref.current) {
         await renderSfV1Ref.current(d.plan, opt, 'deep search');
         if (!live()) return;
+        // the comparison's sentence described the plan it put on the sheet (0 Delk Ave: "draws 4 lots"
+        // over a 5-lot plan). The search line now carries the history: found N, up from M.
+        setSfV1AutoBest(null);
         sheetLots = d.best_lots ?? sheetLots;
         onSheet = true;
         precedentFrom = deepWinnerPrecedent(d);
@@ -3753,7 +3756,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             thV3OnSheet && thV3Summary
               ? { lots: thV3Summary.homes, densityDuAc: thV3Summary.homesPerAcre, fails: thV3Summary.requiredFails, status: 'done', label: 'Townhomes', densityLabel: 'homes / ac' }
               : sfV1Summary && !displayElements.some(e => e.id.startsWith('sfseed-'))
-              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status, tests: sfV1Summary.tests.map(t => t.id), offParcelLots: sfV1HoleOverlap?.lotsOnHoles ?? null, unplannedAcres: sfV1Summary.remainder?.acres ?? null }
+              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status, tests: sfV1Summary.tests.map(t => t.id), measuredOnly: checkCounts(sfV1Summary.tests).measured, offParcelLots: sfV1HoleOverlap?.lotsOnHoles ?? null, unplannedAcres: sfV1Summary.remainder?.acres ?? null }
               : legacyLots != null
               // the legacy lot generator's answer: a lot count, provisional (no code tests ran on it)
               ? { lots: legacyLots, densityDuAc: mappedAcres && mappedAcres > 0 ? Math.round((legacyLots / mappedAcres) * 100) / 100 : null, fails: [], status: 'done', legacy: true }
