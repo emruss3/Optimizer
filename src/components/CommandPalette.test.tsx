@@ -2,12 +2,13 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 
-const fromMock = vi.fn();
+const searchMock = vi.fn();
 const rpcMock = vi.fn();
 vi.mock('../lib/supabase', () => ({
   supabase: {
-    from: (...a: unknown[]) => fromMock(...a),
-    rpc: (...a: unknown[]) => rpcMock(...a),
+    rpc: (name: string, args: unknown) => name === 'find_planner_parcels'
+      ? searchMock(args)
+      : rpcMock(name, args),
   },
 }));
 
@@ -17,15 +18,8 @@ import CommandPalette from './CommandPalette';
 class RO { observe() { /* noop */ } unobserve() { /* noop */ } disconnect() { /* noop */ } }
 (globalThis as unknown as { ResizeObserver: typeof RO }).ResizeObserver = RO;
 
-const orFilters: string[] = [];
-/** a PostgREST-shaped query builder that resolves to the given rows */
 function table(result: { data: unknown; error: unknown }, delayMs = 0) {
-  const chain = {
-    select: () => chain,
-    or: (f: string) => { orFilters.push(f); return chain; },
-    limit: () => new Promise(res => setTimeout(() => res(result), delayMs)),
-  };
-  return chain;
+  return { abortSignal: () => new Promise(res => setTimeout(() => res(result), delayMs)) };
 }
 
 /** the first option, by keyboard (the parcels lead the list) */
@@ -50,7 +44,7 @@ beforeEach(() => {
 
 describe('CommandPalette — a search hit opens the parcel the way a map click does (the scope\'s P0.3, 2026-11-09)', () => {
   it('fetches the full row and dispatches openParcelDrawer with it; the palette closes after', async () => {
-    fromMock.mockImplementation(() => table({ data: [ROW], error: null }));
+    searchMock.mockImplementation(() => table({ data: [ROW], error: null }));
     rpcMock.mockResolvedValue({ data: [ROW], error: null });
     const onClose = vi.fn();
     const seen: unknown[] = [];
@@ -73,7 +67,7 @@ describe('CommandPalette — a search hit opens the parcel the way a map click d
   });
 
   it('a row without geometry does not open the drawer: the failure is said, the palette stays', async () => {
-    fromMock.mockImplementation(() => table({ data: [ROW], error: null }));
+    searchMock.mockImplementation(() => table({ data: [ROW], error: null }));
     rpcMock.mockResolvedValue({ data: [{ ...ROW, geometry: null }], error: null });
     const onClose = vi.fn();
     render(<CommandPalette isOpen onClose={onClose} />);
@@ -85,12 +79,12 @@ describe('CommandPalette — a search hit opens the parcel the way a map click d
   });
 
   it('no match and a failed request read differently', async () => {
-    fromMock.mockImplementation(() => table({ data: [], error: null }));
+    searchMock.mockImplementation(() => table({ data: [], error: null }));
     const { rerender } = render(<CommandPalette isOpen onClose={() => undefined} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'zzzz nowhere' } });
     expect((await screen.findByTestId('palette-no-match', {}, { timeout: 3000 })).textContent).toContain('No parcel matches "zzzz nowhere"');
 
-    fromMock.mockImplementation(() => table({ data: null, error: { message: 'statement timeout' } }));
+    searchMock.mockImplementation(() => table({ data: null, error: { message: 'statement timeout' } }));
     rerender(<CommandPalette isOpen onClose={() => undefined} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'brick church' } });
     expect((await screen.findByTestId('palette-search-error', {}, { timeout: 3000 })).textContent).toContain('Parcel search failed: statement timeout');
@@ -98,11 +92,11 @@ describe('CommandPalette — a search hit opens the parcel the way a map click d
   });
 
   it('a slow answer for an older query never lands over the newer one', async () => {
-    fromMock.mockImplementation(() => table({ data: [{ ...ROW, ogc_fid: 1, address: 'OLD QUERY HIT' }], error: null }, 900));
+    searchMock.mockImplementation(() => table({ data: [{ ...ROW, ogc_fid: 1, address: 'OLD QUERY HIT' }], error: null }, 900));
     render(<CommandPalette isOpen onClose={() => undefined} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'old query' } });
     await act(async () => { await new Promise(r => setTimeout(r, 400)); }); // the debounce fires, the slow request is in flight
-    fromMock.mockImplementation(() => table({ data: [{ ...ROW, ogc_fid: 2, address: 'NEW QUERY HIT' }], error: null }, 50));
+    searchMock.mockImplementation(() => table({ data: [{ ...ROW, ogc_fid: 2, address: 'NEW QUERY HIT' }], error: null }, 50));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'new query' } });
     await screen.findByText('NEW QUERY HIT', {}, { timeout: 3000 });
     await act(async () => { await new Promise(r => setTimeout(r, 900)); }); // the old answer arrives late
@@ -113,12 +107,10 @@ describe('CommandPalette — a search hit opens the parcel the way a map click d
 
 describe('CommandPalette — an APN typed with its formatting matches the unformatted column (the cohort retest, 2026-11-09)', () => {
   it('searches parcelnumb_no_formatting with the digits of the query', async () => {
-    orFilters.length = 0;
-    fromMock.mockImplementation(() => table({ data: [{ ...ROW, parcelnumb: '116 02 0 020.00' }], error: null }));
+    searchMock.mockImplementation(() => table({ data: [{ ...ROW, parcelnumb: '116 02 0 020.00' }], error: null }));
     render(<CommandPalette isOpen onClose={() => undefined} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '116 02 0 020.00' } });
     await screen.findByText('0 WHITES CREEK PIKE', {}, { timeout: 3000 });
-    expect(orFilters.at(-1)).toContain('parcelnumb_no_formatting.ilike.%11602002000%');
-    expect(orFilters.at(-1)).toContain('parcelnumb.ilike.%116 02 0 020.00%');
+    expect(searchMock).toHaveBeenCalledWith({ p_query: '116 02 0 020.00', p_limit: 10 });
   });
 });
