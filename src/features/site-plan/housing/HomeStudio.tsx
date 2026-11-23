@@ -210,14 +210,14 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
                     </button>
                     {current?.placement && (
                       <button type="button" className="home-primary" onClick={() => onPreview(current.placement!)}>
-                        Preview on site
+                        Preview in 3D massing
                       </button>
                     )}
                   </div>
                   <p aria-live="polite">
                     {current?.placement?.basis ??
                       current?.reason ??
-                      'Check the drawn lot and its vehicle and pedestrian approaches at full size.'}
+                      'Check the drawn lot and its vehicle and pedestrian approaches at full size. A fit opens the live 3D massing with this design.'}
                   </p>
                 </>
               ) : (
