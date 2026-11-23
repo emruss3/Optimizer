@@ -1,4 +1,4 @@
-# Engine handoff: the by-right planner fails in the browser on "DELETE requires a WHERE clause"
+# Engine handoff: the by-right planner fails in the browser on "DELETE requires a WHERE clause", and grading will fail next on UPDATE
 
 From the app session, 2026-11-23. Read from the live database; nothing in the
 database was changed.
@@ -54,28 +54,36 @@ I did not confirm that from the function bodies.
 
 ## The fix
 
-Either of these, in `fn_terrain_ensure`:
+`safeupdate` rejects a bare `UPDATE` as well as a bare `DELETE`. A scan of
+every function in `public` and `training` for either, with no `WHERE` in the
+statement, finds four statements in two functions:
 
-```
-delete from _terrain_need where true;
-delete from _terrain_probe where true;
-```
+| Function | Statement |
+|---|---|
+| `fn_terrain_ensure` | `delete from _terrain_need;` |
+| `fn_terrain_ensure` | `delete from _terrain_probe;` |
+| `fn_plan_grading` | `update _gs set zd = …;` |
+| `fn_plan_grading` | `update _gp set elev = …, below = …;` |
 
-or `truncate _terrain_need;` and `truncate _terrain_probe;`. `safeupdate` does
-not block `TRUNCATE`.
+All four act on temp tables. Fix all four in one release: once terrain stops
+failing, grading will reach the two updates and fail the same way.
 
-A scan of `public` and `training` found four functions matching a bare
-`DELETE` or a `TRUNCATE`. Two of the matches are the statements above. The
-others should be read before the release is recorded.
+- The deletes: `delete from _terrain_need where true;`, or `truncate`, which
+  `safeupdate` does not block.
+- The updates: add `where true`.
 
 ## Acceptance
 
-1. Call `fn_sf_v1_plan_app` for 675671 **as the `anon` role through the
-   authenticator**, not as the owner. It returns a plan or a real refusal, and
-   no "DELETE requires a WHERE clause".
-2. Do the same for `fn_parcel_topo`, `fn_sf_v1_grading` and
-   `fn_th_v3_grading` on a parcel whose terrain is not cached.
-3. Record the release.
+Run every check **as `anon` or `authenticated` through PostgREST**, the way the
+app calls. The SQL editor and the MCP channel run as the owner, do not load
+`safeupdate`, and will pass whether or not the fix is right.
+
+1. `fn_sf_v1_plan_app` for 675671 returns a plan or a real refusal, and no
+   "DELETE requires a WHERE clause".
+2. `fn_parcel_topo` on a parcel whose terrain is not cached returns terrain.
+3. `fn_sf_v1_grading` and `fn_th_v3_grading` on a drawn plan return a grading
+   result, and no "UPDATE requires a WHERE clause".
+4. Record the release.
 
 This is the second incident this month where a function passed as the owner
 and failed for the browser role. The first was `fn_resolve_permitted_uses` on
