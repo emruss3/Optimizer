@@ -1,0 +1,98 @@
+{
+  "scene": {
+    "parcelId": "469303",
+    "address": "535 Main St",
+    "zoning": "MUG-A",
+    "product": "Structured wrap and street frontage"
+  },
+  "source": {
+    "kind": "fixture replay",
+    "store": "scripts/visual-battery/fixtures/mock_store.json",
+    "commit": "c52fdc2e"
+  },
+  "revision": {
+    "schemeId": "mf:wrap_v1",
+    "revision": "82a80810",
+    "productionRevisionAudited": "82a80810",
+    "matchesProduction": true
+  },
+  "solver": {
+    "solvedBy": "server",
+    "basisLine": "232425 GSF wrap plan @ 5 st (2 garage + 3 residential) · 54.8% of 423765 structured ceiling · block 323 × 280 ft (63.9% of the site) · court 188 × 145 · 131 units @ ~1550 GSF · 238/226 stalls (2 garage levels × 185 + 0 outside) · access: side drive + rear drive · generator: wrap_v1 · exemplar: The Caroline, 101 Cool Springs Blvd · score 0.548",
+    "envelopeSource": "brief_2274_true"
+  },
+  "figures": {
+    "buildings": 5,
+    "buildingList": [
+      "A · mfgen-bldg-1 · Apartments · 5 stories · 21,725 sf footprint · estimated height 54 ft",
+      "B · mfgen-bldg-2 · Apartments · 5 stories · 21,725 sf footprint · estimated height 54 ft",
+      "C · mfgen-bldg-3 · Apartments · 5 stories · 9,771 sf footprint · estimated height 54 ft",
+      "D · mfgen-bldg-4 · Apartments · 5 stories · 9,771 sf footprint · estimated height 54 ft",
+      "E · mfgen-amenity-1 · Amenity · 1 story · 1,800 sf footprint · estimated height 14 ft"
+    ],
+    "apartments": {
+      "units": 131,
+      "stallsDrawn": null,
+      "stallsReported": 238,
+      "stallsRequired": 226,
+      "parkingStatus": "verified"
+    },
+    "townhomes": null,
+    "subdivision": null,
+    "capturePct": 54.8
+  },
+  "access": {
+    "drives": 2,
+    "driveReachesParcelLine": true,
+    "bays": 1,
+    "baysServed": 1,
+    "routeBreak": null
+  },
+  "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.8064,
+    "check": {
+      "status": "verified",
+      "samples": 5,
+      "worstPct": 0.01,
+      "note": "Areas in the drawing frame match the engine's within 0.1%."
+    }
+  },
+  "tasks": {
+    "context": {
+      "state": "done",
+      "reason": null,
+      "ms": null
+    },
+    "terrain": {
+      "state": "done",
+      "ms": null
+    },
+    "lotFit": {
+      "state": "none",
+      "reason": null,
+      "ms": null
+    },
+    "massing": {
+      "state": "done",
+      "reason": null,
+      "ms": null
+    }
+  },
+  "warnings": {
+    "violationCodes": [],
+    "gate": []
+  },
+  "view": {
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "plan": "469303_2d.png",
+    "model": "469303_3d.png",
+    "view3dState": "ready",
+    "rendererTier": "light",
+    "camera": "default on open"
+  },
+  "passed": true
+}

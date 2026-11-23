@@ -1,0 +1,92 @@
+{
+  "scene": {
+    "parcelId": "672526",
+    "address": "0 Hickory Bend Dr",
+    "zoning": "RS10",
+    "product": "A legitimately empty proposal"
+  },
+  "source": {
+    "kind": "fixture replay",
+    "store": "scripts/visual-battery/fixtures/mock_store.json",
+    "commit": "c52fdc2e"
+  },
+  "revision": {
+    "schemeId": "plan",
+    "revision": "b2b4a6b8",
+    "productionRevisionAudited": "b2b4a6b8",
+    "matchesProduction": true
+  },
+  "solver": {
+    "solvedBy": "server",
+    "basisLine": "By-right subdivision skipped — floodplain leaves no buildable piece",
+    "envelopeSource": "brief_2274_true"
+  },
+  "figures": {
+    "buildings": 0,
+    "buildingList": [],
+    "apartments": null,
+    "townhomes": null,
+    "subdivision": {
+      "status": "skipped",
+      "lots": 0,
+      "pattern": null,
+      "basis": "by_right",
+      "fails": []
+    },
+    "capturePct": null
+  },
+  "access": {
+    "drives": 0,
+    "driveReachesParcelLine": false,
+    "bays": 0,
+    "baysServed": 0,
+    "routeBreak": null
+  },
+  "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80658,
+    "check": {
+      "status": "unverified",
+      "samples": 0,
+      "worstPct": null,
+      "note": "No footprint or lot with an engine-reported area to check the frame against."
+    }
+  },
+  "tasks": {
+    "context": {
+      "state": "done",
+      "reason": null,
+      "ms": null
+    },
+    "terrain": {
+      "state": "done",
+      "ms": null
+    },
+    "lotFit": {
+      "state": "done",
+      "reason": "floodplain leaves no buildable piece",
+      "ms": 131
+    },
+    "massing": {
+      "state": "none",
+      "reason": null,
+      "ms": null
+    }
+  },
+  "warnings": {
+    "violationCodes": [],
+    "gate": []
+  },
+  "view": {
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "plan": "672526_2d.png",
+    "model": "672526_3d.png",
+    "view3dState": "ready",
+    "rendererTier": "light",
+    "camera": "default on open"
+  },
+  "passed": true
+}

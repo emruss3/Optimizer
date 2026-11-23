@@ -21,8 +21,8 @@ const OUT = process.env.SHOTS_DIR
 fs.mkdirSync(OUT, { recursive: true });
 
 const ONE = process.env.ONE_PARCEL === '1';
-// ONLY_FID=<ogc_fid> runs that one battery parcel (iteration on a new fixture)
-const ONLY = process.env.ONLY_FID ? String(process.env.ONLY_FID) : null;
+// ONLY_FID=<ogc_fid>[,<ogc_fid>...] runs just those battery parcels (iteration on a fixture, or the review baselines)
+const ONLY = process.env.ONLY_FID ? String(process.env.ONLY_FID).split(',').map(x => x.trim()).filter(Boolean) : null;
 const ASSERT = process.env.ASSERT === '1';
 
 const PARCELS = [
@@ -434,7 +434,7 @@ function judge(exp, ev) {
   return errs;
 }
 
-for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? PARCELS.slice(0, 1) : PARCELS)) {
+for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : ONE ? PARCELS.slice(0, 1) : PARCELS)) {
   const page = await ctx.newPage();
   const errs = [];
   page.on('console', m => {
@@ -617,6 +617,8 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
     const ready3dMs = Date.now() - t3d;
     await page.waitForTimeout(state3d === 'ready' ? 1500 : 5000);
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_3d.png`, timeout: 60000 });
+    // what drew the 3D picture: the manifest of a baseline names its renderer tier
+    const quality3d = await page.evaluate(() => document.querySelector('[data-testid="massing-3d"]')?.getAttribute('data-quality') ?? null).catch(() => null);
 
     const verdictErrs = p.advisory ? [] : judge(expectations[String(p.ogc_fid)], evidence);
     // a 3D tab that reaches none of those states is a finding, not a pass
@@ -627,6 +629,8 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
       advisory: p.advisory ?? false,
       evidence,
       violations: verdictErrs,
+      view3d: { state: state3d, readyMs: ready3dMs, quality: quality3d },
+      viewport: { width: 1600, height: 1000 },
     };
     console.log(
       `${verdictErrs.length === 0 ? 'OK' : 'GATE-FAIL'} ${p.ogc_fid} (${p.address})` +
