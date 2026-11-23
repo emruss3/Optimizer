@@ -33,6 +33,9 @@ export interface RenderViewProps {
   grossSf?: number | null | undefined;
   savedPlanId?: string | undefined;
   accessBreak?: { from: number[]; to: number[] } | null | undefined;
+  /** Home-design study: frame this building when focusHomeToken changes. */
+  focusHomeId?: string | null | undefined;
+  focusHomeToken?: number | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
@@ -58,7 +61,7 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   const [look, setLook] = useState<'review' | 'rendering'>('review');
@@ -311,6 +314,13 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       rig.current = null;
     };
   }, [data, frame, lens, quality, look, present]);
+
+  // Home designs → 3D: after a site preview lands, stand on the street (or entry) looking at that house.
+  useEffect(() => {
+    if (!ready || !focusHomeToken || !focusHomeId) return;
+    if (previewHouse.current !== focusHomeId) return;
+    frame('street');
+  }, [ready, built, focusHomeToken, focusHomeId, frame]);
 
   useEffect(() => {
     const r = rig.current;

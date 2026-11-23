@@ -308,3 +308,11 @@
     font-size: 27px;
   }
 }
+
+.home-exterior-note {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #5a6b60;
+}
+

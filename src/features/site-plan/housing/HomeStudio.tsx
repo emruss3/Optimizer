@@ -321,10 +321,10 @@ export default function HomeStudio({
                   <figure>
                     <img
                       src={'/home-designs/' + home.id + '.webp'}
-                      alt={home.name + ', illustrative exterior character study'}
+                      alt={home.name + ', illustrative character exterior (not generated from this plan)'}
                     />
-                    <figcaption>
-                      Illustrative character image for this concept — not a licensed stock elevation.
+                    <figcaption className="home-exterior-note">
+                      Illustrative character image — not generated from this plan’s drawings, and not a photo of a built home.
                     </figcaption>
                   </figure>
                 ) : view === 'Plans' ? (
@@ -411,14 +411,14 @@ export default function HomeStudio({
                         </button>
                         {current?.placement && (
                           <button type="button" className="home-primary" onClick={() => onPreview(current.placement!)}>
-                            Preview on site
+                            Preview in 3D massing
                           </button>
                         )}
                       </div>
                       <p aria-live="polite">
                         {current?.placement?.basis ??
                           current?.reason ??
-                          'Check the drawn lot and its vehicle and pedestrian approaches at full size.'}
+                          'Check the drawn lot and its vehicle and pedestrian approaches at full size. A fit opens the live 3D massing with this design.'}
                       </p>
                     </>
                   ) : (
@@ -426,8 +426,8 @@ export default function HomeStudio({
                   )}
                 </section>
                 <footer>
-                  * Approximate conditioned area from schematic room zones. Original concept for
-                  feasibility review — not a construction license.
+                  * Approximate conditioned area from schematic room zones. Dimensions include wall allowances.
+                  These are concept studies for site fit — not publisher construction sets.
                 </footer>
               </main>
             </>
