@@ -3212,7 +3212,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const legacyLots = legacyLotCount > 0 ? legacyLotCount : null;
   const layoutZoningBase = plannerCtx?.context?.legal?.zoning_base ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
   // Detached SF stock stamps only on R/RS by-right sessions — not MF/CS unless a rezone label is set.
-  const sfStockDesigns = designsForParcel(parcelIdStr, { zoningBase: layoutZoningBase });
+  const sfStockDesigns = useMemo(
+    () => designsForParcel(parcelIdStr, { zoningBase: layoutZoningBase }),
+    [parcelIdStr, layoutZoningBase],
+  );
   const isRmLayout = sfV1Route(layoutZoningBase) === 'th' && plannerCtx?.context.typology === 'multifamily' && sfV1Competition != null;
   const layoutShown: LayoutKind | null = displayElements.some(e => isMfPlanElement(e)) ? 'multifamily'
     : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
@@ -4011,7 +4014,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
-{homeDesignsUi.show && (
+          {homeDesignsUi.show && (
             <button
               type="button"
               data-testid="home-designs"
@@ -4019,7 +4022,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               disabled={!homeDesignsUi.enabled}
               title={
                 homeDesignsUi.enabled
-                  ? 'Browse buildable stock plans and concept studies that fit house lots on this plan'
+                  ? // Parcel-level stock can enable the control even when the selected lot has none —
+                    // studio empty state covers that; do not promise fits here.
+                    'Browse buildable stock plans and concept studies for house lots on this plan'
                   : HOME_DESIGNS_NONE_FIT_TITLE
               }
               className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -4098,7 +4103,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-{homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
+      {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
         <HomeStudio
           siteBoundary={homeStudioBoundary}
           elements={baseElements}
