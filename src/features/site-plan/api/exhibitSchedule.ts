@@ -107,3 +107,140 @@ export function exhibitSchedule(i: ExhibitScheduleInput): ScheduleRow[] {
   if (i.contextUnverified) rows.push({ label: 'Context', value: 'Not verified' });
   return rows;
 }
+
+/** Which product owns the decision schedule on the sheet. */
+export type ExhibitProductKind = 'seed' | 'home-study' | 'apartment' | 'townhome' | 'detached' | 'conditional' | 'none';
+
+export type ExhibitProduct =
+  | { product: 'seed'; revision?: string | null }
+  | { product: 'home-study'; revision?: string | null }
+  | { product: 'apartment'; input: ExhibitScheduleInput; revision?: string | null }
+  | {
+      product: 'townhome';
+      guestStalls?: number | null;
+      guestTarget?: number | null;
+      guestGraded?: boolean | null;
+      contextUnverified?: boolean;
+      revision?: string | null;
+    }
+  | { product: 'detached'; revision?: string | null }
+  | { product: 'conditional'; input: ExhibitScheduleInput; revision?: string | null }
+  | { product: 'none'; revision?: string | null };
+
+export interface ResolveExhibitProductInput {
+  seedViewOn?: boolean;
+  homeStudyOn?: boolean;
+  apartmentOnSheet?: boolean;
+  apartment?: ExhibitScheduleInput | null;
+  townhomeOnSheet?: boolean;
+  guestStalls?: number | null;
+  guestTarget?: number | null;
+  guestGraded?: boolean | null;
+  /** Detached SF only — must not include thv3 (see isDetachedSfPlanElement). */
+  detachedSfOnSheet?: boolean;
+  conditional?: ExhibitScheduleInput | null;
+  contextUnverified?: boolean;
+  revision?: string | null;
+}
+
+/**
+ * Product order: seed / home-study → apartment → townhome → detached → conditional.
+ * Townhome must win over detached so Mt View guest parking is not emptied by the
+ * old `seedViewOn || sfPlanOnSheet` short-circuit (thv3 was inside isSfPlanElement).
+ */
+export function resolveExhibitProduct(i: ResolveExhibitProductInput): ExhibitProduct {
+  const revision = i.revision ?? null;
+  if (i.seedViewOn) return { product: 'seed', revision };
+  if (i.homeStudyOn) return { product: 'home-study', revision };
+  if (i.apartmentOnSheet) {
+    return { product: 'apartment', input: i.apartment ?? {}, revision };
+  }
+  if (i.townhomeOnSheet) {
+    return {
+      product: 'townhome',
+      guestStalls: i.guestStalls ?? null,
+      guestTarget: i.guestTarget ?? null,
+      guestGraded: i.guestGraded ?? false,
+      contextUnverified: i.contextUnverified,
+      revision,
+    };
+  }
+  if (i.detachedSfOnSheet) return { product: 'detached', revision };
+  if (i.conditional) return { product: 'conditional', input: i.conditional, revision };
+  return { product: 'none', revision };
+}
+
+/** Schedule rows for the selected product. Seed / detached / home-study carry none. */
+export function scheduleForProduct(product: ExhibitProduct): ScheduleRow[] {
+  switch (product.product) {
+    case 'apartment':
+    case 'conditional':
+      return exhibitSchedule(product.input);
+    case 'townhome':
+      return exhibitSchedule({
+        guestStalls: product.guestStalls,
+        guestTarget: product.guestTarget,
+        guestGraded: product.guestGraded,
+        contextUnverified: product.contextUnverified,
+      });
+    default:
+      return [];
+  }
+}
+
+export type GuestBasis = 'engine-target' | 'engine-graded';
+
+export interface LayoutDecisionFacts {
+  rows: ScheduleRow[];
+  parking: string | null;
+  floorArea: string | null;
+  guestSupply: number | null;
+  guestTarget: number | null;
+  guestBasis: GuestBasis | null;
+  revision: string | null;
+}
+
+/**
+ * Workspace / Compare / sheet facts for the product on the sheet. Guest supply,
+ * target, and basis travel as data so a generic stall count cannot stand in.
+ */
+export function layoutDecisionFacts(opts: {
+  product: ExhibitProduct;
+  builtGsf?: number | null;
+  maxGsf?: number | null;
+}): LayoutDecisionFacts {
+  const rows = scheduleForProduct(opts.product);
+  const parking = rows.find(r => r.label === 'Parking')?.value ?? null;
+  const floorFromRows = rows.find(r => r.label === 'Floor area')?.value ?? null;
+  const built = opts.builtGsf ?? null;
+  const max = opts.maxGsf ?? null;
+  const floorArea = floorFromRows
+    ?? (built != null ? `${n(Math.round(built))} GSF` : null)
+    ?? (max != null ? `Unknown · upper bound ${n(Math.round(max))} GSF` : null);
+
+  if (opts.product.product === 'townhome') {
+    const graded = opts.product.guestGraded === true;
+    const supply = opts.product.guestStalls ?? null;
+    return {
+      rows,
+      parking,
+      floorArea,
+      guestSupply: supply,
+      guestTarget: opts.product.guestTarget ?? null,
+      guestBasis: supply == null && opts.product.guestTarget == null
+        ? null
+        : graded ? 'engine-graded' : 'engine-target',
+      revision: opts.product.revision ?? null,
+    };
+  }
+
+  return {
+    rows,
+    parking,
+    floorArea,
+    guestSupply: null,
+    guestTarget: null,
+    guestBasis: null,
+    revision: opts.product.revision ?? null,
+  };
+}

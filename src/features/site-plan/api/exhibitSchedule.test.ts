@@ -1,6 +1,14 @@
-import { describe, it, expect } from 'vitest';
-import { exhibitSchedule } from './exhibitSchedule';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  exhibitSchedule,
+  layoutDecisionFacts,
+  resolveExhibitProduct,
+  scheduleForProduct,
+} from './exhibitSchedule';
 import { captureBasis } from './maxBuildout';
+import { isDetachedSfPlanElement, isSfPlanElement } from './generateSfPlan';
+
+vi.mock('../../../lib/supabase', () => ({ supabase: null }));
 
 describe('the figures a sheet must carry', () => {
   it('W Heiman: drawn, reported and required stalls, and the street break', () => {
@@ -47,5 +55,92 @@ describe('the figures a sheet must carry', () => {
     const row = exhibitSchedule({ guestStalls: 0, guestTarget: 8, guestGraded: false }).find(r => r.label === 'Parking');
     expect(row?.value).toBe('Guest parking 0 of 8 stalls · 8 short · a target of the engine, not one of its tests');
     expect(row?.value).toMatch(/short/);
+  });
+
+  it('a true zero guest target still prints (0 of 0), and missing guest supply emits no parking row', () => {
+    expect(exhibitSchedule({ guestStalls: 0, guestTarget: 0, guestGraded: false })[0]?.value)
+      .toBe('Guest parking 0 of 0 stalls · a target of the engine, not one of its tests');
+    expect(exhibitSchedule({ guestTarget: 8, guestGraded: false })).toEqual([]);
+    expect(exhibitSchedule({ guestStalls: null, guestTarget: 8 })).toEqual([]);
+  });
+});
+
+describe('exhibit product selection (Mt View audit: townhome before SF suppression)', () => {
+  it('keeps replace-on-regenerate (thv3) apart from detached schedule product', () => {
+    expect(isSfPlanElement({ id: 'thv3-home-1' })).toBe(true);
+    expect(isDetachedSfPlanElement({ id: 'thv3-home-1' })).toBe(false);
+    expect(isDetachedSfPlanElement({ id: 'sfv1-lot-1' })).toBe(true);
+    expect(isSfPlanElement({ id: 'sfv1-lot-1' })).toBe(true);
+  });
+
+  it('selects townhome guest schedule even when thv3 would have matched the old sfPlanOnSheet predicate', () => {
+    // Regression: seedViewOn || sfPlanOnSheet (with thv3 in isSfPlanElement) emptied the schedule.
+    const product = resolveExhibitProduct({
+      townhomeOnSheet: true,
+      guestStalls: 0,
+      guestTarget: 8,
+      guestGraded: false,
+      detachedSfOnSheet: false,
+      revision: 'dca61670',
+    });
+    expect(product.product).toBe('townhome');
+    const rows = scheduleForProduct(product);
+    expect(rows.find(r => r.label === 'Parking')?.value).toMatch(/Guest parking 0 of 8 stalls · 8 short · a target of the engine/);
+  });
+
+  it('orders seed → apartment → townhome → detached; apartment keeps 42/42', () => {
+    expect(resolveExhibitProduct({ seedViewOn: true, townhomeOnSheet: true, guestStalls: 0, guestTarget: 8 }).product).toBe('seed');
+    expect(resolveExhibitProduct({
+      apartmentOnSheet: true,
+      apartment: { stallsDrawn: 42, stallsRequired: 42 },
+      townhomeOnSheet: true,
+      guestStalls: 0,
+      guestTarget: 8,
+    }).product).toBe('apartment');
+    expect(scheduleForProduct(resolveExhibitProduct({
+      apartmentOnSheet: true,
+      apartment: { stallsDrawn: 42, stallsRequired: 42 },
+    })).find(r => r.label === 'Parking')?.value).toBe('42 drawn · 42 required');
+    expect(resolveExhibitProduct({ detachedSfOnSheet: true }).product).toBe('detached');
+    expect(scheduleForProduct({ product: 'detached' })).toEqual([]);
+  });
+
+  it('recorded mews case carries its own 2/7 guest fact', () => {
+    const facts = layoutDecisionFacts({
+      product: {
+        product: 'townhome',
+        guestStalls: 2,
+        guestTarget: 7,
+        guestGraded: false,
+        revision: 'mews-rev',
+      },
+      maxGsf: 49_600,
+    });
+    expect(facts.parking).toMatch(/Guest parking 2 of 7 stalls/);
+    expect(facts.guestSupply).toBe(2);
+    expect(facts.guestTarget).toBe(7);
+    expect(facts.guestBasis).toBe('engine-target');
+    expect(facts.floorArea).toBe('Unknown · upper bound 49,600 GSF');
+  });
+
+  it('Mt View layout facts: 0/8 · 8 short · engine target, unknown townhome floor area', () => {
+    const facts = layoutDecisionFacts({
+      product: {
+        product: 'townhome',
+        guestStalls: 0,
+        guestTarget: 8,
+        guestGraded: false,
+        revision: 'dca61670',
+      },
+      maxGsf: 49_600,
+    });
+    expect(facts.parking).toContain('0 of 8');
+    expect(facts.parking).toContain('8 short');
+    expect(facts.parking).toMatch(/target of the engine/);
+    expect(facts.guestSupply).toBe(0);
+    expect(facts.guestTarget).toBe(8);
+    expect(facts.guestBasis).toBe('engine-target');
+    expect(facts.floorArea).toMatch(/Unknown · upper bound 49,600/);
+    expect(facts.revision).toBe('dca61670');
   });
 });

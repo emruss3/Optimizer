@@ -27,7 +27,7 @@ import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, permittedUs
 import { CommercialCapacityCard } from './ui/CommercialCapacityCard';
 import { fetchPlanPattern, type PlanPattern } from './api/planPattern';
 import { PlanPatternPanel } from './ui/PlanPatternPanel';
-import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
+import { generateSfSitePlan, sfPlanToElements, isSfPlanElement, isDetachedSfPlanElement } from './api/generateSfPlan';
 import {
   generateSubdivision, subdivisionToElements, subdivisionSummaryLine,
   type SubdivisionParams, type SubdivisionSummary,
@@ -97,7 +97,7 @@ import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
 import { accessFinding, NO_DRIVE_TO_STREET } from './api/accessFinding';
-import { exhibitSchedule } from './api/exhibitSchedule';
+import { layoutDecisionFacts, resolveExhibitProduct } from './api/exhibitSchedule';
 import { createRequestGeneration } from './api/requestGeneration';
 import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
@@ -3202,6 +3202,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const legacyLotCount = displayElements.filter(e => e.id.startsWith('gen-lot-')).length;
   // a by-right / lot-fit / house result on the sheet: complete in itself, whatever the massing context does
   const sfPlanOnSheet = displayElements.some(e => isSfPlanElement(e));
+  // Detached SF only — thv3 stays in isSfPlanElement for replace-on-regenerate but must not
+  // suppress townhome guest parking on the exhibit (Mt View 0 of 8).
+  const detachedSfOnSheet = displayElements.some(e => isDetachedSfPlanElement(e));
   const legacyLots = legacyLotCount > 0 ? legacyLotCount : null;
   const layoutZoningBase = plannerCtx?.context?.legal?.zoning_base ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
   const isRmLayout = sfV1Route(layoutZoningBase) === 'th' && plannerCtx?.context.typology === 'multifamily' && sfV1Competition != null;
@@ -3512,33 +3515,50 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
   // required parking, what the floor area is a share of, the parking and residential stack, and
   // whether a car can reach the street. They replace the single "Parking" row.
-  // Townhome (thv3) sheets have no mfgen- elements: guest parking still has to reach A-01
-  // (Mt View 0 of 8), so the schedule is built from the townhome summary when that plan is on the sheet.
-  const sheetsTitleWithAccess = useMemo(() => {
+  // Product selection (resolveExhibitProduct): townhome guest parking is chosen before detached
+  // SF suppression so Mt View 0 of 8 reaches A-01, Compare, and the layout panel.
+  const layoutDecision = useMemo(() => {
     const garage = displayElements.find(e => e.type === 'parking' && e.properties?.structured === true);
     const over = displayElements.find(e => e.type === 'building' && e.properties?.overGarage === true);
     const mfOnSheet = displayElements.some(e => e.id.startsWith('mfgen-'));
     const guest = thV3OnSheet && thV3Summary ? guestParkingLine(thV3Summary) : null;
-    const schedule = seedViewOn || sfPlanOnSheet ? []
-      : mfOnSheet ? exhibitSchedule({
-          units: metrics?.totalUnits ?? null,
-          stallsDrawn: metrics?.stallsDrawn ?? null,
-          stallsReported: metrics?.stallsReported ?? metrics?.stallsProvided ?? null,
-          stallsRequired: metrics?.stallsRequired ?? null,
-          builtGsf: metrics?.totalBuiltSF ?? null,
-          capture: captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy),
-          garageLevels: garage ? Number(garage.properties?.levels) || null : null,
-          residentialLevels: over ? Number(over.properties?.residentialLevels) || null : null,
-          routeUnresolved: !!routeBreak,
-          contextUnverified: contextState === 'unavailable',
-        })
-      : thV3OnSheet && thV3Summary ? exhibitSchedule({
-          guestStalls: thV3Summary.guestStalls,
-          guestTarget: thV3Summary.guestTarget,
-          guestGraded: guest?.graded ?? false,
-          contextUnverified: contextState === 'unavailable',
-        })
-      : [];
+    const apartmentInput = {
+      units: metrics?.totalUnits ?? null,
+      stallsDrawn: metrics?.stallsDrawn ?? null,
+      stallsReported: metrics?.stallsReported ?? metrics?.stallsProvided ?? null,
+      stallsRequired: metrics?.stallsRequired ?? null,
+      builtGsf: metrics?.totalBuiltSF ?? null,
+      capture: captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy),
+      garageLevels: garage ? Number(garage.properties?.levels) || null : null,
+      residentialLevels: over ? Number(over.properties?.residentialLevels) || null : null,
+      routeUnresolved: !!routeBreak,
+      contextUnverified: contextState === 'unavailable',
+    };
+    const product = resolveExhibitProduct({
+      seedViewOn,
+      homeStudyOn: !!activeHome,
+      apartmentOnSheet: mfOnSheet,
+      apartment: mfOnSheet ? apartmentInput : null,
+      townhomeOnSheet: thV3OnSheet && !!thV3Summary,
+      guestStalls: thV3Summary?.guestStalls ?? null,
+      guestTarget: thV3Summary?.guestTarget ?? null,
+      guestGraded: guest?.graded ?? false,
+      detachedSfOnSheet,
+      // Conditional massing (e.g. landlocked note) still carries counted parking when no other product owns the sheet.
+      conditional: !mfOnSheet && !thV3OnSheet && !detachedSfOnSheet && metrics?.conditional
+        ? apartmentInput
+        : null,
+      contextUnverified: contextState === 'unavailable',
+      revision: scene?.identity.revision ?? null,
+    });
+    return layoutDecisionFacts({
+      product,
+      builtGsf: metrics?.totalBuiltSF ?? null,
+      maxGsf: maxBuildout?.max_gsf ?? null,
+    });
+  }, [displayElements, metrics, maxBuildout, contextState, seedViewOn, activeHome, detachedSfOnSheet, thV3OnSheet, thV3Summary, routeBreak, scene?.identity.revision]);
+  const sheetsTitleWithAccess = useMemo(() => {
+    const schedule = layoutDecision.rows;
     // the one "Parking" row gives way to the decision figures, which name each count
     const data = schedule.length ? (sheetsTitle.data ?? []).filter(r => r.label !== 'Parking') : sheetsTitle.data;
     return {
@@ -3563,21 +3583,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         : {}),
     };
-  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet, thV3OnSheet, thV3Summary, garageEntries, activeHome]);
+  }, [sheetsTitle, routeBreak, scene, layoutDecision, garageEntries, activeHome]);
   // What the layout comparison may say about the layout on the sheet: the same parking and floor
   // area rows the exported sheet carries. Retained per kind so switching twice keeps both sides.
-  const layoutShownFacts = useMemo(() => {
-    const rows = sheetsTitleWithAccess.decision ?? [];
-    return {
-      parking: rows.find(r => r.label === 'Parking')?.value ?? null,
-      // a townhome plan carries no placed floor area: the ceiling is said as a ceiling, never as the plan's area
-      floorArea: rows.find(r => r.label === 'Floor area')?.value
-        ?? (metrics?.totalBuiltSF ? `${Math.round(metrics.totalBuiltSF).toLocaleString()} GSF`
-          : maxBuildout?.max_gsf ? `Unknown · upper bound ${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF` : null),
-    };
-  }, [sheetsTitleWithAccess, metrics, maxBuildout]);
+  // Guest supply / target / basis travel as data so a generic stall count cannot stand in.
+  const layoutShownFacts = useMemo(() => ({
+    parking: layoutDecision.parking,
+    floorArea: layoutDecision.floorArea,
+    guestSupply: layoutDecision.guestSupply,
+    guestTarget: layoutDecision.guestTarget,
+    guestBasis: layoutDecision.guestBasis,
+  }), [layoutDecision]);
   // revision of the plan on the sheet: facts stay bound to it when the comparison retains them
-  const layoutFactsRevision = scene?.identity.revision ?? null;
+  const layoutFactsRevision = layoutDecision.revision ?? scene?.identity.revision ?? null;
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
     const marked = garageEntries.length
@@ -3751,7 +3769,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       tasks: {
         context: { state: plannerLoading ? 'working' : compileBlocked ? 'blocked' : spOrdinance ? 'unsupported' : plannerCtx ? 'done' : unsupportedUse ? 'unsupported' : 'none', reason: compileBlocked ?? (spOrdinance ? `sp_ordinance_not_loaded:${spOrdinance.ordinance ?? ''}` : null), ms: taskTimingsRef.current.compileMs },
         terrain: { state: topo ? 'done' : 'none', ms: null },
-        lotFit: { state: isGeneratingLots ? 'working' : sfPlanOnSheet ? 'done' : sfV1Summary?.status === 'skipped' ? 'skipped' : 'none', reason: sfV1Summary?.status === 'skipped' ? sfV1Summary.reason : null, ms: taskTimingsRef.current.lotFitMs },
+        lotFit: { state: isGeneratingLots ? 'working' : detachedSfOnSheet ? 'done' : sfV1Summary?.status === 'skipped' ? 'skipped' : 'none', reason: sfV1Summary?.status === 'skipped' ? sfV1Summary.reason : null, ms: taskTimingsRef.current.lotFitMs },
         massing: { state: isGenerating ? 'working' : serverPlanError ? 'failed' : displayElements.some(e => isMfPlanElement(e)) ? 'done' : 'none', reason: serverPlanError, ms: taskTimingsRef.current.massingMs },
       },
       taskTimingsVersion,
@@ -3780,7 +3798,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       utilizationPct:
         !draftMode && capturePct != null ? Math.round(capturePct * 10) / 10 : null,
     };
-  }, [routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
+  }, [routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, detachedSfOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
