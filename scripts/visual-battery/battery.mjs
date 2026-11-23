@@ -341,7 +341,10 @@ function judge(exp, ev) {
   if (exp.requireSfV1Override) {
     const o = ev._override;
     if (!o) errs.push('override: the fill-scenario control was never pressed (button missing on the panel?)');
-    else {
+    else if (o._overrideWaitTimedOut) {
+      // Unfinished fill-scenario state is evidence of a hang, not an answer.
+      errs.push('override: wait for fill-scenario evidence timed out (unfinished state not judged as answer)');
+    } else {
       judgeSfV1(exp.requireSfV1Override, o.sfV1, 'override');
       if (o._domPlannerError) errs.push('override: the canvas error boundary rendered');
     }
@@ -473,11 +476,12 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     const dock = await page.getByTestId('dock').getAttribute('data-open').catch(() => null);
     if (inspector !== 'true' || dock !== 'true') throw new Error(`the inspector (${inspector}) or the schedule (${dock}) is not open: the battery's keys no longer match workspaceLayout.ts`);
     await page.waitForTimeout(12000);
-    // Screenshots are artifacts; the gate judges __planEvidence. A thrashing 2D
-    // canvas (0 Martingale Dr / 680719 floodway fill — ~147 pads coloured from
-    // the DEM) can stall Playwright's capture past 30s and 60s alike. Retry a
-    // few times, then continue: a missing PNG must not fail the parcel.
-    const shot = async (name) => {
+    // Soft-fail ONLY the 680719 floodway-override PNG: that fill view (~147
+    // DEM-coloured pads) can thrash the 2D canvas and stall page.screenshot
+    // past any budget. Missing 2d / 3d (and every other shot) still fails the
+    // parcel — soft-failing every PNG weakened the gate.
+    const shotsSkipped = [];
+    const shot = async (name, { optional = false } = {}) => {
       const dest = `${OUT}/${p.ogc_fid}_${name}.png`;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
@@ -489,8 +493,12 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
           await page.waitForTimeout(1500 * attempt);
         }
       }
-      console.log(`  shot ${p.ogc_fid}_${name} skipped after retries — gate uses evidence, not pixels`);
-      return false;
+      if (optional) {
+        shotsSkipped.push(name);
+        console.log(`  shot ${p.ogc_fid}_${name} skipped after retries — optional override PNG only`);
+        return false;
+      }
+      throw new Error(`screenshot ${p.ogc_fid}_${name}.png failed after retries`);
     };
     await shot('2d');
     // Order-6 item 1: when the refusal card offers the server-verified house,
@@ -589,24 +597,37 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     // 2026-11-03 by-right subdivision: the override the parcel asks for (the
     // floodway-only fill scenario) is pressed and judged on its own evidence.
     // Wait for the fill-scenario answer (lots + fillView) before reading
-    // evidence; shoot afterward best-effort so a stalled PNG cannot wipe the
-    // override judgment (the failure mode on 680719 across #194/#197/#198).
+    // evidence. A wait timeout records _overrideWaitTimedOut — do not treat
+    // unfinished page state as the override answer. The override PNG alone is
+    // optional on 680719 (canvas thrash); evidence still gates the parcel.
     if (evidence && p.sfV1Override === 'floodway') {
       const btn = page.getByTestId('sfv1-override-floodway');
       if (await btn.isVisible().catch(() => false)) {
         await btn.click();
-        await page.waitForFunction(() => {
-          const sf = window.__planEvidence?.sfV1;
-          return sf?.basis === 'override' && sf?.fillView === true && (sf?.lots ?? 0) >= 100;
-        }, null, { timeout: 90000, polling: 500 }).catch(() => null);
+        let overrideWaitTimedOut = false;
+        try {
+          await page.waitForFunction(() => {
+            const sf = window.__planEvidence?.sfV1;
+            return sf?.basis === 'override' && sf?.fillView === true && (sf?.lots ?? 0) >= 100;
+          }, null, { timeout: 90000, polling: 500 });
+        } catch (err) {
+          overrideWaitTimedOut = true;
+          console.log(`  override wait timed out for ${p.ogc_fid}: ${String(err).slice(0, 160)}`);
+        }
         await page.waitForTimeout(2000);
-        evidence._override = await page.evaluate(() => {
+        const overrideEv = await page.evaluate(() => {
           const ev = window.__planEvidence ?? null;
           return ev
             ? { ...ev, _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'), _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? '') }
             : null;
         });
-        await shot('override');
+        if (overrideWaitTimedOut) {
+          evidence._override = { ...(overrideEv ?? {}), _overrideWaitTimedOut: true };
+        } else {
+          evidence._override = overrideEv;
+        }
+        // Soft-fail only this PNG on Martingale (680719); 2d/3d remain required.
+        await shot('override', { optional: p.ogc_fid === 680719 });
       } else {
         evidence._override = null;
       }
@@ -650,10 +671,12 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     // a 3D tab that reaches none of those states is a finding, not a pass
     if (state3d === null && !p.advisory) verdictErrs.push(`the 3D view was not ready ${Math.round(ready3dMs / 1000)} s after it was opened`);
     console.log(`  3D ${state3d ?? 'NOT READY'} after ${(ready3dMs / 1000).toFixed(1)} s — ${p.ogc_fid}`);
+    if (evidence && shotsSkipped.length) evidence.shotsSkipped = shotsSkipped;
     results[p.ogc_fid] = {
       ok: verdictErrs.length === 0,
       advisory: p.advisory ?? false,
       evidence,
+      shotsSkipped,
       violations: verdictErrs,
       view3d: { state: state3d, readyMs: ready3dMs, quality: quality3d },
       viewport: { width: 1600, height: 1000 },
@@ -664,7 +687,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     );
   } catch (e) {
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_FAIL.png` }).catch(() => {});
-    results[p.ogc_fid] = { ok: false, advisory: p.advisory ?? false, evidence: null, violations: [`battery flow failed: ${String(e).slice(0, 200)}`] };
+    results[p.ogc_fid] = { ok: false, advisory: p.advisory ?? false, evidence: null, shotsSkipped: [], violations: [`battery flow failed: ${String(e).slice(0, 200)}`] };
     console.log(`FAIL ${p.ogc_fid}: ${String(e).slice(0, 200)}`);
   }
   consoleErrors[p.ogc_fid] = errs;
@@ -674,6 +697,11 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
 fs.writeFileSync(`${OUT}/console_errors.json`, JSON.stringify(consoleErrors, null, 2));
 fs.writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 2));
 await browser.close();
+
+const skippedSummary = Object.entries(results).flatMap(([fid, r]) =>
+  (r.shotsSkipped ?? []).map(name => `${fid}_${name}`)
+);
+console.log(`shots skipped: ${skippedSummary.length ? skippedSummary.join(', ') : '(none)'}`);
 
 const gateFailures = Object.entries(results).filter(([, r]) => !r.ok && !r.advisory);
 if (ASSERT && gateFailures.length) {
