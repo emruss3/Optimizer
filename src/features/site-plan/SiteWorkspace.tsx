@@ -81,7 +81,7 @@ import { fetchMassingProgram, type MassingProgram } from './api/massingProgram';
 import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, contextStateLabel, type PlanLineage } from './ui/ContextLineage';
 import { PlanBasisDisclosure, type BasisTone } from './ui/PlanBasisDisclosure';
-import { accessBreak, mfAccessSummary } from './api/mfAccess';
+import { accessBreak, formatGapFt, mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
 import ExportMenu from './ui/ExportMenu';
@@ -3418,15 +3418,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   );
   const [showFrontage, setShowFrontage] = useState(false);
   // Where the route breaks, when the finding is that no drive reaches the street: the same two
-  // points mark it on the plan and in the 3D review; gapFt is the measured shortfall.
+  // points mark it on the plan and in the 3D review; gapFt is ground feet via scene.frame.
   const routeBreak = useMemo(
     () => (access?.headline === NO_DRIVE_TO_STREET && displayElements.some(e => e.id.startsWith('mfgen-'))
-      ? accessBreak(displayElements, parcelRing3857, access.frontageLine)
+      ? accessBreak(displayElements, parcelRing3857, access.frontageLine, 3, scene?.frame.distanceFt)
       : null),
-    [access, displayElements, parcelRing3857],
+    [access, displayElements, parcelRing3857, scene],
   );
   const routeBreakLabel = routeBreak
-    ? `Drive stops here · no drawn connection to the street · ${routeBreak.gapFt < 10 ? routeBreak.gapFt.toFixed(1) : Math.round(routeBreak.gapFt)} ft short`
+    ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
     : null;
   // the download carries the unresolved connection too: marked on the sheet and said in its notes
   // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
@@ -3455,7 +3455,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ...(schedule.length ? { decision: schedule } : {}),
       ...(routeBreak && scene
         ? {
-            notes: [`Access unresolved: no drive on this plan reaches the street (${Math.round(routeBreak.gapFt)} ft short). The break is marked in red.`, ...(sheetsTitle.notes ?? [])],
+            notes: [`Access unresolved: no drive on this plan reaches the street (${formatGapFt(routeBreak.gapFt)} ft short). The break is marked in red.`, ...(sheetsTitle.notes ?? [])],
             routeBreak: { from: scene.frame.toFeet(routeBreak.from), to: scene.frame.toFeet(routeBreak.to), gapFt: routeBreak.gapFt },
           }
         : {}),

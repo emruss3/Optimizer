@@ -17,6 +17,7 @@ import type { DrawingScene, ScenePolygons } from './types';
 import { interiorPoint, type Pt } from './frame';
 import { computeFloorplate } from '../../../components/site-planner/unitLayout';
 import { LABEL_PRIORITY, placeLabels, type LabelCandidate, type PlacedLabel } from './labels';
+import { formatGapFt } from '../api/mfAccess';
 
 export type SheetSize = 'letter' | 'tabloid' | 'slide';
 
@@ -524,7 +525,7 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     // an unresolved connection stays on the download: dashed between the two ends, a ring on each
     const a = P(title.routeBreak.from), b = P(title.routeBreak.to);
     const gap = title.routeBreak.gapFt != null && Number.isFinite(title.routeBreak.gapFt)
-      ? ` · ${title.routeBreak.gapFt < 10 ? title.routeBreak.gapFt.toFixed(1) : Math.round(title.routeBreak.gapFt)} ft short`
+      ? ` · ${formatGapFt(title.routeBreak.gapFt)} ft short`
       : '';
     out.push(`<g data-role="route-break" stroke="#dc2626" fill="#ffffff">`
       + `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="1.4" stroke-dasharray="4 3"/>`

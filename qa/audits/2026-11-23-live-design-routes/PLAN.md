@@ -54,7 +54,7 @@ cannot mark a bay served.
 
 ## First slice in this branch
 
-`accessBreak` now returns `gapM` / `gapFt` alongside `from` / `to`, with a
-unit test that a known stub-drive gap reports the measured length. Sheet /
-annotation copy can name the feet in a follow-up commit without waiting on
-full segment typing.
+`accessBreak` returns `gap3857` / `gapFt` alongside `from` / `to`. `gapFt` is
+**ground feet** via `scene.frame.distanceFt` (not raw Mercator ÷ 0.3048). A
+Nashville-latitude unit test pins ~20.85 ft within 0.5 ft. Sheet / canvas /
+notes share `formatGapFt`. QA raster: `heiman-553450-a01-access-break.png`.
