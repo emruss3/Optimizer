@@ -103,7 +103,7 @@ import AuthChip from '../../components/AuthChip';
 import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
-import { accessFinding, NO_DRIVE_TO_STREET } from './api/accessFinding';
+import { accessFinding, NO_DRIVE_TO_STREET, PARKING_NOT_REACHABLE } from './api/accessFinding';
 import { layoutDecisionFacts, resolveExhibitProduct } from './api/exhibitSchedule';
 import { createRequestGeneration } from './api/requestGeneration';
 import { loadSchemeDrawing } from './api/schemeDrawing';
@@ -3523,9 +3523,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return null;
     }
   }, [parcel?.geometry]);
-  // 2026-09-04 (Eric: "random parking, with no road to get to it"): does a
-  // drive reach the curb, and does one touch every bay?
-  const mfAccess = useMemo(() => mfAccessSummary(displayElements, parcelRing3857), [displayElements, parcelRing3857]);
+  // 2026-09-04 (Eric: "random parking, with no road to get to it") + field audit
+  // 32a264a: curb requires a street-edge-connected drive network; a bay counts
+  // as served only with a traversable trip on that network.
+  const accessProbe = useMemo(
+    () => accessFinding({
+      frontage,
+      engineAccess,
+      flags: [...(planLineage?.flags ?? []), ...(plannerCtx?.solver_brief.geometry.front_edge_is_placeholder ? ['frontage_geometry_is_placeholder_until_road_edge_upgrade'] : [])],
+      drives: null,
+    }),
+    [frontage, engineAccess, planLineage?.flags, plannerCtx],
+  );
+  const mfAccess = useMemo(
+    () => mfAccessSummary(displayElements, parcelRing3857, 3, accessProbe?.frontageLine ?? null),
+    [displayElements, parcelRing3857, accessProbe?.frontageLine],
+  );
   // Street access as a finding with a next step: the reason, the frontage it concerns, what clears it.
   const access = useMemo(
     () => accessFinding({
@@ -3537,10 +3550,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     [frontage, engineAccess, planLineage?.flags, plannerCtx, displayElements, mfAccess],
   );
   const [showFrontage, setShowFrontage] = useState(false);
-  // Where the route breaks, when the finding is that no drive reaches the street: the same two
-  // points mark it on the plan and in the 3D review; gapFt is ground feet via scene.frame.
+  // Where the route breaks (no curb, or stranded bays): the same two points mark
+  // it on the plan and in the 3D review; gapFt is ground feet via scene.frame.
   const routeBreak = useMemo(
-    () => (access?.headline === NO_DRIVE_TO_STREET && displayElements.some(e => e.id.startsWith('mfgen-'))
+    () => ((access?.headline === NO_DRIVE_TO_STREET || access?.headline === PARKING_NOT_REACHABLE)
+      && displayElements.some(e => e.id.startsWith('mfgen-'))
       ? accessBreak(displayElements, parcelRing3857, access.frontageLine, 3, scene?.frame.distanceFt)
       : null),
     [access, displayElements, parcelRing3857, scene],

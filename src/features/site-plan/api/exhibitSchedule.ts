@@ -103,7 +103,12 @@ export function exhibitSchedule(i: ExhibitScheduleInput): ScheduleRow[] {
   if (i.garageLevels && i.garageLevels > 0) {
     rows.push({ label: 'Program', value: `${n(i.garageLevels)} parking level${i.garageLevels === 1 ? '' : 's'}${i.residentialLevels ? ` + ${n(i.residentialLevels)} residential` : ''}` });
   }
-  if (i.routeUnresolved) rows.push({ label: 'Street access', value: 'Unresolved: no drive reaches the street' });
+  if (i.routeUnresolved) {
+    rows.push({
+      label: 'Street access',
+      value: 'Unresolved: no traversable drive from parking to the street',
+    });
+  }
   if (i.contextUnverified) rows.push({ label: 'Context', value: 'Not verified' });
   return rows;
 }

@@ -28,6 +28,38 @@ describe('mfAccessSummary — does the parking have a road?', () => {
     expect(s.served).toBe(0);
   });
 
+  // Field audit 32a264a P0: proximity ≠ route. One drive at the boundary and
+  // another isolated beside a bay must not report curb+served with no path.
+  it('does not count an isolated bay as served when a different drive touches the curb', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 8, 18));
+    const island = el('island', 'circulation', rect(60, 60, 65, 65));
+    const bay = el('bay', 'parking-bay', rect(66, 60, 74, 68));
+    const s = mfAccessSummary([curbDrive, island, bay], parcel);
+    expect(s.curb).toBe(true);
+    expect(s.bays).toBe(1);
+    expect(s.served).toBe(0);
+    expect(s.drives).toBe(2);
+  });
+
+  it('serves a bay only through overlapping drives that reach the curb', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 40, 18));
+    const aisle = el('aisle', 'circulation', rect(38, 10, 46, 70)); // overlaps curb drive
+    const bay = el('bay', 'parking', rect(48, 60, 66, 70));
+    const s = mfAccessSummary([curbDrive, aisle, bay], parcel);
+    expect(s.curb).toBe(true);
+    expect(s.served).toBe(1);
+  });
+
+  // Side property line is not the street when a frontage edge is known.
+  it('ignores a non-street parcel boundary when a street edge is supplied', () => {
+    const sideDrive = el('side', 'circulation', rect(0, 40, 6, 56)); // west lot line, not the street
+    const bay = el('bay', 'parking', rect(8, 42, 26, 54));
+    const street = [[100, 0], [100, 100]]; // east frontage
+    const s = mfAccessSummary([sideDrive, bay], parcel, 3, street);
+    expect(s.curb).toBe(false);
+    expect(s.served).toBe(0);
+  });
+
   it('measures ring-to-ring distance edge to vertex both ways, zero when edges cross', () => {
     expect(ringDistance(rect(0, 0, 10, 10), rect(12, 4, 20, 6))).toBeCloseTo(2, 6);
     expect(ringDistance(rect(0, 0, 10, 10), rect(8, 8, 12, 12))).toBe(0);
@@ -37,10 +69,21 @@ describe('mfAccessSummary — does the parking have a road?', () => {
 });
 
 describe('accessBreak — where the route to the street stops', () => {
-  it('is null when a drive reaches the parcel line, or when the plan has no drive', () => {
+  it('is null when a curb-connected network serves the plan, or when there is no drive', () => {
     expect(accessBreak([el('drive', 'circulation', rect(0, 0, 8, 60))], parcel)).toBeNull();
     expect(accessBreak([el('bay', 'parking', rect(60, 20, 80, 40))], parcel)).toBeNull();
     expect(accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], null)).toBeNull();
+  });
+
+  it('marks the gap between a curb stub and an isolated parking network', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 8, 18));
+    const island = el('island', 'circulation', rect(60, 60, 65, 65));
+    const bay = el('bay', 'parking-bay', rect(66, 60, 74, 68));
+    const b = accessBreak([curbDrive, island, bay], parcel);
+    expect(b).not.toBeNull();
+    expect(b!.gap3857).toBeGreaterThan(3);
+    // break runs from the island toward the curb stub (east→west)
+    expect(b!.from[0]).toBeGreaterThan(b!.to[0]!);
   });
 
   it('marks the end of the drive and the nearest point on the parcel line', () => {

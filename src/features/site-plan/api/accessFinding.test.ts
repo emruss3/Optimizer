@@ -58,6 +58,14 @@ describe('accessFinding', () => {
     expect(f?.clears[0]).toMatch(/marked in red on the plan/);
   });
 
+  it('says when striped bays have no traversable trip to the curb', () => {
+    const f = accessFinding({ frontage: frontage(), engineAccess: null, flags: [], drives: { curb: true, bays: 4, served: 1, drives: 2 } });
+    expect(f?.headline).toBe('Parking is drawn without a route to the street');
+    expect(f?.why).toMatch(/3 of 4/);
+    expect(f?.why).toMatch(/usable/);
+    expect(f?.clears[0]).toMatch(/joins the parking network/);
+  });
+
   it('has nothing to say before any access data arrives', () => {
     expect(accessFinding({ frontage: null, engineAccess: null, flags: [], drives: null })).toBeNull();
   });

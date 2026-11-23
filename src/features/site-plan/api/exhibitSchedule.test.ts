@@ -14,7 +14,7 @@ describe('the figures a sheet must carry', () => {
   it('W Heiman: drawn, reported and required stalls, and the street break', () => {
     const rows = exhibitSchedule({ units: 70, stallsDrawn: 127, stallsReported: 20, stallsRequired: 122, routeUnresolved: true });
     expect(rows.find(r => r.label === 'Parking')?.value).toBe('127 drawn · 20 reported · 122 required · reported count 102 short of required');
-    expect(rows.find(r => r.label === 'Street access')?.value).toMatch(/no drive reaches the street/);
+    expect(rows.find(r => r.label === 'Street access')?.value).toMatch(/no traversable drive from parking to the street/);
   });
 
   it('Main St: supplied against required, the structured ceiling, and the 2 + 3 stack', () => {
@@ -137,7 +137,7 @@ describe('exhibit product selection (Mt View audit: townhome before SF suppressi
     expect(product.product).toBe('conditional');
     const rows = scheduleForProduct(product);
     expect(rows.find(r => r.label === 'Parking')?.value).toMatch(/4 drawn/);
-    expect(rows.find(r => r.label === 'Street access')?.value).toMatch(/no drive reaches the street/);
+    expect(rows.find(r => r.label === 'Street access')?.value).toMatch(/no traversable drive from parking to the street/);
     expect(rows.find(r => r.label === 'Context')?.value).toBe('Not verified');
   });
 
