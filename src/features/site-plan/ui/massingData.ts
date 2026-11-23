@@ -20,6 +20,8 @@ export interface MassingPolygon {
   /** The plan element's type, for a view that chooses its own materials. */
   kind?: string;
   hazard?: 'wetland' | 'floodplain' | 'floodway' | 'slope';
+  /** what the held land is (wetland, its buffer, a fill hold, a hillside), apart from its hatch */
+  source?: string;
   privateDrive?: boolean;
   /** Polygon rings in local metres, centred on the plan's bbox centre */
   polygon: number[][][];
@@ -174,6 +176,7 @@ export function buildMassingData(
       ...(el.type === 'building' && buildingUse(el) === 'house' ? { detached: true } : {}),
       kind: el.type === 'circulation' && el.name === 'Walk' ? 'walk' : el.properties?.kind === 'pond' ? 'pond' : pavementKind(el) ?? el.type,
       ...(hazard === 'wetland' || hazard === 'floodplain' || hazard === 'floodway' || hazard === 'slope' ? { hazard } : {}),
+      ...(typeof el.properties?.constraintSource === 'string' ? { source: el.properties.constraintSource } : {}),
       ...(el.properties?.privateDrive === true || /private drive/i.test(el.name ?? '') ? { privateDrive: true } : {}),
       polygon: el.geometry.coordinates.map(ring => ring.map(m)),
       elevation: el.type === 'building' ? heightOf(el).aboveGradeFt * METERS_PER_FOOT : 0.15,
