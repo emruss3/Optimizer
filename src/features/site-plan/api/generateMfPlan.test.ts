@@ -913,3 +913,72 @@ describe('explainStallCounts: 2600 W Heiman St, audit 2026-11-22 (127 drawn, 20 
     expect(parkingStatusOf(127, 85, null).parkingStatus).toBe('needs_verification');
   });
 });
+
+// ── story counts under either name (2600 W Heiman, 2026-11-23) ───────────────
+// The production answer for this scheme carried `floors: 5` on each of four residential
+// buildings and `metrics.floors: 5`, with the floor area under `gfa_sqft`. The sheet drew them
+// three stories high, because only `stories` was read.
+import { storyCount } from './generateMfPlan';
+import { buildingHeight } from '../scene/heights';
+
+describe('story counts are read under either field name', () => {
+  const heiman = {
+    parcel_ogc_fid: 553450,
+    typology: 'multifamily',
+    generator_version: 'mf_max_gsf_v1',
+    buildings: [1, 2, 3, 4].map(i => ({ structure_id: i, geom_2274: rect2274(1727000 + i * 90, 670000, 70, 78), footprint_sqft: 5425, floors: 5 })),
+    amenity: [{ name: 'Clubhouse', geom_2274: rect2274(1727000, 670120, 60, 30), area_sqft: 1800 }],
+    metrics: { floors: 5, gfa_sqft: 106776, units_est: 70 },
+  } as unknown as SeedFamilyResponse;
+
+  it('draws W Heiman five stories high, and leaves the amenity at one', () => {
+    const { elements, flags } = seedFamilyPlanToElements(heiman);
+    const homes = elements.filter(e => e.type === 'building' && e.properties?.use === 'residential');
+    expect(homes).toHaveLength(4);
+    for (const b of homes) {
+      expect(b.properties?.stories).toBe(5);
+      expect(b.properties?.floors).toBe(5);
+      expect(b.properties?.storiesBasis).toBe('building');
+      expect(b.name).toMatch(/5 stories/);
+      // 14 ft ground story and four at 10 ft: the estimate every view reads
+      expect(buildingHeight('apartments', b.properties?.floors).aboveGradeFt).toBe(54);
+    }
+    const amenity = elements.find(e => e.properties?.use === 'amenity');
+    expect(amenity?.properties?.stories).toBe(1);
+    expect(flags).not.toContain('stories_assumed_no_count_in_plan');
+  });
+
+  it('keeps the homes and the floor area the engine reported: a drawing correction changes neither', () => {
+    const { metrics } = seedFamilyPlanToElements(heiman);
+    expect(metrics?.totalBuiltSF).toBe(106776);
+    expect(metrics?.totalUnits).toBe(70);
+  });
+
+  it('reads the building before the scheme, and either name on each', () => {
+    expect(storyCount({ stories: 4 }, { stories: 6 })).toEqual({ stories: 4, basis: 'building', conflict: false });
+    expect(storyCount({ floors: 4 }, { floors: 6 })).toEqual({ stories: 4, basis: 'building', conflict: false });
+    expect(storyCount({}, { floors: 6 })).toEqual({ stories: 6, basis: 'scheme', conflict: false });
+    expect(storyCount({}, { stories: 2 })).toEqual({ stories: 2, basis: 'scheme', conflict: false });
+  });
+
+  it('a mixed-height plan keeps each building its own count', () => {
+    const mixed = { ...heiman, buildings: (heiman.buildings ?? []).map((b, i) => ({ ...b, floors: i === 0 ? 3 : 5 })) } as unknown as SeedFamilyResponse;
+    const got = seedFamilyPlanToElements(mixed).elements.filter(e => e.properties?.use === 'residential').map(e => e.properties?.stories);
+    expect(got).toEqual([3, 5, 5, 5]);
+  });
+
+  it('says so when the two names disagree, and draws the taller', () => {
+    expect(storyCount({ stories: 3, floors: 5 }, {})).toEqual({ stories: 5, basis: 'building', conflict: true });
+    const both = { ...heiman, buildings: (heiman.buildings ?? []).map(b => ({ ...b, stories: 3 })) } as unknown as SeedFamilyResponse;
+    expect(seedFamilyPlanToElements(both).flags).toContain('stories_conflict_in_plan');
+  });
+
+  it('falls back to what the floor area implies, and only then to an assumption that is flagged', () => {
+    expect(storyCount({}, {}, 5000, 20000)).toEqual({ stories: 4, basis: 'floor_area', conflict: false });
+    expect(storyCount({}, {})).toEqual({ stories: 3, basis: 'assumed', conflict: false });
+    const bare = { ...heiman, metrics: { gfa_sqft: 106776 }, buildings: (heiman.buildings ?? []).map(b => ({ structure_id: b.structure_id, geom_2274: b.geom_2274 })) } as unknown as SeedFamilyResponse;
+    const { elements, flags } = seedFamilyPlanToElements(bare);
+    expect(elements.find(e => e.properties?.use === 'residential')?.properties?.storiesBasis).toBe('assumed');
+    expect(flags).toContain('stories_assumed_no_count_in_plan');
+  });
+});

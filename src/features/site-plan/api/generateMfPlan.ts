@@ -112,7 +112,8 @@ export function mfPlanToElements(resp: MfPlanResponse): {
   for (const b of resp.buildings ?? []) {
     const poly = toCanvasPolygon(b.geom);
     if (!poly) continue;
-    const floors = Math.max(1, Math.round(b.floors ?? 3));
+    // either name, as in the seed family (storyCount): this family says `floors`
+    const floors = storyCount(b as { stories?: unknown; floors?: unknown }, (resp.metrics ?? {}) as { stories?: unknown; floors?: unknown }, b.footprint_sqft ?? null, null).stories;
     // Townhome rows carry their real unit count; apartment bars estimate
     // from GFA at the server's average-unit assumption.
     const unitsForBar = Math.max(
@@ -524,6 +525,31 @@ export function parkingStatusOf(
   return { parkingStatus: 'verified' };
 }
 
+/**
+ * How many stories a building of a plan has, and where that came from.
+ *
+ * The engines name the field two ways: the seed family says `stories`, the max-buildout family
+ * says `floors`. A plan that carried only `floors` was drawn three stories high whatever it said
+ * (2600 W Heiman, 2026-11-23: five floors in the answer, three on the sheet). The building's own
+ * count is read first under either name, then the scheme's, then the count its floor area implies.
+ * Only when the plan says nothing at all is three assumed, and the plan is flagged.
+ */
+export function storyCount(
+  b: { stories?: unknown; floors?: unknown },
+  m: { stories?: unknown; floors?: unknown },
+  footprintSqft?: number | null,
+  gsf?: number | null,
+): { stories: number; basis: 'building' | 'scheme' | 'floor_area' | 'assumed'; conflict: boolean } {
+  const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.round(v) : null);
+  const own = [n(b.stories), n(b.floors)].filter((v): v is number => v != null);
+  // two names that disagree on one building: the taller is drawn, and the plan is flagged
+  if (own.length) return { stories: Math.max(...own), basis: 'building', conflict: own.length === 2 && own[0] !== own[1] };
+  const scheme = [n(m.stories), n(m.floors)].filter((v): v is number => v != null);
+  if (scheme.length) return { stories: Math.max(...scheme), basis: 'scheme', conflict: scheme.length === 2 && scheme[0] !== scheme[1] };
+  if (footprintSqft && gsf && footprintSqft > 0 && gsf >= footprintSqft * 0.75) return { stories: Math.max(1, Math.round(gsf / footprintSqft)), basis: 'floor_area', conflict: false };
+  return { stories: 3, basis: 'assumed', conflict: false };
+}
+
 export function seedFamilyPlanToElements(
   resp: SeedFamilyResponse,
   opts: { idPrefix?: string; house?: boolean } = {}
@@ -537,6 +563,7 @@ export function seedFamilyPlanToElements(
     typeof v === 'number' && Number.isFinite(v) ? v : null;
 
   const structures = (resp.buildings ?? []).filter(b => b?.geom_2274);
+  const storyFlags = new Set<string>();
   const gsfShares = (() => {
     const gsfs = structures.map(s => num(s.gsf) ?? num(s.footprint_sqft) ?? 0);
     const total = gsfs.reduce((a, b) => a + b, 0);
@@ -566,9 +593,13 @@ export function seedFamilyPlanToElements(
     } catch {
       return; // one malformed geometry must not sink the plan
     }
-    const stories = Math.max(1, Math.round(num(b.stories) ?? num(m.stories) ?? 3));
     const footprint = num(b.footprint_sqft);
-    const gsf = num(b.gsf) ?? (footprint != null ? footprint * stories : null);
+    const reportedGsf = num(b.gsf) ?? num((b as { gfa_sqft?: unknown }).gfa_sqft);
+    const count = storyCount(b, m, footprint, reportedGsf);
+    const stories = count.stories;
+    if (count.basis === 'assumed') storyFlags.add('stories_assumed_no_count_in_plan');
+    if (count.conflict) storyFlags.add('stories_conflict_in_plan');
+    const gsf = reportedGsf ?? (footprint != null ? footprint * stories : null);
     const unitsEst = Math.max(1, Math.round((gsf ?? 0) / AVG_UNIT_SF));
     // The building is named by what it is — stories and units — never by the
     // generator's composition token ("bars connected S form × 5 st" read as
@@ -599,6 +630,8 @@ export function seedFamilyPlanToElements(
         areaSqFt: footprint ?? undefined,
         floors: stories,
         stories,
+        // where the story count came from: the building's own record, the scheme, its floor area, or an assumption
+        storiesBasis: count.basis,
         // The unit count this building's caption states. The drawing scene
         // reads it, so a tag or a sheet cannot state another (the mix rows
         // below can sum one short of it).
@@ -865,6 +898,7 @@ export function seedFamilyPlanToElements(
       ...(Array.isArray(resp.flags) ? (resp.flags as unknown[]).filter((f): f is string => typeof f === 'string') : []),
       ...(m.parking_limited === true ? ['parking_limited'] : []),
       ...(summaryDisagrees ? ['parking_summary_disagrees'] : []),
+      ...storyFlags,
     ]),
   ];
 
