@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Element } from '../../../engine/types';
-import { accessBreak, mfAccessSummary, ringDistance } from './mfAccess';
+import { accessBreak, formatGapFt, mfAccessSummary, ringDistance } from './mfAccess';
+import { createGroundFrame } from '../scene/frame';
 
 const meta = { createdAt: 't', updatedAt: 't', source: 'ai-generated' as const };
 const rect = (x1: number, y1: number, x2: number, y2: number) => [[x1, y1], [x2, y1], [x2, y2], [x1, y2], [x1, y1]];
@@ -48,6 +49,20 @@ describe('accessBreak — where the route to the street stops', () => {
     expect(b?.from[1]).toBe(20);
     expect(b?.to[1]).toBe(0);
     expect(b?.from[0]).toBe(b?.to[0]);
+    expect(b?.gap3857).toBeCloseTo(20, 6);
+    // without a ground frame, hide feet (no raw Mercator-as-feet flash)
+    expect(b?.gapFt).toBeNull();
+  });
+
+  // Live Design P2: partner sheet / inspector must name the measured gap
+  it('reports the gap in feet so a reviewer can check it against the graphic scale', () => {
+    const flatFt = (a: ArrayLike<number>, b: ArrayLike<number>) =>
+      Math.hypot(Number(a[0]) - Number(b[0]), Number(a[1]) - Number(b[1])) / 0.3048;
+    const b = accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], parcel, null, 3, flatFt);
+    expect(b).not.toBeNull();
+    expect(b!.gapFt).not.toBeNull();
+    expect(b!.gapFt!).toBeGreaterThan(65);
+    expect(b!.gapFt!).toBeLessThan(66);
   });
 
   it('aims at the street edge when the frontage is known, not at whichever parcel line is nearest', () => {
@@ -64,5 +79,65 @@ describe('accessBreak — where the route to the street stops', () => {
       el('b', 'circulation', rect(40, 6, 48, 30)),
     ], parcel);
     expect(b?.from[1]).toBe(6);
+  });
+
+  it('measures ground feet at Nashville latitude (W Heiman ~20.85 ft), not raw Mercator', () => {
+    // 2600 W Heiman St (553450): ~36.17°N, lon −86.82 → EPSG:3857 origin for the frame
+    const lon = -86.8177415864042;
+    const lat = 36.1708695412901;
+    const a = 6378137;
+    const ox = (lon * Math.PI) / 180 * a;
+    const oy = Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360)) * a;
+    const frame = createGroundFrame(ox, oy);
+    expect(frame.latDeg).toBeCloseTo(36.17, 1);
+    expect(frame.groundScale).toBeCloseTo(0.806, 2);
+
+    // Place a drive whose south end is 20.85 ground feet north of the parcel's south edge.
+    const south = frame.fromFeet([0, 0]);
+    const northGap = frame.fromFeet([0, 20.85]);
+    const driveNE = frame.fromFeet([26, 80]);
+    const driveNW = frame.fromFeet([-26, 80]);
+    const parcelRing = [
+      frame.fromFeet([-200, 0]),
+      frame.fromFeet([200, 0]),
+      frame.fromFeet([200, 400]),
+      frame.fromFeet([-200, 400]),
+      frame.fromFeet([-200, 0]),
+    ];
+    const driveRing = [
+      [driveNW[0], northGap[1]],
+      [driveNE[0], northGap[1]],
+      [driveNE[0], driveNE[1]],
+      [driveNW[0], driveNW[1]],
+      [driveNW[0], northGap[1]],
+    ];
+
+    const b = accessBreak(
+      [el('drive', 'circulation', driveRing)],
+      parcelRing,
+      null,
+      3,
+      frame.distanceFt,
+    );
+    expect(b).not.toBeNull();
+    expect(Math.abs(b!.gapFt - 20.85)).toBeLessThan(0.5);
+    expect(b!.gapFt).toBeCloseTo(20.85, 1);
+    // Raw Mercator → feet would print ~26 ft; ground feet must not.
+    expect(b!.gap3857 / 0.3048).toBeGreaterThan(25);
+    expect(b!.gapFt).toBeLessThan(22);
+    // the gap is north–south: endpoints differ by ~20.85 ft in local northing
+    const fromFt = frame.toFeet(b!.from);
+    const toFt = frame.toFeet(b!.to);
+    expect(Math.abs(fromFt[1]! - toFt[1]!)).toBeCloseTo(20.85, 1);
+    expect(Math.abs(fromFt[0]! - toFt[0]!)).toBeLessThan(1);
+    expect(formatGapFt(b!.gapFt!)).toBe('21');
+  });
+});
+
+describe('formatGapFt', () => {
+  it('uses one decimal under 10 ft, whole feet otherwise', () => {
+    expect(formatGapFt(9.4)).toBe('9.4');
+    expect(formatGapFt(20.85)).toBe('21');
+    expect(formatGapFt(10)).toBe('10');
   });
 });

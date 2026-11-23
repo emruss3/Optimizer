@@ -17,6 +17,7 @@ import type { DrawingScene, ScenePolygons } from './types';
 import { interiorPoint, type Pt } from './frame';
 import { computeFloorplate } from '../../../components/site-planner/unitLayout';
 import { LABEL_PRIORITY, placeLabels, type LabelCandidate, type PlacedLabel } from './labels';
+import { formatGapFt } from '../api/mfAccess';
 
 export type SheetSize = 'letter' | 'tabloid' | 'slide';
 
@@ -34,8 +35,8 @@ export interface SheetTitle {
   subtitle?: string | null | undefined;
   date: string;
   notes?: string[] | undefined;
-  /** Where the route to the street breaks, scene feet: the end of the drive and the street edge it does not reach. */
-  routeBreak?: { from: Pt; to: Pt } | null | undefined;
+  /** Where the route to the street breaks, scene feet: endpoints and optional measured gap. */
+  routeBreak?: { from: Pt; to: Pt; gapFt?: number } | null | undefined;
   /** Where a car enters a parking structure, scene feet, as the engine places it. */
   garageEntries?: Pt[] | undefined;
   /** The figures a decision turns on (api/exhibitSchedule): printed under the headline numbers on every sheet size. */
@@ -530,10 +531,13 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   if (title.routeBreak) {
     // an unresolved connection stays on the download: dashed between the two ends, a ring on each
     const a = P(title.routeBreak.from), b = P(title.routeBreak.to);
+    const gap = title.routeBreak.gapFt != null && Number.isFinite(title.routeBreak.gapFt)
+      ? ` · ${formatGapFt(title.routeBreak.gapFt)} ft short`
+      : '';
     out.push(`<g data-role="route-break" stroke="#dc2626" fill="#ffffff">`
       + `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="1.4" stroke-dasharray="4 3"/>`
       + `<circle cx="${a[0]}" cy="${a[1]}" r="4.5" stroke-width="1.4"/><circle cx="${b[0]}" cy="${b[1]}" r="4.5" stroke-width="1.4"/>`
-      + `<text x="${r2(a[0] + 8)}" y="${r2(a[1] - 7)}" font-size="6.6" font-weight="700" fill="#991b1b" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Drive stops here · no drawn connection to the street</text>`
+      + `<text x="${r2(a[0] + 8)}" y="${r2(a[1] - 7)}" font-size="6.6" font-weight="700" fill="#991b1b" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Drive stops here · no drawn connection to the street${gap}</text>`
       + '</g>');
   }
   out.push('</g>');
