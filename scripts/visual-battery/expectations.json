@@ -408,5 +408,24 @@
   "-3": {
     "mode": "server-plan",
     "_basis": "Combined site -3 = 2937 + 2939 Brick Church Pike (486359 + 663343), RM15, 4.03 ac, same owner, made by fn_assemble_parcels on 2026-11-23. Apart the townhome engine draws 20 and 30 homes; combined it draws 53 (mews), every required test passing. Apartments are not planned on a combined site yet: fn_generate_mf_site_plan_v2 answers planner_max_buildout_required, and the townhome competition runs."
+  },
+  "675423": {
+    "mode": "server-plan",
+    "_basis": "0 Delk Ave (RS5), the live audit of 2026-11-22, captured 2026-11-23. Default 3 lots (frontage, no new street); the comparison's best is the shared private drive at 4; the deep search (15 layouts, replayed call by call from seq:fn_sf_v1_deep_search:675423) finds 5 on a 300 ft private lane, 16 ft of pavement in a 24 ft easement, 0 ft of new public street. 16 checks listed: 15 graded and passing, yield.vs_arithmetic a measurement with no verdict. The comparison's sentence is gone once the search takes the sheet.",
+    "requireSfV1": {
+      "status": "done",
+      "basis": "by_right",
+      "minLots": 5,
+      "maxLots": 5,
+      "pattern": "shared private drive",
+      "minTests": 16,
+      "says": {
+        "_domVerdict": "All 15 checks pass",
+        "_domDriveLength": "300 ft",
+        "_domStreetLength": "0 ft",
+        "_domDeepSearch": "Found 5 lots, up from 4",
+        "_domAutoBest": null
+      }
+    }
   }
 }
