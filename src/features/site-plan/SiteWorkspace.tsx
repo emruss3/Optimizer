@@ -3431,6 +3431,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       : 'Drive stops here · no drawn connection to the street'
     : null;
   // the download carries the unresolved connection too: marked on the sheet and said in its notes
+  // where a car enters a parking structure, as the engine places it (the same points the 3D portals stand on)
+  const garageEntries = useMemo(
+    () => displayElements
+      .filter(e => e.type === 'parking' && e.properties?.structured === true && Array.isArray(e.properties?.garageEntries))
+      .flatMap(e => (e.properties!.garageEntries as number[][]).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]))),
+    [displayElements],
+  );
   // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
   // required parking, what the floor area is a share of, the parking and residential stack, and
   // whether a car can reach the street. They replace the single "Parking" row.
@@ -3455,6 +3462,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ...sheetsTitle,
       data,
       ...(schedule.length ? { decision: schedule } : {}),
+      ...(garageEntries.length && scene ? { garageEntries: garageEntries.map(p => scene.frame.toFeet(p)) } : {}),
       ...(routeBreak && scene
         ? {
             notes: [
@@ -3471,7 +3479,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         : {}),
     };
-  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet]);
+  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet, garageEntries]);
   // What the layout comparison may say about the layout on the sheet: the same parking and floor
   // area rows the exported sheet carries. The other layout's stay unknown until it is drawn.
   const layoutShownFacts = useMemo(() => {
@@ -3487,14 +3495,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [sheetsTitleWithAccess, thV3OnSheet, thV3Summary, metrics, maxBuildout]);
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
-    const withBreak = routeBreak && routeBreakLabel
-      ? [...sheetAnnotations, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: routeBreakLabel }]
+    const marked = garageEntries.length
+      ? [...sheetAnnotations, ...garageEntries.map(p => ({ kind: 'entry' as const, x: p[0] as number, y: p[1] as number, text: 'Garage entry' }))]
       : sheetAnnotations;
+    const withBreak = routeBreak && routeBreakLabel
+      ? [...marked, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: routeBreakLabel }]
+      : marked;
     if (!showFrontage || !line || line.length < 2) return withBreak;
     const mid = line[Math.floor(line.length / 2)] ?? line[0]!;
     const prev = line[Math.floor(line.length / 2) - 1] ?? line[0]!;
     return [...withBreak, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
-  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel]);
+  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel, garageEntries]);
 
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation

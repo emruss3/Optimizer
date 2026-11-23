@@ -37,6 +37,8 @@ export interface SheetTitle {
   notes?: string[] | undefined;
   /** Where the route to the street breaks, scene feet: endpoints and optional measured gap. */
   routeBreak?: { from: Pt; to: Pt; gapFt?: number } | null | undefined;
+  /** Where a car enters a parking structure, scene feet, as the engine places it. */
+  garageEntries?: Pt[] | undefined;
   /** The figures a decision turns on (api/exhibitSchedule): printed under the headline numbers on every sheet size. */
   decision?: Array<{ label: string; value: string }> | undefined;
   /** The site data table: figures of the scheme, as the workspace states them. */
@@ -520,6 +522,11 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     const c0 = end(cutLine.lo - 14), c1 = end(cutLine.hi + 14);
     const tag = (q: Pt) => `<circle cx="${q[0]}" cy="${q[1]}" r="5.2" fill="#ffffff" stroke="${INK}" stroke-width="0.8"/><text x="${q[0]}" y="${r2(q[1] + 2.3)}" font-size="6.4" font-weight="700" text-anchor="middle" fill="${INK}">A</text>`;
     out.push(`<g data-role="section-cut"><line x1="${c0[0]}" y1="${c0[1]}" x2="${c1[0]}" y2="${c1[1]}" stroke="${INK}" stroke-width="0.7" stroke-dasharray="9 2.5 1.5 2.5"/>${tag(c0)}${tag(c1)}</g>`);
+  }
+  for (const e of title.garageEntries ?? []) {
+    const q = P(e);
+    out.push(`<g data-role="garage-entry"><path d="M${q[0]} ${r2(q[1] - 4.6)}L${r2(q[0] + 4.6)} ${q[1]}L${q[0]} ${r2(q[1] + 4.6)}L${r2(q[0] - 4.6)} ${q[1]}Z" fill="#4c1d95" stroke="#ffffff" stroke-width="0.8"/>`
+      + `<text x="${r2(q[0] + 7)}" y="${r2(q[1] - 5)}" font-size="6.4" font-weight="700" fill="#4c1d95" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Garage entry</text></g>`);
   }
   if (title.routeBreak) {
     // an unresolved connection stays on the download: dashed between the two ends, a ring on each
