@@ -6,6 +6,9 @@ import type { InvestmentAnalysis, SelectedParcel } from '../../types/parcel';
 import { createFallbackParcel, isValidParcel } from '../../types/parcel';
 import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import type { HomePlacement } from './housing/placement';
+import { residentialHomes } from './housing/placement';
+import { HOME_DESIGNS } from './housing/originalDesigns';
+import { schemeAllowsHomeDesigns, eligibleHomeDesigns, typologyEligibleHomeDesigns } from './housing/homeDesignsGate';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
@@ -3197,6 +3200,33 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
     : null;
   const layoutShownRequested = layoutShown === 'neighborhood' ? (thV3OnSheet ? 'townhome' : sfV1Shown) : null;
+  // Home designs: SF / townhomes / neighborhood only, and only designs that fit a house lot.
+  const homeStudioBoundary = useMemo((): Element['geometry'] | null => {
+    if (scene?.parcel?.polygons.length !== 1) return null;
+    return {
+      type: 'Polygon',
+      coordinates: scene.parcel.polygons[0]!.map((r) => r.map((p) => scene.frame.fromFeet(p))),
+    };
+  }, [scene]);
+  const homeDesignsUi = useMemo(() => {
+    const houses = residentialHomes(baseElements);
+    if (
+      !schemeAllowsHomeDesigns({
+        layoutShown,
+        product,
+        houseCount: houses.length,
+      })
+    ) {
+      return { show: false as const, eligible: [] as typeof HOME_DESIGNS };
+    }
+    const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
+    if (!typed.length) return { show: false as const, eligible: [] as typeof HOME_DESIGNS };
+    const eligible = eligibleHomeDesigns(typed, baseElements, homeStudioBoundary);
+    return { show: eligible.length > 0, eligible };
+  }, [baseElements, layoutShown, product, homeStudioBoundary]);
+  useEffect(() => {
+    if (!homeDesignsUi.show && homesOpen) setHomesOpen(false);
+  }, [homeDesignsUi.show, homesOpen]);
   const layoutChoice = useMemo(
     () => (isRmLayout
       ? chooseLayout({
@@ -3958,7 +3988,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
-          <button type="button" onClick={() => setHomesOpen(true)} className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Home designs</button>
+          {homeDesignsUi.show && (
+            <button
+              type="button"
+              onClick={() => setHomesOpen(true)}
+              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            >
+              Home designs
+            </button>
+          )}
           {!classicDrawing && scene && scene.buildings.length > 0 && (
             <button
               data-testid="view-section"
@@ -4030,9 +4068,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-      {homesOpen && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening home designs…</div>}>
-        <HomeStudio siteBoundary={scene?.parcel?.polygons.length === 1 ? {type:'Polygon', coordinates:scene.parcel.polygons[0]!.map(r=>r.map(p=>scene.frame.fromFeet(p)))} : null} elements={baseElements} selected={sceneSelectedIds[0] ?? null} onClose={closeHomes}
-          onPreview={study => {setHouseStudy({parcel:parcelIdStr,base:baseElements,study});setHomesOpen(false);}} />
+      {homesOpen && homeDesignsUi.show && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening home designs…</div>}>
+        <HomeStudio
+          siteBoundary={homeStudioBoundary}
+          elements={baseElements}
+          selected={sceneSelectedIds[0] ?? null}
+          designs={homeDesignsUi.eligible}
+          onClose={closeHomes}
+          onPreview={study => {setHouseStudy({parcel:parcelIdStr,base:baseElements,study});setHomesOpen(false);}}
+        />
       </React.Suspense>}
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
         <span><strong>{activeHome.name} · site preview.</strong> The yield, site checks and underwriting figures describe the base scheme.</span>

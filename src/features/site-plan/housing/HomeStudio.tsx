@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Element } from '../../../engine/types';
-import { HOME_DESIGNS, type Face } from './originalDesigns';
+import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
@@ -10,10 +10,21 @@ interface Props {
   siteBoundary?: Element['geometry'] | null;
   elements: Element[];
   selected?: string | null;
+  /** Eligible designs for this scheme only — defaults to the full catalogue. */
+  designs?: readonly HomeDesign[];
   onClose: () => void;
   onPreview: (placement: HomePlacement) => void;
 }
-export default function HomeStudio({ elements, selected, onClose, onPreview, siteBoundary }: Props) {
+export default function HomeStudio({
+  elements,
+  selected,
+  onClose,
+  onPreview,
+  siteBoundary,
+  designs = HOME_DESIGNS,
+}: Props) {
+  const catalogue = designs;
+  const emptyEligible = catalogue.length === 0;
   const houses = useMemo(() => residentialHomes(elements), [elements]);
   const [index, setIndex] = useState(0),
     [level, setLevel] = useState(0),
@@ -22,12 +33,15 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
     [houseId, setHouseId] = useState(() => houses.find((e) => e.id === selected)?.id ?? houses[0]?.id ?? '');
   const [fit, setFit] = useState<{ key: string; result: FitResult } | null>(null),
     root = useRef<HTMLElement>(null);
-  const home = HOME_DESIGNS[index]!,
+  useEffect(() => {
+    if (catalogue.length && index >= catalogue.length) setIndex(0);
+  }, [catalogue, index]);
+  const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))],
     selectedHouse = houses.find((e) => e.id === houseId),
-    key = home.id + '|' + houseId;
+    key = (home?.id ?? '') + '|' + houseId;
   const current = fit?.key === key ? fit.result : null;
-  const info = program(home),
-    [, , width, depth] = designBounds(home);
+  const info = home ? program(home) : null;
+  const [, , width, depth] = home ? designBounds(home) : [0, 0, 0, 0];
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
     root.current?.querySelector<HTMLButtonElement>('button')?.focus();
@@ -84,23 +98,35 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
         </header>
         <div className="home-body">
           <nav aria-label="Home designs">
-            {HOME_DESIGNS.map((h, i) => (
-              <button
-                type="button"
-                key={h.id}
-                aria-current={i === index ? 'true' : undefined}
-                onClick={() => {
-                  setIndex(i);
-                  setLevel(0);
-                  setFit(null);
-                }}
-              >
-                <strong>{h.name}</strong>
-                <span>{h.setting}</span>
-              </button>
-            ))}
+            {emptyEligible ? (
+              <p className="home-empty-eligible">No designs fit this scheme’s house lots.</p>
+            ) : (
+              catalogue.map((h, i) => (
+                <button
+                  type="button"
+                  key={h.id}
+                  aria-current={i === index ? 'true' : undefined}
+                  onClick={() => {
+                    setIndex(i);
+                    setLevel(0);
+                    setFit(null);
+                  }}
+                >
+                  <strong>{h.name}</strong>
+                  <span>{h.setting}</span>
+                </button>
+              ))
+            )}
           </nav>
           <main>
+            {emptyEligible ? (
+              <p role="status">
+                This layout has detached or attached house footprints, but none of the Middle Tennessee
+                home designs clear the drawn lots, setbacks, and mapped approaches. Adjust the scheme or
+                return to the base plan.
+              </p>
+            ) : home && info ? (
+              <>
             <div className="home-title">
               <div>
                 <small>{home.setting}</small>
@@ -202,7 +228,7 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
                       type="button"
                       disabled={!selectedHouse}
                       onClick={() => {
-                        if (selectedHouse)
+                        if (selectedHouse && home)
                           setFit({ key, result: placeHome(home, selectedHouse, elements, siteBoundary) });
                       }}
                     >
@@ -228,6 +254,8 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
               * Approximate conditioned area from schematic room zones. Dimensions include wall allowances.
               Original concept for feasibility review.
             </footer>
+              </>
+            ) : null}
           </main>
         </div>
       </section>
