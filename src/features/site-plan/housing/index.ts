@@ -61,3 +61,6 @@ export {
   recalledHousingChoice,
   rememberHousingChoice,
 } from './handoff';
+
+export { applyHousingDesign, lotsFromElements } from './apply';
+export type { ApplyHousingResult } from './apply';

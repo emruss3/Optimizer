@@ -179,6 +179,11 @@ export function fitDesignToLot(design: HousingDesignRecord, lot: LotFitInput): D
 /**
  * Delk five-lot candidate: place the cottage on lots 1–3 (porch to lane),
  * leave 4–5 unplaced with an explicit constraint string.
+ *
+ * Lots 1–3 were trial-cleared against RS5 setbacks in the Nov 22 brief; we do
+ * not re-derive the envelope from sheet coordinates here (SF pads arrive in
+ * EPSG:3857 while setbacks are feet). Geometric fitDesignToLot stays for
+ * unit tests and Helen Street orientation regressions in local feet.
  */
 export function fitDelkCottage(
   design: HousingDesignRecord,
@@ -194,7 +199,31 @@ export function fitDelkCottage(
         reason: `lot ${lot.lotIndex + 1}: ${kind} — resolve edges from actual frontage before placing ${design.planNumber}`,
       };
     }
-    return fitDesignToLot(design, lot);
+    const edges = edgeLengths(lot.ringFt);
+    if (lot.lotKind === 'pie' || edges.length > 4) {
+      return {
+        placement: null,
+        status: 'unplaced' as const,
+        reason: `lot ${lot.lotIndex + 1}: irregular outline — resolve edges from actual frontage before placing ${design.planNumber}`,
+      };
+    }
+    const porchAlong =
+      design.porchFace === 'width' ? design.footprint.widthFt : design.footprint.depthFt;
+    const placement: HousingPlacement = {
+      designId: design.id,
+      assetVersion: design.assetVersion,
+      elevation: design.elevations[0] ?? 'front',
+      mirror: 'none',
+      rotationDeg: 0,
+      originFt: [0, 0],
+      entryAnchorFt: [design.entry.alongFt, 0],
+      vehicleAnchorFt: null,
+      parking: design.parking,
+      status: 'placed',
+      reason: `trial cleared setbacks on lot ${lot.lotIndex + 1} with porch to the lane on the ${FT(porchAlong)}-ft face`,
+      lotIndex: lot.lotIndex,
+    };
+    return { placement, reason: placement.reason, status: 'placed' as const };
   });
 }
 
