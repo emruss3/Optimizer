@@ -1,0 +1,48 @@
+{
+  "planInfo": {
+    "lots": 5,
+    "shown": "deep search",
+    "deep": "Checked 15 layouts. Found 5 lots, up from 4. Street layout adapted from OAKWOOD, a built subdivision.",
+    "basis": "5 lots @ 50 × 100 ft by right on a shared private drive (no new public street) · 3.37 du/ac gross · 21.3% easement / 40.9% lots / 37.8% open · flood hold: sfha · 15 checks pass · generator: sf_v1 · from the pattern competition",
+    "inspector": "true",
+    "picker": true
+  },
+  "commitHint": "fixture deep search = production audit rev 316a0d36",
+  "state3d": "ready",
+  "meta": {
+    "ready": "true",
+    "rendered": "pbr",
+    "quality": "light",
+    "buildings": "5",
+    "look": "review",
+    "sceneKey": "675423|neighborhood:deep search",
+    "shot": {
+      "shot": "street",
+      "position": [
+        -61.31,
+        4.34,
+        5.5
+      ],
+      "target": [
+        -31.78,
+        55.5,
+        5.5
+      ],
+      "fovDeg": 38,
+      "lift": 1.32,
+      "basis": "Street arrival at eye level (5.5 ft), clear line of sight; 23 ft from the nearest street line; 0 trees in the line of sight",
+      "units": "ft",
+      "frame": "local east, north, up",
+      "revision": "316a0d36",
+      "style": "infill",
+      "sunKey": "jun21",
+      "sunHour": 9
+    },
+    "housingSelected": "false",
+    "fitSummary": null,
+    "designId": null,
+    "evidenceHousing": null,
+    "revisionFromShot": "316a0d36"
+  },
+  "shotPath": "/tmp/housing-delk-wt/qa/audits/2026-11-23-housing-delk-pr188/675423_3d_street_baseline-fixture_316a0d36.png"
+}
