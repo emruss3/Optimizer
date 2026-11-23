@@ -36,6 +36,8 @@ export interface SheetTitle {
   notes?: string[] | undefined;
   /** Where the route to the street breaks, scene feet: the end of the drive and the street edge it does not reach. */
   routeBreak?: { from: Pt; to: Pt } | null | undefined;
+  /** The figures a decision turns on (api/exhibitSchedule): printed under the headline numbers on every sheet size. */
+  decision?: Array<{ label: string; value: string }> | undefined;
   /** The site data table: figures of the scheme, as the workspace states them. */
   data?: Array<{ label: string; value: string }> | undefined;
 }
@@ -566,7 +568,25 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     out.push(`<g data-figure="${esc(f.label)}"><text x="${r2(fx)}" y="${r2(fy)}" font-size="${f.value.length > 6 ? 17 : 22}" font-weight="700" fill="${INK}">${esc(f.value)}</text><text x="${r2(fx)}" y="${r2(fy + 11)}" font-size="6" font-weight="600" letter-spacing="0.9" fill="#7a8087">${esc(f.label)}</text></g>`);
   });
   if (shown.length) y += Math.ceil(shown.length / 2) * 40 - 16;
-  if (!scene.schedule.consistent) { y += 8; line('The drawn features do not add up to the scheme schedule.', 6.2, 500, '#8a4b12'); }
+  if (!scene.schedule.consistent) {
+    // say which count disagrees and by how much: a warning nobody can act on is noise
+    const sc = scene.schedule, parts: string[] = [];
+    if (sc.units != null && sc.buildingUnits != null && sc.units !== sc.buildingUnits) parts.push(`The buildings' own counts total ${num(sc.buildingUnits)} homes; the scheme reports ${num(sc.units)}.`);
+    if (sc.stalls != null && sc.featureStalls != null && sc.stalls !== sc.featureStalls) parts.push(`The parking drawn totals ${num(sc.featureStalls)} stalls; the scheme reports ${num(sc.stalls)}.`);
+    y += 8;
+    for (const text of parts.length ? parts : ['The drawn features do not add up to the scheme schedule.']) line(text, 6.2, 500, '#8a4b12');
+  }
+  // The figures a decision turns on sit right under the headline numbers, where every sheet size
+  // has room for them: drawn against required parking, what the floor area is a share of, the
+  // parking and residential stack, and whether a car can reach the street.
+  if (title.decision?.length) {
+    y += 10;
+    for (const row of title.decision) {
+      out.push(`<g data-decision="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="5.4" letter-spacing="0.4" fill="#7a8087">${esc(row.label.toUpperCase())}</text><text x="${r2(tx + 46)}" y="${r2(y)}" font-size="6" font-weight="600" fill="${/^Unresolved|^Not verified/.test(row.value) ? '#b4232a' : INK}">${esc(row.value)}</text></g>`);
+      y += 9.6;
+    }
+    y -= 4;
+  }
   rule(8, 16);
 
   const onSheet = scene.buildings.filter(b => b.tagOnPlan);
@@ -620,22 +640,35 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['context', 'Existing building', `fill="${C.contextBuilding}" stroke="${C.contextBuildingEdge}" stroke-width="0.4"`],
   ];
   const items = LEGEND.filter(([key]) => (key === 'parcel' ? !!scene.parcel : key === 'envelope' ? !!scene.envelope : key === 'context' ? scene.context.buildings.length > 0 : key === 'walk' ? walks > 0 || present.has('walk') : present.has(key)));
+  // the strip ends at the scale and the north arrow: the legend and the table give way to them
+  const stripFloor = strip.y + strip.h - 118 - 10;
+  let legendRows = 0;
+  const legendRoom = Math.max(1, Math.floor((stripFloor - y) / 12) + 1);
+  const legendCols = items.length <= legendRoom * 2 ? 2 : 3;
   items.forEach(([key, label, style], i) => {
-    const lx = tx + (i % 2) * (tw / 2), ly = y + Math.floor(i / 2) * 12;
+    const lx = tx + (i % legendCols) * (tw / legendCols), ly = y + Math.floor(i / legendCols) * 12;
+    if (ly > stripFloor) return;
+    legendRows = Math.floor(i / legendCols) + 1;
     if (key === 'parcel' || key === 'envelope' || key === 'lot') out.push(`<line x1="${r2(lx)}" y1="${r2(ly - 2.5)}" x2="${r2(lx + 16)}" y2="${r2(ly - 2.5)}" ${style}/>`);
     else out.push(`<rect x="${r2(lx)}" y="${r2(ly - 6.5)}" width="16" height="8" ${style}/>`);
     out.push(`<text x="${r2(lx + 21)}" y="${r2(ly)}" font-size="6.5" fill="${INK}" data-legend="${key}">${esc(label)}</text>`);
   });
-  y += Math.ceil(items.length / 2) * 12;
+  y += legendRows * 12;
 
   // the site data table, where the workspace supplied one
-  if (title.data?.length) {
+  if (title.data?.length && y + 28 <= stripFloor) {
     rule(4, 14);
     eyebrow('SITE DATA');
     for (const row of title.data) {
       // the table stops short of the scale and the north arrow
-      if (y > strip.y + strip.h - 118 - 10) break;
-      out.push(`<g data-site-data="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="6.6" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="6.6" font-weight="600" text-anchor="end" fill="${INK}">${esc(row.value)}</text></g>`);
+      if (y > stripFloor) break;
+      if (row.label.length + row.value.length > 46) {
+        // a long figure takes a line of its own under its label, so neither runs into the other
+        out.push(`<g data-site-data="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="6.6" fill="#4b5158">${esc(row.label)}</text><text x="${tx}" y="${r2(y + 8.8)}" font-size="6.4" font-weight="600" fill="${INK}">${esc(row.value)}</text></g>`);
+        y += 8.8;
+      } else {
+        out.push(`<g data-site-data="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="6.6" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="6.6" font-weight="600" text-anchor="end" fill="${INK}">${esc(row.value)}</text></g>`);
+      }
       y += 9.6;
     }
   }
