@@ -473,9 +473,25 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     const dock = await page.getByTestId('dock').getAttribute('data-open').catch(() => null);
     if (inspector !== 'true' || dock !== 'true') throw new Error(`the inspector (${inspector}) or the schedule (${dock}) is not open: the battery's keys no longer match workspaceLayout.ts`);
     await page.waitForTimeout(12000);
-    // 2D canvas paints can exceed Playwright's 30s default on heavy parcels
-    // (0 Martingale Dr / 680719 fill override). Match the 3D screenshot budget.
-    const shot = (name) => page.screenshot({ path: `${OUT}/${p.ogc_fid}_${name}.png`, timeout: 60000 });
+    // Screenshots are artifacts; the gate judges __planEvidence. A thrashing 2D
+    // canvas (0 Martingale Dr / 680719 floodway fill — ~147 pads coloured from
+    // the DEM) can stall Playwright's capture past 30s and 60s alike. Retry a
+    // few times, then continue: a missing PNG must not fail the parcel.
+    const shot = async (name) => {
+      const dest = `${OUT}/${p.ogc_fid}_${name}.png`;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+          await page.screenshot({ path: dest, timeout: 45000, animations: 'disabled' });
+          return true;
+        } catch (err) {
+          console.log(`  shot ${p.ogc_fid}_${name} attempt ${attempt}/3 failed: ${String(err).slice(0, 120)}`);
+          await page.waitForTimeout(1500 * attempt);
+        }
+      }
+      console.log(`  shot ${p.ogc_fid}_${name} skipped after retries — gate uses evidence, not pixels`);
+      return false;
+    };
     await shot('2d');
     // Order-6 item 1: when the refusal card offers the server-verified house,
     // tap it and shoot the render — the SF seed is the deliverable.
@@ -553,7 +569,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
       if (await btn.isVisible().catch(() => false) && await btn.isEnabled().catch(() => false)) {
         await btn.click();
         await page.waitForTimeout(6000);
-        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_layout_${other}.png`, timeout: 60000 });
+        await shot(`layout_${other}`);
         const after = await page.evaluate(() => {
           const ev = window.__planEvidence ?? null;
           return {
@@ -572,18 +588,25 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     }
     // 2026-11-03 by-right subdivision: the override the parcel asks for (the
     // floodway-only fill scenario) is pressed and judged on its own evidence.
+    // Wait for the fill-scenario answer (lots + fillView) before reading
+    // evidence; shoot afterward best-effort so a stalled PNG cannot wipe the
+    // override judgment (the failure mode on 680719 across #194/#197/#198).
     if (evidence && p.sfV1Override === 'floodway') {
       const btn = page.getByTestId('sfv1-override-floodway');
       if (await btn.isVisible().catch(() => false)) {
         await btn.click();
-        await page.waitForTimeout(9000);
-        await shot('override');
+        await page.waitForFunction(() => {
+          const sf = window.__planEvidence?.sfV1;
+          return sf?.basis === 'override' && sf?.fillView === true && (sf?.lots ?? 0) >= 100;
+        }, null, { timeout: 90000, polling: 500 }).catch(() => null);
+        await page.waitForTimeout(2000);
         evidence._override = await page.evaluate(() => {
           const ev = window.__planEvidence ?? null;
           return ev
             ? { ...ev, _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'), _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? '') }
             : null;
         });
+        await shot('override');
       } else {
         evidence._override = null;
       }
@@ -619,7 +642,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     }, null, { timeout: 120000, polling: 500 }).then(h => h.jsonValue()).catch(() => null);
     const ready3dMs = Date.now() - t3d;
     await page.waitForTimeout(state3d === 'ready' ? 1500 : 5000);
-    await page.screenshot({ path: `${OUT}/${p.ogc_fid}_3d.png`, timeout: 60000 });
+    await shot('3d');
     // what drew the 3D picture: the manifest of a baseline names its renderer tier
     const quality3d = await page.evaluate(() => document.querySelector('[data-testid="massing-3d"]')?.getAttribute('data-quality') ?? null).catch(() => null);
 
