@@ -3359,6 +3359,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const eligible = typed.length
       ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
       : ([] as typeof HOME_DESIGNS);
+    // Scheme allows homes: keep the control visible; disable when nothing fits.
     return { show: true as const, enabled: eligible.length > 0, eligible };
   }, [baseElements, layoutShown, product, homeStudioBoundary]);
   useEffect(() => {
