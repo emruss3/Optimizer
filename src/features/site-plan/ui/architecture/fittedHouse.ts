@@ -6,8 +6,21 @@ import { housePalette, type ArchStyle } from './styles';
 
 export interface HouseAccess {
   driveways: V2[][];
+  /**
+   * Attached garage: `true` draws one where a drive meets the wall; `false`
+   * never does; `null` (unknown) also never invents a garage — unknown stays
+   * unknown. Parking pads are independent of the entry.
+   */
   garage: boolean | null;
   catalogued: boolean;
+  /** Durable design id when a product record was chosen (`abhp:1754-00010`). */
+  designId?: string | null;
+  assetVersion?: string | null;
+  /** Preferred porch / front wall length in metres (porch face of the design). */
+  porchFaceLenM?: number | null;
+  /** Entry centre along the front wall, metres from the wall start. */
+  entryAlongM?: number | null;
+  parking?: 'attached-garage' | 'detached-garage' | 'pad' | 'street' | 'alley' | 'none' | 'unknown' | null;
 }
 
 interface DriveMeeting {
@@ -86,22 +99,45 @@ function pitchedRoof(k: Kit, walls: Wall[], front: Wall, top: number, palette: R
   walls.forEach(w => edge(local(w.a), local(on(w, w.len)), () => top - 0.02, palette.gable));
 }
 
+/** Prefer the wall whose length matches the design’s porch face; else pavement / drive. */
+function frontWall(walls: Wall[], pavement: V2[], access?: HouseAccess, meetingWall?: Wall | null): Wall {
+  const porchLen = access?.porchFaceLenM;
+  if (porchLen != null && porchLen > 0) {
+    let best: Wall | null = null, bestErr = Infinity;
+    for (const w of walls) {
+      if (w.len < 2.5) continue;
+      const err = Math.abs(w.len - porchLen);
+      if (err < bestErr) { bestErr = err; best = w; }
+    }
+    // Within ~18% of the porch face length — otherwise fall through.
+    if (best && bestErr <= porchLen * 0.18) return best;
+  }
+  return meetingWall ?? walls[frontOf(walls, pavement).index]!;
+}
+
 export function fittedHouse(k: Kit, rings: number[][][], height: SceneHeight, pavement: V2[], style: ArchStyle, access?: HouseAccess): boolean {
   const outer = rings[0], walls = outer ? ringWalls(outer) : [];
   if (!outer || walls.length < 3) return false;
   const meeting = drivewayMeeting(walls, access?.driveways ?? []);
-  const front = meeting?.wall ?? walls[frontOf(walls, pavement).index]!;
+  const front = frontWall(walls, pavement, access, meeting?.wall ?? null);
   const levels = levelsM(height), top = levels[levels.length - 1] ?? 3.2;
-  const garage = meeting && access?.garage !== false ? meeting : null;
+  // Only an explicit true grows a garage. false / null / pad parking never invent one.
+  const wantsGarage = access?.garage === true && access?.parking !== 'pad' && access?.parking !== 'none'
+    && access?.parking !== 'street' && access?.parking !== 'alley' && access?.parking !== 'detached-garage';
+  const garage = meeting && wantsGarage && meeting.wall === front ? meeting : null;
   const palette = housePalette(style, k.seed);
   const skirt = style === 'urban-brick' ? palette.body : palette.found;
   k.mass(rings, 0, FOUND, skirt, 'base');
   k.mass(rings, FOUND, top - FOUND, palette.body, 'body');
   pitchedRoof(k, walls, front, top, palette, style);
 
-  // The access side carries the entrance and, only where the scheme supports one, an attached garage.
+  // The access side carries the entrance and, only where the design explicitly has one, an attached garage.
+  // Parking pads are independent of the entry (no-garage cottage).
   const clear = garage ? garage.width / 2 + 0.74 : 0;
-  const preferred = front.len * (meeting ? (meeting.s < front.len / 2 ? 0.69 : 0.31) : (k.seed % 2 === 0 ? 0.35 : 0.65));
+  const fromDesign = access?.entryAlongM != null && access.entryAlongM > 0.5 && access.entryAlongM < front.len - 0.5
+    ? access.entryAlongM
+    : null;
+  const preferred = fromDesign ?? front.len * (meeting && meeting.wall === front ? (meeting.s < front.len / 2 ? 0.69 : 0.31) : (k.seed % 2 === 0 ? 0.35 : 0.65));
   const door = garage
     ? (garage.s > front.len / 2 ? Math.max(0.91, (garage.s - clear) / 2) : Math.min(front.len - 0.91, (garage.s + clear + front.len) / 2))
     : Math.max(0.91, Math.min(front.len - 0.91, preferred));

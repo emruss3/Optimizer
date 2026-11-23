@@ -30,9 +30,43 @@ export interface SceneInput {
    *  plan's streets and the property line (scene/landscape). */
   frontEdges?: Segment[] | null;
   generator?: string | null;
+  /** Session-chosen housing design id for this scheme (not yet a saved-candidate field). */
+  housingDesignId?: string | null;
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+
+function housingFromProps(p: Record<string, unknown>): SceneBuilding['housing'] {
+  const designId = typeof p.housingDesignId === 'string' ? p.housingDesignId
+    : typeof p.housePlan === 'string' ? `legacy:${p.housePlan}` : null;
+  if (!designId) return null;
+  const recovered = typeof p.housingDesignId === 'string' && typeof p.housingAssetVersion === 'string';
+  const status = p.housingPlacementStatus === 'placed' || p.housingPlacementStatus === 'unplaced' || p.housingPlacementStatus === 'schematic'
+    ? p.housingPlacementStatus
+    : recovered ? 'placed' : 'schematic';
+  const anchor = (v: unknown): [number, number] | null =>
+    Array.isArray(v) && v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number' ? [v[0], v[1]] : null;
+  return {
+    designId,
+    assetVersion: typeof p.housingAssetVersion === 'string' ? p.housingAssetVersion : 'unrecovered',
+    elevation: typeof p.housingElevation === 'string' ? p.housingElevation : 'front',
+    mirror: typeof p.housingMirror === 'string' ? p.housingMirror : 'none',
+    rotationDeg: typeof p.housingRotationDeg === 'number' ? p.housingRotationDeg : 0,
+    parking: typeof p.housingParking === 'string' ? p.housingParking : 'unknown',
+    status,
+    fitReason: typeof p.housingFitReason === 'string' ? p.housingFitReason : (recovered ? null : 'legacy catalogue plan — design unrecovered; schematic massing'),
+    entryAnchorFt: anchor(p.housingEntryAnchorFt),
+    vehicleAnchorFt: anchor(p.housingVehicleAnchorFt),
+  };
+}
+
+function housingDesignFromElements(elements: Element[]): string | null {
+  for (const el of elements) {
+    const id = (el.properties as Record<string, unknown> | undefined)?.housingDesignId;
+    if (typeof id === 'string' && id.length) return id;
+  }
+  return null;
+}
 
 const ROLE: Record<string, [FeatureRole, StyleRole]> = {
   building: ['building', 'building'],
@@ -224,10 +258,12 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     const parkingLevels = p.overGarage === true && resLevels != null && resLevels > 0 && resLevels < floorsN ? floorsN - Math.round(resLevels) : 0;
     const outline = polygons[0] ?? [];
     const labelPoint: Pt = interiorPoint(outline) ?? outline[0]?.[0] ?? [0, 0];
+    const housing = housingFromProps(p);
     const b: Omit<SceneBuilding, 'display'> = {
       ...base, role: 'building', styleRole: use === 'amenity' ? 'amenity' : small ? 'house' : 'building',
       tag, tagOnPlan: !small, use, floors, footprintSqFt, grossSqFt, units, height, parkingLevels, labelPoint,
       unitMix: mix ? mix.filter((m): m is { type: string; count: number; avgSqft: number } => typeof (m as { type?: unknown }).type === 'string' && num(m.count) != null && num((m as { avgSqft?: unknown }).avgSqft) != null) : null,
+      housing,
     };
     const full: SceneBuilding = { ...b, display: describe(b) };
     features.push(full);
@@ -285,6 +321,7 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     schemeId: input.schemeId,
     revision: sceneRevision(elements),
     key: `${parcelId}|${input.schemeId}`,
+    housingDesignId: input.housingDesignId ?? housingDesignFromElements(elements),
   };
 
   return {
