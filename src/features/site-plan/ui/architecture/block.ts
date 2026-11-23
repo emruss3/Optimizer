@@ -172,6 +172,11 @@ export function block(k: Kit, rings: number[][][], use: BuildingUse, height: Sce
       const inMod = b - Math.round(m * per), size = Math.round((m + 1) * per) - Math.round(m * per);
       const middle = size >= 3 ? inMod > 0 && inMod < size - 1 : size === 2 ? inMod === 0 : false;
       const balcony = !lite && alt && middle && use !== 'amenity';
+      // parking levels under the homes: open concrete bays, drawn before anything else looks for a window there
+      for (let st = 0; st < n; st++) {
+        const z0 = st === 0 ? 0 : lv[st - 1] ?? first, z1 = lv[st] ?? top;
+        if (k.shut?.(w, s, z0 + 0.8) === 'garage') k.garageBay(w, b * step, (b + 1) * step, z0, z1);
+      }
       // the ground story: the entrance under a canopy, and tall windows
       const gTop = Math.min(first - 0.75, 3.15);
       if (b === entryBay && use !== 'amenity') {

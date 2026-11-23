@@ -184,3 +184,64 @@ describe('streetConnection', () => {
     expect(streetConnection([[[-30, 12], [30, 12], [30, 30], [-30, 30]]], [street])).toBeNull();
   });
 });
+
+// A wrap: a liner bar on the street, three bars standing over a two-level garage, a court and a
+// pool house on the garage's deck. The rules it tests are general: they read the plan's own
+// structured-parking element and the buildings round it, whichever generator drew them.
+describe('a parking structure in the model', () => {
+  const rect = (x: number, y: number, w: number, h: number) => [[X + x, Y + y], [X + x + w, Y + y], [X + x + w, Y + y + h], [X + x, Y + y + h], [X + x, Y + y]];
+  const el = (id: string, type: Element['type'], ring: number[][], properties: Record<string, unknown> = {}): Element =>
+    ({ id, type, name: id, geometry: { type: 'Polygon', coordinates: [ring] }, properties: { areaSqFt: 0, ...properties }, metadata: { createdAt: '', updatedAt: '', source: 'ai-generated' } }) as Element;
+  const bar = (id: string, ring: number[][], over: boolean): Element => el(id, 'building', ring, { floors: 5, stories: 5, use: 'residential', wrapBar: id, overGarage: over, residentialLevels: over ? 3 : 5 });
+  const plan: Element[] = [
+    bar('front', rect(0, 0, 120, 25), false),
+    bar('rear', rect(0, 80, 120, 25), true),
+    bar('west', rect(0, 25, 25, 55), true),
+    bar('east', rect(95, 25, 25, 55), true),
+    el('garage', 'parking', rect(0, 25, 120, 80), { structured: true, levels: 2, stalls: 238, garageEntries: [[X + 124, Y + 60]] }),
+    el('court', 'greenspace', rect(30, 30, 60, 45)),
+    el('pool', 'building', rect(50, 40, 18, 10), { floors: 1, stories: 1, use: 'amenity' }),
+    el('drive', 'circulation', rect(121, -10, 8, 130)),
+  ];
+  const data = buildMassingData(plan, { style: 'infill' as ArchStyle });
+  const deck = 24 * 0.3048;
+  const lowest = (id: string) => Math.min(...data.windows.filter(w => w.id === id).flatMap(w => w.polygon.map(q => q[2] ?? 0)));
+
+  it('makes the garage, its bars and what stands on its deck one structure on one floor level', () => {
+    expect(data.structures).toHaveLength(1);
+    expect([...(data.structures?.[0] ?? [])].sort()).toEqual(['east', 'front', 'garage', 'pool', 'rear', 'west']);
+  });
+
+  it('draws the garage as a structure with a deck, and the pool house on the deck', () => {
+    const podium = data.slabs.filter(s => s.id === 'garage' && s.part === 'base');
+    expect(podium).toHaveLength(1);
+    expect(podium[0]!.elevation).toBeGreaterThan(deck - 0.5);
+    const pool = data.slabs.filter(s => s.id === 'pool');
+    expect(pool.length).toBeGreaterThan(0);
+    expect(Math.min(...pool.flatMap(s => s.polygon[0]!.map(q => q[2] ?? 0)))).toBeGreaterThanOrEqual(deck - 0.01);
+  });
+
+  it('shows the way in: a portal where the engine puts the garage entry', () => {
+    expect(data.slabs.filter(s => s.label === 'Garage entry').length).toBe(4);
+  });
+
+  it('puts no apartment windows on the parking levels of a bar that stands over the garage', () => {
+    expect(lowest('rear')).toBeGreaterThanOrEqual(deck - 0.5);
+    expect(lowest('east')).toBeGreaterThanOrEqual(deck - 0.5);
+    // the liner bar on the street has homes from the ground up
+    expect(lowest('front')).toBeLessThan(3);
+  });
+
+  it('keeps windows off walls that stand against another building and off inside corners', () => {
+    // the east bar's court wall runs into the front and rear bars at inside corners: no glass beside them
+    const wall = data.toLocal([X + 95, Y + 25]), far = data.toLocal([X + 95, Y + 80]);
+    const onCourtWall = data.windows.filter(w => w.id === 'east' && w.polygon.every(q => Math.abs((q[0] ?? 0) - wall[0]!) < 1));
+    expect(onCourtWall.length).toBeGreaterThan(0);
+    const ys = onCourtWall.flatMap(w => w.polygon.map(q => q[1] ?? 0));
+    expect(Math.min(...ys)).toBeGreaterThan(Math.min(wall[1]!, far[1]!) + 3);
+    expect(Math.max(...ys)).toBeLessThan(Math.max(wall[1]!, far[1]!) - 3);
+    // and its two ends stand against those bars: no glass on them at all
+    const beyond = data.windows.filter(w => w.id === 'east' && w.polygon.every(q => (q[1] ?? 0) < Math.min(wall[1]!, far[1]!) + 0.3 || (q[1] ?? 0) > Math.max(wall[1]!, far[1]!) - 0.3));
+    expect(beyond).toHaveLength(0);
+  });
+});

@@ -128,6 +128,8 @@ const LAMP_DARK = mat(36, 36, 40);
 const LAMP_GLOW = mat(255, 232, 176);
 const WINDOW_INTERIORS = [mat(96, 91, 82), mat(81, 86, 87), mat(112, 105, 94)];
 const ROLLER_SHADE = mat(168, 162, 148);
+const GARAGE_VOID = mat(34, 36, 40);
+const GARAGE_CONCRETE = mat(172, 170, 164, 'concrete');
 
 export class Kit {
   slabs: RenderSlab[] = [];
@@ -137,7 +139,24 @@ export class Kit {
   readonly seed: number;
   /** Draw openings plainly: for a model so large that every bar of every window would weigh it down. */
   lite = false;
+  /**
+   * What stands in the way of an opening at s along a wall, at height z: 'blank' where the wall
+   * looks straight at another wall a few feet off, or stands against one, so no window belongs
+   * there; 'garage' where the story behind it is a parking level, which gets an open grille and
+   * not a window. Unset, every opening is drawn.
+   */
+  shut: ((w: Wall, s: number, z: number) => 'blank' | 'garage' | null) | null = null;
   constructor(readonly id: string, readonly label: string) { this.seed = hashId(id); }
+
+  /**
+   * One bay of a parking level, from s0 to s1 along a wall and z0 to z1: a concrete face with a
+   * long open strip above a solid spandrel, the way a parking deck reads from the street.
+   */
+  garageBay(w: Wall, s0: number, s1: number, z0: number, z1: number): void {
+    if (s1 - s0 < 0.6 || z1 - z0 < 1.6) return;
+    this.box(w, s0, s1, 0, 0.26, z0, z1 - z0, GARAGE_CONCRETE);
+    this.panel(w, s0 + 0.12, s1 - 0.12, z0 + 1.1, z1 - 0.45, 0.29, GARAGE_VOID);
+  }
 
   /** A solid on a footprint ring, from z0 up by h. */
   prism(ring: V2[], z0: number, h: number, m: Mat, part: RenderSlab['part'] = 'detail', approach?: RenderSlab['approach']): void {
@@ -207,6 +226,10 @@ export class Kit {
   window(w: Wall, s: number, width: number, z0: number, z1: number, o: WindowSpec, d = 0): void {
     const a = s - width / 2, b = s + width / 2;
     if (width < 0.3 || z1 - z0 < 0.3) return;
+    const shut = this.shut?.(w, s, z0) ?? null;
+    if (shut === 'blank') return;
+    // a parking level carries no windows: the generator draws its open bays (garageBay)
+    if (shut === 'garage') return;
     if (this.lite) {
       this.panel(w, a - 0.05, b + 0.05, z0 - 0.05, z1 + 0.05, d + 0.02, o.frame);
       this.pane(w, a, b, z0, z1, d + 0.04);
@@ -247,6 +270,7 @@ export class Kit {
   /** A door: frame, leaf, and where asked a light in the leaf, a sidelight and a transom. */
   door(w: Wall, s: number, width: number, z0: number, h: number, o: { frame: Mat; leaf: Mat; lite?: boolean; sidelight?: number; transom?: boolean }, d = 0): void {
     const side = o.sidelight ?? 0, a = s - width / 2, b = s + width / 2;
+    if (this.shut?.(w, s, z0)) return;
     const top = z0 + h + (o.transom ? 0.42 : 0), f = 0.06, p = 0.08;
     this.box(w, a - f, b + side + f, d, d + p, top, f, o.frame);
     this.box(w, a - f, a, d, d + p, z0, top - z0, o.frame);
@@ -309,6 +333,7 @@ export class Kit {
 
   /** A balcony: a slab out from the wall and a balustrade on its three open sides. */
   balcony(w: Wall, s0: number, s1: number, depth: number, z: number, o: { slab: Mat; rail: 'bars' | 'glass'; railMat: Mat }): void {
+    if (this.shut?.(w, (s0 + s1) / 2, z)) return;
     this.box(w, s0, s1, 0, depth, z - 0.18, 0.18, o.slab);
     this.rail(w, s0 + 0.03, s1 - 0.03, depth - 0.04, z, o.rail, o.railMat);
     const neg = (v: V2): V2 => [-v[0], -v[1]];
@@ -455,6 +480,7 @@ export class Kit {
    */
   dormer(w: Wall, s: number, width: number, z0: number, z1: number, inset: number, o: { wall: Mat; lid: Mat; panes: number; spec: WindowSpec }): void {
     const a = s - width / 2, b = s + width / 2, zb = z0 + 0.12, zt = z1 - 0.3;
+    if (this.shut?.(w, s, z0)) return;
     this.box(w, a, b, -inset - 0.05, 0.04, zb, zt - zb, o.wall);
     this.box(w, a - 0.1, b + 0.1, -inset - 0.05, 0.16, zt, 0.1, o.lid);
     const each = Math.min(0.9, (width - 0.5 - (o.panes - 1) * 0.1) / o.panes);
