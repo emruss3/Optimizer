@@ -154,11 +154,11 @@ export function LayoutChoicePanel({
           </button>
           {comparing && (() => {
             const price = parseLandPrice(landPrice);
-            // retain what each side has already rendered; undrawn stays absent so compareLayouts names it
+            // shown side: live workspace facts (retained trails by one effect). Other side: last render.
             const facts = (kind: LayoutKind) => {
+              if (shown === kind) return shownFacts ?? {};
               const kept = retained[kind];
-              if (kept) return { parking: kept.parking, floorArea: kept.floorArea };
-              return shown === kind ? shownFacts ?? {} : {};
+              return kept ? { parking: kept.parking, floorArea: kept.floorArea } : {};
             };
             const a: LayoutOption = { key: 'multifamily', label: `${mf} ${product === 'townhomes' ? 'townhomes' : 'apartments'}`, homes: mf, shown: shown === 'multifamily', ...facts('multifamily') };
             const b: LayoutOption = { key: 'neighborhood', label: `${nb.homes} ${nb.label}`, homes: nb.homes, shown: shown === 'neighborhood', ...facts('neighborhood') };

@@ -218,4 +218,19 @@ describe('comparing the two layouts', () => {
     expect(floor?.textContent).toContain('43,203 GSF');
     expect(floor?.textContent).toContain('49,600');
   });
+
+  it('prefers live shownFacts for the side on the sheet over a retained copy', () => {
+    const { rerender } = draw(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }} factsRevision="rev-town" />);
+    // regenerate the townhome plan: new parking, floor area omitted — must not keep the retained ceiling
+    rerender(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 2 of 8', floorArea: null }} factsRevision="rev-town-2" />);
+    fire.click(page.getByTestId('layout-compare'));
+    const parking = document.querySelector('[data-compare-row="Parking"]');
+    expect(parking?.textContent).toContain('Guest parking 2 of 8');
+    expect(parking?.textContent).not.toContain('Guest parking 0 of 8');
+    const floor = document.querySelector('[data-compare-row="Floor area"]');
+    expect(floor?.textContent).toMatch(/Unknown/);
+    expect(floor?.textContent).not.toContain('49,600');
+  });
 });

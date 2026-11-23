@@ -3483,7 +3483,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
   }, [sheetsTitleWithAccess, metrics, maxBuildout]);
   // revision of the plan on the sheet: facts stay bound to it when the comparison retains them
-  const layoutFactsRevision = scene?.identity.revision ?? null;  const canvasAnnotations = useMemo(() => {
+  const layoutFactsRevision = scene?.identity.revision ?? null;
+  const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
     const withBreak = routeBreak
       ? [...sheetAnnotations, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: 'Drive stops here · no drawn connection to the street' }]

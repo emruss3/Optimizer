@@ -33,6 +33,10 @@ export type LayoutFactsByKind = Partial<Record<'multifamily' | 'neighborhood', L
  * Keep each rendered option's parking and floor area against its kind (and revision when
  * known). Switching layouts twice must still show both sides' values. An undrawn option
  * stays absent here so compareLayouts can name the missing fact.
+ *
+ * When the same kind comes back under a new revision (retry / regenerate), replace that
+ * kind's entry rather than merging — otherwise an omitted field keeps the earlier run's
+ * value. Parcel changes remount the panel (`key={parcelId}`); this only guards revision.
  */
 export function retainLayoutFacts(
   prior: LayoutFactsByKind,
@@ -41,13 +45,23 @@ export function retainLayoutFacts(
   revision?: string | null,
 ): LayoutFactsByKind {
   if (!shown || !facts) return prior;
-  const next: LayoutFacts = {
-    ...(prior[shown] ?? {}),
-    ...facts,
-    revision: revision ?? facts.revision ?? prior[shown]?.revision ?? null,
-  };
+  const prev = prior[shown];
+  const rev = revision ?? facts.revision ?? null;
+  const revisionMoved = prev?.revision != null && rev != null && prev.revision !== rev;
+  const next: LayoutFacts = revisionMoved
+    ? { parking: facts.parking ?? null, floorArea: facts.floorArea ?? null, revision: rev }
+    : {
+        ...(prev ?? {}),
+        ...facts,
+        revision: rev ?? prev?.revision ?? null,
+      };
   // only store when at least one figure is present (nulls alone are not a rendered set)
-  if (next.parking == null && next.floorArea == null) return prior;
+  if (next.parking == null && next.floorArea == null) {
+    if (!revisionMoved) return prior;
+    // a regenerate that cleared both figures drops the stale kind
+    const { [shown]: _drop, ...rest } = prior;
+    return rest;
+  }
   return { ...prior, [shown]: next };
 }
 
