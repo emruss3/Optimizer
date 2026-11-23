@@ -603,19 +603,25 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
     // Only the rendered view reports readiness. A parcel with no plan has no 3D view at all
     // ("Generate a plan to see the 3D massing", 2405 12th Ave S), and the classic massing sets
     // no ready flag: for those there is nothing to wait on, and the old 5 s pause stands.
+    // The rendered view is not in the page until its model is built (53 s on Martingale), so
+    // a short probe for it is skipped on exactly the plan that needs the wait. One wait for
+    // whichever settled state comes: the rendered view ready, the classic massing drawn, or the
+    // page saying there is no plan to show.
     const t3d = Date.now();
-    const pbr = await page.waitForSelector('[data-testid="massing-3d"][data-rendered="pbr"]', { timeout: 8000 }).then(() => true).catch(() => false);
-    const ready3d = pbr
-      ? await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 120000 }).then(() => true).catch(() => false)
-      : null;
+    const state3d = await page.waitForFunction(() => {
+      const v = document.querySelector('[data-testid="massing-3d"]');
+      if (v?.getAttribute('data-rendered') === 'pbr') return v.getAttribute('data-ready') === 'true' ? 'ready' : false;
+      if (v?.getAttribute('data-rendered') === 'true') return 'classic';
+      return /Generate a plan to see the 3D massing/.test(document.body.innerText ?? '') ? 'no plan' : false;
+    }, null, { timeout: 120000, polling: 500 }).then(h => h.jsonValue()).catch(() => null);
     const ready3dMs = Date.now() - t3d;
-    await page.waitForTimeout(pbr ? 1500 : 5000);
+    await page.waitForTimeout(state3d === 'ready' ? 1500 : 5000);
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_3d.png`, timeout: 60000 });
 
     const verdictErrs = p.advisory ? [] : judge(expectations[String(p.ogc_fid)], evidence);
-    // a rendered 3D view that never says it is ready is a finding, not a pass
-    if (ready3d === false && !p.advisory) verdictErrs.push(`the 3D view was not ready ${Math.round(ready3dMs / 1000)} s after it was opened`);
-    console.log(`  3D ${ready3d === null ? 'not the rendered view: nothing to wait on' : ready3d ? `ready in ${(ready3dMs / 1000).toFixed(1)} s` : 'NOT READY'} — ${p.ogc_fid}`);
+    // a 3D tab that reaches none of those states is a finding, not a pass
+    if (state3d === null && !p.advisory) verdictErrs.push(`the 3D view was not ready ${Math.round(ready3dMs / 1000)} s after it was opened`);
+    console.log(`  3D ${state3d ?? 'NOT READY'} after ${(ready3dMs / 1000).toFixed(1)} s — ${p.ogc_fid}`);
     results[p.ogc_fid] = {
       ok: verdictErrs.length === 0,
       advisory: p.advisory ?? false,
