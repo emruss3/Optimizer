@@ -123,7 +123,7 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
               <figure>
                 <img
                   src={'/home-designs/' + home.id + '.webp'}
-                  alt={home.name + ', exterior study built from its floor plans and openings'}
+                  alt={home.name + ', photoreal exterior view'}
                 />
               </figure>
             ) : view === 'Plans' ? (
@@ -226,7 +226,7 @@ export default function HomeStudio({ elements, selected, onClose, onPreview, sit
             </section>
             <footer>
               * Approximate conditioned area from schematic room zones. Dimensions include wall allowances.
-              Original concept for feasibility review.
+              Exterior view is a photoreal impression of the concept for feasibility review.
             </footer>
           </main>
         </div>
