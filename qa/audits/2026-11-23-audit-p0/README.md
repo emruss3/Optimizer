@@ -22,6 +22,17 @@ easement, and 0 ft of new public street.
 Regression: `src/features/site-plan/api/delk.audit.test.ts` on the captured
 plans (`__fixtures__/delk-675423.json`).
 
+Evidence (2026-11-23): `delk-five-lots-2d.png` and `delk-five-lots-3d.png`,
+from the test battery replaying the live search call by call. The badge
+reads "All 15 checks pass", the private drive row "300 ft · 16 ft of pavement
+in a 24 ft easement · 1 dead end", new public street "0 ft", and the search
+line "Found 5 lots, up from 4". Delk is now a pinned battery case.
+
+Seen in the screenshot and not fixed here: the label "Open space beside
+wetland / buffer" sits over lot 5's label (the 2D label work in the design
+handoff), and all five lots carry the same catalogue plan, the pie lot
+included (the house catalogue work).
+
 Not done on this item: a manual selection while a late search response is
 in flight, and reopening a saved revision and exporting it.
 

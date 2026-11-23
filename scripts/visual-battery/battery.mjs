@@ -64,6 +64,8 @@ const PARCELS = [
   { ogc_fid: 680001, address: '0 UNION HILL RD', zoning: 'RS40' },
   { ogc_fid: 661661, address: '6404 EATONS CREEK RD', zoning: 'R40' },
   { ogc_fid: 672526, address: '0 HICKORY BEND DR', zoning: 'RS10' },
+  // audit baseline 2026-11-22: 3 lots by default, 4 in the comparison, 5 from the deep search (a 300 ft private lane)
+  { ogc_fid: 675423, address: '0 DELK AVE', zoning: 'RS5' },
   // a combined site (assemblage): two adjoining RS10 parcels planned as one, id from fn_assemble_parcels
   { ogc_fid: -1, address: '0 HAMILTON CHURCH RD + 1 more', zoning: 'RS10' },
   { ogc_fid: -3, address: '2939 BRICK CHURCH PIKE + 1 more', zoning: 'RM15' },
@@ -234,6 +236,11 @@ function judge(exp, ev) {
         if (a.why !== want.autoBest.why) errs.push(`${label}: the best took the sheet because '${a.why}', expected '${want.autoBest.why}'`);
         if (ev._domAutoBestWhy !== want.autoBest.why) errs.push(`${label}: the panel's auto-best note says '${ev._domAutoBestWhy ?? 'nothing'}'`);
       }
+    }
+    // 2026-11-23 audit (0 Delk Ave): what the panel and the badge say about the plan on the sheet
+    for (const [probe, text] of Object.entries(want.says ?? {})) {
+      if (text === null) { if (ev[probe]) errs.push(); }
+      else if (!(ev[probe] ?? '').includes(text)) errs.push();
     }
     if (want.privateDriveNote && !(ev._domPrivateDrive ?? '').includes('share a private drive')) errs.push(`${label}: the shared private drive is not said on the panel`);
     if (want.heldNote && !(ev._domHeld ?? '').includes(want.heldNote)) errs.push(`${label}: the flood hold line says '${ev._domHeld ?? 'nothing'}', expected it to include '${want.heldNote}'`);
@@ -504,6 +511,12 @@ for (const p of (ONLY ? PARCELS.filter(q => String(q.ogc_fid) === ONLY) : ONE ? 
         // 2026-11-06 engine g13: the auto-best note (and why), the shared drive, the hold on a skip, the engine's why
         _domAutoBestWhy: document.querySelector('[data-testid="sfv1-auto-best"]')?.getAttribute('data-why') ?? null,
         _domPrivateDrive: document.querySelector('[data-testid="sfv1-private-drive"]')?.textContent ?? null,
+        // 2026-11-23 audit: the numbers of the selected plan, as the reader sees them
+        _domVerdict: document.querySelector('[data-testid="kpi-subdivision-verdict"]')?.textContent ?? null,
+        _domDriveLength: document.querySelector('[data-testid="sfv1-private-drive-length"]')?.textContent ?? null,
+        _domStreetLength: document.querySelector('[data-testid="sfv1-street-length"]')?.textContent ?? null,
+        _domDeepSearch: document.querySelector('[data-testid="sfv1-deep-search"]')?.textContent ?? null,
+        _domAutoBest: document.querySelector('[data-testid="sfv1-auto-best"]')?.textContent ?? null,
         _domHeld: document.querySelector('[data-testid="sfv1-held"]')?.textContent ?? null,
         _domHillside: document.querySelector('[data-testid="sfv1-hillside"]')?.textContent ?? null,
         _domWhy: Array.from(document.querySelectorAll('[data-testid="sfv1-competition-why"] li')).map(e => e.textContent),

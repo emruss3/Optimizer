@@ -18,6 +18,8 @@ let store = {};
 try { store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')); } catch { store = {}; }
 console.log(`mock store: ${STORE_PATH} (${Object.keys(store).length} keys)`);
 
+const seqAt = new Map();
+
 const keyFor = (path, body) => {
   // RPC calls key on fn name + the discriminating args; table reads key on path.
   const m = path.match(/\/rest\/v1\/rpc\/(\w+)/);
@@ -47,6 +49,25 @@ http.createServer((req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ session: null, user: null }));
       return;
+    }
+    // A multi-call search (fn_sf_v1_deep_search): the store holds the calls in order under
+    // seq:<fn>:<fid>. The first call carries no search id and starts at the top; each later
+    // call gets the next reply, and the last reply repeats once the search is done.
+    const seqM = req.url.match(/\/rest\/v1\/rpc\/(\w+)/);
+    if (seqM) {
+      let a = {};
+      try { a = JSON.parse(body || '{}'); } catch { /* noop */ }
+      const seqKey = `seq:${seqM[1]}:${a.p_ogc_fid ?? ''}`;
+      const calls = store[seqKey];
+      if (Array.isArray(calls) && calls.length > 0) {
+        const at = a.p_search_id == null ? 0 : Math.min((seqAt.get(seqKey) ?? 0) + 1, calls.length - 1);
+        seqAt.set(seqKey, at);
+        log(MISS_LOG.replace('misses', 'hits'), `${Date.now()} HIT ${seqKey} #${at}
+`);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(calls[at]));
+        return;
+      }
     }
     const key = keyFor(req.url, body);
     if (key in store) {

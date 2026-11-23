@@ -179,6 +179,7 @@ export function SfV1Panel({
   // Engine g20 says the unplanned land in a note of its own ("6.10 ac is carried inside 3 oversized lot(s)
   // and is not planned…"); the panel already says it once from remainder_ac, so the note is not repeated.
   const remainderShown = summary.remainder != null && summary.lots > 0;
+  const deadEndText = `${summary.deadEnds != null ? ` · ${summary.deadEnds} dead end${summary.deadEnds === 1 ? '' : 's'}` : ''}${summary.deadEndMaxFt != null && summary.deadEndMaxFt > 0 ? ` (max ${Math.round(summary.deadEndMaxFt)} ft)` : ''}`;
   const otherNotes = summary.notes.filter(n => n !== steep && !(remainderShown && isRemainderNote(n)));
   // An answer that drew nothing on steep ground the engine did not remark on
   // (930 Morton Mill Rd: 28.5% mean slope, "no lot of 20000 sf fits"): the
@@ -396,14 +397,15 @@ export function SfV1Panel({
                   {summary.privateDrive.lengthFt != null ? `${Math.round(summary.privateDrive.lengthFt).toLocaleString()} ft` : '—'}
                   {summary.privateDrive.laneFt != null && summary.privateDrive.easementFt != null
                     ? ` · ${Math.round(summary.privateDrive.laneFt)} ft of pavement in a ${Math.round(summary.privateDrive.easementFt)} ft easement` : ''}
+                  {deadEndText}
                 </dd>
               </>
             )}
             <dt className="text-slate-500">{summary.privateDrive ? 'New public street' : 'Street'}</dt>
             <dd data-testid="sfv1-street-length">
               {summary.streetFt != null ? `${Math.round(summary.streetFt).toLocaleString()} ft` : '—'}
-              {summary.deadEnds != null ? ` · ${summary.deadEnds} dead end${summary.deadEnds === 1 ? '' : 's'}` : ''}
-              {summary.deadEndMaxFt != null && summary.deadEndMaxFt > 0 ? ` (max ${Math.round(summary.deadEndMaxFt)} ft)` : ''}
+              {/* the dead end is the drive's when the plan has no new public street (0 Delk Ave) */}
+              {summary.privateDrive ? '' : deadEndText}
             </dd>
             {summary.densityDuAc != null && (
               <>
