@@ -597,19 +597,24 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     // 2026-11-03 by-right subdivision: the override the parcel asks for (the
     // floodway-only fill scenario) is pressed and judged on its own evidence.
     // Wait for the fill-scenario answer (lots + fillView) before reading
-    // evidence. A wait timeout records _overrideWaitTimedOut — do not treat
-    // unfinished page state as the override answer. The override PNG alone is
-    // optional on 680719 (canvas thrash); evidence still gates the parcel.
+    // evidence. Only mark _overrideWaitTimedOut when the collected evidence is
+    // still unfinished — on #198 tip 20f8a35 the wait timed out at 90s while
+    // the subsequent evaluate already had 147 lots / fillView (false fail).
+    // The override PNG alone is optional on 680719 (canvas thrash).
     if (evidence && p.sfV1Override === 'floodway') {
       const btn = page.getByTestId('sfv1-override-floodway');
       if (await btn.isVisible().catch(() => false)) {
         await btn.click();
+        const overrideReady = (ev) => {
+          const sf = ev?.sfV1;
+          return !!sf && sf.basis === 'override' && sf.fillView === true && (sf.lots ?? 0) >= 100;
+        };
         let overrideWaitTimedOut = false;
         try {
           await page.waitForFunction(() => {
-            const sf = window.__planEvidence?.sfV1;
-            return sf?.basis === 'override' && sf?.fillView === true && (sf?.lots ?? 0) >= 100;
-          }, null, { timeout: 90000, polling: 500 });
+            const sf = window.__planEvidence && window.__planEvidence.sfV1;
+            return !!(sf && sf.basis === 'override' && sf.fillView === true && (sf.lots || 0) >= 100);
+          }, null, { timeout: 120000, polling: 500 });
         } catch (err) {
           overrideWaitTimedOut = true;
           console.log(`  override wait timed out for ${p.ogc_fid}: ${String(err).slice(0, 160)}`);
@@ -621,9 +626,12 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
             ? { ...ev, _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'), _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? '') }
             : null;
         });
-        if (overrideWaitTimedOut) {
+        if (overrideWaitTimedOut && !overrideReady(overrideEv)) {
           evidence._override = { ...(overrideEv ?? {}), _overrideWaitTimedOut: true };
         } else {
+          if (overrideWaitTimedOut) {
+            console.log(`  override wait timed out for ${p.ogc_fid} but evidence is ready — judging answer`);
+          }
           evidence._override = overrideEv;
         }
         // Soft-fail only this PNG on Martingale (680719); 2d/3d remain required.
