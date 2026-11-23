@@ -67,8 +67,10 @@ export default function HomeStudio({
   stockPlans,
   onApplyStock,
 }: Props) {
+  // Explicit empty list means “no SF stock for this session” (MF/CS) — do not
+  // fall back to the full catalogue and offer Apply on apartment land.
   const stock = useMemo(
-    () => (stockPlans?.length ? [...stockPlans] : buildableStockPlans()),
+    () => (stockPlans !== undefined ? [...stockPlans] : buildableStockPlans()),
     [stockPlans],
   );
   const houses = useMemo(() => residentialHomes(elements), [elements]);
@@ -203,9 +205,10 @@ export default function HomeStudio({
                       <p className="home-stock-kicker">{verificationLabel(plan.verification)}</p>
                       <dl className="home-stock-facts">
                         <div>
-                          <dt>Footprint</dt>
+                          <dt>Listing overall</dt>
                           <dd>
                             {plan.footprint.widthFt}′ × {Number(plan.footprint.depthFt.toFixed(2))}′
+                            <span className="home-stock-dim-note"> (may include porch)</span>
                           </dd>
                         </div>
                         <div>
@@ -248,9 +251,9 @@ export default function HomeStudio({
                             </button>
                           </div>
                           <p>
-                            Stamps this stock plan’s footprint, parking, and citation onto the drawn
-                            house pads that clear setbacks. Construction drawings are licensed from the
-                            publisher separately.
+                            Stamps this stock plan’s listing-overall footprint, parking, and citation
+                            onto the drawn house pads that clear setbacks. Construction drawings are
+                            licensed from the publisher separately.
                           </p>
                         </>
                       ) : houses.length ? (
@@ -268,7 +271,11 @@ export default function HomeStudio({
                     </footer>
                   </>
                 ) : (
-                  <p role="status">No buildable stock plans are loaded.</p>
+                  <p role="status">
+                    {stockPlans !== undefined && stockPlans.length === 0
+                      ? 'No SF stock on this parcel — apply is limited to single-family / by-right detached sessions (or a labeled rezone).'
+                      : 'No buildable stock plans are loaded.'}
+                  </p>
                 )}
               </main>
             </>

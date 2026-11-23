@@ -27,7 +27,8 @@ function ring(widthFt: number, depthFt: number): Array<[number, number]> {
   ];
 }
 
-/** Rectangular heated ranch/cottage from public ABHP listing facts (citation-only). */
+/** Rectangular heated ranch/cottage from public ABHP listing facts (citation-only).
+ *  Width×Depth are the listing’s overall dimensions (often including porch). */
 function abhpPadRanch(input: {
   planNumber: string;
   name: string;
@@ -55,7 +56,7 @@ function abhpPadRanch(input: {
     source: {
       publisher: ABHP,
       url: `${ABHP_SITE}${input.listingPath}`,
-      citation: `${ABHP} plan ${input.planNumber} — ${input.beds} bed / ${input.baths} bath, ${input.heatedSf.toLocaleString()} heated sf, ${W}′ × ${D}′, no attached garage (public listing; construction license sold separately).`,
+      citation: `${ABHP} plan ${input.planNumber} — ${input.beds} bed / ${input.baths} bath, ${input.heatedSf.toLocaleString()} heated sf, ${W}′ × ${D}′ listing overall (may include porch), no attached garage (public listing; construction license sold separately).`,
       rights: 'citation-only',
     },
     stories: 1,
@@ -89,6 +90,7 @@ function abhpPadRanch(input: {
     verification: input.verification ?? 'provisional',
     notes: input.notes ?? [
       'Public listing facts only — purchase the ABHP construction package before building.',
+      'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
       'No attached garage on the listing; use an independent parking pad or street stall.',
     ],
   };
@@ -191,6 +193,7 @@ export const ABHP_4848_00368 = abhpPadRanch({
   depthFt: 56,
   notes: [
     'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
     'Narrow heated width (31′) suits deep lots; porch faces the 31-ft front.',
     'No attached garage on the listing; use an independent parking pad or street stall.',
   ],
@@ -263,10 +266,31 @@ export function housingDesignById(id: string): HousingDesignRecord | undefined {
 }
 
 /**
+ * True when detached SF stock may stamp onto pads: R / RS by-right (or an
+ * explicitly labeled rezone). MF / CS / attached sessions stay empty so we do
+ * not treat apartment or commercial land as as-of-right SF product.
+ */
+export function allowSfStockPlans(
+  zoningBase: string | null | undefined,
+  opts?: { rezoneLabeled?: boolean },
+): boolean {
+  if (opts?.rezoneLabeled) return true;
+  const z = (zoningBase ?? '').trim().toUpperCase();
+  return /^RS?\d/.test(z);
+}
+
+/**
  * Designs for a parcel session. Delk keeps the trial-cleared cottage first;
  * other SF / neighborhood parcels see the full buildable stock list.
+ * Pass zoningBase (or rezoneLabeled) so MF/CS sessions get an empty list.
  */
-export function designsForParcel(parcelId: string): HousingDesignRecord[] {
+export function designsForParcel(
+  parcelId: string,
+  opts?: { zoningBase?: string | null; rezoneLabeled?: boolean },
+): HousingDesignRecord[] {
+  if (opts && !allowSfStockPlans(opts.zoningBase, { rezoneLabeled: opts.rezoneLabeled })) {
+    return [];
+  }
   const stock = buildableStockPlans();
   if (String(parcelId) === DELK_PARCEL_ID) {
     return [DELK_COTTAGE_1754_00010, ...stock.filter(d => d.id !== DELK_COTTAGE_ID)];

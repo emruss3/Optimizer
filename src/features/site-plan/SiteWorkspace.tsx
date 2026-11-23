@@ -3191,6 +3191,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sfPlanOnSheet = displayElements.some(e => isSfPlanElement(e));
   const legacyLots = legacyLotCount > 0 ? legacyLotCount : null;
   const layoutZoningBase = plannerCtx?.context?.legal?.zoning_base ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
+  // Detached SF stock stamps only on R/RS by-right sessions — not MF/CS unless a rezone label is set.
+  const sfStockDesigns = designsForParcel(parcelIdStr, { zoningBase: layoutZoningBase });
   const isRmLayout = sfV1Route(layoutZoningBase) === 'th' && plannerCtx?.context.typology === 'multifamily' && sfV1Competition != null;
   const layoutShown: LayoutKind | null = displayElements.some(e => isMfPlanElement(e)) ? 'multifamily'
     : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
@@ -4034,8 +4036,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           siteBoundary={scene?.parcel?.polygons.length === 1 ? {type:'Polygon', coordinates:scene.parcel.polygons[0]!.map(r=>r.map(p=>scene.frame.fromFeet(p)))} : null}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
-          stockPlans={designsForParcel(parcelIdStr)}
-          onApplyStock={handleHousingDesignSelect}
+          stockPlans={sfStockDesigns}
+          onApplyStock={sfStockDesigns.length > 0 ? handleHousingDesignSelect : undefined}
           onClose={closeHomes}
           onPreview={study => {setHouseStudy({parcel:parcelIdStr,base:baseElements,study});setHomesOpen(false);}}
         />
@@ -4170,10 +4172,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               autoBest={sfV1AutoBest}
               holeOverlap={sfV1HoleOverlap}
               frontageLandlocked={noStreetAccess}
-              housing={designsForParcel(parcelIdStr).length > 0
+              housing={sfStockDesigns.length > 0
                 ? {
                     parcelId: parcelIdStr,
-                    designs: designsForParcel(parcelIdStr),
+                    designs: sfStockDesigns,
                     selectedId: housingDesignId,
                     fits: housingFits,
                     onSelect: handleHousingDesignSelect,
