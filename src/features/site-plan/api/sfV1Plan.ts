@@ -1094,6 +1094,9 @@ export function checkCounts(tests: ReadonlyArray<{ pass: boolean | null }>): { g
 /** One line for the basis row and the lot-fit strip. */
 export function sfV1SummaryLine(s: SfV1Summary): string {
   if (s.status === 'skipped') return `By-right subdivision skipped — ${s.reason ?? 'no reason given'}`;
+  // A failed run is not a yield. "0 lots by right — engine error" read as a finding about the land
+  // (0 Osage St, 2026-11-23); the run failed, and nothing can be said of the parcel from it.
+  if (s.status === 'error') return `No by-right result — the generator failed${s.reason ? `: ${s.reason}` : ''} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
   const basis = s.basis === 'override' ? 'as an OVERRIDE' : 'by right';
   if (s.lots === 0) return `0 lots ${basis}${s.reason ? ` — ${s.reason}` : ''} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
   const module = s.lotWFt != null && s.lotDFt != null ? ` @ ${s.lotWFt} × ${s.lotDFt} ft` : '';
@@ -1918,7 +1921,14 @@ export function deepWinnerPrecedent(r: SfV1DeepResponse): string | null {
 }
 
 /** One plain line for the panel. */
-export function deepSearchLine(p: SfV1DeepProgress): string {
+export function deepSearchLine(p: SfV1DeepProgress, sheetFailed = false): string {
+  // with no plan on the sheet there is nothing for a search to have beaten: it names what it found, or says so
+  if (sheetFailed && (p.done || p.stopped)) {
+    const n = p.triesDone > 0 ? `Checked ${p.triesDone} layout${p.triesDone === 1 ? '' : 's'}.` : 'The search could not run.';
+    return p.bestLots != null && p.bestLots > 0
+      ? `${n} The best placed ${p.bestLots} lot${p.bestLots === 1 ? '' : 's'}, but no plan is on the sheet: the generator failed when it was asked to draw one.`
+      : `${n} No plan is on the sheet: the generator failed.`;
+  }
   if (!p.done && !p.stopped) {
     return p.triesTotal > 0 ? `Trying layout ${Math.min(p.triesDone + 1, p.triesTotal)} of ${p.triesTotal}…` : 'Looking for a better layout…';
   }

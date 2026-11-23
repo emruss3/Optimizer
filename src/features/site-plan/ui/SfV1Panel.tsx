@@ -472,7 +472,7 @@ export function SfV1Panel({
 
       {deepSearch && (
         <p className="mt-2 text-xs text-slate-600" data-testid="sfv1-deep-search" aria-live="polite">
-          {deepSearchLine(deepSearch)}
+          {deepSearchLine(deepSearch, summary.status === 'error')}
         </p>
       )}
 
