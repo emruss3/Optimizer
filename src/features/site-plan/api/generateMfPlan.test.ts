@@ -7,6 +7,7 @@ import {
   generateMfSitePlanV2,
   generateThSitePlan,
   type MfPlanResponse,
+  explainStallCounts, parkingStatusOf,
 } from './generateMfPlan';
 
 const rpcMock = vi.fn();
@@ -880,5 +881,35 @@ describe('parking status: what the sheet can stand on (the cohort retest, 2026-1
   it('the legacy mapper carries the same status', () => {
     expect(mfPlanToElements(RESP).metrics?.parkingStatus).toBe('verified');
     expect(mfPlanToElements({ ...RESP, metrics: { ...RESP.metrics, stalls: 60 } }).metrics?.parkingStatus).toBe('needs_verification');
+  });
+});
+
+describe('explainStallCounts: 2600 W Heiman St, audit 2026-11-22 (127 drawn, 20 reported, 122 required)', () => {
+  // the eight bays of the live answer on 2026-11-23: only two carry an area
+  const BAYS = [15, 10, 10, 10, 10].map(stalls => ({ stalls }))
+    .concat([{ stalls: 10, area_sqft: 1830 }, { stalls: 10, area_sqft: 1880 }] as never, [{ stalls: 52 }]);
+
+  it('accounts for all 107 stalls from the engine\'s own payload', () => {
+    const why = explainStallCounts(BAYS, 20, 70, 1.84);
+    expect(why).toContain('adds up only the 2 of 8 bays that carry an area');
+    expect(why).toContain('hold 107 more');
+    expect(why).toContain('gives 129, in line with the 127 drawn');
+    // explained is not verified: the status holds until the bays are reached from the street
+    const st = parkingStatusOf(127, 20, why);
+    expect(st.parkingStatus).toBe('needs_verification');
+    expect(st.parkingCountNote).toBe(why);
+    expect(st.parkingStatusReason).toContain('does not verify the supply');
+  });
+
+  it('leaves a difference it cannot account for as needing verification', () => {
+    // the summary is not the area-bearing bays
+    expect(explainStallCounts(BAYS, 85, 70, 1.84)).toBeNull();
+    // the ratio does not land on the drawn total
+    expect(explainStallCounts(BAYS, 20, 70, 1.2)).toBeNull();
+    // no ratio to check against
+    expect(explainStallCounts(BAYS, 20, 70, null)).toBeNull();
+    // every bay carries an area: the summary skipped nothing
+    expect(explainStallCounts(BAYS.map(b => ({ ...b, area_sqft: 1800 })), 20, 70, 1.84)).toBeNull();
+    expect(parkingStatusOf(127, 85, null).parkingStatus).toBe('needs_verification');
   });
 });

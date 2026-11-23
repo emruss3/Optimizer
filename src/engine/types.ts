@@ -147,6 +147,12 @@ export interface SiteMetrics {
   parkingStatus?: 'verified' | 'needs_verification' | 'not_evaluated';
   parkingStatusReason?: string;
   /**
+   * Why the drawn count stands when the engine's summary differs and the
+   * difference is accounted for (2600 W Heiman St: the summary of 20 adds up
+   * only the 2 bays that carry an area; the engine's own ratio gives 129).
+   */
+  parkingCountNote?: string;
+  /**
    * The plan depends on an unverified precondition (the scope's P0.2): a
    * house sketched on a landlocked parcel assumes an access easement; one in
    * the flood hazard area assumes fill to the BFE and a floodplain permit.
