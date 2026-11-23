@@ -129,9 +129,11 @@ const colours = page => page.evaluate(() => {
   await page.locator('[data-testid="camera-iso"]').click();
   await page.waitForTimeout(2000);
   check((await colours(page)) > 60, 'the cameras (Street, Top, Fit site, Aerial) each leave a picture');
-  // the buildings can be shown in four styles: a change redraws them, keeps the camera and the facts, and is remembered
+  // the buildings can be shown in several styles: a change redraws them, keeps the camera and the facts, and is remembered
+  // (six styles, opening in Nashville infill, since the infill architecture was added)
   const picker = page.locator('[data-testid="arch-style"]');
-  check((await picker.count()) === 1 && (await picker.inputValue()) === 'mansard' && (await picker.locator('option').count()) === 4, 'the 3D view offers four styles and opens in the first');
+  const firstStyle = await picker.inputValue();
+  check((await picker.count()) === 1 && firstStyle === 'infill' && (await picker.locator('option').count()) === 6, 'the 3D view offers six styles and opens in the first');
   const signature = () => page.evaluate(() => {
     const c = document.querySelector('[data-testid="massing-3d"] canvas');
     const t = document.createElement('canvas');
@@ -152,7 +154,7 @@ const colours = page => page.evaluate(() => {
     await view.screenshot({ path: path.join(out, `model_style_${style}.png`) });
   }
   check((await page.evaluate(() => localStorage.getItem('pp.archStyle'))) === 'heritage', 'the choice of style is kept on this device');
-  await picker.selectOption('mansard');
+  await picker.selectOption(firstStyle);
   await page.waitForSelector('[data-testid="massing-3d"][data-ready="true"]', { timeout: 60000 }).catch(() => {});
   await page.waitForTimeout(5000);
   check(far(asMansard, await signature()) < 0.02, 'and the first style comes back as it was');
@@ -173,7 +175,7 @@ const colours = page => page.evaluate(() => {
   const first = sent[0];
   check(!!first && first.auth === 'Bearer check-session-token', 'the request carries the user\'s session');
   check(!!first && Object.keys(first.body).sort().join() === 'image,product,stories,style,view' && /^data:image\/jpeg;base64,/.test(first.body.image), `only the picture and four fixed words are sent (${first ? Object.keys(first.body).sort().join() : 'nothing'})`);
-  check(!!first && first.body.product === 'apartments' && first.body.stories === 4 && first.body.view === 'aerial' && first.body.style === 'mansard', `the scene is described from fixed lists: ${first ? [first.body.product, first.body.stories, first.body.view, first.body.style].join(', ') : ''}`);
+  check(!!first && first.body.product === 'apartments' && first.body.stories === 4 && first.body.view === 'aerial' && first.body.style === firstStyle, `the scene is described from fixed lists: ${first ? [first.body.product, first.body.stories, first.body.view, first.body.style].join(', ') : ''}`);
   check(!!first && !/MEHARRY|488278/i.test(JSON.stringify({ ...first.body, image: '' })), 'no address or parcel number is in the request');
   await page.screenshot({ path: path.join(out, 'photoreal_view.png') });
   await page.locator('[data-testid="photoreal-back"]').click();

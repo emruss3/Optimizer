@@ -1529,7 +1529,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (elements.some(e => e.id.startsWith('sfv1-hold-'))) heldRows.push(['Flood hazard area · held out', '#DBEAFE']);
     if (elements.some(e => e.id.startsWith('sfv1-hillside-'))) heldRows.push(['Hillside · held out (over 25% slope)', '#FDE68A']);
     else if (elements.some(e => /hillside/i.test(String(propsOf(e).openKind ?? '')))) heldRows.push(['Hillside · held out (over 25% slope)', '#99F6E4']);
-    if (elements.some(e => e.id.startsWith('sfv1-nobuild-') || (propsOf(e).hazardKind === 'wetland' && !/hillside/i.test(String(propsOf(e).openKind ?? ''))))) heldRows.push(['Wetland / natural land · held out', '#99F6E4']);
+    if (elements.some(e => e.id.startsWith('sfv1-nobuild-') || (propsOf(e).hazardKind === 'wetland' && !/hillside/i.test(String(propsOf(e).openKind ?? ''))))) heldRows.push(['Wetland · held out', '#99F6E4']);
     if (elements.some(e => propsOf(e).constraintSource === 'natural_unspecified')) heldRows.push(['Natural land · held out', '#D9F99D']);
     if (elements.some(e => e.id.startsWith('sfv1-deep-fill-hold-'))) heldRows.push(['Deep-fill hold (fill over the cap)', '#FECACA']);
     const entries: Array<[string, string]> = isSubdivision

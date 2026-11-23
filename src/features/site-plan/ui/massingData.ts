@@ -1,6 +1,7 @@
 import { makeTerrain } from '../render3d/terrain';
 import { point2274To3857 } from '../api/parcelTopo';
 import type { Element } from '../../../engine/types';
+import type { ConstraintSource } from '../api/sfV1Plan';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { pointsAlongSegment, type Segment } from '../../../components/site-planner/planRendering';
 import { createGroundFrame } from '../scene/frame';
@@ -21,7 +22,7 @@ export interface MassingPolygon {
   kind?: string;
   hazard?: 'wetland' | 'floodplain' | 'floodway' | 'slope';
   /** what the held land is (wetland, its buffer, a fill hold, a hillside), apart from its hatch */
-  source?: string;
+  source?: ConstraintSource;
   privateDrive?: boolean;
   /** Polygon rings in local metres, centred on the plan's bbox centre */
   polygon: number[][][];
@@ -176,7 +177,7 @@ export function buildMassingData(
       ...(el.type === 'building' && buildingUse(el) === 'house' ? { detached: true } : {}),
       kind: el.type === 'circulation' && el.name === 'Walk' ? 'walk' : el.properties?.kind === 'pond' ? 'pond' : pavementKind(el) ?? el.type,
       ...(hazard === 'wetland' || hazard === 'floodplain' || hazard === 'floodway' || hazard === 'slope' ? { hazard } : {}),
-      ...(typeof el.properties?.constraintSource === 'string' ? { source: el.properties.constraintSource } : {}),
+      ...(typeof el.properties?.constraintSource === 'string' ? { source: el.properties.constraintSource as ConstraintSource } : {}),
       ...(el.properties?.privateDrive === true || /private drive/i.test(el.name ?? '') ? { privateDrive: true } : {}),
       polygon: el.geometry.coordinates.map(ring => ring.map(m)),
       elevation: el.type === 'building' ? heightOf(el).aboveGradeFt * METERS_PER_FOOT : 0.15,
