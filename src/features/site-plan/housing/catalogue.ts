@@ -211,6 +211,36 @@ export const ABHP_5633_00358 = abhpPadRanch({
   depthFt: 32,
 });
 
+/** Compact 36×28 ranch — small-lot Mid-South product. */
+export const ABHP_5633_00372 = abhpPadRanch({
+  planNumber: '5633-00372',
+  name: 'ABHP 5633-00372 · compact three-bedroom ranch',
+  listingPath: '/floorplans/563300372',
+  heatedSf: 980,
+  beds: 3,
+  baths: 2,
+  widthFt: 36,
+  depthFt: 28,
+});
+
+/** Narrow 28×50 cottage — deep urban / alley-loaded lots. */
+export const ABHP_4848_00390 = abhpPadRanch({
+  planNumber: '4848-00390',
+  name: 'ABHP 4848-00390 · narrow three-bedroom cottage',
+  listingPath: '/floorplans/484800390',
+  heatedSf: 1180,
+  beds: 3,
+  baths: 2,
+  widthFt: 28,
+  depthFt: 50,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    'Narrow 28′ front suits deep lots; porch faces the short front.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
 /**
  * The Lanes Unit A — narrow urban product (second demo). Stub only: no
  * footprints, openings, or CubiCasa reuse until the Delk handoff is solid.
@@ -253,6 +283,8 @@ export const HOUSING_CATALOGUE: HousingDesignRecord[] = [
   ABHP_110_00108,
   ABHP_4848_00368,
   ABHP_5633_00358,
+  ABHP_5633_00372,
+  ABHP_4848_00390,
 ];
 
 export function buildableStockPlans(): HousingDesignRecord[] {

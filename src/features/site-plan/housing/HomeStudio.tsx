@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Element } from '../../../engine/types';
-import { HOME_DESIGNS, type Face } from './originalDesigns';
+import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
+import { eligibleStockDesigns } from './homeDesignsGate';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
 
@@ -14,6 +15,8 @@ interface Props {
   siteBoundary?: Element['geometry'] | null;
   elements: Element[];
   selected?: string | null;
+  /** Scheme-eligible concept studies (#194). Defaults to the full concept catalogue. */
+  designs?: readonly HomeDesign[];
   /** Buildable publisher stock plans (defaults to the ABHP citation catalogue). */
   stockPlans?: readonly HousingDesignRecord[];
   /** Stamp a stock plan onto the scheme pads / lots. */
@@ -64,15 +67,18 @@ export default function HomeStudio({
   onClose,
   onPreview,
   siteBoundary,
+  designs = HOME_DESIGNS,
   stockPlans,
   onApplyStock,
 }: Props) {
   // Explicit empty list means “no SF stock for this session” (MF/CS) — do not
   // fall back to the full catalogue and offer Apply on apartment land.
-  const stock = useMemo(
+  const stockAll = useMemo(
     () => (stockPlans !== undefined ? [...stockPlans] : buildableStockPlans()),
     [stockPlans],
   );
+  const catalogue = designs;
+  const emptyEligible = catalogue.length === 0;
   const houses = useMemo(() => residentialHomes(elements), [elements]);
   const [mode, setMode] = useState<StudioMode>('stock');
   const [stockIndex, setStockIndex] = useState(0);
@@ -85,16 +91,37 @@ export default function HomeStudio({
     root = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    if (!houses.length) return;
+    if (!houses.some((h) => h.id === houseId)) {
+      setHouseId(houses.find((e) => e.id === selected)?.id ?? houses[0]!.id);
+    }
+  }, [houses, houseId, selected]);
+
+  const selectedHouse = houses.find((e) => e.id === houseId);
+
+  // Per-selected-lot catalogue filter for buildable stock.
+  const stock = useMemo(
+    () =>
+      eligibleStockDesigns(stockAll, elements, {
+        selectedHouseId: selectedHouse?.id ?? (houseId || null),
+      }),
+    [stockAll, elements, selectedHouse?.id, houseId],
+  );
+
+  useEffect(() => {
     if (stockIndex >= stock.length) setStockIndex(0);
   }, [stock, stockIndex]);
 
+  useEffect(() => {
+    if (catalogue.length && index >= catalogue.length) setIndex(0);
+  }, [catalogue, index]);
+
   const plan = stock[Math.min(stockIndex, Math.max(stock.length - 1, 0))];
-  const home = HOME_DESIGNS[index]!,
-    selectedHouse = houses.find((e) => e.id === houseId),
-    key = home.id + '|' + houseId;
+  const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))];
+  const key = (home?.id ?? '') + '|' + houseId;
   const current = fit?.key === key ? fit.result : null;
-  const info = program(home),
-    [, , width, depth] = designBounds(home);
+  const info = home ? program(home) : null;
+  const [, , width, depth] = home ? designBounds(home) : [0, 0, 0, 0];
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
@@ -152,20 +179,10 @@ export default function HomeStudio({
           </button>
         </header>
         <div className="home-mode-tabs" role="tablist" aria-label="Home design source">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'stock'}
-            onClick={() => setMode('stock')}
-          >
+          <button type="button" role="tab" aria-selected={mode === 'stock'} onClick={() => setMode('stock')}>
             Buildable stock
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === 'concept'}
-            onClick={() => setMode('concept')}
-          >
+          <button type="button" role="tab" aria-selected={mode === 'concept'} onClick={() => setMode('concept')}>
             Concept studies
           </button>
         </div>
@@ -173,19 +190,48 @@ export default function HomeStudio({
           {mode === 'stock' ? (
             <>
               <nav aria-label="Buildable stock plans">
-                {stock.map((h, i) => (
-                  <button
-                    type="button"
-                    key={h.id}
-                    aria-current={i === stockIndex ? 'true' : undefined}
-                    onClick={() => setStockIndex(i)}
-                  >
-                    <strong>{h.planNumber}</strong>
-                    <span>
-                      {h.beds} bed · {bathsLabel(h.baths)} · {h.heatedSf.toLocaleString()} sf
-                    </span>
-                  </button>
-                ))}
+                {houses.length > 0 && (
+                  <div className="home-stock-lot">
+                    <label>
+                      Lot filter{' '}
+                      <select
+                        aria-label="House lot to filter stock plans"
+                        value={houseId}
+                        onChange={(e) => {
+                          setHouseId(e.target.value);
+                          setStockIndex(0);
+                        }}
+                      >
+                        {houses.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+                {stock.length === 0 ? (
+                  <p className="home-empty-eligible">
+                    {stockAll.length === 0
+                      ? 'No SF stock on this parcel.'
+                      : 'No stock plans fit this selected lot. Pick another house lot.'}
+                  </p>
+                ) : (
+                  stock.map((h, i) => (
+                    <button
+                      type="button"
+                      key={h.id}
+                      aria-current={i === stockIndex ? 'true' : undefined}
+                      onClick={() => setStockIndex(i)}
+                    >
+                      <strong>{h.planNumber}</strong>
+                      <span>
+                        {h.beds} bed · {bathsLabel(h.baths)} · {h.heatedSf.toLocaleString()} sf
+                      </span>
+                    </button>
+                  ))
+                )}
               </nav>
               <main>
                 {plan ? (
@@ -251,30 +297,32 @@ export default function HomeStudio({
                             </button>
                           </div>
                           <p>
-                            Stamps this stock plan’s listing-overall footprint, parking, and citation
-                            onto the drawn house pads that clear setbacks. Construction drawings are
-                            licensed from the publisher separately.
+                            Stamps this stock plan’s listing-overall footprint, parking, and citation onto
+                            the drawn house pads that clear setbacks. Construction drawings are licensed
+                            from the publisher separately.
                           </p>
                         </>
                       ) : houses.length ? (
                         <p>
-                          Open this parcel’s by-right house design picker to apply the plan, or return
-                          after house lots are drawn.
+                          Open this parcel’s by-right house design picker to apply the plan, or return after
+                          house lots are drawn.
                         </p>
                       ) : (
                         <p>This scheme has no detached or attached house footprint to check.</p>
                       )}
                     </section>
                     <footer>
-                      Citation-only catalogue facts from America’s Best House Plans. This app does not
-                      ship copyrighted elevations or construction PDFs.
+                      Citation-only catalogue facts from America’s Best House Plans. This app does not ship
+                      copyrighted elevations or construction PDFs.
                     </footer>
                   </>
                 ) : (
                   <p role="status">
                     {stockPlans !== undefined && stockPlans.length === 0
                       ? 'No SF stock on this parcel — apply is limited to single-family / by-right detached sessions (or a labeled rezone).'
-                      : 'No buildable stock plans are loaded.'}
+                      : selectedHouse
+                        ? `No stock plans fit “${selectedHouse.name}”. Switch lots above, or close and adjust the scheme.`
+                        : 'No buildable stock plans are loaded.'}
                   </p>
                 )}
               </main>
@@ -282,153 +330,180 @@ export default function HomeStudio({
           ) : (
             <>
               <nav aria-label="Concept home studies">
-                {HOME_DESIGNS.map((h, i) => (
-                  <button
-                    type="button"
-                    key={h.id}
-                    aria-current={i === index ? 'true' : undefined}
-                    onClick={() => {
-                      setIndex(i);
-                      setLevel(0);
-                      setFit(null);
-                    }}
-                  >
-                    <strong>{h.name}</strong>
-                    <span>{h.setting}</span>
-                  </button>
-                ))}
+                {emptyEligible ? (
+                  <p className="home-empty-eligible">No concept studies fit this scheme’s house lots.</p>
+                ) : (
+                  catalogue.map((h, i) => (
+                    <button
+                      type="button"
+                      key={h.id}
+                      aria-current={i === index ? 'true' : undefined}
+                      onClick={() => {
+                        setIndex(i);
+                        setLevel(0);
+                        setFit(null);
+                      }}
+                    >
+                      <strong>{h.name}</strong>
+                      <span>{h.setting}</span>
+                    </button>
+                  ))
+                )}
               </nav>
               <main>
-                <div className="home-title">
-                  <div>
-                    <small>{home.setting} · concept study</small>
-                    <h3>{home.name}</h3>
-                  </div>
-                  <span>
-                    {info.beds} beds · {info.baths} baths
-                    <br />
-                    {info.heated.toLocaleString()} sf conditioned*
-                  </span>
-                </div>
-                <div className="home-tabs">
-                  {(['Exterior', 'Plans', 'Elevations'] as const).map((v) => (
-                    <button key={v} type="button" aria-pressed={v === view} onClick={() => setView(v)}>
-                      {v}
-                    </button>
-                  ))}
-                </div>
-                {view === 'Exterior' ? (
-                  <figure>
-                    <img
-                      src={'/home-designs/' + home.id + '.webp'}
-                      alt={home.name + ', illustrative character exterior (not generated from this plan)'}
-                    />
-                    <figcaption className="home-exterior-note">
-                      Illustrative character image — not generated from this plan’s drawings, and not a photo of a built home.
-                    </figcaption>
-                  </figure>
-                ) : view === 'Plans' ? (
-                  <>
-                    <div className="home-options">
-                      {home.levels.map((l, i) => (
-                        <button key={l.name} type="button" aria-pressed={level === i} onClick={() => setLevel(i)}>
-                          {l.name}
-                        </button>
-                      ))}
-                    </div>
-                    <figure className="home-plan">
-                      <HomePlan home={home} level={level} />
-                    </figure>
-                    <details>
-                      <summary>Room dimensions</summary>
-                      <dl className="home-rooms">
-                        {home.levels[level]!.rooms.map((r, i) => (
-                          <div key={r.name}>
-                            <dt>
-                              {i + 1}. {r.name}
-                            </dt>
-                            <dd>
-                              {r.rect[2]} × {r.rect[3]} ft
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </details>
-                  </>
+                {emptyEligible || !home || !info ? (
+                  <p role="status">
+                    This layout has detached or attached house footprints, but none of the Middle Tennessee
+                    concept studies clear the drawn lots, setbacks, and mapped approaches. Adjust the scheme
+                    or browse Buildable stock.
+                  </p>
                 ) : (
                   <>
-                    <div className="home-options">
-                      {(['front', 'right', 'back', 'left'] as const).map((v) => (
-                        <button type="button" key={v} aria-pressed={v === side} onClick={() => setSide(v)}>
-                          {v === 'back' ? 'Rear' : v[0]!.toUpperCase() + v.slice(1)}
+                    <div className="home-title">
+                      <div>
+                        <small>{home.setting} · concept study</small>
+                        <h3>{home.name}</h3>
+                      </div>
+                      <span>
+                        {info.beds} beds · {info.baths} baths
+                        <br />
+                        {info.heated.toLocaleString()} sf conditioned*
+                      </span>
+                    </div>
+                    <div className="home-tabs">
+                      {(['Exterior', 'Plans', 'Elevations'] as const).map((v) => (
+                        <button key={v} type="button" aria-pressed={v === view} onClick={() => setView(v)}>
+                          {v}
                         </button>
                       ))}
                     </div>
-                    <figure className="home-elevation">
-                      <Elevation home={home} side={side} />
-                    </figure>
+                    {view === 'Exterior' ? (
+                      <figure>
+                        <img
+                          src={'/home-designs/' + home.id + '.webp'}
+                          alt={home.name + ', illustrative character exterior (not generated from this plan)'}
+                        />
+                        <figcaption className="home-exterior-note">
+                          Illustrative character image — not generated from this plan’s drawings, and not a
+                          photo of a built home.
+                        </figcaption>
+                      </figure>
+                    ) : view === 'Plans' ? (
+                      <>
+                        <div className="home-options">
+                          {home.levels.map((l, i) => (
+                            <button
+                              key={l.name}
+                              type="button"
+                              aria-pressed={level === i}
+                              onClick={() => setLevel(i)}
+                            >
+                              {l.name}
+                            </button>
+                          ))}
+                        </div>
+                        <figure className="home-plan">
+                          <HomePlan home={home} level={level} />
+                        </figure>
+                        <details>
+                          <summary>Room dimensions</summary>
+                          <dl className="home-rooms">
+                            {home.levels[level]!.rooms.map((r, i) => (
+                              <div key={r.name}>
+                                <dt>
+                                  {i + 1}. {r.name}
+                                </dt>
+                                <dd>
+                                  {r.rect[2]} × {r.rect[3]} ft
+                                </dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </details>
+                      </>
+                    ) : (
+                      <>
+                        <div className="home-options">
+                          {(['front', 'right', 'back', 'left'] as const).map((v) => (
+                            <button type="button" key={v} aria-pressed={v === side} onClick={() => setSide(v)}>
+                              {v === 'back' ? 'Rear' : v[0]!.toUpperCase() + v.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+                        <figure className="home-elevation">
+                          <Elevation home={home} side={side} />
+                        </figure>
+                      </>
+                    )}
+                    <p>{home.description}</p>
+                    <p>{home.access}</p>
+                    <div className="home-measures">
+                      <span>
+                        {width} × {depth} ft incl. porches
+                      </span>
+                      <span>
+                        {home.levels.length} {home.levels.length === 1 ? 'story' : 'stories'}
+                      </span>
+                      <span>{roofHeight(home).toFixed(1)} ft to ridge or parapet</span>
+                    </div>
+                    <section className="home-placement">
+                      <h4>Try on this site</h4>
+                      {houses.length ? (
+                        <>
+                          <div>
+                            <select
+                              aria-label="House lot to check"
+                              value={houseId}
+                              onChange={(e) => {
+                                setHouseId(e.target.value);
+                                setFit(null);
+                              }}
+                            >
+                              {houses.map((e) => (
+                                <option key={e.id} value={e.id}>
+                                  {e.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={!selectedHouse}
+                              onClick={() => {
+                                if (selectedHouse)
+                                  setFit({
+                                    key,
+                                    result: placeHome(home, selectedHouse, elements, siteBoundary),
+                                  });
+                              }}
+                            >
+                              Check lot fit
+                            </button>
+                            {current?.placement && (
+                              <button
+                                type="button"
+                                className="home-primary"
+                                onClick={() => onPreview(current.placement!)}
+                              >
+                                Preview in 3D massing
+                              </button>
+                            )}
+                          </div>
+                          <p aria-live="polite">
+                            {current?.placement?.basis ??
+                              current?.reason ??
+                              'Check the drawn lot and its vehicle and pedestrian approaches at full size. A fit opens the live 3D massing with this design.'}
+                          </p>
+                        </>
+                      ) : (
+                        <p>This scheme has no detached or attached house footprint to check.</p>
+                      )}
+                    </section>
+                    <footer>
+                      * Approximate conditioned area from schematic room zones. Dimensions include wall
+                      allowances. These are concept studies for site fit — not publisher construction sets.
+                    </footer>
                   </>
                 )}
-                <p>{home.description}</p>
-                <p>{home.access}</p>
-                <div className="home-measures">
-                  <span>
-                    {width} × {depth} ft incl. porches
-                  </span>
-                  <span>
-                    {home.levels.length} {home.levels.length === 1 ? 'story' : 'stories'}
-                  </span>
-                  <span>{roofHeight(home).toFixed(1)} ft to ridge or parapet</span>
-                </div>
-                <section className="home-placement">
-                  <h4>Try on this site</h4>
-                  {houses.length ? (
-                    <>
-                      <div>
-                        <select
-                          aria-label="House lot to check"
-                          value={houseId}
-                          onChange={(e) => {
-                            setHouseId(e.target.value);
-                            setFit(null);
-                          }}
-                        >
-                          {houses.map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {e.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          disabled={!selectedHouse}
-                          onClick={() => {
-                            if (selectedHouse)
-                              setFit({ key, result: placeHome(home, selectedHouse, elements, siteBoundary) });
-                          }}
-                        >
-                          Check lot fit
-                        </button>
-                        {current?.placement && (
-                          <button type="button" className="home-primary" onClick={() => onPreview(current.placement!)}>
-                            Preview in 3D massing
-                          </button>
-                        )}
-                      </div>
-                      <p aria-live="polite">
-                        {current?.placement?.basis ??
-                          current?.reason ??
-                          'Check the drawn lot and its vehicle and pedestrian approaches at full size. A fit opens the live 3D massing with this design.'}
-                      </p>
-                    </>
-                  ) : (
-                    <p>This scheme has no detached or attached house footprint to check.</p>
-                  )}
-                </section>
-                <footer>
-                  * Approximate conditioned area from schematic room zones. Dimensions include wall allowances.
-                  These are concept studies for site fit — not publisher construction sets.
-                </footer>
               </main>
             </>
           )}

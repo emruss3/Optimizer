@@ -6,6 +6,14 @@ import type { InvestmentAnalysis, SelectedParcel } from '../../types/parcel';
 import { createFallbackParcel, isValidParcel } from '../../types/parcel';
 import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import type { HomePlacement } from './housing/placement';
+import { residentialHomes } from './housing/placement';
+import { HOME_DESIGNS } from './housing/originalDesigns';
+import {
+  HOME_DESIGNS_NONE_FIT_TITLE,
+  schemeAllowsHomeDesigns,
+  eligibleHomeDesigns,
+  typologyEligibleHomeDesigns,
+} from './housing/homeDesignsGate';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
@@ -3328,6 +3336,38 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         })),
     [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, activeHome, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion, housingDesignId],
   );
+  // Home designs: SF / townhomes / neighborhood only, and only designs that fit a house lot.
+  // Must sit after `scene` — the studio boundary is read from the drawing scene frame.
+  const homeStudioBoundary = useMemo((): Element['geometry'] | null => {
+    if (scene?.parcel?.polygons.length !== 1) return null;
+    return {
+      type: 'Polygon',
+      coordinates: scene.parcel.polygons[0]!.map((r) => r.map((p) => scene.frame.fromFeet(p))),
+    };
+  }, [scene]);
+  const homeDesignsUi = useMemo(() => {
+    const houses = residentialHomes(baseElements);
+    if (
+      !schemeAllowsHomeDesigns({
+        layoutShown,
+        product,
+        houseCount: houses.length,
+      })
+    ) {
+      return { show: false as const, enabled: false as const, eligible: [] as typeof HOME_DESIGNS };
+    }
+    const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
+    const eligible = typed.length
+      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
+      : ([] as typeof HOME_DESIGNS);
+    // Scheme allows homes: keep the control visible; disable when nothing fits.
+    // SF stock can still open the studio when concept studies do not fit.
+    const stockOk = sfStockDesigns.length > 0;
+    return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
+  }, [baseElements, layoutShown, product, homeStudioBoundary, sfStockDesigns]);
+  useEffect(() => {
+    if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
+  }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
   // One selection for the plan and the 3D view, remembered for this parcel and scheme.
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
   const sceneKey = scene?.identity.key ?? null;
@@ -3971,7 +4011,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
-          <button type="button" onClick={() => setHomesOpen(true)} className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Buildable plans</button>
+{homeDesignsUi.show && (
+            <button
+              type="button"
+              data-testid="home-designs"
+              onClick={() => homeDesignsUi.enabled && setHomesOpen(true)}
+              disabled={!homeDesignsUi.enabled}
+              title={
+                homeDesignsUi.enabled
+                  ? 'Browse buildable stock plans and concept studies that fit house lots on this plan'
+                  : HOME_DESIGNS_NONE_FIT_TITLE
+              }
+              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Buildable plans
+            </button>
+          )}
           {!classicDrawing && scene && scene.buildings.length > 0 && (
             <button
               data-testid="view-section"
@@ -4043,11 +4098,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-      {homesOpen && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
+{homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
         <HomeStudio
-          siteBoundary={scene?.parcel?.polygons.length === 1 ? {type:'Polygon', coordinates:scene.parcel.polygons[0]!.map(r=>r.map(p=>scene.frame.fromFeet(p)))} : null}
+          siteBoundary={homeStudioBoundary}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
+          designs={homeDesignsUi.eligible}
           stockPlans={sfStockDesigns}
           onApplyStock={sfStockDesigns.length > 0 ? handleHousingDesignSelect : undefined}
           onClose={closeHomes}
