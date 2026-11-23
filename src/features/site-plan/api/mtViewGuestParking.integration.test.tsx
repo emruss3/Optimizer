@@ -227,17 +227,35 @@ describe('Mt View guest parking through panel, compare, and print', () => {
       generator: 'th_v3',
     });
     expect(scene).not.toBeNull();
+    // SITE DATA mirrors SiteWorkspace for thv3: Homes (not Lots); suppress generic "N stalls"
+    // when guest parking owns the decision schedule.
+    const detachedSfOnSheet = thElements.some(isDetachedSfPlanElement);
+    const thV3OnSheet = thElements.some(e => e.id.startsWith('thv3-home-'));
+    expect(detachedSfOnSheet).toBe(false);
+    expect(thV3OnSheet).toBe(true);
+    const units = 30;
+    const stalls = 8; // metrics may report stalls — must not become SITE DATA "8 stalls"
+    const siteData: Array<{ label: string; value: string }> = [{ label: 'Zoning', value: 'RM15' }];
+    if (units) siteData.push({ label: detachedSfOnSheet ? 'Lots' : 'Homes', value: String(units) });
+    if (stalls && !thV3OnSheet) siteData.push({ label: 'Parking', value: `${stalls} stalls` });
+    expect(siteData.some(r => r.label === 'Homes')).toBe(true);
+    expect(siteData.some(r => r.label === 'Lots')).toBe(false);
+    expect(siteData.some(r => r.label === 'Parking')).toBe(false);
+
     const title = {
       project: '5525 Mt View Rd',
       subtitle: 'RM15 · townhomes',
       date: '2026-11-23',
       decision: mtViewTown.rows,
-      data: [{ label: 'Zoning', value: 'RM15' }],
+      data: siteData,
     };
     for (const size of ['letter', 'slide', 'tabloid'] as const) {
       const sheet = renderSitePlanSheet(scene!, title, size);
       const doc = new DOMParser().parseFromString(sheet.svg, 'image/svg+xml');
       expect(doc.querySelector('parsererror')).toBeNull();
+      expect(doc.querySelector('[data-site-data="Homes"]:not([data-decision])')?.textContent).toMatch(/Homes30/);
+      expect(doc.querySelector('[data-site-data="Lots"]')).toBeNull();
+      expect(doc.querySelectorAll('[data-site-data="Parking"]:not([data-decision])')).toHaveLength(0);
       const parking = doc.querySelector('[data-decision="Parking"]');
       expect(parking?.textContent).toMatch(/0 of 8/);
       expect(parking?.textContent).toMatch(/8 short/);
