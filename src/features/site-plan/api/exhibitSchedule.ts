@@ -39,7 +39,14 @@ export function exhibitSchedule(i: ExhibitScheduleInput): ScheduleRow[] {
     if (drawn != null && reported != null && drawn !== reported) parts.push(`${n(drawn)} drawn`, `${n(reported)} reported`);
     else parts.push(`${n(supplied)} ${drawn != null ? 'drawn' : 'supplied'}`);
     if (required != null && required > 0) parts.push(`${n(required)} required`);
-    if (i.units) parts.push(`${n(supplied / i.units, 2)} per home`);
+    const disagree = drawn != null && reported != null && drawn !== reported;
+    // a per-home ratio needs one count to stand on: it is left off when the two disagree
+    if (i.units && !disagree) parts.push(`${n(supplied / i.units, 2)} per home`);
+    // a shortfall is said in words, so it reads on a grey print as well as in colour
+    if (required != null && required > 0) {
+      if (supplied < required) parts.push(`${n(required - supplied)} short of required`);
+      else if (disagree && reported != null && reported < required) parts.push(`reported count ${n(required - reported)} short of required`);
+    }
     rows.push({ label: 'Parking', value: parts.join(' · ') });
   }
   if (i.capture && i.builtGsf) {

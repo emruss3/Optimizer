@@ -96,6 +96,18 @@ describe('the sheet', () => {
     expect(mark?.textContent).toMatch(/no drawn connection to the street/);
   });
 
+  it('prints the decision figures ahead of the other site data, and says so when a legend is cut short', () => {
+    const decided = { ...title, decision: [{ label: 'Parking', value: '238 supplied · 226 required' }, { label: 'Street access', value: 'Unresolved: no drive reaches the street' }] };
+    const doc = new DOMParser().parseFromString(renderSitePlanSheet(scene, decided, 'slide').svg, 'image/svg+xml');
+    const rows = [...doc.querySelectorAll('[data-site-data]')].map(g => g.getAttribute('data-site-data'));
+    expect(rows.slice(0, 3)).toEqual(['Parking', 'Street access', 'Zoning']);
+    expect(doc.querySelector('[data-decision="Parking"]')?.textContent).toBe('Parking238 supplied · 226 required');
+    // every legend item is either drawn or counted in the "more" note
+    const drawn = doc.querySelectorAll('[data-legend]').length;
+    const more = doc.querySelector('[data-legend-more]')?.getAttribute('data-legend-more');
+    expect(drawn > 0 || more === 'all').toBe(true);
+  });
+
   it('prints the key figures, the site data and the stripes it could draw', () => {
     const sheet = renderSitePlanSheet(scene, title, 'tabloid');
     expect(sheet.figures.map(f => [f.label, f.value])).toEqual([['HOMES', '24'], ['BUILDING', '1'], ['STORIES', '3'], ['PARKING STALLS', '10']]);

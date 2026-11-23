@@ -576,14 +576,27 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     y += 8;
     for (const text of parts.length ? parts : ['The drawn features do not add up to the scheme schedule.']) line(text, 6.2, 500, '#8a4b12');
   }
-  // The figures a decision turns on sit right under the headline numbers, where every sheet size
-  // has room for them: drawn against required parking, what the floor area is a share of, the
-  // parking and residential stack, and whether a car can reach the street.
-  if (title.decision?.length) {
-    y += 10;
-    for (const row of title.decision) {
-      out.push(`<g data-decision="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="5.4" letter-spacing="0.4" fill="#7a8087">${esc(row.label.toUpperCase())}</text><text x="${r2(tx + 46)}" y="${r2(y)}" font-size="6" font-weight="600" fill="${/^Unresolved|^Not verified/.test(row.value) ? '#b4232a' : INK}">${esc(row.value)}</text></g>`);
-      y += 9.6;
+  // The site data sits right under the headline numbers, where every sheet size has room for it.
+  // The figures a decision turns on lead it (api/exhibitSchedule): drawn against required parking,
+  // what the floor area is a share of, the parking and residential stack, whether a car can reach
+  // the street. The scheme's other figures follow. One line a row.
+  const dataRows = [
+    ...(title.decision ?? []).map(r => ({ ...r, decision: true })),
+    ...(title.data ?? []).map(r => ({ ...r, decision: false })),
+  // the slide's strip is short: the more buildings its table lists, the fewer rows the data keeps,
+  // and the decision figures are the ones kept
+  ].slice(0, size === 'slide' ? Math.max(4, 9 - scene.buildings.filter(b => b.tagOnPlan).length) : 14);
+  if (dataRows.length) {
+    rule(8, 14);
+    eyebrow('SITE DATA');
+    for (const row of dataRows) {
+      const long = row.label.length + row.value.length > 44;
+      const alert = /^Unresolved|^Not verified|short of/.test(row.value);
+      const value = long
+        ? `<text x="${r2(tx + 46)}" y="${r2(y)}" font-size="5.9" font-weight="600" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`
+        : `<text x="${tx + tw}" y="${r2(y)}" font-size="6.4" font-weight="600" text-anchor="end" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`;
+      out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''}><text x="${tx}" y="${r2(y)}" font-size="${long ? 5.9 : 6.4}" fill="#4b5158">${esc(row.label)}</text>${value}</g>`);
+      y += 9.4;
     }
     y -= 4;
   }
@@ -620,8 +633,12 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   if (estimated) { y += 2; line('Heights are estimated from story counts and are above grade. The plan carries no measured height.', 5.8, 400, '#7a8087', 2.5); }
   rule(6, 14);
 
-  // legend: only what is on the sheet
-  eyebrow('LEGEND');
+  // legend: only what is on the sheet, and only where the strip has room above the scale
+  const stripFloor = strip.y + strip.h - 118 - 10;
+  const legendFits = y + 16 <= stripFloor;
+  if (legendFits) eyebrow('LEGEND');
+  // a sheet never loses its legend without saying so
+  else out.push(`<text x="${tx}" y="${r2(Math.min(y + 4, strip.y + strip.h - 122))}" font-size="5.6" fill="#7a8087" data-legend-more="all">Legend: see the 11 × 17 sheet.</text>`);
   const present = new Set<string>(scene.features.map(f => f.styleRole));
   const LEGEND: Array<[string, string, string]> = [
     ['parcel', 'Property line', `fill="none" stroke="${INK}" stroke-width="1.3" stroke-dasharray="8 2 2 2 2 2"`],
@@ -640,38 +657,21 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['context', 'Existing building', `fill="${C.contextBuilding}" stroke="${C.contextBuildingEdge}" stroke-width="0.4"`],
   ];
   const items = LEGEND.filter(([key]) => (key === 'parcel' ? !!scene.parcel : key === 'envelope' ? !!scene.envelope : key === 'context' ? scene.context.buildings.length > 0 : key === 'walk' ? walks > 0 || present.has('walk') : present.has(key)));
-  // the strip ends at the scale and the north arrow: the legend and the table give way to them
-  const stripFloor = strip.y + strip.h - 118 - 10;
   let legendRows = 0;
   const legendRoom = Math.max(1, Math.floor((stripFloor - y) / 12) + 1);
   const legendCols = items.length <= legendRoom * 2 ? 2 : 3;
   items.forEach(([key, label, style], i) => {
     const lx = tx + (i % legendCols) * (tw / legendCols), ly = y + Math.floor(i / legendCols) * 12;
-    if (ly > stripFloor) return;
+    if (!legendFits || ly > stripFloor) return;
     legendRows = Math.floor(i / legendCols) + 1;
     if (key === 'parcel' || key === 'envelope' || key === 'lot') out.push(`<line x1="${r2(lx)}" y1="${r2(ly - 2.5)}" x2="${r2(lx + 16)}" y2="${r2(ly - 2.5)}" ${style}/>`);
     else out.push(`<rect x="${r2(lx)}" y="${r2(ly - 6.5)}" width="16" height="8" ${style}/>`);
     out.push(`<text x="${r2(lx + 21)}" y="${r2(ly)}" font-size="6.5" fill="${INK}" data-legend="${key}">${esc(label)}</text>`);
   });
   y += legendRows * 12;
-
-  // the site data table, where the workspace supplied one
-  if (title.data?.length && y + 28 <= stripFloor) {
-    rule(4, 14);
-    eyebrow('SITE DATA');
-    for (const row of title.data) {
-      // the table stops short of the scale and the north arrow
-      if (y > stripFloor) break;
-      if (row.label.length + row.value.length > 46) {
-        // a long figure takes a line of its own under its label, so neither runs into the other
-        out.push(`<g data-site-data="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="6.6" fill="#4b5158">${esc(row.label)}</text><text x="${tx}" y="${r2(y + 8.8)}" font-size="6.4" font-weight="600" fill="${INK}">${esc(row.value)}</text></g>`);
-        y += 8.8;
-      } else {
-        out.push(`<g data-site-data="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="6.6" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="6.6" font-weight="600" text-anchor="end" fill="${INK}">${esc(row.value)}</text></g>`);
-      }
-      y += 9.6;
-    }
-  }
+  // a legend that ran out of room says how much it left off
+  const legendShown = Math.min(items.length, legendRows * legendCols);
+  if (legendFits && legendShown < items.length) out.push(`<text x="${tx + tw}" y="${r2(y - 12)}" font-size="5.6" text-anchor="end" fill="#7a8087" data-legend-more="${items.length - legendShown}">+${items.length - legendShown} more in the 11 × 17 sheet</text>`);
 
   // bottom block: north, scale, sheet number
   const by = strip.y + strip.h;
