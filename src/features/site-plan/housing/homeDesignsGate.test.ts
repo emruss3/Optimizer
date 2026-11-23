@@ -148,26 +148,34 @@ describe('homeDesignsGate — typology and fit', () => {
 });
 
 describe('homeDesignsGate — stock per-lot', () => {
-  const elements = sfV1ToElements(fixture as SfV1Response);
-  const houses = residentialHomes(elements);
-
   it('filters stock to plans that fit a given lot envelope', () => {
-    const house = houses[0]!;
-    const lot = lotFitInputForHouse(house, elements);
-    expect(lot).not.toBeNull();
-    const fitted = stockDesignsFittingLot(buildableStockPlans(), lot!);
+    const roomy = {
+      ringFt: [
+        [0, 0],
+        [60, 0],
+        [60, 100],
+        [0, 100],
+        [0, 0],
+      ] as Array<[number, number]>,
+      frontage: null,
+      setbacks: { front: 20, side: 5, rear: 20 },
+      lotKind: null,
+      lotIndex: 0,
+    };
+    const fitted = stockDesignsFittingLot(buildableStockPlans(), roomy);
     expect(fitted.length).toBeGreaterThan(0);
-    expect(fitted.every((d) => d.footprint.widthFt > 0)).toBe(true);
+    expect(fitted.map((d) => d.id)).toContain(ABHP_5633_00358.id);
   });
 
   it('narrows further when a house is selected vs scheme-level', () => {
+    const { elements } = sfV1ToElements(fixture.deep as unknown as SfV1Response);
+    const houses = residentialHomes(elements);
     const house = houses[0]!;
     const forLot = eligibleStockDesigns(buildableStockPlans(), elements, {
       selectedHouseId: house.id,
     });
     const anyLot = eligibleStockDesigns(buildableStockPlans(), elements);
     expect(anyLot.length).toBeGreaterThanOrEqual(forLot.length);
-    // Wide 46′ ranch should not fit a narrow deep envelope that accepts 31×56.
     const narrow = stockDesignsFittingLot(
       [ABHP_4848_00368, ABHP_5633_00358],
       {
