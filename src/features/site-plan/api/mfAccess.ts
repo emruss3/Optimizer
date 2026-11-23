@@ -3,22 +3,36 @@
  * "You have a random parking, with no road to get to it.")
  *
  * Read from the rendered elements, in the canvas frame (EPSG:3857 metres):
- * a drive that reaches the parcel line (the curb), and a drive touching every
- * parking bay. The battery asserts it; the headline states it.
+ * a drive network that reaches the street (or parcel line when no street edge
+ * is known), and every parking bay that can travel that network to the curb.
+ * Proximity alone is not enough — a bay beside an isolated stub is not served
+ * just because a different drive touches the boundary (field audit 32a264a).
  *
- * Lengths shown to a reviewer (gapFt) are ground feet via the scene frame —
- * Web Mercator metres are not ground metres (~1.24× at Nashville).
+ * When frontage geometry is a placeholder, callers must pass streetEdge=null so
+ * curb falls back to the parcel ring (667574 / 408571 / Herman / W Heiman must
+ * not false-red to NO_DRIVE_TO_STREET from a placeholder edge alone).
+ *
+ * The battery asserts it; the headline states it. Lengths shown to a reviewer
+ * (gapFt) are ground feet via the scene frame — Web Mercator metres are not
+ * ground metres (~1.24× at Nashville).
  */
 import type { Element } from '../../../engine/types';
 
 export interface MfAccessSummary {
-  /** a drive reaches the parcel line */
+  /** a curb-connected drive network reaches the street / parcel edge */
   curb: boolean;
-  /** parking bays on the plan (garage aprons excluded) */
+  /** parking bays on the plan (garage aprons excluded) — striped count */
   bays: number;
-  /** bays with a drive within `tolM` of them */
+  /** bays with a traversable trip to the curb through overlapping drives */
   served: number;
   drives: number;
+  /**
+   * Sum of stalls on curb-reachable bays when every bay carries a stall count;
+   * null when any bay is missing stalls (usable figure cannot be computed).
+   */
+  stallsServed: number | null;
+  /** Sum of stalls on all striped bays when every bay carries a stall count. */
+  stallsStriped: number | null;
 }
 
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
@@ -66,15 +80,13 @@ const ringOf = (el: Element): number[][] | null => {
   return r && r.length >= 4 ? r : null;
 };
 
-export function mfAccessSummary(elements: Element[], parcelRing: number[][] | null, tolM = 3): MfAccessSummary {
-  const drives = elements.filter(e => e.type === 'circulation').map(ringOf).filter((r): r is number[][] => r != null);
-  const bays = elements
-    .filter(e => (e.type === 'parking' || e.type === 'parking-bay') && !(e.properties as { apron?: boolean } | undefined)?.apron)
-    .map(ringOf)
-    .filter((r): r is number[][] => r != null);
-  const curb = !!parcelRing && parcelRing.length >= 4 && drives.some(d => ringDistance(d, parcelRing) <= tolM);
-  const served = bays.filter(b => drives.some(d => ringDistance(b, d) <= tolM)).length;
-  return { curb, bays: bays.length, served, drives: drives.length };
+type Bay = { ring: number[][]; stalls: number | null };
+
+function bayStalls(el: Element): number | null {
+  const p = el.properties as { stalls?: unknown; parkingSpaces?: unknown } | undefined;
+  if (typeof p?.stalls === 'number' && p.stalls >= 0) return p.stalls;
+  if (typeof p?.parkingSpaces === 'number' && p.parkingSpaces >= 0) return p.parkingSpaces;
+  return null;
 }
 
 /** Nearest pair of points between two polylines: vertices of each against the segments of the other. */
@@ -102,6 +114,143 @@ function nearestPair(a: number[][], b: number[][]): { from: number[]; to: number
   return best;
 }
 
+/** Distance from a closed drive ring to a street edge (open polyline) or parcel ring. */
+function distanceToEdge(drive: number[][], edge: number[][]): number {
+  const closed =
+    edge.length >= 4 &&
+    edge[0]![0] === edge[edge.length - 1]![0] &&
+    edge[0]![1] === edge[edge.length - 1]![1];
+  if (closed) return ringDistance(drive, edge);
+  const pair = nearestPair(drive, edge);
+  return pair ? pair.d : Infinity;
+}
+
+function driveTouchesEdge(drive: number[][], edge: number[][], tolM: number): boolean {
+  return distanceToEdge(drive, edge) <= tolM;
+}
+
+type BBox = { minX: number; minY: number; maxX: number; maxY: number };
+
+function ringBBox(r: number[][]): BBox {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of r) {
+    const x = p[0] ?? 0, y = p[1] ?? 0;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function bboxNear(a: BBox, b: BBox, tolM: number): boolean {
+  return !(a.maxX + tolM < b.minX || b.maxX + tolM < a.minX || a.maxY + tolM < b.minY || b.maxY + tolM < a.minY);
+}
+
+/** Union-find components of drives that overlap / touch within tolM. */
+function driveComponents(drives: number[][][], tolM: number): number[] {
+  const n = drives.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => {
+    let x = i;
+    while (parent[x] !== x) x = parent[x]!;
+    let y = i;
+    while (parent[y] !== y) {
+      const next = parent[y]!;
+      parent[y] = x;
+      y = next;
+    }
+    return x;
+  };
+  const boxes = drives.map(ringBBox);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (!bboxNear(boxes[i]!, boxes[j]!, tolM)) continue;
+      if (ringDistance(drives[i]!, drives[j]!) <= tolM) {
+        const a = find(i);
+        const b = find(j);
+        if (a !== b) parent[b] = a;
+      }
+    }
+  }
+  return drives.map((_, i) => find(i));
+}
+
+function collectDrives(elements: Element[]): number[][][] {
+  return elements.filter(e => e.type === 'circulation').map(ringOf).filter((r): r is number[][] => r != null);
+}
+
+function collectBays(elements: Element[]): Bay[] {
+  return elements
+    .filter(e => (e.type === 'parking' || e.type === 'parking-bay') && !(e.properties as { apron?: boolean } | undefined)?.apron)
+    .map(e => {
+      const ring = ringOf(e);
+      return ring ? { ring, stalls: bayStalls(e) } : null;
+    })
+    .filter((b): b is Bay => b != null);
+}
+
+function stallTotals(bays: Bay[], servedMask: boolean[]): { stallsServed: number | null; stallsStriped: number | null } {
+  if (bays.length === 0) return { stallsServed: 0, stallsStriped: 0 };
+  if (bays.some(b => b.stalls == null)) return { stallsServed: null, stallsStriped: null };
+  let striped = 0;
+  let served = 0;
+  for (let i = 0; i < bays.length; i++) {
+    const n = bays[i]!.stalls!;
+    striped += n;
+    if (servedMask[i]) served += n;
+  }
+  return { stallsServed: served, stallsStriped: striped };
+}
+
+/**
+ * Street edge when the frontage layer has one; else the full parcel line.
+ * A side lot line alone must not count as curb when a street edge is known
+ * (Herman / field audit: nearest boundary can be a non-street line).
+ * Callers that only have a placeholder frontage must pass null so the parcel
+ * ring stands in.
+ */
+function curbEdge(parcelRing: number[][] | null, streetEdge: number[][] | null): number[][] | null {
+  if (streetEdge && streetEdge.length >= 2) return streetEdge;
+  if (parcelRing && parcelRing.length >= 4) return parcelRing;
+  return null;
+}
+
+export function mfAccessSummary(
+  elements: Element[],
+  parcelRing: number[][] | null,
+  tolM = 3,
+  /** Preferred street / approved-approach edge; falls back to the parcel line. */
+  streetEdge: number[][] | null = null,
+): MfAccessSummary {
+  const drives = collectDrives(elements);
+  const bays = collectBays(elements);
+  const empty = { curb: false, bays: bays.length, served: 0, drives: drives.length, stallsServed: null as number | null, stallsStriped: null as number | null };
+  const edge = curbEdge(parcelRing, streetEdge);
+  if (!edge || drives.length === 0) {
+    const totals = stallTotals(bays, bays.map(() => false));
+    return { ...empty, ...totals };
+  }
+
+  const comps = driveComponents(drives, tolM);
+  const curbRoots = new Set<number>();
+  for (let i = 0; i < drives.length; i++) {
+    if (driveTouchesEdge(drives[i]!, edge, tolM)) curbRoots.add(comps[i]!);
+  }
+  const curb = curbRoots.size > 0;
+
+  const servedMask = bays.map(b => {
+    for (let i = 0; i < drives.length; i++) {
+      if (ringDistance(b.ring, drives[i]!) <= tolM && curbRoots.has(comps[i]!)) return true;
+    }
+    return false;
+  });
+  const served = servedMask.filter(Boolean).length;
+  const totals = stallTotals(bays, servedMask);
+
+  return { curb, bays: bays.length, served, drives: drives.length, ...totals };
+}
+
 export type AccessBreak = {
   from: number[];
   to: number[];
@@ -124,13 +273,14 @@ export function formatGapFt(gapFt: number): string {
 }
 
 /**
- * Where the route to the street breaks, when no drive reaches the parcel line:
- * the end of the drive nearest the street, the point on the street edge it
- * would have to reach, and the measured gap. Endpoints mark the drawing;
- * gapFt is what a reviewer reads against the graphic scale.
+ * Where the route to the street breaks:
+ * 1. No curb-connected drive → end of the drive nearest the street edge.
+ * 2. Curb exists but parking sits on an isolated network → gap between that
+ *    network and the nearest curb-connected drive (or the street if none).
+ * 3. Curb exists but a bay touches no drive → gap from that bay to the
+ *    nearest curb-connected drive (so PARKING_NOT_REACHABLE still draws red).
  *
- * Pass `distanceFt` from `scene.frame.distanceFt` so gapFt is ground feet at
- * the site latitude. Without it, gapFt is null (hide feet until the frame exists).
+ * Endpoints mark the drawing; gapFt is what a reviewer reads against the scale.
  */
 export function accessBreak(
   elements: Element[],
@@ -140,17 +290,69 @@ export function accessBreak(
   tolM = 3,
   distanceFt?: (a: ArrayLike<number>, b: ArrayLike<number>) => number,
 ): AccessBreak | null {
-  const drives = elements.filter(e => e.type === 'circulation').map(ringOf).filter((r): r is number[][] => r != null);
-  if (drives.length === 0 || !parcelRing || parcelRing.length < 4) return null;
-  if (drives.some(d => ringDistance(d, parcelRing) <= tolM)) return null;
-  const edge = frontageLine && frontageLine.length >= 2 ? frontageLine : parcelRing;
-  let best: { from: number[]; to: number[]; d: number } | null = null;
-  for (const d of drives) {
-    const pair = nearestPair(d, edge);
-    if (pair && (!best || pair.d < best.d)) best = pair;
+  const drives = collectDrives(elements);
+  const bays = collectBays(elements).map(b => b.ring);
+  const edge = curbEdge(parcelRing, frontageLine);
+  if (drives.length === 0 || !edge) return null;
+
+  const comps = driveComponents(drives, tolM);
+  const curbRoots = new Set<number>();
+  for (let i = 0; i < drives.length; i++) {
+    if (driveTouchesEdge(drives[i]!, edge, tolM)) curbRoots.add(comps[i]!);
   }
-  if (!best) return null;
-  const gap3857 = best.d;
-  const gapFt = distanceFt ? distanceFt(best.from, best.to) : null;
-  return { from: best.from, to: best.to, gap3857, gapFt };
+
+  const toBreak = (pair: { from: number[]; to: number[]; d: number }): AccessBreak => ({
+    from: pair.from,
+    to: pair.to,
+    gap3857: pair.d,
+    gapFt: distanceFt ? distanceFt(pair.from, pair.to) : null,
+  });
+
+  // Case 1: nothing reaches the street — same as the historical Herman gap.
+  if (curbRoots.size === 0) {
+    let best: { from: number[]; to: number[]; d: number } | null = null;
+    for (const d of drives) {
+      const pair = nearestPair(d, edge);
+      if (pair && (!best || pair.d < best.d)) best = pair;
+    }
+    return best ? toBreak(best) : null;
+  }
+
+  const curbDrives = drives.filter((_, i) => curbRoots.has(comps[i]!));
+
+  // Case 2: curb-connected network exists, but some bays only touch isolated drives.
+  const strandedDriveIdx: number[] = [];
+  for (let i = 0; i < drives.length; i++) {
+    if (curbRoots.has(comps[i]!)) continue;
+    const touchesBay = bays.some(b => ringDistance(b, drives[i]!) <= tolM);
+    if (touchesBay) strandedDriveIdx.push(i);
+  }
+  if (strandedDriveIdx.length > 0) {
+    let best: { from: number[]; to: number[]; d: number } | null = null;
+    for (const i of strandedDriveIdx) {
+      const stranded = drives[i]!;
+      for (const curb of curbDrives) {
+        const pair = nearestPair(stranded, curb);
+        if (pair && (!best || pair.d < best.d)) best = pair;
+      }
+      // Prefer joining to the curb network; if somehow empty, aim at the street.
+      if (curbDrives.length === 0) {
+        const pair = nearestPair(stranded, edge);
+        if (pair && (!best || pair.d < best.d)) best = pair;
+      }
+    }
+    return best && best.d > tolM ? toBreak(best) : null;
+  }
+
+  // Case 3: orphan bays that touch no drive — mark bay → curb-network gap.
+  const orphanBays = bays.filter(b => !drives.some(d => ringDistance(b, d) <= tolM));
+  if (orphanBays.length === 0 || curbDrives.length === 0) return null;
+  let orphanBest: { from: number[]; to: number[]; d: number } | null = null;
+  for (const bay of orphanBays) {
+    for (const curb of curbDrives) {
+      const pair = nearestPair(bay, curb);
+      if (pair && (!orphanBest || pair.d < orphanBest.d)) orphanBest = pair;
+    }
+  }
+  return orphanBest && orphanBest.d > tolM ? toBreak(orphanBest) : null;
 }

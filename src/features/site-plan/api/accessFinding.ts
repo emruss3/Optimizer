@@ -20,9 +20,12 @@ export interface AccessFinding {
 }
 
 export const NO_DRIVE_TO_STREET = 'The drive does not reach the street';
+/** Drawn parking exists, but some bays have no traversable trip to the curb. */
+export const PARKING_NOT_REACHABLE = 'Parking is drawn without a route to the street';
 const SURVEY = 'A boundary survey or recorded plat that shows the parcel line on a public right-of-way.';
 const EASEMENT = 'A recorded access easement across the neighbouring parcel, with its width.';
 const CURB = 'A driveway permit or approved curb cut for the street the plan enters from.';
+const JOIN = 'A continuous drive that joins the parking network to the street entry. The break is marked in red on the plan and in the 3D review.';
 
 function frontageInPlanFrame(frontage: ParcelFrontage | null | undefined): number[][] | null {
   const g = frontage?.primary?.geom_2274 as LineString | undefined;
@@ -93,8 +96,21 @@ export function accessFinding(input: {
       ...base,
       state: 'needs_verification',
       headline: NO_DRIVE_TO_STREET,
-      why: 'No drive on this plan touches the parcel line, so the parking has no drawn way out.',
+      why: 'No drive on this plan reaches the street edge, so the parking has no drawn way out.',
       clears: ['A plan whose entry drive meets the street edge. The break is marked in red on the plan and in the 3D review. Recalculate, or draw the drive to the street edge.', CURB],
+    };
+  }
+  // Field audit 32a264a: a curb stub plus an isolated bay must not read as served.
+  if (drives && drives.bays > 0 && drives.served < drives.bays) {
+    const short = drives.bays - drives.served;
+    return {
+      ...base,
+      state: 'needs_verification',
+      headline: PARKING_NOT_REACHABLE,
+      why: drives.stallsServed != null && drives.stallsStriped != null
+        ? `${short} of ${drives.bays} parking bay${drives.bays === 1 ? '' : 's'} ${short === 1 ? 'has' : 'have'} no traversable drive to the street. Striped count stays visible; ${drives.stallsServed} of ${drives.stallsStriped} stalls count as usable.`
+        : `${short} of ${drives.bays} parking bay${drives.bays === 1 ? '' : 's'} ${short === 1 ? 'has' : 'have'} no traversable drive to the street. Striped count stays visible; only curb-reachable bays count toward usable supply.`,
+      clears: [JOIN, CURB],
     };
   }
   if (!frontage && !engineAccess) return null;

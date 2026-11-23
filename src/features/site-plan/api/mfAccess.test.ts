@@ -17,7 +17,20 @@ describe('mfAccessSummary — does the parking have a road?', () => {
     const far = el('bay-b', 'parking', rect(60, 20, 80, 40)); // nowhere near it
     const apron = el('apron', 'parking', rect(60, 80, 62, 84), { apron: true }); // a garage apron, not a bay
     const s = mfAccessSummary([drive, near, far, apron], parcel);
-    expect(s).toEqual({ curb: true, bays: 2, served: 1, drives: 1 });
+    expect(s).toMatchObject({ curb: true, bays: 2, served: 1, drives: 1 });
+    // stall counts absent on these fixtures → usable figure stays null
+    expect(s.stallsServed).toBeNull();
+    expect(s.stallsStriped).toBeNull();
+  });
+
+  it('sums stalls on curb-reachable bays for the usable figure', () => {
+    const drive = el('drive', 'circulation', rect(0, 0, 8, 60));
+    const near = el('bay-a', 'parking', rect(10, 50, 30, 60), { stalls: 10 });
+    const far = el('bay-b', 'parking', rect(60, 20, 80, 40), { stalls: 8 });
+    const s = mfAccessSummary([drive, near, far], parcel);
+    expect(s.served).toBe(1);
+    expect(s.stallsServed).toBe(10);
+    expect(s.stallsStriped).toBe(18);
   });
 
   it('a drive that stops inside the site never reaches the curb', () => {
@@ -26,6 +39,50 @@ describe('mfAccessSummary — does the parking have a road?', () => {
     const s = mfAccessSummary([stub, bay], parcel);
     expect(s.curb).toBe(false);
     expect(s.served).toBe(0);
+  });
+
+  // Field audit 32a264a P0: proximity ≠ route. One drive at the boundary and
+  // another isolated beside a bay must not report curb+served with no path.
+  it('does not count an isolated bay as served when a different drive touches the curb', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 8, 18));
+    const island = el('island', 'circulation', rect(60, 60, 65, 65));
+    const bay = el('bay', 'parking-bay', rect(66, 60, 74, 68));
+    const s = mfAccessSummary([curbDrive, island, bay], parcel);
+    expect(s.curb).toBe(true);
+    expect(s.bays).toBe(1);
+    expect(s.served).toBe(0);
+    expect(s.drives).toBe(2);
+  });
+
+  it('serves a bay only through overlapping drives that reach the curb', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 40, 18));
+    const aisle = el('aisle', 'circulation', rect(38, 10, 46, 70)); // overlaps curb drive
+    const bay = el('bay', 'parking', rect(48, 60, 66, 70));
+    const s = mfAccessSummary([curbDrive, aisle, bay], parcel);
+    expect(s.curb).toBe(true);
+    expect(s.served).toBe(1);
+  });
+
+  // Side property line is not the street when a frontage edge is known.
+  it('ignores a non-street parcel boundary when a street edge is supplied', () => {
+    const sideDrive = el('side', 'circulation', rect(0, 40, 6, 56)); // west lot line, not the street
+    const bay = el('bay', 'parking', rect(8, 42, 26, 54));
+    const street = [[100, 0], [100, 100]]; // east frontage
+    const s = mfAccessSummary([sideDrive, bay], parcel, 3, street);
+    expect(s.curb).toBe(false);
+    expect(s.served).toBe(0);
+  });
+
+  // Placeholder frontage (667574 / 408571 / Herman / W Heiman): do not pass a
+  // guessed street edge — fall back to the parcel ring so a drive on any lot
+  // line still clears curb and does not false-red to NO_DRIVE_TO_STREET.
+  it('falls back to the parcel ring when street edge is omitted (placeholder frontage)', () => {
+    const sideDrive = el('side', 'circulation', rect(0, 40, 6, 56));
+    const bay = el('bay', 'parking', rect(8, 42, 26, 54));
+    const distantStreet = [[100, 0], [100, 100]];
+    expect(mfAccessSummary([sideDrive, bay], parcel, 3, distantStreet).curb).toBe(false);
+    expect(mfAccessSummary([sideDrive, bay], parcel, 3, null).curb).toBe(true);
+    expect(mfAccessSummary([sideDrive, bay], parcel).curb).toBe(true);
   });
 
   it('measures ring-to-ring distance edge to vertex both ways, zero when edges cross', () => {
@@ -37,10 +94,32 @@ describe('mfAccessSummary — does the parking have a road?', () => {
 });
 
 describe('accessBreak — where the route to the street stops', () => {
-  it('is null when a drive reaches the parcel line, or when the plan has no drive', () => {
+  it('is null when a curb-connected network serves the plan, or when there is no drive', () => {
     expect(accessBreak([el('drive', 'circulation', rect(0, 0, 8, 60))], parcel)).toBeNull();
     expect(accessBreak([el('bay', 'parking', rect(60, 20, 80, 40))], parcel)).toBeNull();
     expect(accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], null)).toBeNull();
+  });
+
+  it('marks the gap between a curb stub and an isolated parking network', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 8, 18));
+    const island = el('island', 'circulation', rect(60, 60, 65, 65));
+    const bay = el('bay', 'parking-bay', rect(66, 60, 74, 68));
+    const b = accessBreak([curbDrive, island, bay], parcel);
+    expect(b).not.toBeNull();
+    expect(b!.gap3857).toBeGreaterThan(3);
+    // break runs from the island toward the curb stub (east→west)
+    expect(b!.from[0]).toBeGreaterThan(b!.to[0]!);
+  });
+
+  // PARKING_NOT_REACHABLE with orphan bays (no drive touches them): still draw red.
+  it('marks the gap from an orphan bay to the curb network when no drive touches the bay', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 8, 18));
+    const bay = el('bay', 'parking', rect(66, 60, 74, 68));
+    const b = accessBreak([curbDrive, bay], parcel);
+    expect(b).not.toBeNull();
+    expect(b!.gap3857).toBeGreaterThan(3);
+    // break runs from the bay toward the curb stub (east→west)
+    expect(b!.from[0]).toBeGreaterThan(b!.to[0]!);
   });
 
   it('marks the end of the drive and the nearest point on the parcel line', () => {
