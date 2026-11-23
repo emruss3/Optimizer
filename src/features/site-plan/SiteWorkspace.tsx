@@ -43,7 +43,7 @@ import {
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
-import { fetchThV3Plan, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
+import { fetchThV3Plan, guestParkingLine, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
 import { chooseLayout, isFloodSkip, type LayoutKind } from './api/layoutChoice';
 import { LayoutChoicePanel } from './ui/LayoutChoicePanel';
 import { line2274To3857 } from './api/parcelTopo';
@@ -3458,6 +3458,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         : {}),
     };
   }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet]);
+  // What the layout comparison may say about the layout on the sheet: the same parking and floor
+  // area rows the exported sheet carries. The other layout's stay unknown until it is drawn.
+  const layoutShownFacts = useMemo(() => {
+    const rows = sheetsTitleWithAccess.decision ?? [];
+    const guest = thV3OnSheet && thV3Summary ? guestParkingLine(thV3Summary) : null;
+    return {
+      parking: rows.find(r => r.label === 'Parking')?.value ?? (guest ? `Guest parking ${guest.text}` : null),
+      floorArea: rows.find(r => r.label === 'Floor area')?.value ?? (metrics?.totalBuiltSF ? `${Math.round(metrics.totalBuiltSF).toLocaleString()} GSF` : null),
+    };
+  }, [sheetsTitleWithAccess, thV3OnSheet, thV3Summary, metrics]);
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
     const withBreak = routeBreak
@@ -3983,6 +3993,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               onRetry={() => { if (contextOgcFid != null) runLayoutCompetition(contextOgcFid); }}
               thV3={thV3OnSheet ? thV3Summary : null}
               thV3Error={thV3Error}
+              shownFacts={layoutShownFacts}
             />
           )}
           {planPattern && (
