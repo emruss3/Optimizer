@@ -90,6 +90,7 @@ import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
 import { accessFinding, NO_DRIVE_TO_STREET } from './api/accessFinding';
+import { exhibitSchedule } from './api/exhibitSchedule';
 import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -3425,13 +3426,38 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     [access, displayElements, parcelRing3857],
   );
   // the download carries the unresolved connection too: marked on the sheet and said in its notes
-  const sheetsTitleWithAccess = useMemo(() => (routeBreak && scene
-    ? {
-        ...sheetsTitle,
-        notes: ['Access unresolved: no drive on this plan reaches the street. The break is marked in red.', ...(sheetsTitle.notes ?? [])],
-        routeBreak: { from: scene.frame.toFeet(routeBreak.from), to: scene.frame.toFeet(routeBreak.to) },
-      }
-    : sheetsTitle), [sheetsTitle, routeBreak, scene]);
+  // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
+  // required parking, what the floor area is a share of, the parking and residential stack, and
+  // whether a car can reach the street. They replace the single "Parking" row.
+  const sheetsTitleWithAccess = useMemo(() => {
+    const garage = displayElements.find(e => e.type === 'parking' && e.properties?.structured === true);
+    const over = displayElements.find(e => e.type === 'building' && e.properties?.overGarage === true);
+    const schedule = seedViewOn || sfPlanOnSheet || !displayElements.some(e => e.id.startsWith('mfgen-')) ? [] : exhibitSchedule({
+      units: metrics?.totalUnits ?? null,
+      stallsDrawn: metrics?.stallsDrawn ?? null,
+      stallsReported: metrics?.stallsReported ?? metrics?.stallsProvided ?? null,
+      stallsRequired: metrics?.stallsRequired ?? null,
+      builtGsf: metrics?.totalBuiltSF ?? null,
+      capture: captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy),
+      garageLevels: garage ? Number(garage.properties?.levels) || null : null,
+      residentialLevels: over ? Number(over.properties?.residentialLevels) || null : null,
+      routeUnresolved: !!routeBreak,
+      contextUnverified: contextState === 'unavailable',
+    });
+    // the one "Parking" row gives way to the decision figures, which name each count
+    const data = schedule.length ? (sheetsTitle.data ?? []).filter(r => r.label !== 'Parking') : sheetsTitle.data;
+    return {
+      ...sheetsTitle,
+      data,
+      ...(schedule.length ? { decision: schedule } : {}),
+      ...(routeBreak && scene
+        ? {
+            notes: ['Access unresolved: no drive on this plan reaches the street. The break is marked in red.', ...(sheetsTitle.notes ?? [])],
+            routeBreak: { from: scene.frame.toFeet(routeBreak.from), to: scene.frame.toFeet(routeBreak.to) },
+          }
+        : {}),
+    };
+  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet]);
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
     const withBreak = routeBreak

@@ -36,6 +36,8 @@ export interface SheetTitle {
   notes?: string[] | undefined;
   /** Where the route to the street breaks, scene feet: the end of the drive and the street edge it does not reach. */
   routeBreak?: { from: Pt; to: Pt } | null | undefined;
+  /** The figures a decision turns on (api/exhibitSchedule): printed under the headline numbers on every sheet size. */
+  decision?: Array<{ label: string; value: string }> | undefined;
   /** The site data table: figures of the scheme, as the workspace states them. */
   data?: Array<{ label: string; value: string }> | undefined;
 }
@@ -566,7 +568,38 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     out.push(`<g data-figure="${esc(f.label)}"><text x="${r2(fx)}" y="${r2(fy)}" font-size="${f.value.length > 6 ? 17 : 22}" font-weight="700" fill="${INK}">${esc(f.value)}</text><text x="${r2(fx)}" y="${r2(fy + 11)}" font-size="6" font-weight="600" letter-spacing="0.9" fill="#7a8087">${esc(f.label)}</text></g>`);
   });
   if (shown.length) y += Math.ceil(shown.length / 2) * 40 - 16;
-  if (!scene.schedule.consistent) { y += 8; line('The drawn features do not add up to the scheme schedule.', 6.2, 500, '#8a4b12'); }
+  if (!scene.schedule.consistent) {
+    // say which count disagrees and by how much: a warning nobody can act on is noise
+    const sc = scene.schedule, parts: string[] = [];
+    if (sc.units != null && sc.buildingUnits != null && sc.units !== sc.buildingUnits) parts.push(`The buildings' own counts total ${num(sc.buildingUnits)} homes; the scheme reports ${num(sc.units)}.`);
+    if (sc.stalls != null && sc.featureStalls != null && sc.stalls !== sc.featureStalls) parts.push(`The parking drawn totals ${num(sc.featureStalls)} stalls; the scheme reports ${num(sc.stalls)}.`);
+    y += 8;
+    for (const text of parts.length ? parts : ['The drawn features do not add up to the scheme schedule.']) line(text, 6.2, 500, '#8a4b12');
+  }
+  // The site data sits right under the headline numbers, where every sheet size has room for it.
+  // The figures a decision turns on lead it (api/exhibitSchedule): drawn against required parking,
+  // what the floor area is a share of, the parking and residential stack, whether a car can reach
+  // the street. The scheme's other figures follow. One line a row.
+  const dataRows = [
+    ...(title.decision ?? []).map(r => ({ ...r, decision: true })),
+    ...(title.data ?? []).map(r => ({ ...r, decision: false })),
+  // the slide's strip is short: the more buildings its table lists, the fewer rows the data keeps,
+  // and the decision figures are the ones kept
+  ].slice(0, size === 'slide' ? Math.max(4, 9 - scene.buildings.filter(b => b.tagOnPlan).length) : 14);
+  if (dataRows.length) {
+    rule(8, 14);
+    eyebrow('SITE DATA');
+    for (const row of dataRows) {
+      const long = row.label.length + row.value.length > 44;
+      const alert = /^Unresolved|^Not verified|short of/.test(row.value);
+      const value = long
+        ? `<text x="${r2(tx + 46)}" y="${r2(y)}" font-size="5.9" font-weight="600" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`
+        : `<text x="${tx + tw}" y="${r2(y)}" font-size="6.4" font-weight="600" text-anchor="end" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`;
+      out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''}><text x="${tx}" y="${r2(y)}" font-size="${long ? 5.9 : 6.4}" fill="#4b5158">${esc(row.label)}</text>${value}</g>`);
+      y += 9.4;
+    }
+    y -= 4;
+  }
   rule(8, 16);
 
   const onSheet = scene.buildings.filter(b => b.tagOnPlan);
@@ -600,8 +633,12 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   if (estimated) { y += 2; line('Heights are estimated from story counts and are above grade. The plan carries no measured height.', 5.8, 400, '#7a8087', 2.5); }
   rule(6, 14);
 
-  // legend: only what is on the sheet
-  eyebrow('LEGEND');
+  // legend: only what is on the sheet, and only where the strip has room above the scale
+  const stripFloor = strip.y + strip.h - 118 - 10;
+  const legendFits = y + 16 <= stripFloor;
+  if (legendFits) eyebrow('LEGEND');
+  // a sheet never loses its legend without saying so
+  else out.push(`<text x="${tx}" y="${r2(Math.min(y + 4, strip.y + strip.h - 122))}" font-size="5.6" fill="#7a8087" data-legend-more="all">Legend: see the 11 × 17 sheet.</text>`);
   const present = new Set<string>(scene.features.map(f => f.styleRole));
   const LEGEND: Array<[string, string, string]> = [
     ['parcel', 'Property line', `fill="none" stroke="${INK}" stroke-width="1.3" stroke-dasharray="8 2 2 2 2 2"`],
@@ -620,25 +657,21 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['context', 'Existing building', `fill="${C.contextBuilding}" stroke="${C.contextBuildingEdge}" stroke-width="0.4"`],
   ];
   const items = LEGEND.filter(([key]) => (key === 'parcel' ? !!scene.parcel : key === 'envelope' ? !!scene.envelope : key === 'context' ? scene.context.buildings.length > 0 : key === 'walk' ? walks > 0 || present.has('walk') : present.has(key)));
+  let legendRows = 0;
+  const legendRoom = Math.max(1, Math.floor((stripFloor - y) / 12) + 1);
+  const legendCols = items.length <= legendRoom * 2 ? 2 : 3;
   items.forEach(([key, label, style], i) => {
-    const lx = tx + (i % 2) * (tw / 2), ly = y + Math.floor(i / 2) * 12;
+    const lx = tx + (i % legendCols) * (tw / legendCols), ly = y + Math.floor(i / legendCols) * 12;
+    if (!legendFits || ly > stripFloor) return;
+    legendRows = Math.floor(i / legendCols) + 1;
     if (key === 'parcel' || key === 'envelope' || key === 'lot') out.push(`<line x1="${r2(lx)}" y1="${r2(ly - 2.5)}" x2="${r2(lx + 16)}" y2="${r2(ly - 2.5)}" ${style}/>`);
     else out.push(`<rect x="${r2(lx)}" y="${r2(ly - 6.5)}" width="16" height="8" ${style}/>`);
     out.push(`<text x="${r2(lx + 21)}" y="${r2(ly)}" font-size="6.5" fill="${INK}" data-legend="${key}">${esc(label)}</text>`);
   });
-  y += Math.ceil(items.length / 2) * 12;
-
-  // the site data table, where the workspace supplied one
-  if (title.data?.length) {
-    rule(4, 14);
-    eyebrow('SITE DATA');
-    for (const row of title.data) {
-      // the table stops short of the scale and the north arrow
-      if (y > strip.y + strip.h - 118 - 10) break;
-      out.push(`<g data-site-data="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="6.6" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="6.6" font-weight="600" text-anchor="end" fill="${INK}">${esc(row.value)}</text></g>`);
-      y += 9.6;
-    }
-  }
+  y += legendRows * 12;
+  // a legend that ran out of room says how much it left off
+  const legendShown = Math.min(items.length, legendRows * legendCols);
+  if (legendFits && legendShown < items.length) out.push(`<text x="${tx + tw}" y="${r2(y - 12)}" font-size="5.6" text-anchor="end" fill="#7a8087" data-legend-more="${items.length - legendShown}">+${items.length - legendShown} more in the 11 × 17 sheet</text>`);
 
   // bottom block: north, scale, sheet number
   const by = strip.y + strip.h;
