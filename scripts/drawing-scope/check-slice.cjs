@@ -175,7 +175,7 @@ const colours = page => page.evaluate(() => {
   const first = sent[0];
   check(!!first && first.auth === 'Bearer check-session-token', 'the request carries the user\'s session');
   check(!!first && Object.keys(first.body).sort().join() === 'image,product,stories,style,view' && /^data:image\/jpeg;base64,/.test(first.body.image), `only the picture and four fixed words are sent (${first ? Object.keys(first.body).sort().join() : 'nothing'})`);
-  check(!!first && first.body.product === 'apartments' && first.body.stories === 4 && first.body.view === 'aerial' && first.body.style === 'mansard', `the scene is described from fixed lists: ${first ? [first.body.product, first.body.stories, first.body.view, first.body.style].join(', ') : ''}`);
+  check(!!first && first.body.product === 'apartments' && first.body.stories === 4 && first.body.view === 'aerial' && first.body.style === firstStyle, `the scene is described from fixed lists: ${first ? [first.body.product, first.body.stories, first.body.view, first.body.style].join(', ') : ''}`);
   check(!!first && !/MEHARRY|488278/i.test(JSON.stringify({ ...first.body, image: '' })), 'no address or parcel number is in the request');
   await page.screenshot({ path: path.join(out, 'photoreal_view.png') });
   await page.locator('[data-testid="photoreal-back"]').click();
