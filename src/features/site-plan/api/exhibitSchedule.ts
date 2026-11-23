@@ -144,17 +144,22 @@ export interface ResolveExhibitProductInput {
 }
 
 /**
- * Product order: seed / home-study → apartment → townhome → detached → conditional.
- * Townhome must win over detached so Mt View guest parking is not emptied by the
- * old `seedViewOn || sfPlanOnSheet` short-circuit (thv3 was inside isSfPlanElement).
+ * Product order: seed → apartment → home-study → townhome → detached → conditional.
+ * - Apartment beats home-study so an MF schedule is not wiped by a leftover study
+ *   overlay (home study suppresses SF/TH decision rows only).
+ * - Apartment beats detached SF when both families are present.
+ * - Townhome must win over detached so Mt View guest parking is not emptied by the
+ *   old `seedViewOn || sfPlanOnSheet` short-circuit (thv3 was inside isSfPlanElement).
  */
 export function resolveExhibitProduct(i: ResolveExhibitProductInput): ExhibitProduct {
   const revision = i.revision ?? null;
   if (i.seedViewOn) return { product: 'seed', revision };
-  if (i.homeStudyOn) return { product: 'home-study', revision };
   if (i.apartmentOnSheet) {
     return { product: 'apartment', input: i.apartment ?? {}, revision };
   }
+  // Home study clears decision rows on SF / townhome sheets so a preview does not
+  // mix underwriting facts with the study. Apartment already returned above.
+  if (i.homeStudyOn) return { product: 'home-study', revision };
   if (i.townhomeOnSheet) {
     return {
       product: 'townhome',
@@ -221,13 +226,17 @@ export function layoutDecisionFacts(opts: {
   if (opts.product.product === 'townhome') {
     const graded = opts.product.guestGraded === true;
     const supply = opts.product.guestStalls ?? null;
+    const target = opts.product.guestTarget ?? null;
+    // Townhome carries no placed floor area: the ceiling is said as a ceiling
+    // (Unknown · upper bound), never as the plan's area.
+    // Guest basis names how the target was set; supply alone (no target) is not a basis.
     return {
       rows,
       parking,
       floorArea,
       guestSupply: supply,
-      guestTarget: opts.product.guestTarget ?? null,
-      guestBasis: supply == null && opts.product.guestTarget == null
+      guestTarget: target,
+      guestBasis: target == null
         ? null
         : graded ? 'engine-graded' : 'engine-target',
       revision: opts.product.revision ?? null,

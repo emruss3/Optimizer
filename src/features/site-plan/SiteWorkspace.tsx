@@ -3535,6 +3535,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       routeUnresolved: !!routeBreak,
       contextUnverified: contextState === 'unavailable',
     };
+    // Conditional / landlocked massing has no MF routeBreak marker (that geometry is
+    // mfgen-only). Still force Street access / Context findings so the schedule does
+    // not read as a clean by-right apartment sheet.
+    const conditionalNote = metrics?.conditional ?? null;
+    const conditionalAccessUnresolved = !!conditionalNote && /easement|landlocked|no mapped street|no street/i.test(conditionalNote);
+    const conditionalInput = !mfOnSheet && !thV3OnSheet && !detachedSfOnSheet && conditionalNote
+      ? {
+          ...apartmentInput,
+          routeUnresolved: apartmentInput.routeUnresolved || conditionalAccessUnresolved,
+          contextUnverified: apartmentInput.contextUnverified || conditionalAccessUnresolved,
+        }
+      : null;
     const product = resolveExhibitProduct({
       seedViewOn,
       homeStudyOn: !!activeHome,
@@ -3545,10 +3557,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       guestTarget: thV3Summary?.guestTarget ?? null,
       guestGraded: guest?.graded ?? false,
       detachedSfOnSheet,
-      // Conditional massing (e.g. landlocked note) still carries counted parking when no other product owns the sheet.
-      conditional: !mfOnSheet && !thV3OnSheet && !detachedSfOnSheet && metrics?.conditional
-        ? apartmentInput
-        : null,
+      conditional: conditionalInput,
       contextUnverified: contextState === 'unavailable',
       revision: scene?.identity.revision ?? null,
     });

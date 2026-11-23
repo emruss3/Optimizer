@@ -88,7 +88,7 @@ describe('exhibit product selection (Mt View audit: townhome before SF suppressi
     expect(rows.find(r => r.label === 'Parking')?.value).toMatch(/Guest parking 0 of 8 stalls · 8 short · a target of the engine/);
   });
 
-  it('orders seed → apartment → townhome → detached; apartment keeps 42/42', () => {
+  it('orders seed → apartment → home-study → townhome → detached; apartment keeps 42/42', () => {
     expect(resolveExhibitProduct({ seedViewOn: true, townhomeOnSheet: true, guestStalls: 0, guestTarget: 8 }).product).toBe('seed');
     expect(resolveExhibitProduct({
       apartmentOnSheet: true,
@@ -101,8 +101,44 @@ describe('exhibit product selection (Mt View audit: townhome before SF suppressi
       apartmentOnSheet: true,
       apartment: { stallsDrawn: 42, stallsRequired: 42 },
     })).find(r => r.label === 'Parking')?.value).toBe('42 drawn · 42 required');
+    // Apartment beats detached SF when both are present.
+    expect(resolveExhibitProduct({
+      apartmentOnSheet: true,
+      apartment: { stallsDrawn: 42, stallsRequired: 42 },
+      detachedSfOnSheet: true,
+    }).product).toBe('apartment');
+    // Home study suppresses SF/TH rows, but not an apartment schedule on the sheet.
+    expect(resolveExhibitProduct({ homeStudyOn: true, townhomeOnSheet: true, guestStalls: 0, guestTarget: 8 }).product).toBe('home-study');
+    expect(scheduleForProduct(resolveExhibitProduct({ homeStudyOn: true, townhomeOnSheet: true, guestStalls: 0, guestTarget: 8 }))).toEqual([]);
+    expect(resolveExhibitProduct({
+      homeStudyOn: true,
+      apartmentOnSheet: true,
+      apartment: { stallsDrawn: 42, stallsRequired: 42 },
+    }).product).toBe('apartment');
+    expect(scheduleForProduct(resolveExhibitProduct({
+      homeStudyOn: true,
+      apartmentOnSheet: true,
+      apartment: { stallsDrawn: 42, stallsRequired: 42 },
+    })).find(r => r.label === 'Parking')?.value).toBe('42 drawn · 42 required');
     expect(resolveExhibitProduct({ detachedSfOnSheet: true }).product).toBe('detached');
     expect(scheduleForProduct({ product: 'detached' })).toEqual([]);
+  });
+
+  it('conditional landlocked schedule keeps Street access and Context (does not look clean)', () => {
+    const product = resolveExhibitProduct({
+      conditional: {
+        stallsDrawn: 4,
+        stallsRequired: 2,
+        builtGsf: 2_400,
+        routeUnresolved: true,
+        contextUnverified: true,
+      },
+    });
+    expect(product.product).toBe('conditional');
+    const rows = scheduleForProduct(product);
+    expect(rows.find(r => r.label === 'Parking')?.value).toMatch(/4 drawn/);
+    expect(rows.find(r => r.label === 'Street access')?.value).toMatch(/no drive reaches the street/);
+    expect(rows.find(r => r.label === 'Context')?.value).toBe('Not verified');
   });
 
   it('recorded mews case carries its own 2/7 guest fact', () => {
@@ -140,7 +176,22 @@ describe('exhibit product selection (Mt View audit: townhome before SF suppressi
     expect(facts.guestSupply).toBe(0);
     expect(facts.guestTarget).toBe(8);
     expect(facts.guestBasis).toBe('engine-target');
+    // Townhome carries no placed floor area — ceiling only.
     expect(facts.floorArea).toMatch(/Unknown · upper bound 49,600/);
     expect(facts.revision).toBe('dca61670');
+  });
+
+  it('guestBasis is null when supply is known but there is no target', () => {
+    const facts = layoutDecisionFacts({
+      product: {
+        product: 'townhome',
+        guestStalls: 3,
+        guestTarget: null,
+        guestGraded: false,
+      },
+    });
+    expect(facts.guestSupply).toBe(3);
+    expect(facts.guestTarget).toBeNull();
+    expect(facts.guestBasis).toBeNull();
   });
 });
