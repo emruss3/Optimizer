@@ -44,3 +44,15 @@ the top of the parking levels by the same estimate (24 ft for two levels).
   wall. It is not yet chosen to pass through the most informative parts.
 - No ramp is drawn. The engine gives garage entry points, not a ramp.
 - Garage entries are not yet marked on the 2D plan.
+
+## Garage entries on the plan and the sheet (follow-up)
+
+The engine gives two entry points for the Main St garage. The 3D view already
+stood a portal on each. The 2D plan and sheet A-01 now mark the same two
+points with a diamond and the words "Garage entry".
+
+- `main-2d-garage-entries.png`: the live plan.
+- `main-a01-garage-entries.png`: the exported site plan sheet.
+
+Still not drawn: a ramp, or the path from the street to each entry. The engine
+gives points, not a route.
