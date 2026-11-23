@@ -62,8 +62,7 @@ http.createServer((req, res) => {
       if (Array.isArray(calls) && calls.length > 0) {
         const at = a.p_search_id == null ? 0 : Math.min((seqAt.get(seqKey) ?? 0) + 1, calls.length - 1);
         seqAt.set(seqKey, at);
-        log(MISS_LOG.replace('misses', 'hits'), `${Date.now()} HIT ${seqKey} #${at}
-`);
+        log(MISS_LOG.replace('misses', 'hits'), `${Date.now()} HIT ${seqKey} #${at}\n`);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(calls[at]));
         return;

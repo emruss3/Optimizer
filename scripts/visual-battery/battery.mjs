@@ -239,8 +239,8 @@ function judge(exp, ev) {
     }
     // 2026-11-23 audit (0 Delk Ave): what the panel and the badge say about the plan on the sheet
     for (const [probe, text] of Object.entries(want.says ?? {})) {
-      if (text === null) { if (ev[probe]) errs.push(); }
-      else if (!(ev[probe] ?? '').includes(text)) errs.push();
+      if (text === null) { if (ev[probe]) errs.push(`${label}: ${probe} still says '${ev[probe]}', expected nothing`); }
+      else if (!(ev[probe] ?? '').includes(text)) errs.push(`${label}: ${probe} says '${ev[probe] ?? 'nothing'}', expected it to include '${text}'`);
     }
     if (want.privateDriveNote && !(ev._domPrivateDrive ?? '').includes('share a private drive')) errs.push(`${label}: the shared private drive is not said on the panel`);
     if (want.heldNote && !(ev._domHeld ?? '').includes(want.heldNote)) errs.push(`${label}: the flood hold line says '${ev._domHeld ?? 'nothing'}', expected it to include '${want.heldNote}'`);
