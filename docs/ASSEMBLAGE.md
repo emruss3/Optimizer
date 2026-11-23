@@ -44,9 +44,11 @@ Refusals are verdicts with a plain `message`: `too_few`, `too_many`,
 
 ## Database changes (project okxrvetbzpoazrybhcqj)
 
-Migrations `assemblage_v1_combined_site` and
-`assemblage_v1_permitted_uses_keep_error_shape`, release
-`g44_assemblage_v1`. Engine drift was empty before and after.
+Migrations `assemblage_v1_combined_site`,
+`assemblage_v1_permitted_uses_keep_error_shape` and
+`assemblage_v1_fix_permitted_uses_permission`, release
+`g44_assemblage_v1`. Engine drift was empty before and after. The SQL is in
+`supabase/migrations/20261117000000_assemblage_v1.sql`.
 
 - New: `parcel_assemblage`, `parcel_assemblage_seq`,
   `fn_assemblage_params`, `fn_assemble_parcels` (SECURITY DEFINER, pinned
@@ -55,6 +57,21 @@ Migrations `assemblage_v1_combined_site` and
   site. Real parcels and replay sites answer as before.
 - `fn_resolve_permitted_uses`: a combined site reads its district's uses
   from its largest member. Every other id answers as before.
+
+## Incident on release (2026-11-17, about 15 minutes)
+
+The first version of the `fn_resolve_permitted_uses` change read
+`parcel_assemblage` directly. That function runs with the caller's rights
+and the browser role cannot read the table, so **every signed-out call
+failed** with "permission denied for table parcel_assemblage", for real
+parcels too. Plan generation that goes through it failed with it. The
+solver-floors run on PR 169 caught it. The lookup now goes through a
+definer helper (`fn_assemblage_members`) and is reached only for a negative
+id. The fix migration tests itself as the anon role, and the planner calls
+were re-checked as anon afterwards.
+
+Lesson: my release checks ran as the database owner. A change to a function
+the browser calls has to be tested as `anon` before it is recorded.
 
 ## Measured
 
