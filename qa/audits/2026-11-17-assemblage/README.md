@@ -9,3 +9,6 @@ app against the captured live answers.
 - `battery-2d.png`: the same site from the test battery run, which passes.
 
 See `docs/ASSEMBLAGE.md`.
+
+- `combined-rm-townhomes.png` (2026-11-23): combined site `-3`, 2937 + 2939
+  Brick Church Pike, RM15, 53 townhomes across both parcels.
