@@ -451,3 +451,59 @@ describe('walks and an element\'s own label', () => {
     expect(sheet.svg).toContain('data-legend="walk"');
   });
 });
+
+// ── the wrap in section: a floor that needs a use (535 Main St, layout review 2026-11-23) ──
+import { sectionCut } from './sheetSvg';
+
+describe('section through a wrap (469303, 535 Main St)', () => {
+  const main = (() => { const v = store['rpc:fn_generate_mf_site_plan_v2:469303:multifamily']; return (Array.isArray(v) ? v[0] : v) as SeedFamilyResponse; })();
+  const mainParcel = (() => {
+    const v = store['rpc:get_parcel_by_id:469303:']; const row = Array.isArray(v) ? v[0] : v;
+    const g = (row.geometry ?? row.geom) as Polygon | MultiPolygon;
+    const c = (g.type === 'Polygon' ? g.coordinates[0] : g.coordinates[0]?.[0]) ?? [];
+    return (Math.abs(c[0]?.[0] ?? 0) > 1000 ? g : feature4326To3857(g)) as Polygon | MultiPolygon;
+  })();
+  const { elements } = seedFamilyPlanToElements(main);
+  const scene = buildDrawingScene({ parcelId: 469303, schemeId: 'mf:wrap_v1', elements, parcelGeometry: mainParcel, schedule: { units: 131, stalls: 238 } })!;
+  const title = { project: '535 MAIN ST', subtitle: 'MUG-A', date: '2026-11-23', notes: [] };
+
+  it('knows which buildings stand over the garage, and how many of their levels are parking', () => {
+    const byName = Object.fromEntries(scene.buildings.map(b => [b.name.split(' · ')[0], b.parkingLevels]));
+    expect(byName['Frontage bar']).toBe(0);
+    expect(byName['Rear bar']).toBe(2);
+    expect(byName['Side bar']).toBe(2);
+  });
+
+  it('labels parking levels as parking and homes as residential, and draws the garage with the court on its deck', () => {
+    const doc = new DOMParser().parseFromString(renderSectionSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    expect(doc.querySelector('parsererror')).toBeNull();
+    const text = doc.documentElement.textContent ?? '';
+    expect(doc.querySelectorAll('[data-level-use="parking"]').length).toBe(2);
+    expect(text).toMatch(/Level 1 · Parking P1 · 14 ft/);
+    expect(text).toMatch(/Level 2 · Parking P2 · 10 ft/);
+    expect(text).toMatch(/Level 3 · Residential · 10 ft/);
+    // the liner bar on the street is homes from the ground up
+    expect(text).toMatch(/Level 1 · Residential · 14 ft/);
+    expect(doc.querySelector('[data-role="section-garage"]')).not.toBeNull();
+    expect(doc.querySelector('[data-role="section-court"]')?.textContent).toBe('Court on the garage deck · est. 24 ft above grade');
+    expect(doc.querySelector('[data-role="section-garage-label"]')?.textContent).toBe('Garage · 2 parking levels · 238 stalls');
+  });
+
+  it('marks the same cut on the site plan that the section draws', () => {
+    expect(sectionCut(scene)).not.toBeNull();
+    const doc = new DOMParser().parseFromString(renderSitePlanSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    const cut = doc.querySelector('[data-role="section-cut"]');
+    expect(cut?.querySelectorAll('circle').length).toBe(2);
+    expect(cut?.textContent).toBe('AA');
+  });
+});
+
+describe('a plan with no garage keeps its section as it was', () => {
+  it('labels levels without a use, since nothing on the plan says otherwise', () => {
+    const { elements } = seedFamilyPlanToElements(meharry);
+    const scene = buildDrawingScene({ parcelId: 488278, schemeId: 'mf:test', elements, parcelGeometry: meharryParcel, schedule: { units: 30, stalls: 52 } })!;
+    const text = new DOMParser().parseFromString(renderSectionSheet(scene, { project: 'P', date: 'd', notes: [] }, 'slide').svg, 'image/svg+xml').documentElement.textContent ?? '';
+    expect(text).toMatch(/Level 1 · 14 ft/);
+    expect(text).not.toMatch(/Parking P1|Residential/);
+  });
+});

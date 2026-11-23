@@ -512,6 +512,14 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     });
     out.push('</g>');
   }
+  // where section A–A (sheet A-03) cuts this plan: a chain line with the letter at each end
+  const cutLine = sectionCut(scene);
+  if (cutLine) {
+    const end = (t: number): Pt => P([cutLine.at[0] + cutLine.dir[0] * t, cutLine.at[1] + cutLine.dir[1] * t]);
+    const c0 = end(cutLine.lo - 14), c1 = end(cutLine.hi + 14);
+    const tag = (q: Pt) => `<circle cx="${q[0]}" cy="${q[1]}" r="5.2" fill="#ffffff" stroke="${INK}" stroke-width="0.8"/><text x="${q[0]}" y="${r2(q[1] + 2.3)}" font-size="6.4" font-weight="700" text-anchor="middle" fill="${INK}">A</text>`;
+    out.push(`<g data-role="section-cut"><line x1="${c0[0]}" y1="${c0[1]}" x2="${c1[0]}" y2="${c1[1]}" stroke="${INK}" stroke-width="0.7" stroke-dasharray="9 2.5 1.5 2.5"/>${tag(c0)}${tag(c1)}</g>`);
+  }
   if (title.routeBreak) {
     // an unresolved connection stays on the download: dashed between the two ends, a ring on each
     const a = P(title.routeBreak.from), b = P(title.routeBreak.to);
@@ -840,6 +848,33 @@ export interface SectionGround {
   grading: { deepest_cut_ft: number; deepest_fill_ft: number } | null;
 }
 
+/**
+ * Where section A–A cuts the plan: through the first tagged building's label point, at right
+ * angles to its longest wall, from one property line to the other. Sheet A-01 marks the same line
+ * that sheet A-03 draws, so a reader can find the cut on the plan.
+ */
+export function sectionCut(scene: DrawingScene): { at: Pt; dir: Pt; lo: number; hi: number } | null {
+  const subject = scene.buildings.find(b => b.tagOnPlan) ?? scene.buildings[0];
+  const ring = subject?.polygons[0]?.[0];
+  if (!subject || !ring || ring.length < 3) return null;
+  let long: Pt = [1, 0], best = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    if (!a || !b) continue;
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len > best) { best = len; long = [(b[0] - a[0]) / len, (b[1] - a[1]) / len]; }
+  }
+  const dir: Pt = [-long[1], long[0]], at = subject.labelPoint;
+  const lot = scene.parcel?.polygons[0]?.[0];
+  const lotCuts = lot ? crossings(lot, at, dir) : [];
+  const before = lotCuts.filter(t => t < 0), after = lotCuts.filter(t => t > 0);
+  const hits = scene.buildings.flatMap(b => { const h = crossings(b.polygons[0]?.[0] ?? [], at, dir); return h.length >= 2 ? h : []; });
+  if (!hits.length) return null;
+  const lo = Math.min(before.length ? (before[before.length - 1] as number) : Infinity, ...hits);
+  const hi = Math.max(after.length ? (after[0] as number) : -Infinity, ...hits);
+  return { at, dir, lo, hi };
+}
+
 export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize, control?: HeightControl | null, profile?: SectionGround | null): { svg: string; widthPt: number; heightPt: number; drawn: number; overLimit: boolean } {
   const { wIn, hIn } = SHEET_SIZES[size];
   const { widthPt: W, heightPt: H, image } = viewSheetLayout(size);
@@ -918,6 +953,37 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
       out.push(`<g data-role="height-limit"><line x1="${x(from)}" y1="${heightY(limit)}" x2="${x(to)}" y2="${heightY(limit)}" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
         + `<text x="${r2(x(to) - 4)}" y="${r2(heightY(limit) - 4)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`Screening height ${Math.round(limit)} ft`)}</text></g>`);
     }
+    // The garage the cut crosses, drawn before the buildings that stand on and beside it: a
+    // concrete structure as high as its parking levels, its deck, and the court on the deck.
+    const garages = scene.features.filter(f => f.styleRole === 'garage');
+    const garageOnPlan = garages.length > 0;
+    const over = scene.buildings.filter(b => b.parkingLevels > 0);
+    const deckFt = over.length ? Math.max(...over.map(b => b.height.levelsFt[b.parkingLevels - 1] ?? 0)) : 0;
+    const deckLevels = over.length ? Math.max(...over.map(b => b.parkingLevels)) : 0;
+    if (deckFt > 0) {
+      for (const g of garages) {
+        const gh = crossings(g.polygons[0]?.[0] ?? [], at, dir);
+        if (gh.length < 2) continue;
+        const ga = gh[0] as number, gz = gh[gh.length - 1] as number;
+        const seat = pad(over[0]!.id);
+        out.push(`<g data-role="section-garage" data-feature-id="${esc(g.id)}"><rect x="${x(ga)}" y="${y(seat + deckFt)}" width="${r2((gz - ga) * k)}" height="${r2(deckFt * k)}" fill="#e2e2df" stroke="${INK}" stroke-width="0.8"/>`
+          + Array.from({ length: Math.max(0, deckLevels - 1) }, (_, i) => { const lv = over[0]!.height.levelsFt[i] ?? 0; return `<line x1="${x(ga)}" y1="${y(seat + lv)}" x2="${x(gz)}" y2="${y(seat + lv)}" stroke="${INK}" stroke-width="0.5"/>`; }).join('')
+          + `<line x1="${x(ga)}" y1="${y(seat + deckFt)}" x2="${x(gz)}" y2="${y(seat + deckFt)}" stroke="#146b5e" stroke-width="1.6"/></g>`);
+        // the stretch of deck no building stands on is the court: it is named there, with its height
+        const covered = cuts.map(c => [c.hits[0] as number, c.hits[c.hits.length - 1] as number] as const).sort((p, q) => p[0] - q[0]);
+        let open: [number, number] = [ga, gz], widest = 0, cursor = ga;
+        for (const [c0, c1] of [...covered, [gz, gz] as const]) {
+          const end = Math.min(c0, gz);
+          if (end - cursor > widest) { widest = end - cursor; open = [cursor, end]; }
+          cursor = Math.max(cursor, c1);
+        }
+        if (widest * k > 60) {
+          const mid = (open[0] + open[1]) / 2;
+          out.push(`<text x="${x(mid)}" y="${r2(y(seat + deckFt) - 5)}" font-size="6.4" font-weight="600" text-anchor="middle" fill="#146b5e" data-role="section-court">${esc(`Court on the garage deck · est. ${Math.round(deckFt)} ft above grade`)}</text>`
+            + `<text x="${x(mid)}" y="${r2(y(seat + deckFt / 2) + 2.4)}" font-size="6.4" text-anchor="middle" fill="#3f4347" data-role="section-garage-label">${esc(`Garage · ${deckLevels} parking level${deckLevels === 1 ? '' : 's'}${g.stalls ? ` · ${g.stalls} stalls` : ''}`)}</text>`);
+        }
+      }
+    }
     for (const { b, hits } of cuts) {
       const a = hits[0] as number, z = hits[hits.length - 1] as number;
       const allow = [allowedAt(a), allowedAt(z)].filter((v): v is number => v != null);
@@ -929,8 +995,16 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
       const seat = pad(b.id), seatY = y(seat);
       levels.forEach((top, i) => {
         const base = i === 0 ? 0 : (levels[i - 1] as number);
+        // a level says what it is where the plan says so: parking under the homes, homes above
+        const parking = i < b.parkingLevels;
+        const use = !garageOnPlan ? '' : parking ? ` · Parking P${i + 1}` : b.use === 'amenity' ? ' · Amenity' : ' · Residential';
+        if (parking) {
+          out.push(`<rect x="${x(a)}" y="${y(seat + top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="#d3d4d2" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}" data-level-use="parking" data-building="${esc(b.id)}"/>`);
+          if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y(seat + (top + base) / 2) + 2.4)}" font-size="6.2" fill="#3f4347">${esc(`Level ${i + 1}${use} · ${Math.round(top - base)} ft`)}</text>`);
+          return;
+        }
         out.push(`<rect x="${x(a)}" y="${y(seat + top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="${i % 2 ? '#f4f1ea' : '#ebe7de'}" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}"/>`);
-        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y(seat + (top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">${esc(`Level ${i + 1} · ${Math.round(top - base)} ft`)}</text>`);
+        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y(seat + (top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">${esc(`Level ${i + 1}${use} · ${Math.round(top - base)} ft`)}</text>`);
       });
       const heightFt = b.height.aboveGradeFt, topY = y(seat + heightFt), dx = x(z) + 12;
       out.push(`<g data-role="height" data-building="${esc(b.id)}"><line x1="${dx}" y1="${seatY}" x2="${dx}" y2="${topY}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${seatY}" x2="${r2(dx + 3)}" y2="${seatY}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${topY}" x2="${r2(dx + 3)}" y2="${topY}" stroke="${INK}" stroke-width="0.6"/>`

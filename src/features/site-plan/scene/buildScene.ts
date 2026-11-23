@@ -219,11 +219,14 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     const unitsN = num(p.planUnits) ?? num(p.units) ?? (mixUnits != null && mixUnits > 0 ? mixUnits : null);
     const units: Sourced<number> | null = use === 'amenity' || unitsN == null ? null : { value: unitsN, authority: 'engine' };
     const height = buildingHeight(use, floorsN, p.heightFt);
+    // a building that stands over a garage: its lower stories are parking, by the engine's own count of residential levels
+    const resLevels = num(p.residentialLevels);
+    const parkingLevels = p.overGarage === true && resLevels != null && resLevels > 0 && resLevels < floorsN ? floorsN - Math.round(resLevels) : 0;
     const outline = polygons[0] ?? [];
     const labelPoint: Pt = interiorPoint(outline) ?? outline[0]?.[0] ?? [0, 0];
     const b: Omit<SceneBuilding, 'display'> = {
       ...base, role: 'building', styleRole: use === 'amenity' ? 'amenity' : small ? 'house' : 'building',
-      tag, tagOnPlan: !small, use, floors, footprintSqFt, grossSqFt, units, height, labelPoint,
+      tag, tagOnPlan: !small, use, floors, footprintSqFt, grossSqFt, units, height, parkingLevels, labelPoint,
       unitMix: mix ? mix.filter((m): m is { type: string; count: number; avgSqft: number } => typeof (m as { type?: unknown }).type === 'string' && num(m.count) != null && num((m as { avgSqft?: unknown }).avgSqft) != null) : null,
     };
     const full: SceneBuilding = { ...b, display: describe(b) };

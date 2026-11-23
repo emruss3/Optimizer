@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareLayouts, type LayoutOption } from './layoutCompare';
+import { compareLayouts, parseLandPrice, type LayoutOption } from './layoutCompare';
 
 describe('two layouts of one parcel, side by side', () => {
   // 5525 Mt View Rd: 30 lane townhomes on the sheet against 24 surface apartments
@@ -26,5 +26,19 @@ describe('two layouts of one parcel, side by side', () => {
     expect(c.rows.find(r => r.label === 'Land per home')?.b).toBe('Unknown');
     expect(c.tradeOff).toBeNull();
     expect(c.missing).toContain('Home count of apartments');
+  });
+});
+
+describe('a land price as typed', () => {
+  it('reads commas, a dollar sign and K or M', () => {
+    expect(parseLandPrice('$1,200,000').value).toBe(1_200_000);
+    expect(parseLandPrice('1.2M').value).toBe(1_200_000);
+    expect(parseLandPrice('1.2m').value).toBe(1_200_000);
+    expect(parseLandPrice('850k').value).toBe(850_000);
+  });
+  it('does not guess at anything else', () => {
+    expect(parseLandPrice('about a million')).toEqual({ value: null, hint: 'Enter a price such as 1,200,000 or 1.2M.' });
+    expect(parseLandPrice('')).toEqual({ value: null, hint: null });
+    expect(parseLandPrice('0').value).toBeNull();
   });
 });

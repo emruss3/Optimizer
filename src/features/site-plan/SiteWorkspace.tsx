@@ -3465,9 +3465,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const guest = thV3OnSheet && thV3Summary ? guestParkingLine(thV3Summary) : null;
     return {
       parking: rows.find(r => r.label === 'Parking')?.value ?? (guest ? `Guest parking ${guest.text}` : null),
-      floorArea: rows.find(r => r.label === 'Floor area')?.value ?? (metrics?.totalBuiltSF ? `${Math.round(metrics.totalBuiltSF).toLocaleString()} GSF` : null),
+      // a townhome plan carries no placed floor area: the ceiling is said as a ceiling, never as the plan's area
+      floorArea: rows.find(r => r.label === 'Floor area')?.value
+        ?? (metrics?.totalBuiltSF ? `${Math.round(metrics.totalBuiltSF).toLocaleString()} GSF`
+          : maxBuildout?.max_gsf ? `Unknown · upper bound ${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF` : null),
     };
-  }, [sheetsTitleWithAccess, thV3OnSheet, thV3Summary, metrics]);
+  }, [sheetsTitleWithAccess, thV3OnSheet, thV3Summary, metrics, maxBuildout]);
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
     const withBreak = routeBreak
@@ -3982,6 +3985,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
           {isRmLayout && (
             <LayoutChoicePanel
+              // a land price typed for one parcel never carries to the next
+              key={parcelIdStr}
               choice={layoutChoice}
               competition={sfV1Competition}
               shown={layoutShown}
