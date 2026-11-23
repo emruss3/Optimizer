@@ -11,8 +11,11 @@ import {
   DELK_COTTAGE_1754_00010,
   DELK_COTTAGE_ID,
   DELK_PARCEL_ID,
+  HOUSING_CATALOGUE,
   applyHousingDesign,
+  buildableStockPlans,
   clearHousingChoices,
+  designsForParcel,
   designToHouseAccess,
   fitDelkCottage,
   fitDesignToLot,
@@ -62,6 +65,36 @@ describe('housing design record — Delk cottage 1754-00010', () => {
     expect(garageFlagForDrawing(null, 'unknown')).toBeNull();
     expect(garageFlagForDrawing(null, 'pad')).toBe(false);
     expect(garageFlagForDrawing(true, 'attached-garage')).toBe(true);
+  });
+});
+
+describe('buildable stock catalogue', () => {
+  it('lists multiple ABHP plans with footprints and publisher URLs', () => {
+    const stock = buildableStockPlans();
+    expect(stock.length).toBeGreaterThanOrEqual(5);
+    expect(HOUSING_CATALOGUE.every(d => d.source.rights === 'citation-only')).toBe(true);
+    for (const d of stock) {
+      expect(d.heatedSf).toBeGreaterThan(0);
+      expect(d.footprint.widthFt).toBeGreaterThan(0);
+      expect(d.footprintsByFloor.length).toBeGreaterThan(0);
+      expect(d.source.url).toMatch(/houseplans\.net/);
+      expect(d.attachedGarage).toBe(false);
+      expect(d.parking).toBe('pad');
+    }
+  });
+
+  it('offers the full stock list on any parcel, Delk cottage first on Delk', () => {
+    const delk = designsForParcel(DELK_PARCEL_ID);
+    expect(delk[0]?.id).toBe(DELK_COTTAGE_ID);
+    expect(delk.length).toBe(buildableStockPlans().length);
+    expect(designsForParcel('999999').map(d => d.id)).toEqual(buildableStockPlans().map(d => d.id));
+  });
+
+  it('resolves each catalogue plan by id and plan number', () => {
+    for (const d of HOUSING_CATALOGUE) {
+      expect(housingDesignById(d.id)?.planNumber).toBe(d.planNumber);
+      expect(housingDesignById(d.planNumber)?.id).toBe(d.id);
+    }
   });
 });
 

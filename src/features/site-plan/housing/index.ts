@@ -45,6 +45,7 @@ export {
   DELK_PARCEL_ID,
   HOUSING_CATALOGUE,
   LANES_UNIT_A_STUB,
+  buildableStockPlans,
   designsForParcel,
   housingDesignById,
 } from './catalogue';

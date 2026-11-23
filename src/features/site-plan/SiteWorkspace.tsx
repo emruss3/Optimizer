@@ -45,7 +45,6 @@ import {
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import {
-  DELK_PARCEL_ID,
   applyHousingDesign,
   designsForParcel,
   type DesignFitResult,
@@ -3958,7 +3957,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
-          <button type="button" onClick={() => setHomesOpen(true)} className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Home designs</button>
+          <button type="button" onClick={() => setHomesOpen(true)} className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Buildable plans</button>
           {!classicDrawing && scene && scene.buildings.length > 0 && (
             <button
               data-testid="view-section"
@@ -4030,9 +4029,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-      {homesOpen && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening home designs…</div>}>
-        <HomeStudio siteBoundary={scene?.parcel?.polygons.length === 1 ? {type:'Polygon', coordinates:scene.parcel.polygons[0]!.map(r=>r.map(p=>scene.frame.fromFeet(p)))} : null} elements={baseElements} selected={sceneSelectedIds[0] ?? null} onClose={closeHomes}
-          onPreview={study => {setHouseStudy({parcel:parcelIdStr,base:baseElements,study});setHomesOpen(false);}} />
+      {homesOpen && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
+        <HomeStudio
+          siteBoundary={scene?.parcel?.polygons.length === 1 ? {type:'Polygon', coordinates:scene.parcel.polygons[0]!.map(r=>r.map(p=>scene.frame.fromFeet(p)))} : null}
+          elements={baseElements}
+          selected={sceneSelectedIds[0] ?? null}
+          stockPlans={designsForParcel(parcelIdStr)}
+          onApplyStock={handleHousingDesignSelect}
+          onClose={closeHomes}
+          onPreview={study => {setHouseStudy({parcel:parcelIdStr,base:baseElements,study});setHomesOpen(false);}}
+        />
       </React.Suspense>}
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
         <span><strong>{activeHome.name} · site preview.</strong> The yield, site checks and underwriting figures describe the base scheme.</span>
@@ -4164,7 +4170,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               autoBest={sfV1AutoBest}
               holeOverlap={sfV1HoleOverlap}
               frontageLandlocked={noStreetAccess}
-              housing={parcelIdStr === DELK_PARCEL_ID && designsForParcel(parcelIdStr).length > 0
+              housing={designsForParcel(parcelIdStr).length > 0
                 ? {
                     parcelId: parcelIdStr,
                     designs: designsForParcel(parcelIdStr),

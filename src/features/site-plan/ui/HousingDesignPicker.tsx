@@ -44,7 +44,7 @@ export function HousingDesignPicker({
       className="mt-3 rounded border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700"
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">House design</h3>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Buildable stock plans</h3>
         {placed != null && (
           <span data-testid="housing-fit-summary" className="text-slate-500">
             {placed} placed{unplaced.length ? ` · ${unplaced.length} open` : ''}
