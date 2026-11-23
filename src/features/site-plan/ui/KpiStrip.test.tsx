@@ -106,6 +106,18 @@ describe('KpiStrip — the empty strip says why (1360 Brick Church Pike, 2026-11
 });
 
 describe('KpiStrip — the verdict names its scope (the scope\'s P0.2, 2026-11-09)', () => {
+  it('does not count a measurement with no verdict as a passing check (0 Delk Ave: 16 listed, 15 graded)', () => {
+    const sub = { ...base, totalUnits: 5, openSpacePct: 12, zoningCompliant: true } as SiteMetrics;
+    render(
+      <KpiStrip
+        metrics={sub}
+        investment={null}
+        subdivision={{ lots: 5, densityDuAc: 3, fails: [], status: 'done', tests: ['lot.min_area', 'access.landlocked', 'yield.vs_arithmetic'], measuredOnly: 1 }}
+      />
+    );
+    expect(screen.getByTestId('kpi-subdivision-verdict').textContent).toBe('All 2 checks pass');
+  });
+
   it('"All N checks pass" counts the checks and the title lists them and what was not evaluated (4727 Post Rd)', () => {
     const sub = { ...base, totalUnits: 11, openSpacePct: 12, zoningCompliant: true } as SiteMetrics;
     render(

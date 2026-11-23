@@ -7,7 +7,7 @@
  */
 import { useState } from 'react';
 import type { HoleOverlap, SfV1AutoBest, SfV1DeepProgress, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, deepSearchLine, autoBestSentence, edgeClassSentence, isOverride, isRemainderNote, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
+import { FILL_BANDS, checkCounts, deepSearchLine, autoBestSentence, edgeClassSentence, isOverride, isRemainderNote, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
 
 /** What the by-right generator does not evaluate, named beside its passing checks (the scope's P0.2). */
 export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
@@ -75,6 +75,13 @@ function yieldSentence(t: SfV1Test): string | null {
   if (lots == null || ar == null) return null;
   const ratio = typeof t.ratio === 'number' ? ` (ratio ${Math.round(t.ratio * 100) / 100})` : '';
   return `${lots} lot${lots === 1 ? '' : 's'}; a 62% net-to-gross estimate would say ${ar}${ratio}`;
+}
+
+/** The scope of the count beside the tests: graded checks, and measurements that carry no verdict. */
+export function checksLine(tests: ReadonlyArray<{ pass: boolean | null }>): string {
+  const c = checkCounts(tests);
+  const graded = `${c.graded} check${c.graded === 1 ? '' : 's'} from the district's standards.`;
+  return c.measured > 0 ? `${graded} ${c.measured} more ${c.measured === 1 ? 'is a measurement' : 'are measurements'} with no pass or fail.` : graded;
 }
 
 function TestRow({ t }: { t: SfV1Test }) {
@@ -380,8 +387,20 @@ export function SfV1Panel({
                 summary.imperviousPct != null ? `${summary.imperviousPct}% impervious` : null,
               ].filter(Boolean).join(' · ') || '—'}
             </dd>
-            <dt className="text-slate-500">{summary.privateDrive ? 'Private drive' : 'Street'}</dt>
-            <dd>
+            {summary.privateDrive && (
+              // a shared private drive and a new public street are different quantities (0 Delk Ave:
+              // a 300 ft lane was listed as "Private drive 0 ft", the public street length)
+              <>
+                <dt className="text-slate-500">Private drive</dt>
+                <dd data-testid="sfv1-private-drive-length">
+                  {summary.privateDrive.lengthFt != null ? `${Math.round(summary.privateDrive.lengthFt).toLocaleString()} ft` : '—'}
+                  {summary.privateDrive.laneFt != null && summary.privateDrive.easementFt != null
+                    ? ` · ${Math.round(summary.privateDrive.laneFt)} ft of pavement in a ${Math.round(summary.privateDrive.easementFt)} ft easement` : ''}
+                </dd>
+              </>
+            )}
+            <dt className="text-slate-500">{summary.privateDrive ? 'New public street' : 'Street'}</dt>
+            <dd data-testid="sfv1-street-length">
               {summary.streetFt != null ? `${Math.round(summary.streetFt).toLocaleString()} ft` : '—'}
               {summary.deadEnds != null ? ` · ${summary.deadEnds} dead end${summary.deadEnds === 1 ? '' : 's'}` : ''}
               {summary.deadEndMaxFt != null && summary.deadEndMaxFt > 0 ? ` (max ${Math.round(summary.deadEndMaxFt)} ft)` : ''}
@@ -433,7 +452,7 @@ export function SfV1Panel({
           {summary.lots > 0 && (
             // "All tests pass" names its scope: these checks, and not the civil work still ahead (4727 Post Rd)
             <p data-testid="sfv1-diligence" className="mt-1 text-[10.5px] leading-snug text-slate-500">
-              {summary.tests.length} check{summary.tests.length === 1 ? '' : 's'} from the district's standards. Not evaluated here: {CIVIL_DILIGENCE}.
+              {checksLine(summary.tests)} Not evaluated here: {CIVIL_DILIGENCE}.
             </p>
           )}
         </div>

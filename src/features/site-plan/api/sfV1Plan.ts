@@ -1034,6 +1034,18 @@ export function sfV1ToElements(
   return { elements, summary };
 }
 
+/**
+ * How a plan's checks are counted, everywhere they are counted. A check with
+ * a verdict is graded (pass or fail). A check with no verdict is a measurement
+ * the engine reports beside the others (yield against the arithmetic, on
+ * 0 Delk Ave): it is listed, and it is not a pass. The badge said "All 16
+ * checks pass" while the basis line said "15 tests pass" for the same plan.
+ */
+export function checkCounts(tests: ReadonlyArray<{ pass: boolean | null }>): { graded: number; passed: number; measured: number } {
+  const graded = tests.filter(t => t.pass === true || t.pass === false).length;
+  return { graded, passed: tests.filter(t => t.pass === true).length, measured: tests.length - graded };
+}
+
 /** One line for the basis row and the lot-fit strip. */
 export function sfV1SummaryLine(s: SfV1Summary): string {
   if (s.status === 'skipped') return `By-right subdivision skipped — ${s.reason ?? 'no reason given'}`;
@@ -1043,8 +1055,8 @@ export function sfV1SummaryLine(s: SfV1Summary): string {
   const dens = s.densityDuAc != null ? ` · ${s.densityDuAc} du/ac gross` : '';
   const land = s.rowPct != null && s.lotPct != null ? ` · ${s.rowPct}% ${isDrivePattern(s.pattern) ? 'easement' : 'ROW'} / ${s.lotPct}% lots${s.openPct != null ? ` / ${s.openPct}% open` : ''}` : '';
   const flood = s.floodHold ? ` · flood hold: ${s.floodHold}` : '';
-  const passed = s.tests.filter(t => t.pass === true).length;
-  const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : passed > 0 ? ` · ${passed} tests pass` : '';
+  const { passed } = checkCounts(s.tests);
+  const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : passed > 0 ? ` · ${passed} checks pass` : '';
   return `${s.lots} lot${s.lots === 1 ? '' : 's'}${module} ${basis}${patternPhrase(s.pattern)}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
 }
 
