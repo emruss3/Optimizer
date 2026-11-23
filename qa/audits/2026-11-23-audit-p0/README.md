@@ -84,6 +84,29 @@ Not done: the 49,600 GSF bound against the 72,000 sq ft that three full
 floors would imply. No floor plates are supplied, so that needs the engine's
 basis for the bound before either number is shown as comparable.
 
+## 535 Main St (469303, MUG-A): two ceilings, one claim
+
+The plan is 232,425 GSF on a two-level garage. The app measured it against
+`max_gsf`, which is the surface-parking bound (199,950), and said "116%
+capture" beside the engine's own "54.8% of 423,765 structured ceiling".
+
+Now one rule (`captureBasis`) decides the denominator from how the plan
+parks. A plan that parks in a structure is measured against the structured
+ceiling, and the surface bound rides along by name:
+
+"423,765 GSF structured-parking ceiling · 55% capture · surface-parking
+bound 199,950 GSF (116%: this plan parks in a structure)"
+
+The header's utilization figure uses the same rule. A surface-parked plan
+reads as before.
+
+The battery's floor for this parcel was 110, read against the surface
+frontier. It is re-based to 54 against the structured ceiling: the same
+plan and floor area, a different denominator.
+
+Not done: the exported sheets still need the same wording checked, and the
+garage and residential levels in a section (delivery 3).
+
 ## Still to do in part 1
 
-W Heiman access route, Main St comparison basis, Mt View floor area.
+W Heiman access route, Mt View floor area.

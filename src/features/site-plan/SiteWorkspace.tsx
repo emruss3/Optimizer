@@ -56,7 +56,7 @@ import HbuStrip from './ui/HbuStrip';
 import BuiltHeadline from './ui/BuiltHeadline';
 import ExportReport from './ui/ExportReport';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
-import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
+import { fetchMaxBuildout, captureBasis, captureBasisParts, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
 import { fetchParcelTopo, topoView, TopoGrid, type ParcelTopo } from './api/parcelTopo';
 import { buildSheetAnnotations, buildSheetTitleBlock } from './api/sheetAnnotations';
@@ -3365,6 +3365,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     activeContext: plannerCtx,
     lineage: planLineage,
   });
+  // the plan's floor area over the ceiling that applies to how it parks (535 Main St)
+  const capturePct = captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy)?.pct ?? null;
   const basisSummary = useMemo(() => {
     const parts: string[] = [];
     if (displayBasis) parts.push(displayBasis.split(' · ').slice(0, 2).join(' · '));
@@ -3372,8 +3374,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (metrics?.conditional && !seedViewOn) parts.push(`conditional: ${metrics.conditional}`);
     parts.push(contextStateLabel(contextState));
     if (maxBuildout && !draftMode && maxBuildout.max_gsf > 0) {
-      parts.push(`${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF upper bound`);
-      if (metrics?.totalBuiltSF) parts.push(`${Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 100)}% capture`);
+      // one claim, one denominator: a structure-parked plan is measured against the structured ceiling
+      const capture = captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy);
+      if (capture) parts.push(...captureBasisParts(capture));
+      else parts.push(`${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF upper bound`);
     }
     return parts;
   }, [displayBasis, contextState, maxBuildout, draftMode, metrics, seedViewOn]);
@@ -3604,9 +3608,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         : null,
       utilizationPct:
-        !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
-          ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
-          : null,
+        !draftMode && capturePct != null ? Math.round(capturePct * 10) / 10 : null,
     };
   }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
 
@@ -3763,9 +3765,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               : null
           }
           utilizationPct={
-            !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
-              ? (metrics.totalBuiltSF / maxBuildout.max_gsf) * 100
-              : null
+            !draftMode ? capturePct : null
           }
         />
         <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 max-w-full xl:flex-shrink-0">
