@@ -396,5 +396,17 @@
       "stallsRequired": 92,
       "stallsReported": 85
     }
+  },
+  "-1": {
+    "mode": "server-plan",
+    "_basis": "Combined site -1 = 7412 Maroney Dr (315880) + 0 Hamilton Church Rd (674870), RS10, 3.83 ac, made by fn_assemble_parcels on 2026-11-17. The parcels plan as 4 and 2 lots apart; the combined site draws 6 lots on a shared private drive across both, and the competition's best is neighborhood at 7. No massing context is compiled for a combined site, so the by-right generator runs under that banner. 2026-11-23: the combined site now compiles a planner context (district facts from the largest member, areas on the combined outline), so the banner is gone.",
+    "requireSfV1": {
+      "status": "done",
+      "basis": "by_right"
+    }
+  },
+  "-3": {
+    "mode": "server-plan",
+    "_basis": "Combined site -3 = 2937 + 2939 Brick Church Pike (486359 + 663343), RM15, 4.03 ac, same owner, made by fn_assemble_parcels on 2026-11-23. Apart the townhome engine draws 20 and 30 homes; combined it draws 53 (mews), every required test passing. Apartments are not planned on a combined site yet: fn_generate_mf_site_plan_v2 answers planner_max_buildout_required, and the townhome competition runs."
   }
 }
