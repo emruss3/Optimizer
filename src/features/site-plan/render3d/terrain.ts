@@ -280,7 +280,7 @@ export function gradeMassingSite(data: MassingData): Grade | null {
     .filter(q => !q.building && ['drive', 'parking-aisle', 'circulation', 'parking', 'parking-bay', 'driveway'].includes(q.kind ?? ''))
     .map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number]))
     .filter(r => r.length >= 3);
-  return gradeSite(data.terrain, buildings, paved);
+  return gradeSite(data.terrain, buildings, paved, data.structures ?? []);
 }
 
 /** Whether a point lies inside a ring. */
@@ -313,7 +313,7 @@ export function awayFrom(x: number, y: number, ring: Array<[number, number]>): n
  * is level on it; and the graded ground is eased back to the existing ground
  * over a short run round the work.
  */
-export function gradeSite(survey: Terrain, buildings: Array<{ id: string; ring: Array<[number, number]> }>, paved: Array<Array<[number, number]>>): Grade {
+export function gradeSite(survey: Terrain, buildings: Array<{ id: string; ring: Array<[number, number]> }>, paved: Array<Array<[number, number]>>, structures: string[][] = []): Grade {
   const el = (v: number) => Math.round((survey.zeroFt + v / FT) * 10) / 10;
   const tenth = (v: number) => Math.round((v / FT) * 10) / 10;
   const under = buildings.map(b => {
@@ -343,6 +343,16 @@ export function gradeSite(survey: Terrain, buildings: Array<{ id: string; ring: 
   let cut = 0, fill = 0;
   for (const q of pts) { const dz = q[2] - plane(q[0], q[1]); cut = Math.max(cut, dz); fill = Math.max(fill, -dz); }
   const level = buildings.map(bd => plane(bd.ring.reduce((t, q) => t + q[0], 0) / bd.ring.length, bd.ring.reduce((t, q) => t + q[1], 0) / bd.ring.length));
+  // The parts of one structure stand on one floor level: the bars of a wrap and the garage they
+  // stand round. Each group takes the level of the fitted surface at its middle, so one building
+  // does not step with the ground from bar to bar.
+  for (const ids of structures) {
+    const list = buildings.map((bd, i) => (ids.includes(bd.id) ? i : -1)).filter(i => i >= 0);
+    if (list.length < 2) continue;
+    const all = list.flatMap(i => buildings[i]!.ring);
+    const shared = plane(all.reduce((t, q) => t + q[0], 0) / all.length, all.reduce((t, q) => t + q[1], 0) / all.length);
+    for (const i of list) level[i] = shared;
+  }
   buildings.forEach((bd, i) => pads.set(bd.id, level[i]!));
   const padList = buildings.map((bd, i) => ({
     building: bd.id, pad_elevation_ft: el(level[i]!), lowest_ground_ft: el(under[i]!.low), highest_ground_ft: el(under[i]!.high),

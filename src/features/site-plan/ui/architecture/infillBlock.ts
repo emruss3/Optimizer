@@ -54,12 +54,19 @@ export function infillBlock(
           const base = levels[story - 1] ?? FOOTING;
           const head = Math.min(level, roof);
           const finish = story === 0 ? p.base : accent ? p.body2 : p.body;
-          const lobby = story === 0 && bay === entryBay && head - base >= 2.55;
+          if (k.shut?.(w, s, base + 0.8) === 'garage') {
+            // a parking level under the homes: an open concrete bay, no windows and no lobby
+            if (!k.lite) section(a, b, base, head, p.base);
+            k.garageBay(w, a, b, base, head);
+            continue;
+          }
+          const lobby = story === 0 && bay === entryBay && head - base >= 2.55 && !k.shut?.(w, s, base);
           const balcony = story > 0 && balconies && head - base >= 1.95;
           const bottom = base + (lobby ? 0.01 : balcony ? 0.07 : story === 0 ? 0.78 : 0.71);
           const openingTop = Math.min(head - 0.3, base + (lobby ? 3.22 : story === 0 ? 2.91 : 2.55));
           const width = Math.min(step - (lobby ? 0.4 : 0.88), lobby ? 3.56 : balcony ? 1.85 : masonry ? 1.28 : 2.42);
-          const hasWindow = width >= 0.68 && openingTop - bottom >= 0.55;
+          // a wall that faces another wall close by, or stands against one, stays whole: no opening is cut in it
+          const hasWindow = width >= 0.68 && openingTop - bottom >= 0.55 && k.shut?.(w, s, bottom) !== 'blank';
           if (k.lite) {
             if (hasWindow) k.window(w, s, width, bottom, openingTop, { frame: p.frame });
             continue;

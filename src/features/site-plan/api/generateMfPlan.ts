@@ -702,6 +702,15 @@ export function seedFamilyPlanToElements(
       const poly = seedTo3857(garage.geom_2274 as Polygon);
       const levels = Math.max(1, Math.round(num(garage.levels) ?? 1));
       const garageStalls = Math.max(0, Math.round(num(garage.stalls) ?? 0));
+      // where a car enters the garage, as the engine places it: the model and the plan mark the same points
+      const entries: number[][] = [];
+      for (const pt of [garage.entry_2274, garage.entry_rear_2274]) {
+        if (!pt || (pt as { type?: string }).type !== 'Point') continue;
+        try {
+          const c = (seedTo3857(pt) as unknown as { coordinates: number[] }).coordinates;
+          if (Number.isFinite(c?.[0]) && Number.isFinite(c?.[1])) entries.push([c[0] as number, c[1] as number]);
+        } catch { /* an entry that cannot be placed is left off */ }
+      }
       elements.push({
         id: `${prefix}-garage`,
         type: 'parking',
@@ -712,6 +721,7 @@ export function seedFamilyPlanToElements(
           parkingSpaces: garageStalls,
           structured: true,
           levels,
+          ...(entries.length ? { garageEntries: entries } : {}),
           label: `Garage · ${levels} lvl · ${garageStalls} stalls`,
           areaSqFt: num(garage.area_sqft) ?? undefined,
           styleOverride: true,

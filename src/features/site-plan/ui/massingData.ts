@@ -4,7 +4,7 @@ import type { Element } from '../../../engine/types';
 import { isConstraintSource, type ConstraintSource } from '../api/sfV1Plan';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { pointsAlongSegment, type Segment } from '../../../components/site-planner/planRendering';
-import { createGroundFrame } from '../scene/frame';
+import { createGroundFrame, pointInPolygon } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
 import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
@@ -139,6 +139,8 @@ export function buildMassingData(
    *  sun-study light; never a hardcoded city. */
   origin: { latDeg: number; lonDeg: number };
   /** The surveyed ground under the plan, in this model's frame; null or absent where the parcel has no survey. */
+  /** Buildings that are one structure and so stand on one floor level, by id. */
+  structures?: string[][];
   terrain?: import('../render3d/terrain').Terrain | null;
 } {
   const drawable = elements.filter(
@@ -282,6 +284,44 @@ export function buildMassingData(
   const roadFrontage = (ground?.contextRoads ?? []).flatMap(road => densify((road.line?.coordinates ?? []).map(m)));
   const frontage = roadFrontage.length ? roadFrontage : (ground?.frontEdges ?? []).flatMap(edge => densify(edge.map(m)));
   const outlines = buildings.map(el => (el.geometry.coordinates[0] ?? []).map(m));
+  // A parking structure under the plan (a wrap's garage): its footprint, the height of its deck,
+  // and where the engine puts its entries. The deck is as high as the parking levels of the
+  // buildings that stand on it, read from the same story heights as everything else.
+  const inside = (p: number[], ring: number[][]) => pointInPolygon(p[0] ?? 0, p[1] ?? 0, [ring]);
+  const middleOf = (ring: number[][]) => [ring.reduce((t, q) => t + (q[0] ?? 0), 0) / Math.max(1, ring.length), ring.reduce((t, q) => t + (q[1] ?? 0), 0) / Math.max(1, ring.length)];
+  const garages = drawable
+    .filter(el => el.type === 'parking' && el.properties?.structured === true)
+    .map(el => {
+      const ring = (el.geometry.coordinates[0] ?? []).map(m);
+      const levels = Math.max(1, Math.round(Number(el.properties?.levels) || 1));
+      const deckM = (buildingHeight('apartments', levels).aboveGradeFt) * METERS_PER_FOOT;
+      const entries = (Array.isArray(el.properties?.garageEntries) ? el.properties.garageEntries as number[][] : []).map(p => m(p));
+      // the buildings of this structure: the bars the engine says stand over it, and any that touch it
+      const bars = buildings.filter(b => b.properties?.overGarage === true || b.properties?.wrapBar != null).map(b => b.id);
+      // what stands on the deck: a building wholly inside the garage's footprint that is not one of its bars
+      const onDeck = buildings.filter(b => !bars.includes(b.id) && inside(middleOf((b.geometry.coordinates[0] ?? []).map(m)), ring)).map(b => b.id);
+      return { id: el.id, label: el.name ?? 'Garage', ring, levels, deckM, entries, bars, onDeck };
+    })
+    .filter(g => g.ring.length >= 4);
+  const garageOf = (el: Element) => garages.find(g => g.bars.includes(el.id)) ?? null;
+  const deckUnder = (el: Element) => garages.find(g => g.onDeck.includes(el.id)) ?? null;
+  // One structure stands on one floor level. A garage and everything on it is one structure; so
+  // are larger buildings that stand against each other (the legs of an L, bars joined at a corner).
+  // Houses and row homes are left out: a row steps down a slope home by home.
+  const structures: string[][] = garages.map(g => [g.id, ...g.bars, ...g.onDeck]);
+  const big = buildings.filter(b => { const u = buildingUse(b); return u === 'apartments' || u === 'amenity' || u === 'other'; });
+  const ringOfBig = big.map(b => (b.geometry.coordinates[0] ?? []).map(m));
+  const near = (A: number[][], B: number[][]) => A.some(q => inside(q, B) || B.some(r => Math.hypot((q[0] ?? 0) - (r[0] ?? 0), (q[1] ?? 0) - (r[1] ?? 0)) < 1.5));
+  big.forEach((b, i) => {
+    for (let j = i + 1; j < big.length; j++) {
+      if (!near(ringOfBig[i]!, ringOfBig[j]!) && !near(ringOfBig[j]!, ringOfBig[i]!)) continue;
+      const a = structures.find(s => s.includes(b.id)), c = structures.find(s => s.includes(big[j]!.id));
+      if (a && c) { if (a !== c) { a.push(...c); structures.splice(structures.indexOf(c), 1); } }
+      else if (a) a.push(big[j]!.id);
+      else if (c) c.push(b.id);
+      else structures.push([b.id, big[j]!.id]);
+    }
+  });
   const draw = (scale: number) => {
     const slabs: RenderSlab[] = [], windows: RenderWindow[] = [], roofs: RenderWindow[] = [];
     const shrubs: Array<[number, number, number]> = [];
@@ -289,14 +329,58 @@ export function buildMassingData(
       const rings = el.geometry.coordinates.map(r => r.map(m));
       const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
       const use = buildingUse(el), properties = el.properties;
+      const garage = garageOf(el), deck = deckUnder(el);
       const a = buildArchitecture(el.id, label, rings, use, heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i), frontage,
         use === 'house' ? { driveways, garage: typeof properties?.houseGarage === 'boolean' ? properties.houseGarage : null,
-          catalogued: typeof properties?.floorplanId === 'string' || typeof properties?.housePlan === 'string' } : undefined);
+          catalogued: typeof properties?.floorplanId === 'string' || typeof properties?.housePlan === 'string' } : undefined,
+        garage ? { ring: garage.ring, deckM: garage.deckM, over: properties?.overGarage === true } : null);
+      if (deck) {
+        // it stands on the garage's deck, not on the ground under it
+        for (const sl of a.slabs) for (const r of sl.polygon) for (const q of r) q[2] = (q[2] ?? 0) + deck.deckM;
+        for (const f of [...a.glass, ...a.flats]) for (const q of f.polygon) q[2] = (q[2] ?? 0) + deck.deckM;
+        a.shrubs.length = 0;
+      }
       slabs.push(...a.slabs);
       windows.push(...a.glass);
       roofs.push(...a.flats);
       shrubs.push(...a.shrubs);
     });
+    for (const g of garages) {
+      // the garage itself: a concrete structure as high as its parking levels, with the deck on top
+      slabs.push({ id: g.id, building: true, polygon: [g.ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], elevation: g.deckM - 0.25, color: [176, 174, 168, 255], surface: 'concrete', part: 'base', label: g.label });
+      slabs.push({ id: g.id, building: true, polygon: [g.ring.map(q => [q[0] ?? 0, q[1] ?? 0, g.deckM - 0.25])], elevation: 0.25, color: [198, 196, 190, 255], surface: 'concrete', part: 'detail', label: g.label });
+      // planted courts on the deck are drawn on the deck
+      for (const el of drawable) {
+        if (el.type !== 'greenspace') continue;
+        const ring = (el.geometry.coordinates[0] ?? []).map(m);
+        if (ring.length < 4 || !inside(middleOf(ring), g.ring)) continue;
+        slabs.push({ id: g.id, building: true, polygon: [ring.map(q => [q[0] ?? 0, q[1] ?? 0, g.deckM])], elevation: 0.12, color: [118, 142, 92, 255], surface: 'grass', part: 'detail', label: el.name ?? 'Court' });
+      }
+      // each entry: a dark portal in a concrete frame, standing where the engine puts the way in
+      for (const e of g.entries) {
+        let best: { a: number[]; b: number[]; d: number } | null = null;
+        for (let i = 1; i < g.ring.length; i++) {
+          const a = g.ring[i - 1]!, b = g.ring[i]!;
+          const ex = (b[0] ?? 0) - (a[0] ?? 0), ey = (b[1] ?? 0) - (a[1] ?? 0), l2 = ex * ex + ey * ey || 1;
+          const t = Math.max(0, Math.min(1, (((e[0] ?? 0) - (a[0] ?? 0)) * ex + ((e[1] ?? 0) - (a[1] ?? 0)) * ey) / l2));
+          const d = Math.hypot((e[0] ?? 0) - ((a[0] ?? 0) + ex * t), (e[1] ?? 0) - ((a[1] ?? 0) + ey * t));
+          if (!best || d < best.d) best = { a: [(a[0] ?? 0) + ex * t, (a[1] ?? 0) + ey * t], b: [ex / Math.sqrt(l2), ey / Math.sqrt(l2)], d };
+        }
+        if (!best) continue;
+        const [px, py] = best.a as [number, number], [tx, ty] = best.b as [number, number];
+        // outward is the side of the wall the entry point lies on
+        const side = ((e[0] ?? 0) - px) * -ty + ((e[1] ?? 0) - py) * tx >= 0 ? 1 : -1;
+        const nx = -ty * side, ny = tx * side;
+        const half = 3.6, high = Math.min(3.2, g.deckM - 0.6);
+        const quad = (s0: number, s1: number, d0: number, d1: number) => [[px + tx * s0 + nx * d0, py + ty * s0 + ny * d0], [px + tx * s1 + nx * d0, py + ty * s1 + ny * d0], [px + tx * s1 + nx * d1, py + ty * s1 + ny * d1], [px + tx * s0 + nx * d1, py + ty * s0 + ny * d1]];
+        const part = (ring: number[][], z: number, h: number, color: [number, number, number, number], surface: NonNullable<RenderSlab['surface']>) =>
+          slabs.push({ id: g.id, building: true, polygon: [ring.map(q => [q[0] ?? 0, q[1] ?? 0, z])], elevation: h, color, surface, part: 'detail', label: 'Garage entry' });
+        part(quad(-half, half, -0.05, 0.12), 0, high, [30, 32, 36, 255], 'plain');
+        part(quad(-half - 0.45, -half, -0.05, 0.4), 0, high + 0.45, [150, 148, 142, 255], 'concrete');
+        part(quad(half, half + 0.45, -0.05, 0.4), 0, high + 0.45, [150, 148, 142, 255], 'concrete');
+        part(quad(-half - 0.45, half + 0.45, -0.05, 0.4), high, 0.45, [150, 148, 142, 255], 'concrete');
+      }
+    }
     return { slabs, windows, roofs, shrubs };
   };
   const debug = typeof window !== 'undefined' && !!(window as unknown as { __renderDebug?: boolean }).__renderDebug;
@@ -403,7 +487,7 @@ export function buildMassingData(
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
   const terrain = ground?.topo ? makeTerrain(ground.topo, q => { const v = m(point2274To3857(q)); return [v[0] ?? 0, v[1] ?? 0]; }) : null;
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg }, terrain,
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg }, structures, terrain,
     aerialAzimuth: clearestAzimuth(
       contextPolygons.filter(c => c.elevation > 1).map(c => {
         const r = c.polygon[0] ?? [];
