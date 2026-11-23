@@ -11,6 +11,12 @@ const stockWithoutElevations: HomeDesign = {
   setting: 'Buildable stock',
 };
 
+/** Studio opens on Buildable stock; Elevations live under Concept studies. */
+function openConceptElevations() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Concept studies' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Elevations' }));
+}
+
 describe('HomeStudio Elevations — photoreal vs diagram', () => {
   it('defaults Elevations to Diagram for designs with photoreal assets', () => {
     const withAssets = HOME_DESIGNS.find((h) => h.id === 'tn-court-cottage-v1')!;
@@ -18,11 +24,12 @@ describe('HomeStudio Elevations — photoreal vs diagram', () => {
       <HomeStudio
         elements={[]}
         designs={[withAssets]}
+        stockPlans={[]}
         onClose={() => undefined}
         onPreview={() => undefined}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Elevations' }));
+    openConceptElevations();
     expect(screen.getByTestId('home-elevation-diagram')).toBeTruthy();
     expect(screen.queryByTestId('home-elevation-photo')).toBeNull();
     expect(screen.getByTestId('home-elevation-photoreal')).toBeTruthy();
@@ -34,11 +41,12 @@ describe('HomeStudio Elevations — photoreal vs diagram', () => {
       <HomeStudio
         elements={[]}
         designs={[withAssets]}
+        stockPlans={[]}
         onClose={() => undefined}
         onPreview={() => undefined}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Elevations' }));
+    openConceptElevations();
     fireEvent.click(screen.getByTestId('home-elevation-photoreal'));
     expect(screen.getByTestId('home-elevation-photo')).toBeTruthy();
     const img = screen.getByTestId('home-elevation-photo').querySelector('img');
@@ -52,11 +60,12 @@ describe('HomeStudio Elevations — photoreal vs diagram', () => {
       <HomeStudio
         elements={[]}
         designs={[stockWithoutElevations]}
+        stockPlans={[]}
         onClose={() => undefined}
         onPreview={() => undefined}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Elevations' }));
+    openConceptElevations();
     expect(screen.getByTestId('home-elevation-diagram')).toBeTruthy();
     expect(screen.queryByTestId('home-elevation-photoreal')).toBeNull();
     expect(screen.queryByTestId('home-elevation-photo')).toBeNull();
@@ -68,11 +77,12 @@ describe('HomeStudio Elevations — photoreal vs diagram', () => {
       <HomeStudio
         elements={[]}
         designs={[withAssets]}
+        stockPlans={[]}
         onClose={() => undefined}
         onPreview={() => undefined}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Elevations' }));
+    openConceptElevations();
     fireEvent.click(screen.getByTestId('home-elevation-photoreal'));
     const img = screen.getByTestId('home-elevation-photo').querySelector('img')!;
     fireEvent.error(img);
