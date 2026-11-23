@@ -480,6 +480,8 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     // DEM-coloured pads) can thrash the 2D canvas and stall page.screenshot
     // past any budget. Missing 2d / 3d (and every other shot) still fails the
     // parcel — soft-failing every PNG weakened the gate.
+    // Follow-up (app, not gate): floodway fill view thrashing the 2D canvas
+    // needs a product fix so the override PNG is required again.
     const shotsSkipped = [];
     const shot = async (name, { optional = false } = {}) => {
       const dest = `${OUT}/${p.ogc_fid}_${name}.png`;
@@ -597,24 +599,25 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     // 2026-11-03 by-right subdivision: the override the parcel asks for (the
     // floodway-only fill scenario) is pressed and judged on its own evidence.
     // Wait for the fill-scenario answer (lots + fillView) before reading
-    // evidence. Only mark _overrideWaitTimedOut when the collected evidence is
-    // still unfinished — on #198 tip 20f8a35 the wait timed out at 90s while
-    // the subsequent evaluate already had 147 lots / fillView (false fail).
-    // The override PNG alone is optional on 680719 (canvas thrash).
+    // evidence. Do not .catch(() => null) and treat unfinished state as the
+    // answer: flag _overrideWaitTimedOut only when settle criteria remain
+    // unmet after the wait (#198 tip 20f8a35 timed out at 90s while evaluate
+    // already had 147 lots / fillView). Override PNG alone is optional on
+    // 680719 until the canvas thrash is fixed in-app.
     if (evidence && p.sfV1Override === 'floodway') {
       const btn = page.getByTestId('sfv1-override-floodway');
       if (await btn.isVisible().catch(() => false)) {
         await btn.click();
-        const overrideReady = (ev) => {
-          const sf = ev?.sfV1;
-          return !!sf && sf.basis === 'override' && sf.fillView === true && (sf.lots ?? 0) >= 100;
-        };
+        const overrideSettled = (sf) =>
+          !!sf && sf.basis === 'override' && sf.fillView === true && (sf.lots ?? 0) >= 100;
         let overrideWaitTimedOut = false;
         try {
+          // Floodway fill (~147 DEM pads) can block the main thread long enough
+          // that a 90s probe misses settle; give the solve room to finish.
           await page.waitForFunction(() => {
             const sf = window.__planEvidence && window.__planEvidence.sfV1;
             return !!(sf && sf.basis === 'override' && sf.fillView === true && (sf.lots || 0) >= 100);
-          }, null, { timeout: 120000, polling: 500 });
+          }, null, { timeout: 150000, polling: 500 });
         } catch (err) {
           overrideWaitTimedOut = true;
           console.log(`  override wait timed out for ${p.ogc_fid}: ${String(err).slice(0, 160)}`);
@@ -626,11 +629,11 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
             ? { ...ev, _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'), _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? '') }
             : null;
         });
-        if (overrideWaitTimedOut && !overrideReady(overrideEv)) {
+        if (overrideWaitTimedOut && !overrideSettled(overrideEv?.sfV1)) {
           evidence._override = { ...(overrideEv ?? {}), _overrideWaitTimedOut: true };
         } else {
           if (overrideWaitTimedOut) {
-            console.log(`  override wait timed out for ${p.ogc_fid} but evidence is ready — judging answer`);
+            console.log(`  override wait timed out for ${p.ogc_fid} but evidence settled by read — judging answer`);
           }
           evidence._override = overrideEv;
         }
