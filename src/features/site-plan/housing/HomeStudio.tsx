@@ -5,7 +5,7 @@ import { designBounds, program, roofHeight } from './drawings';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
-import { eligibleStockDesigns } from './homeDesignsGate';
+import { designsFittingHouse, eligibleStockDesigns } from './homeDesignsGate';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
 
@@ -77,8 +77,6 @@ export default function HomeStudio({
     () => (stockPlans !== undefined ? [...stockPlans] : buildableStockPlans()),
     [stockPlans],
   );
-  const catalogue = designs;
-  const emptyEligible = catalogue.length === 0;
   const houses = useMemo(() => residentialHomes(elements), [elements]);
   const [mode, setMode] = useState<StudioMode>('stock');
   const [stockIndex, setStockIndex] = useState(0);
@@ -98,6 +96,14 @@ export default function HomeStudio({
   }, [houses, houseId, selected]);
 
   const selectedHouse = houses.find((e) => e.id === houseId);
+
+  // Per-selected-lot concept studies (scheme-eligible list narrowed further).
+  const catalogue = useMemo(() => {
+    if (!designs.length) return [] as HomeDesign[];
+    if (!selectedHouse) return [...designs];
+    return designsFittingHouse(designs, selectedHouse, elements, siteBoundary);
+  }, [designs, selectedHouse, elements, siteBoundary]);
+  const emptyEligible = catalogue.length === 0;
 
   // Per-selected-lot catalogue filter for buildable stock.
   const stock = useMemo(
@@ -330,8 +336,30 @@ export default function HomeStudio({
           ) : (
             <>
               <nav aria-label="Concept home studies">
+                {houses.length > 0 && (
+                  <div className="home-stock-lot">
+                    <label>
+                      Lot filter{' '}
+                      <select
+                        aria-label="House lot to filter concept studies"
+                        value={houseId}
+                        onChange={(e) => {
+                          setHouseId(e.target.value);
+                          setIndex(0);
+                          setFit(null);
+                        }}
+                      >
+                        {houses.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
                 {emptyEligible ? (
-                  <p className="home-empty-eligible">No concept studies fit this scheme’s house lots.</p>
+                  <p className="home-empty-eligible">No concept studies fit this house lot.</p>
                 ) : (
                   catalogue.map((h, i) => (
                     <button
