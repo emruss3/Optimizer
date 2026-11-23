@@ -464,11 +464,57 @@ function apportionMix(
  * elements + planner metrics. Geometry: EPSG:2274 feet → 4326 → 3857 (the
  * canvas frame); every displayed AREA is the engine's own number.
  */
+/**
+ * Account for a summary total that differs from the drawn bays, from the
+ * engine's own payload and nothing else. Two things must both hold:
+ *  1. the summary equals the stalls of the bays that carry an area field,
+ *     and some bays carry none (the summary skipped them);
+ *  2. the engine's own parking ratio times its unit count lands on the drawn
+ *     total (within 3 stalls or 3%).
+ * 2600 W Heiman St, audit 2026-11-22: 127 drawn, 20 reported, 122 required.
+ * The summary is the two area-bearing bays (10 + 10); 1.84 per home on 70
+ * homes is 129. Anything short of both is left unexplained: null.
+ * The ratio comes from the same bays, so this explains the summary and
+ * verifies nothing: the status stays "needs verification".
+ */
+export function explainStallCounts(
+  bays: ReadonlyArray<{ stalls?: number | null; area_sqft?: number | null }>,
+  stallsReported: number | null | undefined,
+  units: number | null | undefined,
+  ratioProvided: number | null | undefined,
+): string | null {
+  if (stallsReported == null || bays.length === 0) return null;
+  if (!bays.every(b => typeof b.stalls === 'number' && b.stalls >= 0)) return null;
+  const drawn = bays.reduce((a, b) => a + Math.round(b.stalls as number), 0);
+  if (drawn === stallsReported) return null;
+  const withArea = bays.filter(b => typeof b.area_sqft === 'number' && b.area_sqft > 0);
+  if (withArea.length === 0 || withArea.length === bays.length) return null;
+  const counted = withArea.reduce((a, b) => a + Math.round(b.stalls as number), 0);
+  if (counted !== stallsReported) return null;
+  if (units == null || ratioProvided == null || !(units > 0) || !(ratioProvided > 0)) return null;
+  const byRatio = Math.round(units * ratioProvided);
+  if (Math.abs(byRatio - drawn) > Math.max(3, 0.03 * drawn)) return null;
+  const rest = bays.length - withArea.length;
+  return `the engine's summary of ${stallsReported} adds up only the ${withArea.length} of ${bays.length} bays that carry an area; the other ${rest} bay${rest === 1 ? '' : 's'} hold${rest === 1 ? 's' : ''} ${drawn - stallsReported} more. Its own ratio, ${ratioProvided} per home on ${units} homes, gives ${byRatio}, in line with the ${drawn} drawn`;
+}
+
 /** The parking status the sheet stands on (SiteMetrics.parkingStatus). */
 export function parkingStatusOf(
   stallsDrawn: number | null | undefined,
   stallsReported: number | null | undefined,
-): { parkingStatus: 'verified' | 'needs_verification'; parkingStatusReason?: string } {
+  /** from explainStallCounts: where the difference comes from */
+  explained?: string | null,
+): { parkingStatus: 'verified' | 'needs_verification'; parkingStatusReason?: string; parkingCountNote?: string } {
+  if (explained && stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported) {
+    // Knowing where the difference comes from does not verify the supply. The ratio is
+    // derived from the same bays (0 Todd Preis Dr: 428 drawn on 94 homes, summary 49,
+    // accounted for the same way), so the count still passes nothing on its own.
+    return {
+      parkingStatus: 'needs_verification',
+      parkingStatusReason: `${explained}. That accounts for the difference; it does not verify the supply, which needs each counted bay reached from the street through a drive and an aisle`,
+      parkingCountNote: explained,
+    };
+  }
   if (stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported) {
     return {
       parkingStatus: 'needs_verification',
@@ -801,7 +847,7 @@ export function seedFamilyPlanToElements(
         stallsReported: stallsReported ?? undefined,
         ...(opts.house
           ? { parkingStatus: 'not_evaluated' as const, parkingStatusReason: 'the house sketch draws no parking and the district\'s requirement for one house was not evaluated' }
-          : parkingStatusOf(stallsDrawn, stallsReported)),
+          : parkingStatusOf(stallsDrawn, stallsReported, explainStallCounts(bays, stallsReported, units, num((m as { parking_ratio_provided?: unknown }).parking_ratio_provided)))),
         violations: [],
         warnings: [],
         zoningCompliant: true,
