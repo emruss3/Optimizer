@@ -3205,35 +3205,6 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
     : null;
   const layoutShownRequested = layoutShown === 'neighborhood' ? (thV3OnSheet ? 'townhome' : sfV1Shown) : null;
-  // Home designs: SF / townhomes / neighborhood only, and only designs that fit a house lot.
-  const homeStudioBoundary = useMemo((): Element['geometry'] | null => {
-    if (scene?.parcel?.polygons.length !== 1) return null;
-    return {
-      type: 'Polygon',
-      coordinates: scene.parcel.polygons[0]!.map((r) => r.map((p) => scene.frame.fromFeet(p))),
-    };
-  }, [scene]);
-  const homeDesignsUi = useMemo(() => {
-    const houses = residentialHomes(baseElements);
-    if (
-      !schemeAllowsHomeDesigns({
-        layoutShown,
-        product,
-        houseCount: houses.length,
-      })
-    ) {
-      return { show: false as const, enabled: false as const, eligible: [] as typeof HOME_DESIGNS };
-    }
-    const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
-    const eligible = typed.length
-      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
-      : ([] as typeof HOME_DESIGNS);
-    // Scheme allows homes: keep the control visible; disable when nothing fits.
-    return { show: true as const, enabled: eligible.length > 0, eligible };
-  }, [baseElements, layoutShown, product, homeStudioBoundary]);
-  useEffect(() => {
-    if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
-  }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
   const layoutChoice = useMemo(
     () => (isRmLayout
       ? chooseLayout({
@@ -3352,6 +3323,36 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         })),
     [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, activeHome, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion, housingDesignId],
   );
+  // Home designs: SF / townhomes / neighborhood only, and only designs that fit a house lot.
+  // Must sit after `scene` — the studio boundary is read from the drawing scene frame.
+  const homeStudioBoundary = useMemo((): Element['geometry'] | null => {
+    if (scene?.parcel?.polygons.length !== 1) return null;
+    return {
+      type: 'Polygon',
+      coordinates: scene.parcel.polygons[0]!.map((r) => r.map((p) => scene.frame.fromFeet(p))),
+    };
+  }, [scene]);
+  const homeDesignsUi = useMemo(() => {
+    const houses = residentialHomes(baseElements);
+    if (
+      !schemeAllowsHomeDesigns({
+        layoutShown,
+        product,
+        houseCount: houses.length,
+      })
+    ) {
+      return { show: false as const, enabled: false as const, eligible: [] as typeof HOME_DESIGNS };
+    }
+    const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
+    const eligible = typed.length
+      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
+      : ([] as typeof HOME_DESIGNS);
+    // Scheme allows homes: keep the control visible; disable when nothing fits.
+    return { show: true as const, enabled: eligible.length > 0, eligible };
+  }, [baseElements, layoutShown, product, homeStudioBoundary]);
+  useEffect(() => {
+    if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
+  }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
   // One selection for the plan and the 3D view, remembered for this parcel and scheme.
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
   const sceneKey = scene?.identity.key ?? null;
