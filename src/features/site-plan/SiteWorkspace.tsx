@@ -3363,7 +3363,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const data: Array<{ label: string; value: string }> = [];
     if (parcel.zoning) data.push({ label: 'Zoning', value: String(parcel.zoning) });
     if (acres) data.push({ label: 'Site area', value: `${n(acres, 2)} ac` });
-    if (units) data.push({ label: sfPlanOnSheet ? 'Lots' : 'Homes', value: n(units) });
+    if (units) data.push({ label: detachedSfOnSheet ? 'Lots' : 'Homes', value: n(units) });
     if (units && acres) data.push({ label: 'Density', value: `${n(units / acres, 1)} per acre` });
     // a subdivision's count is the engine's lot count; the massing metrics carry none
     if (!units && sfV1OnSheet && sfV1Summary) {
@@ -3373,12 +3373,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       data.push({ label: 'Homes', value: n(thV3Summary.homes) });
       if (thV3Summary.homesPerAcre != null) data.push({ label: 'Density', value: `${n(thV3Summary.homesPerAcre, 1)} per acre` });
     }
-    if (!sfPlanOnSheet && metrics?.totalBuiltSF) data.push({ label: 'Gross floor area', value: `${n(metrics.totalBuiltSF)} sf` });
-    if (!sfPlanOnSheet && metrics?.achievedFAR) data.push({ label: 'Floor area ratio', value: n(metrics.achievedFAR, 2) });
-    if (!sfPlanOnSheet && metrics?.siteCoveragePct) data.push({ label: 'Building coverage', value: `${n(metrics.siteCoveragePct)}%` });
-    if (stalls) data.push({ label: 'Parking', value: `${n(stalls)} stalls${units ? ` · ${n(stalls / units, 2)} per home` : ''}` });
+    if (!detachedSfOnSheet && !thV3OnSheet && metrics?.totalBuiltSF) data.push({ label: 'Gross floor area', value: `${n(metrics.totalBuiltSF)} sf` });
+    if (!detachedSfOnSheet && !thV3OnSheet && metrics?.achievedFAR) data.push({ label: 'Floor area ratio', value: n(metrics.achievedFAR, 2) });
+    if (!detachedSfOnSheet && !thV3OnSheet && metrics?.siteCoveragePct) data.push({ label: 'Building coverage', value: `${n(metrics.siteCoveragePct)}%` });
+    // Townhome guest parking lives in decision rows — do not invent a total-stalls SITE DATA line.
+    if (stalls && !thV3OnSheet) data.push({ label: 'Parking', value: `${n(stalls)} stalls${units ? ` · ${n(stalls / units, 2)} per home` : ''}` });
     return { project: sheetTitle.project, subtitle: sheetTitle.subtitle, date: sheetTitle.date, notes: sheetTitle.notes, data: seedViewOn ? [] : data };
-  }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn, sfV1OnSheet, sfV1Summary, thV3OnSheet, thV3Summary]);
+  }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, detachedSfOnSheet, seedViewOn, sfV1OnSheet, sfV1Summary, thV3OnSheet, thV3Summary]);
   // The sheet's picture: the ground it shows, rendered from above from the
   // same model the 3D view draws. Loaded when a sheet first asks for it.
   const archStyle = useArchStyle();
