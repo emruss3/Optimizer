@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Element } from '../../../engine/types';
 import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
+import { hasPhotorealElevation, photorealElevationSrc } from './elevationAssets';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
+import { designsFittingHouse, stepHomeDesignIndex } from './homeDesignsGate';
 import { buildableStockPlans } from './catalogue';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
@@ -76,8 +78,6 @@ export default function HomeStudio({
     () => (stockPlans !== undefined ? [...stockPlans] : buildableStockPlans()),
     [stockPlans],
   );
-  const catalogue = designs;
-  const emptyConcepts = catalogue.length === 0;
   const houses = useMemo(() => residentialHomes(elements), [elements]);
   const [mode, setMode] = useState<StudioMode>(() => (stock.length ? 'stock' : 'concept'));
   const [stockIndex, setStockIndex] = useState(0);
@@ -85,6 +85,8 @@ export default function HomeStudio({
     [level, setLevel] = useState(0),
     [view, setView] = useState<'Exterior' | 'Plans' | 'Elevations'>('Exterior');
   const [side, setSide] = useState<Face>('front'),
+    // Diagram is the plan-derived default; Photoreal is an opt-in character view.
+    [elevationMode, setElevationMode] = useState<'photo' | 'diagram'>('diagram'),
     [houseId, setHouseId] = useState(() => houses.find((e) => e.id === selected)?.id ?? houses[0]?.id ?? '');
   const [fit, setFit] = useState<{ key: string; result: FitResult } | null>(null),
     root = useRef<HTMLElement>(null);
@@ -92,6 +94,28 @@ export default function HomeStudio({
   useEffect(() => {
     if (stockIndex >= stock.length) setStockIndex(0);
   }, [stock, stockIndex]);
+
+  // Keep the selected lot when the sheet refreshes; fall back to the first house.
+  useEffect(() => {
+    if (!houses.length) {
+      setHouseId('');
+      return;
+    }
+    if (!houses.some((h) => h.id === houseId)) {
+      setHouseId(houses.find((e) => e.id === selected)?.id ?? houses[0]!.id);
+    }
+  }, [houses, houseId, selected]);
+
+  const selectedHouse = houses.find((e) => e.id === houseId);
+
+  // Fit-first concepts: when a lot is selected, only offer designs that place on that lot.
+  const catalogue = useMemo(() => {
+    if (!designs.length) return [] as HomeDesign[];
+    if (!selectedHouse) return [...designs];
+    return designsFittingHouse(designs, selectedHouse, elements, siteBoundary);
+  }, [designs, selectedHouse, elements, siteBoundary]);
+
+  const emptyConcepts = catalogue.length === 0;
 
   useEffect(() => {
     if (catalogue.length && index >= catalogue.length) setIndex(0);
@@ -102,13 +126,34 @@ export default function HomeStudio({
     if (mode === 'concept' && catalogue.length === 0 && stock.length > 0) setMode('stock');
   }, [mode, stock.length, catalogue.length]);
 
+  const step = (delta: number) => {
+    if (!catalogue.length) return;
+    setIndex((i) => stepHomeDesignIndex(i, catalogue.length, delta));
+    setLevel(0);
+    setFit(null);
+  };
+
   const plan = stock[Math.min(stockIndex, Math.max(stock.length - 1, 0))];
   const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))],
-    selectedHouse = houses.find((e) => e.id === houseId),
     key = (home?.id ?? '') + '|' + houseId;
+  const canShowPhotoreal = !!home && hasPhotorealElevation(home.id);
+  const showPhotoreal = elevationMode === 'photo' && canShowPhotoreal;
+  useEffect(() => {
+    if (elevationMode === 'photo' && home && !hasPhotorealElevation(home.id)) setElevationMode('diagram');
+  }, [elevationMode, home]);
   const current = fit?.key === key ? fit.result : null;
   const info = home ? program(home) : null;
   const [, , width, depth] = home ? designBounds(home) : [0, 0, 0, 0];
+
+  // Auto-check fit when the design or lot changes so Preview is one click away.
+  useEffect(() => {
+    if (mode !== 'concept' || !home || !selectedHouse) {
+      if (mode !== 'concept') return;
+      setFit(null);
+      return;
+    }
+    setFit({ key, result: placeHome(home, selectedHouse, elements, siteBoundary) });
+  }, [mode, key, home, selectedHouse, elements, siteBoundary]);
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
@@ -118,6 +163,18 @@ export default function HomeStudio({
         event.preventDefault();
         event.stopImmediatePropagation();
         onClose();
+        return;
+      }
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (mode === 'concept' && (event.key === 'ArrowLeft' || event.key === 'ArrowUp')) {
+        event.preventDefault();
+        step(-1);
+        return;
+      }
+      if (mode === 'concept' && (event.key === 'ArrowRight' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        step(1);
         return;
       }
       if (event.key !== 'Tab' || !root.current) return;
@@ -140,7 +197,7 @@ export default function HomeStudio({
       window.removeEventListener('keydown', keys, true);
       before?.focus();
     };
-  }, [onClose]);
+  }, [onClose, catalogue.length, mode]);
 
   return (
     <div
@@ -161,9 +218,21 @@ export default function HomeStudio({
             <small>Parcel Proforma</small>
             <h2>{mode === 'stock' ? 'Buildable stock plans' : 'Concept studies'}</h2>
           </div>
-          <button type="button" className="home-close" onClick={onClose} aria-label="Close home designs">
-            Close ×
-          </button>
+          <div className="home-header-actions">
+            {mode === 'concept' ? (
+              <div className="home-browse" role="group" aria-label="Browse designs that fit this lot">
+                <button type="button" onClick={() => step(-1)} disabled={catalogue.length < 2} aria-label="Previous design">
+                  ← Prev
+                </button>
+                <button type="button" onClick={() => step(1)} disabled={catalogue.length < 2} aria-label="Next design">
+                  Next →
+                </button>
+              </div>
+            ) : null}
+            <button type="button" className="home-close" onClick={onClose} aria-label="Close home designs">
+              Close ×
+            </button>
+          </div>
         </header>
         <div className="home-mode-tabs" role="tablist" aria-label="Home design source">
           <button
@@ -297,7 +366,11 @@ export default function HomeStudio({
             <>
               <nav aria-label="Concept home studies">
                 {emptyConcepts ? (
-                  <p className="home-empty-eligible">No concept studies fit this scheme’s house lots.</p>
+                  <p className="home-empty-eligible">
+                    {selectedHouse
+                      ? 'No concept studies fit this selected lot. Pick another house lot, or return to the base plan.'
+                      : 'No concept studies fit this scheme’s house lots.'}
+                  </p>
                 ) : (
                   catalogue.map((h, i) => (
                     <button
@@ -319,8 +392,9 @@ export default function HomeStudio({
               <main>
                 {emptyConcepts ? (
                   <p role="status">
-                    This layout has detached or attached house footprints, but none of the concept
-                    studies clear the drawn lots, setbacks, and mapped approaches.
+                    {selectedHouse
+                      ? `“${selectedHouse.name}” cannot take any of the eligible concept studies at full size with the drawn approaches. Switch lots above, or close and adjust the scheme.`
+                      : 'This layout has detached or attached house footprints, but none of the concept studies clear the drawn lots, setbacks, and mapped approaches.'}
                   </p>
                 ) : home && info ? (
                   <>
@@ -349,7 +423,8 @@ export default function HomeStudio({
                           alt={home.name + ', illustrative character exterior (not generated from this plan)'}
                         />
                         <figcaption className="home-exterior-note">
-                          Illustrative character image — not generated from this plan’s drawings, and not a photo of a built home.
+                          Illustrative character image — not generated from this plan’s drawings, and not a photo of a
+                          built home.
                         </figcaption>
                       </figure>
                     ) : view === 'Plans' ? (
@@ -367,11 +442,9 @@ export default function HomeStudio({
                         <details>
                           <summary>Room dimensions</summary>
                           <dl className="home-rooms">
-                            {home.levels[level]!.rooms.map((r, i) => (
+                            {home.levels[level]!.rooms.map((r) => (
                               <div key={r.name}>
-                                <dt>
-                                  {i + 1}. {r.name}
-                                </dt>
+                                <dt>{r.name}</dt>
                                 <dd>
                                   {r.rect[2]} × {r.rect[3]} ft
                                 </dd>
@@ -382,16 +455,57 @@ export default function HomeStudio({
                       </>
                     ) : (
                       <>
-                        <div className="home-options">
+                        <div className="home-options" role="group" aria-label="Elevation face">
                           {(['front', 'right', 'back', 'left'] as const).map((v) => (
                             <button type="button" key={v} aria-pressed={v === side} onClick={() => setSide(v)}>
                               {v === 'back' ? 'Rear' : v[0]!.toUpperCase() + v.slice(1)}
                             </button>
                           ))}
                         </div>
-                        <figure className="home-elevation">
-                          <Elevation home={home} side={side} />
-                        </figure>
+                        <div className="home-options" role="group" aria-label="Elevation presentation">
+                          <button
+                            type="button"
+                            aria-pressed={!showPhotoreal}
+                            onClick={() => setElevationMode('diagram')}
+                          >
+                            Diagram
+                          </button>
+                          {canShowPhotoreal ? (
+                            <button
+                              type="button"
+                              aria-pressed={showPhotoreal}
+                              onClick={() => setElevationMode('photo')}
+                              data-testid="home-elevation-photoreal"
+                            >
+                              Photoreal
+                            </button>
+                          ) : null}
+                        </div>
+                        {showPhotoreal ? (
+                          <figure data-testid="home-elevation-photo">
+                            <img
+                              src={photorealElevationSrc(home.id, side)}
+                              alt={
+                                home.name +
+                                ', illustrative character ' +
+                                (side === 'back' ? 'rear' : side) +
+                                ' elevation (not generated from this plan)'
+                              }
+                              onError={() => setElevationMode('diagram')}
+                            />
+                            <figcaption className="home-exterior-note">
+                              Illustrative character elevation — not generated from this plan’s drawings, not a
+                              licensed stock photo, and not a photo of a built home.
+                            </figcaption>
+                          </figure>
+                        ) : (
+                          <figure className="home-elevation" data-testid="home-elevation-diagram">
+                            <Elevation home={home} side={side} />
+                            <figcaption className="home-exterior-note">
+                              Schematic diagram from plan volumes — not a construction elevation.
+                            </figcaption>
+                          </figure>
+                        )}
                       </>
                     )}
                     <p>{home.description}</p>
@@ -406,15 +520,16 @@ export default function HomeStudio({
                       <span>{roofHeight(home).toFixed(1)} ft to ridge or parapet</span>
                     </div>
                     <section className="home-placement">
-                      <h4>Try on this site</h4>
+                      <h4>Place on a house lot</h4>
                       {houses.length ? (
                         <>
                           <div>
                             <select
-                              aria-label="House lot to check"
+                              aria-label="House lot to place on"
                               value={houseId}
                               onChange={(e) => {
                                 setHouseId(e.target.value);
+                                setIndex(0);
                                 setFit(null);
                               }}
                             >
@@ -424,18 +539,12 @@ export default function HomeStudio({
                                 </option>
                               ))}
                             </select>
-                            <button
-                              type="button"
-                              disabled={!selectedHouse}
-                              onClick={() => {
-                                if (selectedHouse && home)
-                                  setFit({ key, result: placeHome(home, selectedHouse, elements, siteBoundary) });
-                              }}
-                            >
-                              Check lot fit
-                            </button>
                             {current?.placement && (
-                              <button type="button" className="home-primary" onClick={() => onPreview(current.placement!)}>
+                              <button
+                                type="button"
+                                className="home-primary"
+                                onClick={() => onPreview(current.placement!)}
+                              >
                                 Preview in 3D massing
                               </button>
                             )}
@@ -443,7 +552,12 @@ export default function HomeStudio({
                           <p aria-live="polite">
                             {current?.placement?.basis ??
                               current?.reason ??
-                              'Check the drawn lot and its vehicle and pedestrian approaches at full size. A fit opens the live 3D massing with this design.'}
+                              'Selecting a lot lists only designs that fit it. Preview opens live 3D massing on that house.'}
+                          </p>
+                          <p className="home-fit-hint">
+                            Showing {catalogue.length} design{catalogue.length === 1 ? '' : 's'} that fit
+                            {selectedHouse ? ` “${selectedHouse.name}”` : ' this scheme'}. Use ← → to browse without
+                            losing the lot.
                           </p>
                         </>
                       ) : (
@@ -451,8 +565,11 @@ export default function HomeStudio({
                       )}
                     </section>
                     <footer>
-                      * Approximate conditioned area from schematic room zones. Dimensions include wall allowances.
-                      These are concept studies for site fit — not publisher construction sets.
+                      * Approximate conditioned area from schematic room zones (kitchen, baths, HVAC/mech, laundry —
+                      not numbered placeholders). Dimensions include wall allowances. Exterior and elevation images
+                      are illustrative AI character studies — not licensed stock, not construction photos, and not
+                      derived from plan CAD. These are concept studies for site fit — not publisher construction
+                      sets. Buildable publisher stock plans live on the Buildable stock tab.
                     </footer>
                   </>
                 ) : null}

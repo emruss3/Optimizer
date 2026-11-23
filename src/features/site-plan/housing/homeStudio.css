@@ -218,6 +218,17 @@
   background: #faf8f2;
   padding: 8px;
 }
+.home-studio figure.home-elevation {
+  display: flex;
+  flex-direction: column;
+}
+.home-studio figure.home-elevation svg {
+  flex: 1;
+  min-height: 0;
+}
+.home-studio figure.home-elevation .home-exterior-note {
+  flex-shrink: 0;
+}
 .home-studio p,
 .home-studio summary {
   margin: 7px 0;
