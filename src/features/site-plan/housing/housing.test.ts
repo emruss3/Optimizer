@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildArchitecture } from '../ui/architecture';
+import { pickFrontWall } from '../ui/architecture/fittedHouse';
+import { frontOf, ringWalls } from '../ui/architecture/kit';
 import { buildingHeight } from '../scene/heights';
 import { buildDrawingScene } from '../scene/buildScene';
 import { sfV1ToElements, type SfV1Response } from '../api/sfV1Plan';
@@ -134,12 +136,50 @@ describe('handoff — no invented garage; design id into scene', () => {
       [], 1, 'farmhouse', [], [], access,
     );
     expect(a.slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
-    // Unknown garage + driveway must also refuse to invent one.
+    // With a designId, unknown garage + driveway must also refuse to invent one.
     const unknown = buildArchitecture(
       'delk-h1', 'Cottage', rings, 'house', buildingHeight('house', 1),
       [], 1, 'farmhouse', [], [], { ...access, garage: null, parking: 'unknown' },
     );
     expect(unknown.slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
+  });
+
+  it('legacy pads without designId still draw a garage when garage is unknown and a drive meets', () => {
+    const w = 40 * 0.3048, d = (34 + 2 / 12) * 0.3048;
+    const rings = [[[0, 0], [w, 0], [w, d], [0, d], [0, 0]]];
+    const drive = [[[2, -7], [6, -7], [6, 0.2], [2, 0.2], [2, -7]]] as Array<Array<[number, number]>>;
+    const legacy = buildArchitecture(
+      'legacy-h1', 'House', rings, 'house', buildingHeight('house', 1),
+      [], 1, 'farmhouse', [], [], {
+        driveways: drive,
+        garage: null,
+        catalogued: false,
+      },
+    );
+    expect(legacy.slabs.some(s => s.approach?.kind === 'apron')).toBe(true);
+  });
+
+  it('porch-face pick prefers pavement/meeting wall when both long walls match (rear listed first)', () => {
+    const w = 40 * 0.3048, d = (34 + 2 / 12) * 0.3048;
+    // Clockwise ring starting on the rear 40-ft face so length-first would pick backyard.
+    const ring = [[0, d], [w, d], [w, 0], [0, 0], [0, d]];
+    const walls = ringWalls(ring);
+    expect(walls[0]!.len).toBeCloseTo(w, 5);
+    const midY0 = (walls[0]!.a[1] + (walls[0]!.a[1] + walls[0]!.t[1] * walls[0]!.len)) / 2;
+    expect(midY0).toBeCloseTo(d, 5);
+
+    const pavement: Array<[number, number]> = [[w / 2, -2]];
+    const facing = walls[frontOf(walls, pavement).index]!;
+    const front = pickFrontWall(
+      walls,
+      pavement,
+      { driveways: [], garage: false, catalogued: true, porchFaceLenM: w },
+      null,
+    );
+    expect(front).toBe(facing);
+    expect(front).not.toBe(walls[0]);
+    const midFront = (front.a[1] + (front.a[1] + front.t[1] * front.len)) / 2;
+    expect(midFront).toBeCloseTo(0, 5);
   });
 
   it('apply + scene carry housingDesignId through pad properties', () => {
@@ -149,10 +189,15 @@ describe('handoff — no invented garage; design id into scene', () => {
       schemeKey: `${DELK_PARCEL_ID}|deep`,
       designId: DELK_COTTAGE_ID,
       elements,
+      setbacks: (FIX.deep.setbacks as { front: number; side: number; rear: number }) ?? undefined,
     });
     expect(applied).not.toBeNull();
     expect(applied!.fits.filter(f => f.status === 'placed')).toHaveLength(3);
     expect(applied!.unplaced.length).toBeGreaterThanOrEqual(2);
+    // Lot 5 is pie on the Delk fixture — unresolved reason must name the constraint.
+    const lot5 = applied!.fits[4] ?? applied!.unplaced.find(u => u.lotIndex === 4);
+    const lot5Reason = (lot5 && 'reason' in lot5 ? lot5.reason : null) ?? applied!.unplaced.find(u => u.lotIndex === 4)?.reason;
+    expect(lot5Reason).toMatch(/pie lot|frontage|resolve/i);
     expect(recalledHousingChoice(`${DELK_PARCEL_ID}|deep`)).toBe(DELK_COTTAGE_ID);
 
     const pad1 = applied!.elements.find(e => e.id.endsWith('pad-1'));

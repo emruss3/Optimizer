@@ -34,7 +34,11 @@ export interface DesignHouseAccess extends HouseAccess {
 
 const FT_TO_M = 0.3048;
 
-/** Attached garage is drawn only when the design (or engine) explicitly says true. */
+/**
+ * Attached-garage flag for a catalogue design / pad properties.
+ * `null` means unknown: fittedHouse refuses to invent a garage only when a
+ * `designId` is present; legacy schemes without one keep the prior meeting rule.
+ */
 export function garageFlagForDrawing(
   attachedGarage: boolean | null | undefined,
   parking: ParkingArrangement | null | undefined,
@@ -44,7 +48,7 @@ export function garageFlagForDrawing(
   }
   if (attachedGarage === true) return true;
   if (attachedGarage === false) return false;
-  return null; // unknown — must not grow a garage
+  return null; // unknown — catalogue designs must not invent; legacy may still meet
 }
 
 export function designToHouseAccess(

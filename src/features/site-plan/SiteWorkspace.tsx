@@ -2058,18 +2058,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   /** Housing design picker (Delk cottage): stamp design id / parking / fit onto pads for this session. */
   const handleHousingDesignSelect = useCallback((designId: string) => {
     const schemeKey = `${parcelIdStr}|${sfV1Shown}`;
+    // Match the sheet / envelope: ordinance setbacks from the zoning brief (RS5 → 20/5/20),
+    // not a hard-coded table that can disagree with fit reasons on the picker.
+    const hc = plannerCtx?.solver_brief?.hard_constraints;
+    const setbacks = {
+      front: rpcMetrics?.setbacks?.front ?? hc?.front_setback_ft ?? 20,
+      side: rpcMetrics?.setbacks?.side ?? hc?.side_setback_ft ?? 5,
+      rear: rpcMetrics?.setbacks?.rear ?? hc?.rear_setback_ft ?? 20,
+    };
     const applied = applyHousingDesign({
       parcelId: parcelIdStr,
       schemeKey,
       designId,
       elements,
-      setbacks: { front: 20, side: 5, rear: 20 },
+      setbacks,
     });
     if (!applied) return;
     setHousingDesignId(applied.design.id);
     setHousingFits(applied.fits);
     setPlanOutput(applied.elements, metrics);
-  }, [parcelIdStr, sfV1Shown, elements, metrics, setPlanOutput]);
+  }, [parcelIdStr, sfV1Shown, elements, metrics, setPlanOutput, rpcMetrics, plannerCtx]);
 
   /** "View this plan" on a row of the pattern competition: `best` and
    *  `structured` arrive whole with the competition; the default is the plan
