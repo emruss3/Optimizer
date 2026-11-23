@@ -50,16 +50,19 @@ describe('accessBreak — where the route to the street stops', () => {
     expect(b?.to[1]).toBe(0);
     expect(b?.from[0]).toBe(b?.to[0]);
     expect(b?.gap3857).toBeCloseTo(20, 6);
-    // without a ground frame, gapFt is raw 3857 metres as feet (flat synthetic only)
-    expect(b?.gapFt).toBeCloseTo(20 / 0.3048, 4);
+    // without a ground frame, hide feet (no raw Mercator-as-feet flash)
+    expect(b?.gapFt).toBeNull();
   });
 
   // Live Design P2: partner sheet / inspector must name the measured gap
   it('reports the gap in feet so a reviewer can check it against the graphic scale', () => {
-    const b = accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], parcel);
+    const flatFt = (a: ArrayLike<number>, b: ArrayLike<number>) =>
+      Math.hypot(Number(a[0]) - Number(b[0]), Number(a[1]) - Number(b[1])) / 0.3048;
+    const b = accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], parcel, null, 3, flatFt);
     expect(b).not.toBeNull();
-    expect(b!.gapFt).toBeGreaterThan(65);
-    expect(b!.gapFt).toBeLessThan(66);
+    expect(b!.gapFt).not.toBeNull();
+    expect(b!.gapFt!).toBeGreaterThan(65);
+    expect(b!.gapFt!).toBeLessThan(66);
   });
 
   it('aims at the street edge when the frontage is known, not at whichever parcel line is nearest', () => {
@@ -127,7 +130,7 @@ describe('accessBreak — where the route to the street stops', () => {
     const toFt = frame.toFeet(b!.to);
     expect(Math.abs(fromFt[1]! - toFt[1]!)).toBeCloseTo(20.85, 1);
     expect(Math.abs(fromFt[0]! - toFt[0]!)).toBeLessThan(1);
-    expect(formatGapFt(b!.gapFt)).toBe('21');
+    expect(formatGapFt(b!.gapFt!)).toBe('21');
   });
 });
 

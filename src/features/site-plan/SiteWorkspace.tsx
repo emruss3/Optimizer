@@ -3426,7 +3426,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     [access, displayElements, parcelRing3857, scene],
   );
   const routeBreakLabel = routeBreak
-    ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
+    ? routeBreak.gapFt != null
+      ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
+      : 'Drive stops here · no drawn connection to the street'
     : null;
   // the download carries the unresolved connection too: marked on the sheet and said in its notes
   // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
@@ -3455,8 +3457,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ...(schedule.length ? { decision: schedule } : {}),
       ...(routeBreak && scene
         ? {
-            notes: [`Access unresolved: no drive on this plan reaches the street (${formatGapFt(routeBreak.gapFt)} ft short). The break is marked in red.`, ...(sheetsTitle.notes ?? [])],
-            routeBreak: { from: scene.frame.toFeet(routeBreak.from), to: scene.frame.toFeet(routeBreak.to), gapFt: routeBreak.gapFt },
+            notes: [
+              routeBreak.gapFt != null
+                ? `Access unresolved: no drive on this plan reaches the street (${formatGapFt(routeBreak.gapFt)} ft short). The break is marked in red.`
+                : 'Access unresolved: no drive on this plan reaches the street. The break is marked in red.',
+              ...(sheetsTitle.notes ?? []),
+            ],
+            routeBreak: {
+              from: scene.frame.toFeet(routeBreak.from),
+              to: scene.frame.toFeet(routeBreak.to),
+              ...(routeBreak.gapFt != null ? { gapFt: routeBreak.gapFt } : {}),
+            },
           }
         : {}),
     };

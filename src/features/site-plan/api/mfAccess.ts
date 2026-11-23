@@ -10,7 +10,6 @@
  * Web Mercator metres are not ground metres (~1.24× at Nashville).
  */
 import type { Element } from '../../../engine/types';
-import { METERS_PER_FOOT } from '../../../engine/units';
 
 export interface MfAccessSummary {
   /** a drive reaches the parcel line */
@@ -108,8 +107,12 @@ export type AccessBreak = {
   to: number[];
   /** Gap length in raw EPSG:3857 canvas metres (not ground metres). */
   gap3857: number;
-  /** Same gap in ground feet (Live Design P2: W Heiman ~20.85 ft short of frontage). */
-  gapFt: number;
+  /**
+   * Same gap in ground feet when a frame is available (Live Design P2:
+   * W Heiman ~20.85 ft short of frontage). Null until `distanceFt` is passed
+   * so a first paint can't show raw Mercator-as-feet (~26 ft at Nashville).
+   */
+  gapFt: number | null;
 };
 
 /**
@@ -127,8 +130,7 @@ export function formatGapFt(gapFt: number): string {
  * gapFt is what a reviewer reads against the graphic scale.
  *
  * Pass `distanceFt` from `scene.frame.distanceFt` so gapFt is ground feet at
- * the site latitude. Without it, gapFt falls back to raw 3857 metres / 0.3048
- * (flat synthetic tests only — wrong by ~1.24× at Nashville).
+ * the site latitude. Without it, gapFt is null (hide feet until the frame exists).
  */
 export function accessBreak(
   elements: Element[],
@@ -149,6 +151,6 @@ export function accessBreak(
   }
   if (!best) return null;
   const gap3857 = best.d;
-  const gapFt = distanceFt ? distanceFt(best.from, best.to) : gap3857 / METERS_PER_FOOT;
+  const gapFt = distanceFt ? distanceFt(best.from, best.to) : null;
   return { from: best.from, to: best.to, gap3857, gapFt };
 }
