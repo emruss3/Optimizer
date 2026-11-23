@@ -75,6 +75,9 @@ type Massing3DProps = {
   /** Where the route to the street breaks, in the plan's frame; marked in the review view. */
   accessBreak?: { from: number[]; to: number[] } | null | undefined;
   onSelect?: (id: string | null) => void;
+  /** Home-design preview: building id + token so the camera frames that house. */
+  focusHomeId?: string | null;
+  focusHomeToken?: number;
 };
 
 /** The deck.gl view: the original massing, and the fallback for the rendering. */
@@ -696,6 +699,8 @@ const Massing3D: React.FC<Massing3DProps> = props => {
         grossSf={props.grossSf}
         savedPlanId={props.savedPlanId}
         accessBreak={props.accessBreak}
+        focusHomeId={props.focusHomeId}
+        focusHomeToken={props.focusHomeToken}
         onFail={onFail}
       />
     );

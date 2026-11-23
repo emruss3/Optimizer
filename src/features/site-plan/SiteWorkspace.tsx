@@ -198,6 +198,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [homesOpen, setHomesOpen] = useState(false);
   const closeHomes = useCallback(() => setHomesOpen(false), []);
   const [houseStudy, setHouseStudy] = useState<{ parcel: string; base: Element[]; study: HomePlacement } | null>(null);
+  /** Bumped when a home-design preview lands so 3D massing reframes on that house. */
+  const [homePreviewFocus, setHomePreviewFocus] = useState(0);
   // which sheet the Export menu opened, and whether it asked for the whole set
   const [sheetsAsk, setSheetsAsk] = useState<{ initial: 'plan' | 'view' | 'section'; printSet: boolean }>({ initial: 'plan', printSet: false });
   const [sceneSelection, setSceneSelection] = useState<SelectionCache | null>(null);
@@ -3158,7 +3160,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (!quickMassingAvailable) setShowSeed(false);
   }, [quickMassingAvailable]);
   const baseElements = seedViewOn && seedRender ? seedRender.elements : elements;
-  const activeHome = houseStudy?.parcel === parcelIdStr && houseStudy.base === baseElements ? houseStudy.study : null;
+  // Keep the study while this parcel's base plan is unchanged (same element ids + geometries).
+  // Reference equality alone drops the preview if React rebuilds the elements array without a plan change.
+  const basePlanKey = useMemo(
+    () => baseElements.map(e => `${e.id}:${e.type}:${Math.round((e.geometry?.coordinates?.[0]?.[0]?.[0] ?? 0) * 100)}`).join('|'),
+    [baseElements],
+  );
+  const houseStudyBaseKey = useMemo(
+    () => houseStudy?.base.map(e => `${e.id}:${e.type}:${Math.round((e.geometry?.coordinates?.[0]?.[0]?.[0] ?? 0) * 100)}`).join('|') ?? null,
+    [houseStudy],
+  );
+  const activeHome = houseStudy?.parcel === parcelIdStr && houseStudyBaseKey === basePlanKey ? houseStudy.study : null;
   const displayElements = activeHome?.elements ?? baseElements;
   const displayBasis = activeHome ? activeHome.name + ' · original home design study. ' + activeHome.basis : seedViewOn && seedRender
     ? seedRender.basis + (seedRender.inFamily ? ` · in-family: ${seedRender.inFamily}` : '')
@@ -4090,11 +4102,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           selected={sceneSelectedIds[0] ?? null}
           designs={homeDesignsUi.eligible}
           onClose={closeHomes}
-          onPreview={study => {setHouseStudy({parcel:parcelIdStr,base:baseElements,study});setHomesOpen(false);}}
+          onPreview={study => {
+            setHouseStudy({ parcel: parcelIdStr, base: baseElements, study });
+            setHomesOpen(false);
+            // Home designs must land in the live 3D massing (same authored geometry as the gallery).
+            setViewMode('3d');
+            handleSceneSelection([study.house]);
+            setHomePreviewFocus(n => n + 1);
+          }}
         />
       </React.Suspense>}
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
-        <span><strong>{activeHome.name} · site preview.</strong> The yield, site checks and underwriting figures describe the base scheme.</span>
+        <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme.</span>
         <button type="button" className="underline" onClick={() => setHouseStudy(null)}>Return to base scheme</button></div>}
       {!seedViewOn && <BuiltHeadline metrics={metrics} elements={elements} />}
       {/* 2026-09-04 (Eric, 2622 W Heiman: "difficult to see the site planner,
@@ -4382,6 +4401,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 grossSf={seedViewOn || activeHome ? null : metrics?.totalBuiltSF}
                 savedPlanId={scene && savedRenderPlan?.parcel === scene.identity.parcelId && savedRenderPlan.revision === scene.identity.revision
                   ? savedRenderPlan.id : undefined}
+                focusHomeId={activeHome?.house ?? null}
+                focusHomeToken={homePreviewFocus}
               />
               </React.Suspense>
             </SitePlannerErrorBoundary>
