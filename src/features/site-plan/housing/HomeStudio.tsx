@@ -30,6 +30,7 @@ export default function HomeStudio({
     [level, setLevel] = useState(0),
     [view, setView] = useState<'Exterior' | 'Plans' | 'Elevations'>('Exterior');
   const [side, setSide] = useState<Face>('front'),
+    [elevationMode, setElevationMode] = useState<'photo' | 'diagram'>('photo'),
     [houseId, setHouseId] = useState(() => houses.find((e) => e.id === selected)?.id ?? houses[0]?.id ?? '');
   const [fit, setFit] = useState<{ key: string; result: FitResult } | null>(null),
     root = useRef<HTMLElement>(null);
@@ -185,16 +186,53 @@ export default function HomeStudio({
               </>
             ) : (
               <>
-                <div className="home-options">
+                <div className="home-options" role="group" aria-label="Elevation face">
                   {(['front', 'right', 'back', 'left'] as const).map((v) => (
                     <button type="button" key={v} aria-pressed={v === side} onClick={() => setSide(v)}>
                       {v === 'back' ? 'Rear' : v[0]!.toUpperCase() + v.slice(1)}
                     </button>
                   ))}
                 </div>
-                <figure className="home-elevation">
-                  <Elevation home={home} side={side} />
-                </figure>
+                <div className="home-options" role="group" aria-label="Elevation presentation">
+                  <button
+                    type="button"
+                    aria-pressed={elevationMode === 'photo'}
+                    onClick={() => setElevationMode('photo')}
+                  >
+                    Photoreal
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={elevationMode === 'diagram'}
+                    onClick={() => setElevationMode('diagram')}
+                  >
+                    Diagram
+                  </button>
+                </div>
+                {elevationMode === 'photo' ? (
+                  <figure>
+                    <img
+                      src={'/home-designs/' + home.id + '-elevation-' + side + '-v2.webp'}
+                      alt={
+                        home.name +
+                        ', illustrative character ' +
+                        (side === 'back' ? 'rear' : side) +
+                        ' elevation (not generated from this plan)'
+                      }
+                    />
+                    <figcaption className="home-exterior-note">
+                      Illustrative character elevation — not generated from this plan’s drawings, not a
+                      licensed stock photo, and not a photo of a built home.
+                    </figcaption>
+                  </figure>
+                ) : (
+                  <figure className="home-elevation">
+                    <Elevation home={home} side={side} />
+                    <figcaption className="home-exterior-note">
+                      Schematic diagram from plan volumes — not a construction elevation.
+                    </figcaption>
+                  </figure>
+                )}
               </>
             )}
             <p>{home.description}</p>
@@ -255,8 +293,10 @@ export default function HomeStudio({
             </section>
             <footer>
               * Approximate conditioned area from schematic room zones. Dimensions include wall allowances.
-              These are concept studies for site fit — not publisher construction sets. For cited buildable
-              stock plans (e.g. America’s Best House Plans), use the housing catalogue.
+              Exterior and elevation images are illustrative AI character studies — not licensed stock, not
+              construction photos, and not derived from plan CAD. These are concept studies for site fit —
+              not publisher construction sets. For cited buildable stock plans (e.g. America’s Best House
+              Plans), use the housing catalogue.
             </footer>
               </>
             ) : null}
