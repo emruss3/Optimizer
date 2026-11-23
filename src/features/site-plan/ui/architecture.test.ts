@@ -131,6 +131,10 @@ describe('houses', () => {
     expect(apron?.start[0]).toBeCloseTo(4, 3);
     expect(apron?.end[1]).toBeCloseTo(-1.06, 2);
     expect(build(false).slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
+    // Unknown garage must not invent a door either (Housing design brief).
+    expect(buildArchitecture('odd', 'House', ell, 'house', buildingHeight('house', 2),
+      [], 1, 'infill', [], [], { driveways: drives, garage: null, catalogued: true })
+      .slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
   });
 });
 
