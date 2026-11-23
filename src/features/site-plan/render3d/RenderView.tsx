@@ -315,11 +315,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     };
   }, [data, frame, lens, quality, look, present]);
 
-  // Home designs → 3D: after a site preview lands, stand on the street (or entry) looking at that house.
+  // Home designs → 3D: frame the previewed house once per token after the model includes it.
+  // Do not re-frame on later rebuilds of the same token (avoids fighting the user).
+  const framedHomeToken = useRef(0);
   useEffect(() => {
     if (!ready || !focusHomeToken || !focusHomeId) return;
     if (previewHouse.current !== focusHomeId) return;
+    if (framedHomeToken.current === focusHomeToken) return;
+    const r = rig.current;
+    if (!r?.model.ground.subjects.some((s) => s.id === focusHomeId)) return;
     frame('street');
+    framedHomeToken.current = focusHomeToken;
   }, [ready, built, focusHomeToken, focusHomeId, frame]);
 
   useEffect(() => {
