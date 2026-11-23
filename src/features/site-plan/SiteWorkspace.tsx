@@ -8,7 +8,12 @@ import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import type { HomePlacement } from './housing/placement';
 import { residentialHomes } from './housing/placement';
 import { HOME_DESIGNS } from './housing/originalDesigns';
-import { schemeAllowsHomeDesigns, eligibleHomeDesigns, typologyEligibleHomeDesigns } from './housing/homeDesignsGate';
+import {
+  HOME_DESIGNS_NONE_FIT_TITLE,
+  schemeAllowsHomeDesigns,
+  eligibleHomeDesigns,
+  typologyEligibleHomeDesigns,
+} from './housing/homeDesignsGate';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
@@ -3217,16 +3222,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         houseCount: houses.length,
       })
     ) {
-      return { show: false as const, eligible: [] as typeof HOME_DESIGNS };
+      return { show: false as const, enabled: false as const, eligible: [] as typeof HOME_DESIGNS };
     }
     const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
-    if (!typed.length) return { show: false as const, eligible: [] as typeof HOME_DESIGNS };
-    const eligible = eligibleHomeDesigns(typed, baseElements, homeStudioBoundary);
-    return { show: eligible.length > 0, eligible };
+    const eligible = typed.length
+      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
+      : ([] as typeof HOME_DESIGNS);
+    // Scheme allows homes: keep the control visible; disable when nothing fits.
+    return { show: true as const, enabled: eligible.length > 0, eligible };
   }, [baseElements, layoutShown, product, homeStudioBoundary]);
   useEffect(() => {
-    if (!homeDesignsUi.show && homesOpen) setHomesOpen(false);
-  }, [homeDesignsUi.show, homesOpen]);
+    if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
+  }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
   const layoutChoice = useMemo(
     () => (isRmLayout
       ? chooseLayout({
@@ -3991,8 +3998,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           {homeDesignsUi.show && (
             <button
               type="button"
-              onClick={() => setHomesOpen(true)}
-              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              data-testid="home-designs"
+              onClick={() => homeDesignsUi.enabled && setHomesOpen(true)}
+              disabled={!homeDesignsUi.enabled}
+              title={
+                homeDesignsUi.enabled
+                  ? 'Browse home designs that fit house lots on this plan'
+                  : HOME_DESIGNS_NONE_FIT_TITLE
+              }
+              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Home designs
             </button>
@@ -4068,7 +4082,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-      {homesOpen && homeDesignsUi.show && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening home designs…</div>}>
+      {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening home designs…</div>}>
         <HomeStudio
           siteBoundary={homeStudioBoundary}
           elements={baseElements}

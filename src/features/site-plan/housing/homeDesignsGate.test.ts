@@ -89,17 +89,18 @@ describe('homeDesignsGate — typology and fit', () => {
         product: 'apartments',
         elements: mf,
         designs: HOME_DESIGNS,
-      }).show,
-    ).toBe(false);
+      }),
+    ).toMatchObject({ show: false, enabled: false, eligible: [] });
 
     const elements = sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
-    const { show, eligible } = showHomeDesignsControl({
+    const { show, enabled, eligible } = showHomeDesignsControl({
       layoutShown: 'neighborhood',
       product: 'apartments',
       elements,
       designs: HOME_DESIGNS,
     });
     expect(show).toBe(true);
+    expect(enabled).toBe(true);
     expect(eligible.length).toBeGreaterThan(0);
     expect(eligible.length).toBeLessThan(HOME_DESIGNS.length);
     expect(eligible.every((d) => !d.attached)).toBe(true);
@@ -109,4 +110,35 @@ describe('homeDesignsGate — typology and fit', () => {
       eligible.map((d) => d.id),
     );
   }, 60000);
+
+  it('shows a disabled control when the scheme allows homes but nothing fits', () => {
+    const tinyDetached: Element = {
+      id: 'house-tiny',
+      type: 'building',
+      name: 'House',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [4, 0],
+            [4, 4],
+            [0, 4],
+            [0, 0],
+          ],
+        ],
+      },
+      properties: { use: 'residential', house: true, floors: 1 },
+      metadata: { createdAt: '', updatedAt: '', source: 'ai-generated' },
+    };
+    const { show, enabled, eligible } = showHomeDesignsControl({
+      layoutShown: 'neighborhood',
+      product: 'apartments',
+      elements: [tinyDetached],
+      designs: HOME_DESIGNS,
+    });
+    expect(show).toBe(true);
+    expect(enabled).toBe(false);
+    expect(eligible).toEqual([]);
+  });
 });

@@ -64,14 +64,21 @@ export function eligibleHomeDesigns(
   );
 }
 
-/** Full toolbar visibility: scheme gate + at least one design that fits. */
+/** Toolbar copy when the scheme allows Home designs but none of the catalogue fit. */
+export const HOME_DESIGNS_NONE_FIT_TITLE =
+  'No home designs fit the house lots on this plan';
+
+/**
+ * Full toolbar visibility: hide on apartment massing / no house lots.
+ * When the scheme allows homes but nothing fits, still show the control disabled.
+ */
 export function showHomeDesignsControl(opts: {
   layoutShown: 'multifamily' | 'neighborhood' | null;
   product: 'apartments' | 'townhomes';
   elements: Element[];
   designs: readonly HomeDesign[];
   siteBoundary?: Element['geometry'] | null;
-}): { show: boolean; houses: Element[]; eligible: HomeDesign[] } {
+}): { show: boolean; enabled: boolean; houses: Element[]; eligible: HomeDesign[] } {
   const houses = residentialHomes(opts.elements);
   if (
     !schemeAllowsHomeDesigns({
@@ -80,8 +87,8 @@ export function showHomeDesignsControl(opts: {
       houseCount: houses.length,
     })
   ) {
-    return { show: false, houses, eligible: [] };
+    return { show: false, enabled: false, houses, eligible: [] };
   }
   const eligible = eligibleHomeDesigns(opts.designs, opts.elements, opts.siteBoundary);
-  return { show: eligible.length > 0, houses, eligible };
+  return { show: true, enabled: eligible.length > 0, houses, eligible };
 }
