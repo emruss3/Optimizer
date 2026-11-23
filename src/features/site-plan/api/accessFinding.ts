@@ -107,7 +107,9 @@ export function accessFinding(input: {
       ...base,
       state: 'needs_verification',
       headline: PARKING_NOT_REACHABLE,
-      why: `${short} of ${drives.bays} parking bay${drives.bays === 1 ? '' : 's'} ${short === 1 ? 'has' : 'have'} no traversable drive to the street. Striped count stays visible; only curb-reachable supply counts as usable.`,
+      why: drives.stallsServed != null && drives.stallsStriped != null
+        ? `${short} of ${drives.bays} parking bay${drives.bays === 1 ? '' : 's'} ${short === 1 ? 'has' : 'have'} no traversable drive to the street. Striped count stays visible; ${drives.stallsServed} of ${drives.stallsStriped} stalls count as usable.`
+        : `${short} of ${drives.bays} parking bay${drives.bays === 1 ? '' : 's'} ${short === 1 ? 'has' : 'have'} no traversable drive to the street. Striped count stays visible; only curb-reachable bays count toward usable supply.`,
       clears: [JOIN, CURB],
     };
   }

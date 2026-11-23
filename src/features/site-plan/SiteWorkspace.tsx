@@ -3526,39 +3526,69 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // 2026-09-04 (Eric: "random parking, with no road to get to it") + field audit
   // 32a264a: curb requires a street-edge-connected drive network; a bay counts
   // as served only with a traversable trip on that network.
+  // Placeholder frontage (front_edge_is_placeholder): never use the guessed
+  // street edge as the strict curb — fall back to the parcel ring so live
+  // parcels (667574 / 408571 / Herman / W Heiman) do not false-red to
+  // NO_DRIVE_TO_STREET from placeholder geometry alone.
+  const frontageIsPlaceholder = !!plannerCtx?.solver_brief.geometry.front_edge_is_placeholder
+    || (planLineage?.flags ?? []).includes('frontage_geometry_is_placeholder_until_road_edge_upgrade');
+  const accessFlags = useMemo(
+    () => [...(planLineage?.flags ?? []), ...(plannerCtx?.solver_brief.geometry.front_edge_is_placeholder ? ['frontage_geometry_is_placeholder_until_road_edge_upgrade'] : [])],
+    [planLineage?.flags, plannerCtx],
+  );
   const accessProbe = useMemo(
     () => accessFinding({
       frontage,
       engineAccess,
-      flags: [...(planLineage?.flags ?? []), ...(plannerCtx?.solver_brief.geometry.front_edge_is_placeholder ? ['frontage_geometry_is_placeholder_until_road_edge_upgrade'] : [])],
+      flags: accessFlags,
       drives: null,
     }),
-    [frontage, engineAccess, planLineage?.flags, plannerCtx],
+    [frontage, engineAccess, accessFlags],
   );
+  const streetEdgeForAccess = frontageIsPlaceholder ? null : (accessProbe?.frontageLine ?? null);
   const mfAccess = useMemo(
-    () => mfAccessSummary(displayElements, parcelRing3857, 3, accessProbe?.frontageLine ?? null),
-    [displayElements, parcelRing3857, accessProbe?.frontageLine],
+    () => mfAccessSummary(displayElements, parcelRing3857, 3, streetEdgeForAccess),
+    [displayElements, parcelRing3857, streetEdgeForAccess],
   );
   // Street access as a finding with a next step: the reason, the frontage it concerns, what clears it.
   const access = useMemo(
     () => accessFinding({
       frontage,
       engineAccess,
-      flags: [...(planLineage?.flags ?? []), ...(plannerCtx?.solver_brief.geometry.front_edge_is_placeholder ? ['frontage_geometry_is_placeholder_until_road_edge_upgrade'] : [])],
+      flags: accessFlags,
       drives: displayElements.some(e => e.id.startsWith('mfgen-')) ? mfAccess : null,
     }),
-    [frontage, engineAccess, planLineage?.flags, plannerCtx, displayElements, mfAccess],
+    [frontage, engineAccess, accessFlags, displayElements, mfAccess],
   );
   const [showFrontage, setShowFrontage] = useState(false);
   // Where the route breaks (no curb, or stranded bays): the same two points mark
   // it on the plan and in the 3D review; gapFt is ground feet via scene.frame.
+  // Placeholder frontage: aim the red mark at the parcel ring, not the guess.
   const routeBreak = useMemo(
     () => ((access?.headline === NO_DRIVE_TO_STREET || access?.headline === PARKING_NOT_REACHABLE)
       && displayElements.some(e => e.id.startsWith('mfgen-'))
-      ? accessBreak(displayElements, parcelRing3857, access.frontageLine, 3, scene?.frame.distanceFt)
+      ? accessBreak(
+        displayElements,
+        parcelRing3857,
+        frontageIsPlaceholder ? null : access.frontageLine,
+        3,
+        scene?.frame.distanceFt,
+      )
       : null),
-    [access, displayElements, parcelRing3857, scene],
+    [access, displayElements, parcelRing3857, scene, frontageIsPlaceholder],
   );
+  // Curb-reachable stalls for KPIs / headline / A-01 when access cuts striped supply.
+  const stallsUsable = useMemo(() => {
+    if (!displayElements.some(e => e.id.startsWith('mfgen-'))) return null;
+    if (mfAccess.stallsServed == null || mfAccess.stallsStriped == null) return null;
+    if (mfAccess.served >= mfAccess.bays) return null;
+    return mfAccess.stallsServed;
+  }, [displayElements, mfAccess]);
+  // Display metrics: stallsProvided stands on curb-reachable supply when known.
+  const accessAwareMetrics = useMemo(() => {
+    if (!metrics || stallsUsable == null) return metrics;
+    return { ...metrics, stallsProvided: stallsUsable };
+  }, [metrics, stallsUsable]);
   const routeBreakLabel = routeBreak
     ? routeBreak.gapFt != null
       ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
@@ -3586,6 +3616,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       units: metrics?.totalUnits ?? null,
       stallsDrawn: metrics?.stallsDrawn ?? null,
       stallsReported: metrics?.stallsReported ?? metrics?.stallsProvided ?? null,
+      stallsUsable,
       stallsRequired: metrics?.stallsRequired ?? null,
       builtGsf: metrics?.totalBuiltSF ?? null,
       capture: captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy),
@@ -3625,7 +3656,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       builtGsf: metrics?.totalBuiltSF ?? null,
       maxGsf: maxBuildout?.max_gsf ?? null,
     });
-  }, [displayElements, metrics, maxBuildout, contextState, seedViewOn, activeHome, detachedSfOnSheet, thV3OnSheet, thV3Summary, routeBreak, scene?.identity.revision]);
+  }, [displayElements, metrics, maxBuildout, contextState, seedViewOn, activeHome, detachedSfOnSheet, thV3OnSheet, thV3Summary, routeBreak, scene?.identity.revision, stallsUsable]);
   const sheetsTitleWithAccess = useMemo(() => {
     const schedule = layoutDecision.rows;
     // the one "Parking" row gives way to the decision figures, which name each count
@@ -3992,7 +4023,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       {/* on a narrow screen the figures and the controls each take a line, so neither runs off the side */}
       <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip
-          metrics={metrics}
+          metrics={accessAwareMetrics}
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
@@ -4168,7 +4199,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
         <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>
         <button type="button" className="underline" onClick={() => { setHouseStudy(null); setHomePreviewFocus(0); }}>Return to base scheme</button></div>}
-      {!seedViewOn && <BuiltHeadline metrics={metrics} elements={elements} />}
+      {!seedViewOn && <BuiltHeadline metrics={accessAwareMetrics} elements={elements} />}
       {/* 2026-09-04 (Eric, 2622 W Heiman: "difficult to see the site planner,
           there is a ton of data"): the basis line, the context lineage, the
           highest-and-best comparator and the buildout ladder fold into ONE

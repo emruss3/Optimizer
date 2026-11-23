@@ -18,6 +18,11 @@ export interface ExhibitScheduleInput {
   stallsDrawn?: number | null;
   /** stalls the engine's summary reports */
   stallsReported?: number | null;
+  /**
+   * Curb-reachable stalls (mfAccess.stallsServed). When set and below drawn,
+   * the Parking row names usable supply separately from the striped total.
+   */
+  stallsUsable?: number | null;
   /** stalls the placed program requires */
   stallsRequired?: number | null;
   /**
@@ -43,21 +48,27 @@ export interface ExhibitScheduleInput {
 
 const n = (v: number, d = 0) => v.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
 
-/** Multifamily (or any counted) parking: drawn / reported / required. */
+/** Multifamily (or any counted) parking: drawn / reported / usable / required. */
 function parkingRow(i: ExhibitScheduleInput): ScheduleRow | null {
   const drawn = i.stallsDrawn ?? null, reported = i.stallsReported ?? null, required = i.stallsRequired ?? null;
+  const usable = i.stallsUsable ?? null;
   const hasDrawn = i.stallsDrawn != null;
   const hasReported = i.stallsReported != null;
   const hasRequired = required != null && required > 0;
   // nothing named about supply or need → no parking row
   if (!hasDrawn && !hasReported && !hasRequired) return null;
 
-  const supplied = drawn ?? reported;
+  // Adequacy stands on curb-reachable supply when access excludes some striped bays.
+  const accessCuts = usable != null && drawn != null && usable < drawn;
+  const supplied = accessCuts ? usable : (drawn ?? reported);
   const parts: string[] = [];
 
   if (supplied == null) {
     // absent supply carries a reason; the required count still prints
     parts.push('Unknown · supply not measured');
+  } else if (accessCuts) {
+    parts.push(`${n(drawn!)} drawn`, `${n(usable!)} usable`);
+    if (hasReported && reported !== drawn) parts.push(`${n(reported!)} reported`);
   } else if (hasDrawn && hasReported && drawn !== reported) {
     parts.push(`${n(drawn!)} drawn`, `${n(reported!)} reported`);
   } else {
@@ -66,7 +77,7 @@ function parkingRow(i: ExhibitScheduleInput): ScheduleRow | null {
 
   if (hasRequired) parts.push(`${n(required!)} required`);
 
-  const disagree = hasDrawn && hasReported && drawn !== reported;
+  const disagree = hasDrawn && hasReported && drawn !== reported && !accessCuts;
   // a per-home ratio needs one count to stand on: it is left off when the two disagree or supply is unknown
   if (i.units && supplied != null && !disagree) parts.push(`${n(supplied / i.units, 2)} per home`);
 

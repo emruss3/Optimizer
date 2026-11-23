@@ -17,6 +17,12 @@ describe('the figures a sheet must carry', () => {
     expect(rows.find(r => r.label === 'Street access')?.value).toMatch(/no traversable drive from parking to the street/);
   });
 
+  // Field audit 32a264a / Herman: inaccessible supply excluded from usable; striped total still visible
+  it('names curb-reachable usable stalls beside the striped total', () => {
+    const rows = exhibitSchedule({ units: 70, stallsDrawn: 127, stallsUsable: 90, stallsRequired: 122 });
+    expect(rows.find(r => r.label === 'Parking')?.value).toBe('127 drawn · 90 usable · 122 required · 1.29 per home · 32 short of required');
+  });
+
   it('Main St: supplied against required, the structured ceiling, and the 2 + 3 stack', () => {
     const capture = captureBasis(232425, { max_gsf: 199950, structured_parking_ceiling: { gsf: 423765 } } as never, 'wrap_garage');
     const rows = exhibitSchedule({ units: 131, stallsReported: 238, stallsRequired: 226, builtGsf: 232425, capture, garageLevels: 2, residentialLevels: 3, contextUnverified: true });

@@ -17,7 +17,20 @@ describe('mfAccessSummary — does the parking have a road?', () => {
     const far = el('bay-b', 'parking', rect(60, 20, 80, 40)); // nowhere near it
     const apron = el('apron', 'parking', rect(60, 80, 62, 84), { apron: true }); // a garage apron, not a bay
     const s = mfAccessSummary([drive, near, far, apron], parcel);
-    expect(s).toEqual({ curb: true, bays: 2, served: 1, drives: 1 });
+    expect(s).toMatchObject({ curb: true, bays: 2, served: 1, drives: 1 });
+    // stall counts absent on these fixtures → usable figure stays null
+    expect(s.stallsServed).toBeNull();
+    expect(s.stallsStriped).toBeNull();
+  });
+
+  it('sums stalls on curb-reachable bays for the usable figure', () => {
+    const drive = el('drive', 'circulation', rect(0, 0, 8, 60));
+    const near = el('bay-a', 'parking', rect(10, 50, 30, 60), { stalls: 10 });
+    const far = el('bay-b', 'parking', rect(60, 20, 80, 40), { stalls: 8 });
+    const s = mfAccessSummary([drive, near, far], parcel);
+    expect(s.served).toBe(1);
+    expect(s.stallsServed).toBe(10);
+    expect(s.stallsStriped).toBe(18);
   });
 
   it('a drive that stops inside the site never reaches the curb', () => {
@@ -60,6 +73,18 @@ describe('mfAccessSummary — does the parking have a road?', () => {
     expect(s.served).toBe(0);
   });
 
+  // Placeholder frontage (667574 / 408571 / Herman / W Heiman): do not pass a
+  // guessed street edge — fall back to the parcel ring so a drive on any lot
+  // line still clears curb and does not false-red to NO_DRIVE_TO_STREET.
+  it('falls back to the parcel ring when street edge is omitted (placeholder frontage)', () => {
+    const sideDrive = el('side', 'circulation', rect(0, 40, 6, 56));
+    const bay = el('bay', 'parking', rect(8, 42, 26, 54));
+    const distantStreet = [[100, 0], [100, 100]];
+    expect(mfAccessSummary([sideDrive, bay], parcel, 3, distantStreet).curb).toBe(false);
+    expect(mfAccessSummary([sideDrive, bay], parcel, 3, null).curb).toBe(true);
+    expect(mfAccessSummary([sideDrive, bay], parcel).curb).toBe(true);
+  });
+
   it('measures ring-to-ring distance edge to vertex both ways, zero when edges cross', () => {
     expect(ringDistance(rect(0, 0, 10, 10), rect(12, 4, 20, 6))).toBeCloseTo(2, 6);
     expect(ringDistance(rect(0, 0, 10, 10), rect(8, 8, 12, 12))).toBe(0);
@@ -83,6 +108,17 @@ describe('accessBreak — where the route to the street stops', () => {
     expect(b).not.toBeNull();
     expect(b!.gap3857).toBeGreaterThan(3);
     // break runs from the island toward the curb stub (east→west)
+    expect(b!.from[0]).toBeGreaterThan(b!.to[0]!);
+  });
+
+  // PARKING_NOT_REACHABLE with orphan bays (no drive touches them): still draw red.
+  it('marks the gap from an orphan bay to the curb network when no drive touches the bay', () => {
+    const curbDrive = el('curb', 'circulation', rect(0, 10, 8, 18));
+    const bay = el('bay', 'parking', rect(66, 60, 74, 68));
+    const b = accessBreak([curbDrive, bay], parcel);
+    expect(b).not.toBeNull();
+    expect(b!.gap3857).toBeGreaterThan(3);
+    // break runs from the bay toward the curb stub (east→west)
     expect(b!.from[0]).toBeGreaterThan(b!.to[0]!);
   });
 
