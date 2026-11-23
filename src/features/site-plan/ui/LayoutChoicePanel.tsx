@@ -77,7 +77,13 @@ export function LayoutChoicePanel({
   thV3?: ThV3Summary | null;
   thV3Error?: string | null;
   /** parking and floor area of the layout on the sheet now, as the workspace states them */
-  shownFacts?: { parking?: string | null; floorArea?: string | null } | null;
+  shownFacts?: {
+    parking?: string | null;
+    floorArea?: string | null;
+    guestSupply?: number | null;
+    guestTarget?: number | null;
+    guestBasis?: 'engine-target' | 'engine-graded' | null;
+  } | null;
   /** scheme revision the shown facts belong to */
   factsRevision?: string | null;
 }) {
@@ -158,7 +164,15 @@ export function LayoutChoicePanel({
             const facts = (kind: LayoutKind) => {
               if (shown === kind) return shownFacts ?? {};
               const kept = retained[kind];
-              return kept ? { parking: kept.parking, floorArea: kept.floorArea } : {};
+              return kept
+                ? {
+                    parking: kept.parking,
+                    floorArea: kept.floorArea,
+                    guestSupply: kept.guestSupply,
+                    guestTarget: kept.guestTarget,
+                    guestBasis: kept.guestBasis,
+                  }
+                : {};
             };
             const a: LayoutOption = { key: 'multifamily', label: `${mf} ${product === 'townhomes' ? 'townhomes' : 'apartments'}`, homes: mf, shown: shown === 'multifamily', ...facts('multifamily') };
             const b: LayoutOption = { key: 'neighborhood', label: `${nb.homes} ${nb.label}`, homes: nb.homes, shown: shown === 'neighborhood', ...facts('neighborhood') };
