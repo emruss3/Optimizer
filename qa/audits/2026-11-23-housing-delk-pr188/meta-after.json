@@ -1,0 +1,48 @@
+{
+  "afterSelect": {
+    "selected": "true",
+    "fit": "3 placed · 2 open",
+    "unplaced": [
+      "Lot decision: lot 4: irregular / unresolved frontage — resolve edges from actual frontage before placing 1754-00010",
+      "Lot decision: lot 5: pie lot — resolve edges from actual frontage before placing 1754-00010"
+    ],
+    "evidence": null
+  },
+  "state3d": "ready",
+  "meta": {
+    "ready": "true",
+    "rendered": "pbr",
+    "quality": "light",
+    "buildings": "5",
+    "look": "review",
+    "sceneKey": "675423|neighborhood:deep search",
+    "shot": {
+      "shot": "street",
+      "position": [
+        23.73,
+        35.3,
+        5.5
+      ],
+      "target": [
+        -31.78,
+        55.5,
+        5.5
+      ],
+      "fovDeg": 38,
+      "lift": 1.32,
+      "basis": "Street arrival at eye level (5.5 ft), clear line of sight; 19 ft from the nearest street line; 0 trees in the line of sight",
+      "units": "ft",
+      "frame": "local east, north, up",
+      "revision": "316a0d36",
+      "style": "infill",
+      "sunKey": "jun21",
+      "sunHour": 9
+    },
+    "housingSelected": "true",
+    "fitSummary": "3 placed · 2 open",
+    "designId": null,
+    "evidenceHousing": null,
+    "revisionFromShot": "316a0d36"
+  },
+  "shotPath": "/tmp/housing-delk-wt/qa/audits/2026-11-23-housing-delk-pr188/675423_3d_street_cottage-candidate_abhp-1754-00010.png"
+}

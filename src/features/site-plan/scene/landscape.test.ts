@@ -94,6 +94,9 @@ describe('the sheet', () => {
     const mark = broken.querySelector('[data-role="route-break"]');
     expect(mark?.querySelectorAll('circle').length).toBe(2);
     expect(mark?.textContent).toMatch(/no drawn connection to the street/);
+    const measured = new DOMParser().parseFromString(
+      renderSitePlanSheet(scene, { ...title, routeBreak: { from: [0, 18], to: [0, -30], gapFt: 20.85 } }, 'tabloid').svg, 'image/svg+xml');
+    expect(measured.querySelector('[data-role="route-break"]')?.textContent).toMatch(/21 ft short/);
   });
 
   it('prints the decision figures ahead of the other site data, and says so when a legend is cut short', () => {
@@ -106,6 +109,43 @@ describe('the sheet', () => {
     const drawn = doc.querySelectorAll('[data-legend]').length;
     const more = doc.querySelector('[data-legend-more]')?.getAttribute('data-legend-more');
     expect(drawn > 0 || more === 'all').toBe(true);
+  });
+
+  // Live Design handoff 2026-11-23: W Heiman parking / street-access text overran Letter (~0.60 in) and slide (~3 pts)
+  it('wraps long decision values inside the strip on Letter and slide', () => {
+    const decided = {
+      ...title,
+      decision: [
+        { label: 'Parking', value: '127 drawn · 20 reported · 122 required · reported count 102 short of required' },
+        { label: 'Street access', value: 'Unresolved: no drive reaches the street' },
+      ],
+    };
+    for (const size of ['letter', 'slide'] as const) {
+      const sheet = renderSitePlanSheet(scene, decided, size);
+      const layout = sheetLayout(scene, size);
+      const tx = layout.strip.x + 14, tw = layout.strip.w - 28;
+      const doc = new DOMParser().parseFromString(sheet.svg, 'image/svg+xml');
+      expect(doc.querySelector('parsererror')).toBeNull();
+      const parking = doc.querySelector('[data-decision="Parking"]');
+      expect(parking?.getAttribute('data-wrapped')).toBe('true');
+      expect(parking?.getAttribute('data-alert')).toBe('true');
+      expect(parking?.textContent).toMatch(/short of required/);
+      // every value fragment starts at the indent and ends before the strip's right content edge
+      for (const t of parking?.querySelectorAll('text') ?? []) {
+        const x = Number(t.getAttribute('x'));
+        const text = t.textContent ?? '';
+        if (text === 'Parking') {
+          expect(x).toBeCloseTo(tx, 1);
+          continue;
+        }
+        expect(x).toBeGreaterThanOrEqual(tx + 46 - 0.5);
+        const approxW = text.length * 5.9 * 0.52;
+        expect(x + approxW).toBeLessThanOrEqual(tx + tw + 1);
+      }
+      const access = doc.querySelector('[data-decision="Street access"]');
+      expect(access?.getAttribute('data-alert')).toBe('true');
+      expect(access?.textContent).toMatch(/Unresolved/);
+    }
   });
 
   it('prints the key figures, the site data and the stripes it could draw', () => {

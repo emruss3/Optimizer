@@ -12,6 +12,8 @@ import { FILL_BANDS, checkCounts, deepSearchLine, autoBestSentence, edgeClassSen
 /** What the by-right generator does not evaluate, named beside its passing checks (the scope's P0.2). */
 export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
+import { HousingDesignPicker } from './HousingDesignPicker';
+import type { DesignFitResult, HousingDesignRecord } from '../housing/types';
 
 function testLabel(id: string): string {
   return id.replace(/\./g, ' · ').replace(/_/g, ' ');
@@ -126,6 +128,7 @@ export function SfV1Panel({
   summary, override, onOverride, busy, onDrawHouse, houseDrawn, houseError,
   competition, shownRequested, onViewCandidate, onRetryCompetition, terrain, site,
   autoBest, holeOverlap, frontageLandlocked, deepSearch,
+  housing,
 }: {
   /** the deep search that keeps looking after the quick plan is drawn (fn_sf_v1_deep_search) */
   deepSearch?: SfV1DeepProgress | null;
@@ -155,6 +158,14 @@ export function SfV1Panel({
   holeOverlap?: HoleOverlap | null;
   /** the frontage layer finds no street on the parcel */
   frontageLandlocked?: boolean;
+  /** Delk cottage picker (Housing design brief slice) — absent on other parcels */
+  housing?: {
+    parcelId: string;
+    designs: HousingDesignRecord[];
+    selectedId: string | null;
+    fits: DesignFitResult[] | null;
+    onSelect: (designId: string) => void;
+  } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
   const [lotD, setLotD] = useState<string>(override.lot_d_ft != null ? String(override.lot_d_ft) : '');
@@ -378,6 +389,17 @@ export function SfV1Panel({
                   {summary.housesPlaced < summary.lots ? ' · the rest keep a generic pad' : ''}
                 </dd>
               </>
+            )}
+            {housing && housing.designs.length > 0 && (
+              <div className="col-span-2">
+                <HousingDesignPicker
+                  parcelId={housing.parcelId}
+                  designs={housing.designs}
+                  selectedId={housing.selectedId}
+                  fits={housing.fits}
+                  onSelect={housing.onSelect}
+                />
+              </div>
             )}
             <dt className="text-slate-500">Land</dt>
             <dd>

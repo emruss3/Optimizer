@@ -26,6 +26,11 @@ export interface SceneIdentity {
   revision: string;
   /** `parcel|scheme`: what a selection or a camera position is remembered for. */
   key: string;
+  /**
+   * Housing design chosen for this scheme in the session (`abhp:1754-00010`).
+   * Not yet part of the persisted candidate schema — see housing/index.ts save gap.
+   */
+  housingDesignId?: string | null;
 }
 
 export type FeatureRole = 'building' | 'parking' | 'drive' | 'street' | 'open-space' | 'lot' | 'other';
@@ -93,6 +98,23 @@ export interface SceneBuilding extends SceneFeature {
   display: BuildingDisplay;
   /** The building's unit mix as the plan gives it, or null. Drives the floor plate on the sheet. */
   unitMix: Array<{ type: string; count: number; avgSqft: number }> | null;
+  /**
+   * One placement identity for every view (SF adapter → scene → A-01 / section /
+   * Three.js / Cycles). Absent on legacy CubiCasa pads that only carry a plan
+   * number — those stay schematic massing with `status: 'schematic'`.
+   */
+  housing?: {
+    designId: string;
+    assetVersion: string;
+    elevation: string;
+    mirror: string;
+    rotationDeg: number;
+    parking: string;
+    status: 'placed' | 'unplaced' | 'schematic';
+    fitReason: string | null;
+    entryAnchorFt: [number, number] | null;
+    vehicleAnchorFt: [number, number] | null;
+  } | null;
 }
 
 export interface SceneContext {

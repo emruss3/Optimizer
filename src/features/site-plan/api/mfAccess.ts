@@ -5,6 +5,9 @@
  * Read from the rendered elements, in the canvas frame (EPSG:3857 metres):
  * a drive that reaches the parcel line (the curb), and a drive touching every
  * parking bay. The battery asserts it; the headline states it.
+ *
+ * Lengths shown to a reviewer (gapFt) are ground feet via the scene frame —
+ * Web Mercator metres are not ground metres (~1.24× at Nashville).
  */
 import type { Element } from '../../../engine/types';
 
@@ -99,11 +102,35 @@ function nearestPair(a: number[][], b: number[][]): { from: number[]; to: number
   return best;
 }
 
+export type AccessBreak = {
+  from: number[];
+  to: number[];
+  /** Gap length in raw EPSG:3857 canvas metres (not ground metres). */
+  gap3857: number;
+  /**
+   * Same gap in ground feet when a frame is available (Live Design P2:
+   * W Heiman ~20.85 ft short of frontage). Null until `distanceFt` is passed
+   * so a first paint can't show raw Mercator-as-feet (~26 ft at Nashville).
+   */
+  gapFt: number | null;
+};
+
+/**
+ * Partner-sheet / canvas / notes copy for a measured gap: one decimal under
+ * 10 ft, otherwise whole feet. Keep every surface on this rule.
+ */
+export function formatGapFt(gapFt: number): string {
+  return gapFt < 10 ? gapFt.toFixed(1) : String(Math.round(gapFt));
+}
+
 /**
  * Where the route to the street breaks, when no drive reaches the parcel line:
- * the end of the drive nearest the street, and the point on the street edge it
- * would have to reach. It marks a place on the drawing. It carries no length:
- * the app does not measure the gap, it shows where the engine's drive stops.
+ * the end of the drive nearest the street, the point on the street edge it
+ * would have to reach, and the measured gap. Endpoints mark the drawing;
+ * gapFt is what a reviewer reads against the graphic scale.
+ *
+ * Pass `distanceFt` from `scene.frame.distanceFt` so gapFt is ground feet at
+ * the site latitude. Without it, gapFt is null (hide feet until the frame exists).
  */
 export function accessBreak(
   elements: Element[],
@@ -111,7 +138,8 @@ export function accessBreak(
   /** the street edge of the parcel, when the frontage layer has one; else the parcel line stands in */
   frontageLine: number[][] | null = null,
   tolM = 3,
-): { from: number[]; to: number[] } | null {
+  distanceFt?: (a: ArrayLike<number>, b: ArrayLike<number>) => number,
+): AccessBreak | null {
   const drives = elements.filter(e => e.type === 'circulation').map(ringOf).filter((r): r is number[][] => r != null);
   if (drives.length === 0 || !parcelRing || parcelRing.length < 4) return null;
   if (drives.some(d => ringDistance(d, parcelRing) <= tolM)) return null;
@@ -121,5 +149,8 @@ export function accessBreak(
     const pair = nearestPair(d, edge);
     if (pair && (!best || pair.d < best.d)) best = pair;
   }
-  return best ? { from: best.from, to: best.to } : null;
+  if (!best) return null;
+  const gap3857 = best.d;
+  const gapFt = distanceFt ? distanceFt(best.from, best.to) : null;
+  return { from: best.from, to: best.to, gap3857, gapFt };
 }

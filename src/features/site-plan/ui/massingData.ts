@@ -9,8 +9,24 @@ import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
 import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
 import { buildArchitecture, DEFAULT_STYLE, type ArchStyle } from './architecture';
+import type { HouseAccess } from './architecture/fittedHouse';
+import { houseAccessFromProperties } from '../housing/handoff';
 import { stallStripes } from '../scene/sheetSvg';
 import { seeded } from '../scene/landscape';
+
+/** Selection→drawing handoff: design identity, garage flag, porch/entry anchors. */
+function houseAccessFor(el: Element, driveways: Array<Array<[number, number]>>): HouseAccess | undefined {
+  const properties = (el.properties ?? {}) as Record<string, unknown>;
+  const access = houseAccessFromProperties(properties, driveways);
+  if (access) return access;
+  const catalogued = typeof properties.floorplanId === 'string' || typeof properties.housePlan === 'string';
+  if (!catalogued && driveways.length === 0) return undefined;
+  return {
+    driveways,
+    garage: typeof properties.houseGarage === 'boolean' ? properties.houseGarage : null,
+    catalogued,
+  };
+}
 
 export interface MassingPolygon {
   /** The plan element's id: the same id the plan and the sheets use. Absent on context. */
@@ -331,8 +347,7 @@ export function buildMassingData(
       const use = buildingUse(el), properties = el.properties;
       const garage = garageOf(el), deck = deckUnder(el);
       const a = buildArchitecture(el.id, label, rings, use, heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i), frontage,
-        use === 'house' ? { driveways, garage: typeof properties?.houseGarage === 'boolean' ? properties.houseGarage : null,
-          catalogued: typeof properties?.floorplanId === 'string' || typeof properties?.housePlan === 'string' } : undefined,
+        use === 'house' ? houseAccessFor(el, driveways) : undefined,
         garage ? { ring: garage.ring, deckM: garage.deckM, over: properties?.overGarage === true } : null);
       if (deck) {
         // it stands on the garage's deck, not on the ground under it

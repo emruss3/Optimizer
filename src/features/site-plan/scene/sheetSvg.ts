@@ -17,6 +17,7 @@ import type { DrawingScene, ScenePolygons } from './types';
 import { interiorPoint, type Pt } from './frame';
 import { computeFloorplate } from '../../../components/site-planner/unitLayout';
 import { LABEL_PRIORITY, placeLabels, type LabelCandidate, type PlacedLabel } from './labels';
+import { formatGapFt } from '../api/mfAccess';
 
 export type SheetSize = 'letter' | 'tabloid' | 'slide';
 
@@ -34,8 +35,8 @@ export interface SheetTitle {
   subtitle?: string | null | undefined;
   date: string;
   notes?: string[] | undefined;
-  /** Where the route to the street breaks, scene feet: the end of the drive and the street edge it does not reach. */
-  routeBreak?: { from: Pt; to: Pt } | null | undefined;
+  /** Where the route to the street breaks, scene feet: endpoints and optional measured gap. */
+  routeBreak?: { from: Pt; to: Pt; gapFt?: number } | null | undefined;
   /** Where a car enters a parking structure, scene feet, as the engine places it. */
   garageEntries?: Pt[] | undefined;
   /** The figures a decision turns on (api/exhibitSchedule): printed under the headline numbers on every sheet size. */
@@ -530,10 +531,13 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   if (title.routeBreak) {
     // an unresolved connection stays on the download: dashed between the two ends, a ring on each
     const a = P(title.routeBreak.from), b = P(title.routeBreak.to);
+    const gap = title.routeBreak.gapFt != null && Number.isFinite(title.routeBreak.gapFt)
+      ? ` · ${formatGapFt(title.routeBreak.gapFt)} ft short`
+      : '';
     out.push(`<g data-role="route-break" stroke="#dc2626" fill="#ffffff">`
       + `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="1.4" stroke-dasharray="4 3"/>`
       + `<circle cx="${a[0]}" cy="${a[1]}" r="4.5" stroke-width="1.4"/><circle cx="${b[0]}" cy="${b[1]}" r="4.5" stroke-width="1.4"/>`
-      + `<text x="${r2(a[0] + 8)}" y="${r2(a[1] - 7)}" font-size="6.6" font-weight="700" fill="#991b1b" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Drive stops here · no drawn connection to the street</text>`
+      + `<text x="${r2(a[0] + 8)}" y="${r2(a[1] - 7)}" font-size="6.6" font-weight="700" fill="#991b1b" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Drive stops here · no drawn connection to the street${gap}</text>`
       + '</g>');
   }
   out.push('</g>');
@@ -605,13 +609,28 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     rule(8, 14);
     eyebrow('SITE DATA');
     for (const row of dataRows) {
-      const long = row.label.length + row.value.length > 44;
-      const alert = /^Unresolved|^Not verified|short of/.test(row.value);
-      const value = long
-        ? `<text x="${r2(tx + 46)}" y="${r2(y)}" font-size="5.9" font-weight="600" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`
-        : `<text x="${tx + tw}" y="${r2(y)}" font-size="6.4" font-weight="600" text-anchor="end" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`;
-      out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''}><text x="${tx}" y="${r2(y)}" font-size="${long ? 5.9 : 6.4}" fill="#4b5158">${esc(row.label)}</text>${value}</g>`);
-      y += 9.4;
+      // short values sit on the same line, right-aligned; long values (parking warnings,
+      // unresolved street access) wrap to the strip's content width so Letter and slide
+      // keep every word inside the print frame (Live Design handoff 2026-11-23).
+      const valueSz = 5.9;
+      const labelSz = 6.4;
+      const valueIndent = 46;
+      const valueWidth = Math.max(24, tw - valueIndent);
+      const maxChars = Math.max(12, Math.floor(valueWidth / (valueSz * 0.52)));
+      const parts = wrap(row.value, maxChars);
+      const long = parts.length > 1 || row.label.length + row.value.length > 44;
+      // alert survives monochrome in words (short / Unresolved / Not verified), not colour alone
+      const alert = /\bshort\b|^Unresolved|^Not verified/.test(row.value);
+      const fill = alert ? '#b4232a' : INK;
+      if (!long) {
+        out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''} data-alert="${alert ? 'true' : 'false'}"><text x="${tx}" y="${r2(y)}" font-size="${labelSz}" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="${labelSz}" font-weight="600" text-anchor="end" fill="${fill}">${esc(row.value)}</text></g>`);
+        y += 9.4;
+      } else {
+        const vx = r2(tx + valueIndent);
+        const valueLines = parts.map((part, i) => `<text x="${vx}" y="${r2(y + i * (valueSz + 2.2))}" font-size="${valueSz}" font-weight="600" fill="${fill}">${esc(part)}</text>`).join('');
+        out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''} data-alert="${alert ? 'true' : 'false'}" data-wrapped="true"><text x="${tx}" y="${r2(y)}" font-size="${valueSz}" fill="#4b5158">${esc(row.label)}</text>${valueLines}</g>`);
+        y += Math.max(9.4, parts.length * (valueSz + 2.2) + 1);
+      }
     }
     y -= 4;
   }
