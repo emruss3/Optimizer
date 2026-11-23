@@ -785,6 +785,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     owner = `curb:${c.id ?? index}`;
     if (real) put('concrete|solid', planCurb(c.path, pavedAt), [206, 198, 183, 255]);
     else if (!opts.review) put('concrete|flat', ribbon(c.path, 0.2, 0.36), [226, 223, 214, 255]);
+    // the access is a labelled overlay of the review view only, never part of the rendering
+    if (opts.review) put('plain|flat', ribbon(c.path, 0.45, 0.43), [234, 138, 30, 255]);
   }
   // and the parcel line and the buildable envelope are drawn on the ground
   if (opts.review) for (const g of data.groundPaths) put('plain|flat', ribbon(g.path, Math.max(0.5, g.widthM * 1.1), 0.42), g.color);

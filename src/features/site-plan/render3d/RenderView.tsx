@@ -478,6 +478,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
           <span className="flex items-center gap-1"><i className="inline-block w-3 h-2 rounded-sm bg-white border border-gray-300" />Existing</span>
           <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-slate-600" />Parcel</span>
           {envelopeRing && <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-blue-600" />Buildable envelope</span>}
+          {data.curbs.length > 0 && <span className="flex items-center gap-1" data-testid="legend-access"><i className="inline-block w-4 border-t-2 border-amber-500" />Access</span>}
           {data.polygons.some(p => p.privateDrive) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 rounded-sm bg-slate-700" />Shared private drive</span>}
           {hazards.has('wetland') && <span className="flex items-center gap-1" data-testid="legend-wetland"><i className="inline-block h-2 w-3 bg-teal-200 border border-teal-600" />Wetland / water buffer</span>}
           {(hazards.has('floodplain') || hazards.has('floodway')) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 bg-blue-200 border border-blue-600" />Flood hazard area</span>}
