@@ -3,9 +3,17 @@ import { HOME_DESIGNS } from './originalDesigns';
 import { residentialHomes } from './placement';
 import { sfV1ToElements, type SfV1Response } from '../api/sfV1Plan';
 import fixture from '../api/__fixtures__/delk-675423.json';
-import { ABHP_4848_00368, ABHP_5633_00358, buildableStockPlans } from './catalogue';
+import {
+  ABHP_4848_00368,
+  ABHP_526_00051,
+  ABHP_5633_00014,
+  ABHP_5633_00358,
+  DELK_COTTAGE_1754_00010,
+  buildableStockPlans,
+} from './catalogue';
 import {
   designMatchesHouseTypology,
+  designsFittingHouse,
   eligibleHomeDesigns,
   eligibleStockDesigns,
   isApartmentMassingPlan,
@@ -16,6 +24,7 @@ import {
   typologyEligibleHomeDesigns,
 } from './homeDesignsGate';
 import type { Element } from '../../../engine/types';
+import type { LotFitInput } from './types';
 
 const mfApartmentPad = (id: string): Element => ({
   id,
@@ -194,4 +203,83 @@ describe('homeDesignsGate — stock per-lot', () => {
     );
     expect(narrow.map((d) => d.id)).toContain(ABHP_4848_00368.id);
   });
+});
+
+const rectLot = (w: number, d: number, index: number): LotFitInput => ({
+  ringFt: [
+    [0, 0],
+    [w, 0],
+    [w, d],
+    [0, d],
+    [0, 0],
+  ],
+  frontage: { a: [0, 0], b: [w, 0] },
+  setbacks: { front: 20, side: 5, rear: 20 },
+  lotKind: 'standard',
+  lotIndex: index,
+});
+
+describe('stockDesignsFittingLot — per-lot filter', () => {
+  const stock = buildableStockPlans();
+
+  it('lot A (wide) keeps a wide ranch that lot B (narrow) drops', () => {
+    // Buildable ~60×80 after 5/20/20 — clears 46×32 and 50×28.
+    const lotA = rectLot(70, 120, 0);
+    // Buildable ~26×80 — clears 24×30; rejects 46×32 / 50×28.
+    const lotB = rectLot(36, 120, 1);
+
+    const onA = stockDesignsFittingLot(stock, lotA).map((d) => d.id);
+    const onB = stockDesignsFittingLot(stock, lotB).map((d) => d.id);
+
+    expect(onA).toContain(ABHP_5633_00358.id);
+    expect(onA).toContain(ABHP_526_00051.id);
+    expect(onA).toContain(DELK_COTTAGE_1754_00010.id);
+
+    expect(onB).toContain(ABHP_5633_00014.id);
+    expect(onB).not.toContain(ABHP_5633_00358.id);
+    expect(onB).not.toContain(ABHP_526_00051.id);
+    // Narrow deep cottage still clears lot B width when turned or head-on.
+    expect(onB.length).toBeGreaterThan(0);
+    expect(onA.length).toBeGreaterThan(onB.length);
+  });
+
+  it('returns an empty eligible list when the lot is too small for every plan', () => {
+    // Buildable ~10×20 after setbacks — nothing in the catalogue clears it.
+    const tiny = rectLot(20, 40, 0);
+    expect(stockDesignsFittingLot(stock, tiny)).toEqual([]);
+    expect(stockDesignsFittingLot([ABHP_4848_00368, ABHP_5633_00014], tiny)).toEqual([]);
+  });
+});
+
+describe('designsFittingHouse — concept per-lot filter', () => {
+  it('Delk house 0 keeps Court Cottage while a tiny pad yields an empty list', () => {
+    const elements = sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
+    const houses = residentialHomes(elements);
+    expect(houses.length).toBeGreaterThan(0);
+    const house0 = houses[0]!;
+    const onLot = designsFittingHouse(HOME_DESIGNS, house0, elements);
+    expect(onLot.some((d) => d.name === 'Court Cottage')).toBe(true);
+    expect(onLot.every((d) => !d.attached)).toBe(true);
+
+    const tiny: Element = {
+      id: 'house-tiny-plot',
+      type: 'building',
+      name: 'House tiny',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [3, 0],
+            [3, 3],
+            [0, 3],
+            [0, 0],
+          ],
+        ],
+      },
+      properties: { use: 'residential', house: true, floors: 1 },
+      metadata: { createdAt: '', updatedAt: '', source: 'ai-generated' },
+    };
+    expect(designsFittingHouse(HOME_DESIGNS, tiny, [tiny])).toEqual([]);
+  }, 60000);
 });
