@@ -2314,7 +2314,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         generatorVersion: seed.generator_version ?? 'sf_seed_v1',
         flags: mapped.flags,
         buildings: seed.buildings.length,
-        floors: typeof seed.metrics?.stories === 'number' ? seed.metrics.stories : null,
+        floors: typeof seed.metrics?.stories === 'number' ? seed.metrics.stories
+          : typeof (seed.metrics as { floors?: unknown } | undefined)?.floors === 'number' ? (seed.metrics as { floors: number }).floors : null,
         footprintSqft: seed.buildings.reduce(
           (s, b) => s + (typeof b.footprint_sqft === 'number' ? b.footprint_sqft : 0), 0
         ) || null,
