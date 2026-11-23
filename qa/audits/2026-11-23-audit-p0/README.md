@@ -67,7 +67,23 @@ For the engine (not changed here): the summary total in
 `fn_generate_mf_site_plan_v2` should add every bay, and the per-bay counts
 on the large bays need a check against the bay's own area.
 
+## 5525 Mt View Rd (660125, RM15): guest parking beside a pass
+
+The townhome engine reports a guest supply and a guest target. None of its
+tests grades guest parking: the test list holds required, scored and context
+tests, and no guest test (checked in the fixtures for Mt View and for
+combined site -3). So "0 of 8" beside "every required test passes" was a
+target missed next to a pass that never looked at it.
+
+The panel and the basis line now say so: "0 of 8 stalls · 8 short · a target
+of the engine, not one of its tests", and the basis line adds "guest parking
+0 of 8, not tested". If the engine adds a guest test, the line reads "graded
+by the engine".
+
+Not done: the 49,600 GSF bound against the 72,000 sq ft that three full
+floors would imply. No floor plates are supplied, so that needs the engine's
+basis for the bound before either number is shown as comparable.
+
 ## Still to do in part 1
 
-W Heiman access route, Main St comparison basis, constraint identity,
-Mt View guest parking and floor area.
+W Heiman access route, Main St comparison basis, Mt View floor area.
