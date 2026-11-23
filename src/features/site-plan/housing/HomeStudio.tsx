@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Element } from '../../../engine/types';
 import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
+import { hasPhotorealElevation, photorealElevationSrc } from './elevationAssets';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { designsFittingHouse, stepHomeDesignIndex } from './homeDesignsGate';
@@ -29,6 +30,8 @@ export default function HomeStudio({
     [level, setLevel] = useState(0),
     [view, setView] = useState<'Exterior' | 'Plans' | 'Elevations'>('Exterior');
   const [side, setSide] = useState<Face>('front'),
+    // Diagram is the plan-derived default; Photoreal is an opt-in character view.
+    [elevationMode, setElevationMode] = useState<'photo' | 'diagram'>('diagram'),
     [houseId, setHouseId] = useState(() => houses.find((e) => e.id === selected)?.id ?? houses[0]?.id ?? '');
   const [fit, setFit] = useState<{ key: string; result: FitResult } | null>(null),
     root = useRef<HTMLElement>(null);
@@ -68,6 +71,11 @@ export default function HomeStudio({
 
   const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))],
     key = (home?.id ?? '') + '|' + houseId;
+  const canShowPhotoreal = !!home && hasPhotorealElevation(home.id);
+  const showPhotoreal = elevationMode === 'photo' && canShowPhotoreal;
+  useEffect(() => {
+    if (elevationMode === 'photo' && home && !hasPhotorealElevation(home.id)) setElevationMode('diagram');
+  }, [elevationMode, home]);
   const current = fit?.key === key ? fit.result : null;
   const info = home ? program(home) : null;
   const [, , width, depth] = home ? designBounds(home) : [0, 0, 0, 0];
@@ -250,20 +258,57 @@ export default function HomeStudio({
                   </>
                 ) : (
                   <>
-                    <div className="home-options">
+                    <div className="home-options" role="group" aria-label="Elevation face">
                       {(['front', 'right', 'back', 'left'] as const).map((v) => (
                         <button type="button" key={v} aria-pressed={v === side} onClick={() => setSide(v)}>
                           {v === 'back' ? 'Rear' : v[0]!.toUpperCase() + v.slice(1)}
                         </button>
                       ))}
                     </div>
-                    <figure className="home-elevation">
-                      <Elevation home={home} side={side} />
-                    </figure>
-                    <p className="home-elevation-note">
-                      Elevations are projected from the same volumes and openings as the plan drawings above — schematic
-                      massing, not a construction set.
-                    </p>
+                    <div className="home-options" role="group" aria-label="Elevation presentation">
+                      <button
+                        type="button"
+                        aria-pressed={!showPhotoreal}
+                        onClick={() => setElevationMode('diagram')}
+                      >
+                        Diagram
+                      </button>
+                      {canShowPhotoreal ? (
+                        <button
+                          type="button"
+                          aria-pressed={showPhotoreal}
+                          onClick={() => setElevationMode('photo')}
+                          data-testid="home-elevation-photoreal"
+                        >
+                          Photoreal
+                        </button>
+                      ) : null}
+                    </div>
+                    {showPhotoreal ? (
+                      <figure data-testid="home-elevation-photo">
+                        <img
+                          src={photorealElevationSrc(home.id, side)}
+                          alt={
+                            home.name +
+                            ', illustrative character ' +
+                            (side === 'back' ? 'rear' : side) +
+                            ' elevation (not generated from this plan)'
+                          }
+                          onError={() => setElevationMode('diagram')}
+                        />
+                        <figcaption className="home-exterior-note">
+                          Illustrative character elevation — not generated from this plan’s drawings, not a
+                          licensed stock photo, and not a photo of a built home.
+                        </figcaption>
+                      </figure>
+                    ) : (
+                      <figure className="home-elevation" data-testid="home-elevation-diagram">
+                        <Elevation home={home} side={side} />
+                        <figcaption className="home-exterior-note">
+                          Schematic diagram from plan volumes — not a construction elevation.
+                        </figcaption>
+                      </figure>
+                    )}
                   </>
                 )}
                 <p>{home.description}</p>
@@ -324,9 +369,10 @@ export default function HomeStudio({
                 </section>
                 <footer>
                   * Approximate conditioned area from schematic room zones (kitchen, baths, HVAC/mech, laundry — not
-                  numbered placeholders). Dimensions include wall allowances. These are concept studies for site fit —
-                  not publisher construction sets. For cited buildable stock plans (e.g. America’s Best House Plans),
-                  use the housing catalogue when available.
+                  numbered placeholders). Dimensions include wall allowances. Exterior and elevation images are
+                  illustrative AI character studies — not licensed stock, not construction photos, and not derived from
+                  plan CAD. These are concept studies for site fit — not publisher construction sets. For cited
+                  buildable stock plans (e.g. America’s Best House Plans), use the housing catalogue when available.
                 </footer>
               </>
             ) : null}
