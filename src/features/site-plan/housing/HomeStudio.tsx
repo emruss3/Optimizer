@@ -5,7 +5,7 @@ import { designBounds, program, roofHeight } from './drawings';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
-import { designsFittingHouse, eligibleStockDesigns } from './homeDesignsGate';
+import { designsFittingHouse, eligibleStockDesigns, stepHomeDesignIndex } from './homeDesignsGate';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
 
@@ -88,8 +88,12 @@ export default function HomeStudio({
   const [fit, setFit] = useState<{ key: string; result: FitResult } | null>(null),
     root = useRef<HTMLElement>(null);
 
+  // Keep the selected lot when the sheet refreshes; fall back to the first house.
   useEffect(() => {
-    if (!houses.length) return;
+    if (!houses.length) {
+      setHouseId('');
+      return;
+    }
     if (!houses.some((h) => h.id === houseId)) {
       setHouseId(houses.find((e) => e.id === selected)?.id ?? houses[0]!.id);
     }
@@ -97,7 +101,7 @@ export default function HomeStudio({
 
   const selectedHouse = houses.find((e) => e.id === houseId);
 
-  // Per-selected-lot concept studies (scheme-eligible list narrowed further).
+  // Fit-first: when a lot is selected, only offer concept designs that place on that lot.
   const catalogue = useMemo(() => {
     if (!designs.length) return [] as HomeDesign[];
     if (!selectedHouse) return [...designs];
@@ -122,12 +126,41 @@ export default function HomeStudio({
     if (catalogue.length && index >= catalogue.length) setIndex(0);
   }, [catalogue, index]);
 
+  const stepConcept = (delta: number) => {
+    if (!catalogue.length) return;
+    setIndex((i) => stepHomeDesignIndex(i, catalogue.length, delta));
+    setLevel(0);
+    setFit(null);
+  };
+
+  const stepStock = (delta: number) => {
+    if (!stock.length) return;
+    setStockIndex((i) => stepHomeDesignIndex(i, stock.length, delta));
+  };
+
+  const step = (delta: number) => {
+    if (mode === 'stock') stepStock(delta);
+    else stepConcept(delta);
+  };
+
+  const browseLength = mode === 'stock' ? stock.length : catalogue.length;
+
   const plan = stock[Math.min(stockIndex, Math.max(stock.length - 1, 0))];
   const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))];
   const key = (home?.id ?? '') + '|' + houseId;
   const current = fit?.key === key ? fit.result : null;
   const info = home ? program(home) : null;
   const [, , width, depth] = home ? designBounds(home) : [0, 0, 0, 0];
+
+  // Auto-check fit when the concept design or lot changes so Preview is one click away.
+  useEffect(() => {
+    if (mode !== 'concept' || !home || !selectedHouse) {
+      if (mode !== 'concept') return;
+      setFit(null);
+      return;
+    }
+    setFit({ key, result: placeHome(home, selectedHouse, elements, siteBoundary) });
+  }, [mode, key, home, selectedHouse, elements, siteBoundary]);
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
@@ -137,6 +170,18 @@ export default function HomeStudio({
         event.preventDefault();
         event.stopImmediatePropagation();
         onClose();
+        return;
+      }
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        step(-1);
+        return;
+      }
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        step(1);
         return;
       }
       if (event.key !== 'Tab' || !root.current) return;
@@ -159,7 +204,7 @@ export default function HomeStudio({
       window.removeEventListener('keydown', keys, true);
       before?.focus();
     };
-  }, [onClose]);
+  }, [onClose, mode, browseLength]);
 
   return (
     <div
@@ -177,12 +222,26 @@ export default function HomeStudio({
       >
         <header>
           <div>
-            <small>Parcel Proforma</small>
+            <small>Parcel Proforma{mode === 'concept' ? ' · concept studies' : ''}</small>
             <h2>{mode === 'stock' ? 'Buildable stock plans' : 'Concept studies'}</h2>
           </div>
-          <button type="button" className="home-close" onClick={onClose} aria-label="Close home designs">
-            Close ×
-          </button>
+          <div className="home-header-actions">
+            <div
+              className="home-browse"
+              role="group"
+              aria-label={mode === 'stock' ? 'Browse stock plans that fit this lot' : 'Browse designs that fit this lot'}
+            >
+              <button type="button" onClick={() => step(-1)} disabled={browseLength < 2} aria-label="Previous design">
+                ← Prev
+              </button>
+              <button type="button" onClick={() => step(1)} disabled={browseLength < 2} aria-label="Next design">
+                Next →
+              </button>
+            </div>
+            <button type="button" className="home-close" onClick={onClose} aria-label="Close home designs">
+              Close ×
+            </button>
+          </div>
         </header>
         <div className="home-mode-tabs" role="tablist" aria-label="Home design source">
           <button type="button" role="tab" aria-selected={mode === 'stock'} onClick={() => setMode('stock')}>
@@ -307,6 +366,11 @@ export default function HomeStudio({
                             the drawn house pads that clear setbacks. Construction drawings are licensed
                             from the publisher separately.
                           </p>
+                          <p className="home-fit-hint">
+                            Showing {stock.length} plan{stock.length === 1 ? '' : 's'} that fit
+                            {selectedHouse ? ` “${selectedHouse.name}”` : ' this scheme'}. Use ← → to browse
+                            without losing the lot.
+                          </p>
                         </>
                       ) : houses.length ? (
                         <p>
@@ -335,7 +399,7 @@ export default function HomeStudio({
             </>
           ) : (
             <>
-              <nav aria-label="Concept home studies">
+              <nav aria-label="Home designs that fit">
                 {houses.length > 0 && (
                   <div className="home-stock-lot">
                     <label>
@@ -359,7 +423,11 @@ export default function HomeStudio({
                   </div>
                 )}
                 {emptyEligible ? (
-                  <p className="home-empty-eligible">No concept studies fit this house lot.</p>
+                  <p className="home-empty-eligible">
+                    {selectedHouse
+                      ? 'No designs fit this selected lot. Pick another house lot, or return to the base plan.'
+                      : 'No concept studies fit this house lot.'}
+                  </p>
                 ) : (
                   catalogue.map((h, i) => (
                     <button
@@ -379,13 +447,13 @@ export default function HomeStudio({
                 )}
               </nav>
               <main>
-                {emptyEligible || !home || !info ? (
+                {emptyEligible ? (
                   <p role="status">
-                    This layout has detached or attached house footprints, but none of the Middle Tennessee
-                    concept studies clear the drawn lots, setbacks, and mapped approaches. Adjust the scheme
-                    or browse Buildable stock.
+                    {selectedHouse
+                      ? `“${selectedHouse.name}” cannot take any of the eligible Middle Tennessee concept designs at full size with the drawn approaches. Switch lots above, or close and adjust the scheme.`
+                      : 'This layout has detached or attached house footprints, but none of the concept designs clear the drawn lots, setbacks, and mapped approaches.'}
                   </p>
-                ) : (
+                ) : home && info ? (
                   <>
                     <div className="home-title">
                       <div>
@@ -436,11 +504,9 @@ export default function HomeStudio({
                         <details>
                           <summary>Room dimensions</summary>
                           <dl className="home-rooms">
-                            {home.levels[level]!.rooms.map((r, i) => (
+                            {home.levels[level]!.rooms.map((r) => (
                               <div key={r.name}>
-                                <dt>
-                                  {i + 1}. {r.name}
-                                </dt>
+                                <dt>{r.name}</dt>
                                 <dd>
                                   {r.rect[2]} × {r.rect[3]} ft
                                 </dd>
@@ -461,6 +527,10 @@ export default function HomeStudio({
                         <figure className="home-elevation">
                           <Elevation home={home} side={side} />
                         </figure>
+                        <p className="home-elevation-note">
+                          Elevations are projected from the same volumes and openings as the plan drawings above —
+                          schematic massing, not a construction set.
+                        </p>
                       </>
                     )}
                     <p>{home.description}</p>
@@ -475,15 +545,16 @@ export default function HomeStudio({
                       <span>{roofHeight(home).toFixed(1)} ft to ridge or parapet</span>
                     </div>
                     <section className="home-placement">
-                      <h4>Try on this site</h4>
+                      <h4>Place on a house lot</h4>
                       {houses.length ? (
                         <>
                           <div>
                             <select
-                              aria-label="House lot to check"
+                              aria-label="House lot to place on"
                               value={houseId}
                               onChange={(e) => {
                                 setHouseId(e.target.value);
+                                setIndex(0);
                                 setFit(null);
                               }}
                             >
@@ -493,19 +564,6 @@ export default function HomeStudio({
                                 </option>
                               ))}
                             </select>
-                            <button
-                              type="button"
-                              disabled={!selectedHouse}
-                              onClick={() => {
-                                if (selectedHouse)
-                                  setFit({
-                                    key,
-                                    result: placeHome(home, selectedHouse, elements, siteBoundary),
-                                  });
-                              }}
-                            >
-                              Check lot fit
-                            </button>
                             {current?.placement && (
                               <button
                                 type="button"
@@ -519,7 +577,12 @@ export default function HomeStudio({
                           <p aria-live="polite">
                             {current?.placement?.basis ??
                               current?.reason ??
-                              'Check the drawn lot and its vehicle and pedestrian approaches at full size. A fit opens the live 3D massing with this design.'}
+                              'Selecting a lot lists only designs that fit it. Preview opens live 3D massing on that house.'}
+                          </p>
+                          <p className="home-fit-hint">
+                            Showing {catalogue.length} design{catalogue.length === 1 ? '' : 's'} that fit
+                            {selectedHouse ? ` “${selectedHouse.name}”` : ' this scheme'}. Use ← → to browse
+                            without losing the lot.
                           </p>
                         </>
                       ) : (
@@ -527,11 +590,13 @@ export default function HomeStudio({
                       )}
                     </section>
                     <footer>
-                      * Approximate conditioned area from schematic room zones. Dimensions include wall
-                      allowances. These are concept studies for site fit — not publisher construction sets.
+                      * Approximate conditioned area from schematic room zones (kitchen, baths, HVAC/mech, laundry —
+                      not numbered placeholders). Dimensions include wall allowances. These are concept studies for
+                      site fit — not publisher construction sets. For cited buildable stock plans (e.g. America’s Best
+                      House Plans), use the Buildable stock tab.
                     </footer>
                   </>
-                )}
+                ) : null}
               </main>
             </>
           )}

@@ -20,6 +20,7 @@ import {
   lotFitInputForHouse,
   schemeAllowsHomeDesigns,
   showHomeDesignsControl,
+  stepHomeDesignIndex,
   stockDesignsFittingLot,
   typologyEligibleHomeDesigns,
 } from './homeDesignsGate';
@@ -282,4 +283,37 @@ describe('designsFittingHouse — concept per-lot filter', () => {
     };
     expect(designsFittingHouse(HOME_DESIGNS, tiny, [tiny])).toEqual([]);
   }, 60000);
+
+  it('narrows further when a single Delk lot is selected', () => {
+    const elements = sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
+    const houses = residentialHomes(elements);
+    const schemeEligible = eligibleHomeDesigns(HOME_DESIGNS, elements);
+    const tight = houses[4]!;
+    const forLot = designsFittingHouse(schemeEligible, tight, elements);
+    expect(forLot.length).toBeLessThan(schemeEligible.length);
+    expect(forLot.every((d) => !d.attached)).toBe(true);
+
+    const open = houses[0]!;
+    const forOpen = designsFittingHouse(schemeEligible, open, elements);
+    expect(forOpen.some((d) => d.name === 'Court Cottage')).toBe(true);
+    expect(forOpen.length).toBeGreaterThan(0);
+  }, 60000);
+
+  it('steps the catalogue index circularly for keyboard browse', () => {
+    expect(stepHomeDesignIndex(0, 3, -1)).toBe(2);
+    expect(stepHomeDesignIndex(2, 3, 1)).toBe(0);
+    expect(stepHomeDesignIndex(1, 3, 1)).toBe(2);
+    expect(stepHomeDesignIndex(0, 0, 1)).toBe(0);
+  });
+});
+
+describe('planRoomLabel — never bare room numbers', () => {
+  it('keeps program names for tight baths / HVAC / kitchens', async () => {
+    const { planRoomLabel } = await import('./PlanIllustrations');
+    expect(planRoomLabel('Primary bath', 6, 7)).toMatch(/Bath/i);
+    expect(planRoomLabel('Mech / HVAC', 5, 4)).toBe('HVAC');
+    expect(planRoomLabel('Kitchen', 15, 12)).toBe('Kitchen');
+    expect(planRoomLabel('Laundry', 6, 5)).toBe('Laundry');
+    expect(planRoomLabel('Bedroom 3', 4, 3)).toMatch(/BR/);
+  });
 });
