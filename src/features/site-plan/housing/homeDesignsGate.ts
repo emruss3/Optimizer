@@ -64,6 +64,29 @@ export function eligibleHomeDesigns(
   );
 }
 
+/**
+ * Fit-first browse for one selected lot: only designs that place on that house.
+ * Empty when typology cannot match (e.g. attached design on a detached pad).
+ */
+export function designsFittingHouse(
+  designs: readonly HomeDesign[],
+  house: Element,
+  elements: Element[],
+  siteBoundary?: Element['geometry'] | null,
+): HomeDesign[] {
+  return designs.filter(
+    (design) =>
+      designMatchesHouseTypology(design, house) &&
+      Boolean(placeHome(design, house, elements, siteBoundary).placement),
+  );
+}
+
+/** Wrap catalogue index for ← / → browsing without dropping the selected lot. */
+export function stepHomeDesignIndex(index: number, length: number, delta: number): number {
+  if (length <= 0) return 0;
+  return ((index + delta) % length + length) % length;
+}
+
 /** Toolbar copy when the scheme allows Home designs but none of the catalogue fit. */
 export const HOME_DESIGNS_NONE_FIT_TITLE =
   'No home designs fit the house lots on this plan';
