@@ -1,7 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
-import { sfPlanToElements } from './generateSfPlan';
+import { sfPlanToElements, isDetachedSfPlanElement, isSfPlanElement } from './generateSfPlan';
 
 vi.mock('../../../lib/supabase', () => ({ supabase: null }));
+
+describe('generated-plan predicates', () => {
+  it('replace-on-regenerate includes thv3; detached schedule product does not', () => {
+    expect(isSfPlanElement({ id: 'thv3-home-1' })).toBe(true);
+    expect(isDetachedSfPlanElement({ id: 'thv3-home-1' })).toBe(false);
+    expect(isDetachedSfPlanElement({ id: 'sfv1-lot-1' })).toBe(true);
+    expect(isSfPlanElement({ id: 'sfv1-lot-1' })).toBe(true);
+    expect(isDetachedSfPlanElement({ id: 'gen-lot-1' })).toBe(true);
+    expect(isDetachedSfPlanElement({ id: 'mfgen-1' })).toBe(false);
+  });
+});
 
 // A small lot near Nashville in 4326 (lon/lat degrees)
 const lotGeom4326 = {

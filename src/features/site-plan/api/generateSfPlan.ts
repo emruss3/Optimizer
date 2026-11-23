@@ -47,19 +47,35 @@ export interface SfPlanSummary {
 }
 
 /**
- * Lot-fit elements are identified by id prefix so a re-generate REPLACES the
- * previous fit instead of stacking a duplicate subdivision on the canvas.
+ * Detached single-family / lot-fit / by-right subdivision elements.
+ *
+ * Used when deciding which product's exhibit schedule applies: these sheets
+ * suppress the multifamily parking schedule. Townhome (thv3) is a different
+ * product — guest parking against an engine target — and must not be folded
+ * into this predicate (Mt View audit 7572158: 0 of 8 was lost because it was).
+ */
+export function isDetachedSfPlanElement(el: Pick<Element, 'id'>): boolean {
+  // 'sfseed-' = the server-verified single-family seed (house + driveway)
+  // drawn from the RefusalCard suggestion.
+  // 'subdiv-' = the subdivision generator's neighbourhood (streets, alleys,
+  // lots, courts).
+  // 'sfv1-' = the by-right subdivision (fn_sf_v1_plan, 2026-10-27): lots,
+  // pads, streets, open space.
+  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-') || el.id.startsWith('sfseed-') || el.id.startsWith('subdiv-') || el.id.startsWith('sfv1-');
+}
+
+/**
+ * Lot-fit / neighborhood elements identified by id prefix so a re-generate
+ * REPLACES the previous fit instead of stacking a duplicate on the canvas.
+ *
+ * Includes townhome (thv3): one generated neighborhood replaces another.
+ * Do not use this for exhibit-schedule product selection — use
+ * isDetachedSfPlanElement (or an explicit townhome / apartment branch).
  */
 export function isSfPlanElement(el: Pick<Element, 'id'>): boolean {
-  // 'sfseed-' = the server-verified single-family seed (house + driveway)
-  // drawn from the RefusalCard suggestion — same replace-on-regenerate class.
-  // 'subdiv-' = the subdivision generator's neighbourhood (streets, alleys,
-  // lots, courts) — one generated plan replaces another, whatever the family.
-  // 'sfv1-' = the by-right subdivision (fn_sf_v1_plan, 2026-10-27): lots,
-  // pads, streets, open space — the same replace-on-regenerate class.
   // 'thv3-' = the townhome engine's neighborhood (th_v3, 2026-11-04): homes,
   // alleys, greens, guest parking — the neighborhood layout on multifamily land.
-  return el.id.startsWith('gen-lot-') || el.id.startsWith('gen-bldg-') || el.id.startsWith('sfseed-') || el.id.startsWith('subdiv-') || el.id.startsWith('sfv1-') || el.id.startsWith('thv3-');
+  return isDetachedSfPlanElement(el) || el.id.startsWith('thv3-');
 }
 
 /** Parse a geom that may arrive as an object or a JSON string; 4326 → 3857. */
