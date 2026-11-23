@@ -1720,6 +1720,20 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
         if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10.5, weight: 700, fill: '#9A3412', pill: 'rgba(255,247,237,0.96)' });
         continue;
       }
+      if (a.kind === 'entry') {
+        // a way into a parking structure: a filled diamond on the spot and its name beside it
+        const r = 6 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y + r); ctx.lineTo(a.x + r, a.y); ctx.lineTo(a.x, a.y - r); ctx.lineTo(a.x - r, a.y);
+        ctx.closePath();
+        ctx.fillStyle = '#4C1D95';
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1.5 / zoom;
+        ctx.stroke();
+        if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10, weight: 700, fill: '#4C1D95', pill: 'rgba(245,243,255,0.97)', dy: -12 / zoom, baseline: 'bottom' });
+        continue;
+      }
       if (a.kind === 'gap') {
         // a connection the plan does not draw: dashed between the two ends, a ring on each, the reason beside it
         const [from, to] = a.line ?? [];

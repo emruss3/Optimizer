@@ -507,3 +507,18 @@ describe('a plan with no garage keeps its section as it was', () => {
     expect(text).not.toMatch(/Parking P1|Residential/);
   });
 });
+
+describe('garage entries on the site plan sheet', () => {
+  it('draws a marker and a name at each entry it is given, and none otherwise', () => {
+    const { elements } = seedFamilyPlanToElements(meharry);
+    const scene = buildDrawingScene({ parcelId: 488278, schemeId: 'mf:test', elements, parcelGeometry: meharryParcel, schedule: { units: 30, stalls: 52 } })!;
+    const title = { project: 'P', date: 'd', notes: [] };
+    const none = new DOMParser().parseFromString(renderSitePlanSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    expect(none.querySelectorAll('[data-role="garage-entry"]').length).toBe(0);
+    const some = new DOMParser().parseFromString(renderSitePlanSheet(scene, { ...title, garageEntries: [[10, 10], [60, 40]] }, 'tabloid').svg, 'image/svg+xml');
+    expect(some.querySelector('parsererror')).toBeNull();
+    const marks = some.querySelectorAll('[data-role="garage-entry"]');
+    expect(marks.length).toBe(2);
+    expect(marks[0]?.textContent).toBe('Garage entry');
+  });
+});
