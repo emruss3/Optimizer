@@ -5,11 +5,13 @@ import { sfV1ToElements, type SfV1Response } from '../api/sfV1Plan';
 import fixture from '../api/__fixtures__/delk-675423.json';
 import {
   designMatchesHouseTypology,
+  designsFittingHouse,
   eligibleHomeDesigns,
   eligibleStockPlans,
   isApartmentMassingPlan,
   schemeAllowsHomeDesigns,
   showHomeDesignsControl,
+  stepHomeDesignIndex,
   typologyEligibleHomeDesigns,
 } from './homeDesignsGate';
 import {
@@ -131,11 +133,25 @@ describe('homeDesignsGate — typology and fit', () => {
     expect(eligible.length).toBeGreaterThan(0);
     expect(eligible.length).toBeLessThan(HOME_DESIGNS.length);
     expect(eligible.every((d) => !d.attached)).toBe(true);
-    // Court Cottage fits some Delk lots; the full catalogue must not all pass
     expect(eligible.some((d) => d.name === 'Court Cottage')).toBe(true);
     expect(eligibleHomeDesigns(HOME_DESIGNS, elements).map((d) => d.id)).toEqual(
       eligible.map((d) => d.id),
     );
+  }, 60000);
+
+  it('narrows further when a single Delk lot is selected', () => {
+    const elements = sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
+    const houses = residentialHomes(elements);
+    const schemeEligible = eligibleHomeDesigns(HOME_DESIGNS, elements);
+    const tight = houses[4]!;
+    const forLot = designsFittingHouse(schemeEligible, tight, elements);
+    expect(forLot.length).toBeLessThan(schemeEligible.length);
+    expect(forLot.every((d) => !d.attached)).toBe(true);
+
+    const open = houses[0]!;
+    const forOpen = designsFittingHouse(schemeEligible, open, elements);
+    expect(forOpen.some((d) => d.name === 'Court Cottage')).toBe(true);
+    expect(forOpen.length).toBeGreaterThan(0);
   }, 60000);
 
   it('shows a disabled control when the scheme allows homes but nothing fits', () => {
@@ -167,6 +183,24 @@ describe('homeDesignsGate — typology and fit', () => {
     expect(show).toBe(true);
     expect(enabled).toBe(false);
     expect(eligible).toEqual([]);
+  });
+
+  it('steps the catalogue index circularly for keyboard browse', () => {
+    expect(stepHomeDesignIndex(0, 3, -1)).toBe(2);
+    expect(stepHomeDesignIndex(2, 3, 1)).toBe(0);
+    expect(stepHomeDesignIndex(1, 3, 1)).toBe(2);
+    expect(stepHomeDesignIndex(0, 0, 1)).toBe(0);
+  });
+});
+
+describe('planRoomLabel — never bare room numbers', () => {
+  it('keeps program names for tight baths / HVAC / kitchens', async () => {
+    const { planRoomLabel } = await import('./PlanIllustrations');
+    expect(planRoomLabel('Primary bath', 6, 7)).toMatch(/Bath/i);
+    expect(planRoomLabel('Mech / HVAC', 5, 4)).toBe('HVAC');
+    expect(planRoomLabel('Kitchen', 15, 12)).toBe('Kitchen');
+    expect(planRoomLabel('Laundry', 6, 5)).toBe('Laundry');
+    expect(planRoomLabel('Bedroom 3', 4, 3)).toMatch(/BR/);
   });
 });
 

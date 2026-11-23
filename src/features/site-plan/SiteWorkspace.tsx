@@ -3382,6 +3382,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   useEffect(() => {
     if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
   }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
+
   // One selection for the plan and the 3D view, remembered for this parcel and scheme.
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
   const sceneKey = scene?.identity.key ?? null;
@@ -4157,8 +4158,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       </React.Suspense>}
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
-        <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme.</span>
-        <button type="button" className="underline" onClick={() => setHouseStudy(null)}>Return to base scheme</button></div>}
+        <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>
+        <button type="button" className="underline" onClick={() => { setHouseStudy(null); setHomePreviewFocus(0); }}>Return to base scheme</button></div>}
       {!seedViewOn && <BuiltHeadline metrics={metrics} elements={elements} />}
       {/* 2026-09-04 (Eric, 2622 W Heiman: "difficult to see the site planner,
           there is a ton of data"): the basis line, the context lineage, the
