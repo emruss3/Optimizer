@@ -3429,21 +3429,33 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
   // required parking, what the floor area is a share of, the parking and residential stack, and
   // whether a car can reach the street. They replace the single "Parking" row.
+  // Townhome (thv3) sheets have no mfgen- elements: guest parking still has to reach A-01
+  // (Mt View 0 of 8), so the schedule is built from the townhome summary when that plan is on the sheet.
   const sheetsTitleWithAccess = useMemo(() => {
     const garage = displayElements.find(e => e.type === 'parking' && e.properties?.structured === true);
     const over = displayElements.find(e => e.type === 'building' && e.properties?.overGarage === true);
-    const schedule = seedViewOn || sfPlanOnSheet || !displayElements.some(e => e.id.startsWith('mfgen-')) ? [] : exhibitSchedule({
-      units: metrics?.totalUnits ?? null,
-      stallsDrawn: metrics?.stallsDrawn ?? null,
-      stallsReported: metrics?.stallsReported ?? metrics?.stallsProvided ?? null,
-      stallsRequired: metrics?.stallsRequired ?? null,
-      builtGsf: metrics?.totalBuiltSF ?? null,
-      capture: captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy),
-      garageLevels: garage ? Number(garage.properties?.levels) || null : null,
-      residentialLevels: over ? Number(over.properties?.residentialLevels) || null : null,
-      routeUnresolved: !!routeBreak,
-      contextUnverified: contextState === 'unavailable',
-    });
+    const mfOnSheet = displayElements.some(e => e.id.startsWith('mfgen-'));
+    const guest = thV3OnSheet && thV3Summary ? guestParkingLine(thV3Summary) : null;
+    const schedule = seedViewOn || sfPlanOnSheet ? []
+      : mfOnSheet ? exhibitSchedule({
+          units: metrics?.totalUnits ?? null,
+          stallsDrawn: metrics?.stallsDrawn ?? null,
+          stallsReported: metrics?.stallsReported ?? metrics?.stallsProvided ?? null,
+          stallsRequired: metrics?.stallsRequired ?? null,
+          builtGsf: metrics?.totalBuiltSF ?? null,
+          capture: captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy),
+          garageLevels: garage ? Number(garage.properties?.levels) || null : null,
+          residentialLevels: over ? Number(over.properties?.residentialLevels) || null : null,
+          routeUnresolved: !!routeBreak,
+          contextUnverified: contextState === 'unavailable',
+        })
+      : thV3OnSheet && thV3Summary ? exhibitSchedule({
+          guestStalls: thV3Summary.guestStalls,
+          guestTarget: thV3Summary.guestTarget,
+          guestGraded: guest?.graded ?? false,
+          contextUnverified: contextState === 'unavailable',
+        })
+      : [];
     // the one "Parking" row gives way to the decision figures, which name each count
     const data = schedule.length ? (sheetsTitle.data ?? []).filter(r => r.label !== 'Parking') : sheetsTitle.data;
     return {
@@ -3457,21 +3469,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         : {}),
     };
-  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet]);
+  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet, thV3OnSheet, thV3Summary]);
   // What the layout comparison may say about the layout on the sheet: the same parking and floor
-  // area rows the exported sheet carries. The other layout's stay unknown until it is drawn.
+  // area rows the exported sheet carries. Retained per kind so switching twice keeps both sides.
   const layoutShownFacts = useMemo(() => {
     const rows = sheetsTitleWithAccess.decision ?? [];
-    const guest = thV3OnSheet && thV3Summary ? guestParkingLine(thV3Summary) : null;
     return {
-      parking: rows.find(r => r.label === 'Parking')?.value ?? (guest ? `Guest parking ${guest.text}` : null),
+      parking: rows.find(r => r.label === 'Parking')?.value ?? null,
       // a townhome plan carries no placed floor area: the ceiling is said as a ceiling, never as the plan's area
       floorArea: rows.find(r => r.label === 'Floor area')?.value
         ?? (metrics?.totalBuiltSF ? `${Math.round(metrics.totalBuiltSF).toLocaleString()} GSF`
           : maxBuildout?.max_gsf ? `Unknown · upper bound ${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF` : null),
     };
-  }, [sheetsTitleWithAccess, thV3OnSheet, thV3Summary, metrics, maxBuildout]);
-  const canvasAnnotations = useMemo(() => {
+  }, [sheetsTitleWithAccess, metrics, maxBuildout]);
+  // revision of the plan on the sheet: facts stay bound to it when the comparison retains them
+  const layoutFactsRevision = scene?.identity.revision ?? null;  const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
     const withBreak = routeBreak
       ? [...sheetAnnotations, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: 'Drive stops here · no drawn connection to the street' }]
@@ -3999,6 +4011,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               thV3={thV3OnSheet ? thV3Summary : null}
               thV3Error={thV3Error}
               shownFacts={layoutShownFacts}
+              factsRevision={layoutFactsRevision}
             />
           )}
           {planPattern && (

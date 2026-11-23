@@ -26,4 +26,26 @@ describe('the figures a sheet must carry', () => {
     expect(exhibitSchedule({ stallsDrawn: 126, stallsReported: 126, stallsRequired: 126 })).toEqual([{ label: 'Parking', value: '126 drawn · 126 required' }]);
     expect(exhibitSchedule({})).toEqual([]);
   });
+
+  // Live Design handoff 2026-11-23: zero / unknown / shortfall must still emit a Parking row
+  it('drawn 0 / reported 0 / required 8: zero carries a value and the shortfall in words', () => {
+    const row = exhibitSchedule({ stallsDrawn: 0, stallsReported: 0, stallsRequired: 8 }).find(r => r.label === 'Parking');
+    expect(row?.value).toBe('0 drawn · 8 required · 8 short of required');
+  });
+
+  it('drawn 0 / reported 12 / required 8: both counts print and the drawn shortfall is said', () => {
+    const row = exhibitSchedule({ stallsDrawn: 0, stallsReported: 12, stallsRequired: 8 }).find(r => r.label === 'Parking');
+    expect(row?.value).toBe('0 drawn · 12 reported · 8 required · 8 short of required');
+  });
+
+  it('unknown supply / required 8: absent carries a reason', () => {
+    const row = exhibitSchedule({ stallsRequired: 8 }).find(r => r.label === 'Parking');
+    expect(row?.value).toBe('Unknown · supply not measured · 8 required');
+  });
+
+  it('Mt View guest parking: 0 of 8 reaches the sheet with the shortfall in words', () => {
+    const row = exhibitSchedule({ guestStalls: 0, guestTarget: 8, guestGraded: false }).find(r => r.label === 'Parking');
+    expect(row?.value).toBe('Guest parking 0 of 8 stalls · 8 short · a target of the engine, not one of its tests');
+    expect(row?.value).toMatch(/short/);
+  });
 });

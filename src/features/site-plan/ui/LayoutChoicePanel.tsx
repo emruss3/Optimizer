@@ -10,12 +10,12 @@
  * why. Under it, every neighborhood plan of the competition, each one
  * drawable, and the townhome plan's own figures when it is on the sheet.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LayoutChoice, LayoutKind } from '../api/layoutChoice';
 import { homesPhrase } from '../api/layoutChoice';
 import { guestParkingLine, type ThV3Summary } from '../api/thV3Plan';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
-import { compareLayouts, parseLandPrice, type LayoutOption } from '../api/layoutCompare';
+import { compareLayouts, parseLandPrice, retainLayoutFacts, type LayoutFactsByKind, type LayoutOption } from '../api/layoutCompare';
 
 const fmt = (v: number | null | undefined, d = 0) => (v == null ? '—' : (Math.round(v * 10 ** d) / 10 ** d).toLocaleString());
 
@@ -60,7 +60,7 @@ function ThV3Facts({ s }: { s: ThV3Summary }) {
 }
 
 export function LayoutChoicePanel({
-  choice, competition, shown, shownRequested, auto, busy, onChoose, onViewCandidate, onRetry, thV3, thV3Error, shownFacts,
+  choice, competition, shown, shownRequested, auto, busy, onChoose, onViewCandidate, onRetry, thV3, thV3Error, shownFacts, factsRevision,
 }: {
   choice: LayoutChoice | null;
   competition: SfV1CompetitionState | null;
@@ -78,11 +78,18 @@ export function LayoutChoicePanel({
   thV3Error?: string | null;
   /** parking and floor area of the layout on the sheet now, as the workspace states them */
   shownFacts?: { parking?: string | null; floorArea?: string | null } | null;
+  /** scheme revision the shown facts belong to */
+  factsRevision?: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [comparing, setComparing] = useState(false);
   // the land price is the reviewer's own assumption: it lives here and is never saved with a plan
   const [landPrice, setLandPrice] = useState('');
+  // each rendered option's facts, kept by kind so switching does not erase the first set
+  const [retained, setRetained] = useState<LayoutFactsByKind>({});
+  useEffect(() => {
+    setRetained(prior => retainLayoutFacts(prior, shown, shownFacts, factsRevision ?? null));
+  }, [shown, shownFacts, factsRevision]);
   const loading = competition?.state === 'loading';
   const nb = choice?.neighborhood ?? null;
   const mf = choice?.multifamilyHomes ?? null;
@@ -147,7 +154,12 @@ export function LayoutChoicePanel({
           </button>
           {comparing && (() => {
             const price = parseLandPrice(landPrice);
-            const facts = (kind: LayoutKind) => (shown === kind ? shownFacts ?? {} : {});
+            // retain what each side has already rendered; undrawn stays absent so compareLayouts names it
+            const facts = (kind: LayoutKind) => {
+              const kept = retained[kind];
+              if (kept) return { parking: kept.parking, floorArea: kept.floorArea };
+              return shown === kind ? shownFacts ?? {} : {};
+            };
             const a: LayoutOption = { key: 'multifamily', label: `${mf} ${product === 'townhomes' ? 'townhomes' : 'apartments'}`, homes: mf, shown: shown === 'multifamily', ...facts('multifamily') };
             const b: LayoutOption = { key: 'neighborhood', label: `${nb.homes} ${nb.label}`, homes: nb.homes, shown: shown === 'neighborhood', ...facts('neighborhood') };
             const c = compareLayouts(a, b, price.value);

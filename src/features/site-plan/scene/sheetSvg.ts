@@ -598,13 +598,28 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     rule(8, 14);
     eyebrow('SITE DATA');
     for (const row of dataRows) {
-      const long = row.label.length + row.value.length > 44;
-      const alert = /^Unresolved|^Not verified|short of/.test(row.value);
-      const value = long
-        ? `<text x="${r2(tx + 46)}" y="${r2(y)}" font-size="5.9" font-weight="600" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`
-        : `<text x="${tx + tw}" y="${r2(y)}" font-size="6.4" font-weight="600" text-anchor="end" fill="${alert ? '#b4232a' : INK}">${esc(row.value)}</text>`;
-      out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''}><text x="${tx}" y="${r2(y)}" font-size="${long ? 5.9 : 6.4}" fill="#4b5158">${esc(row.label)}</text>${value}</g>`);
-      y += 9.4;
+      // short values sit on the same line, right-aligned; long values (parking warnings,
+      // unresolved street access) wrap to the strip's content width so Letter and slide
+      // keep every word inside the print frame (Live Design handoff 2026-11-23).
+      const valueSz = 5.9;
+      const labelSz = 6.4;
+      const valueIndent = 46;
+      const valueWidth = Math.max(24, tw - valueIndent);
+      const maxChars = Math.max(12, Math.floor(valueWidth / (valueSz * 0.52)));
+      const parts = wrap(row.value, maxChars);
+      const long = parts.length > 1 || row.label.length + row.value.length > 44;
+      // alert survives monochrome in words (short / Unresolved / Not verified), not colour alone
+      const alert = /\bshort\b|^Unresolved|^Not verified/.test(row.value);
+      const fill = alert ? '#b4232a' : INK;
+      if (!long) {
+        out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''} data-alert="${alert ? 'true' : 'false'}"><text x="${tx}" y="${r2(y)}" font-size="${labelSz}" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="${labelSz}" font-weight="600" text-anchor="end" fill="${fill}">${esc(row.value)}</text></g>`);
+        y += 9.4;
+      } else {
+        const vx = r2(tx + valueIndent);
+        const valueLines = parts.map((part, i) => `<text x="${vx}" y="${r2(y + i * (valueSz + 2.2))}" font-size="${valueSz}" font-weight="600" fill="${fill}">${esc(part)}</text>`).join('');
+        out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''} data-alert="${alert ? 'true' : 'false'}" data-wrapped="true"><text x="${tx}" y="${r2(y)}" font-size="${valueSz}" fill="#4b5158">${esc(row.label)}</text>${valueLines}</g>`);
+        y += Math.max(9.4, parts.length * (valueSz + 2.2) + 1);
+      }
     }
     y -= 4;
   }

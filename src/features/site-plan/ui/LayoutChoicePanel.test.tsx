@@ -201,4 +201,21 @@ describe('comparing the two layouts', () => {
     expect(parking?.textContent).toContain('Guest parking 0 of 8');
     expect(page.getByTestId('layout-compare-missing').textContent).toMatch(/Parking of 24 apartments: open that layout to draw it/);
   });
+
+  it('retains both options’ facts after switching twice (30/24 Mt View)', () => {
+    const { rerender } = draw(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }} factsRevision="rev-town" />);
+    // switch to the apartment plan, then back: both sides keep what they rendered
+    rerender(<Panel choice={choice as never} competition={null} shown="multifamily" shownRequested={null} auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: '42 drawn · 42 required', floorArea: '43,203 GSF' }} factsRevision="rev-mf" />);
+    rerender(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }} factsRevision="rev-town" />);
+    fire.click(page.getByTestId('layout-compare'));
+    const parking = document.querySelector('[data-compare-row="Parking"]');
+    expect(parking?.textContent).toContain('Guest parking 0 of 8');
+    expect(parking?.textContent).toContain('42 drawn · 42 required');
+    const floor = document.querySelector('[data-compare-row="Floor area"]');
+    expect(floor?.textContent).toContain('43,203 GSF');
+    expect(floor?.textContent).toContain('49,600');
+  });
 });
