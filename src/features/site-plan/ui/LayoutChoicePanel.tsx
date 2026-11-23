@@ -15,7 +15,7 @@ import type { LayoutChoice, LayoutKind } from '../api/layoutChoice';
 import { homesPhrase } from '../api/layoutChoice';
 import { guestParkingLine, type ThV3Summary } from '../api/thV3Plan';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
-import { compareLayouts, type LayoutOption } from '../api/layoutCompare';
+import { compareLayouts, parseLandPrice, type LayoutOption } from '../api/layoutCompare';
 
 const fmt = (v: number | null | undefined, d = 0) => (v == null ? '—' : (Math.round(v * 10 ** d) / 10 ** d).toLocaleString());
 
@@ -146,11 +146,11 @@ export function LayoutChoicePanel({
             {comparing ? 'Hide the comparison' : `Compare ${mf} against ${nb.homes} homes`}
           </button>
           {comparing && (() => {
-            const price = Number(landPrice.replace(/[^0-9.]/g, ''));
+            const price = parseLandPrice(landPrice);
             const facts = (kind: LayoutKind) => (shown === kind ? shownFacts ?? {} : {});
             const a: LayoutOption = { key: 'multifamily', label: `${mf} ${product === 'townhomes' ? 'townhomes' : 'apartments'}`, homes: mf, shown: shown === 'multifamily', ...facts('multifamily') };
             const b: LayoutOption = { key: 'neighborhood', label: `${nb.homes} ${nb.label}`, homes: nb.homes, shown: shown === 'neighborhood', ...facts('neighborhood') };
-            const c = compareLayouts(a, b, Number.isFinite(price) && price > 0 ? price : null);
+            const c = compareLayouts(a, b, price.value);
             return (
               <div data-testid="layout-compare-table" className="mt-1.5 rounded-md border border-slate-200 bg-slate-50 p-2">
                 <label className="flex items-center justify-between gap-2 text-[10.5px] text-slate-600">
@@ -160,6 +160,7 @@ export function LayoutChoicePanel({
                     className="w-24 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-right text-[11px] text-slate-900"
                   />
                 </label>
+                {price.hint && <p data-testid="layout-compare-land-hint" className="mt-0.5 text-right text-[10px] text-amber-800">{price.hint}</p>}
                 <table className="mt-1.5 w-full text-[10.5px]">
                   <thead>
                     <tr className="text-slate-500">

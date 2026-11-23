@@ -36,7 +36,7 @@ export function compareLayouts(a: LayoutOption, b: LayoutOption, landPrice: numb
   const perHome = (o: LayoutOption) => (landPrice != null && landPrice > 0 && o.homes != null && o.homes > 0 ? landPrice / o.homes : null);
   const pa = perHome(a), pb = perHome(b);
   if (landPrice != null && landPrice > 0) {
-    rows.push({ label: 'Land per home', a: pa != null ? money(pa) : UNKNOWN, b: pb != null ? money(pb) : UNKNOWN, note: `${money(landPrice)} land price, as entered ÷ homes` });
+    rows.push({ label: 'Land per home', a: pa != null ? money(pa) : UNKNOWN, b: pb != null ? money(pb) : UNKNOWN, note: `${money(landPrice)} land price, as entered ÷ homes. Not a ranking: it leaves out revenue and home size.` });
   }
   const fact = (o: LayoutOption, v: string | null | undefined, what: string) => {
     if (v) return v;
@@ -58,4 +58,17 @@ export function compareLayouts(a: LayoutOption, b: LayoutOption, landPrice: numb
     missing.push(`Home count of ${a.homes == null ? a.label : b.label}`);
   }
   return { rows, tradeOff, missing };
+}
+
+/**
+ * A land price as a reviewer types it: digits with commas, an optional $, and an optional K or M.
+ * "1.2M" is 1,200,000. Anything else is not a price, and is said to be one rather than read as $1.20.
+ */
+export function parseLandPrice(text: string): { value: number | null; hint: string | null } {
+  const t = text.trim().replace(/^\$/, '').replace(/,/g, '');
+  if (!t) return { value: null, hint: null };
+  const m = /^(\d+(?:\.\d+)?)\s*([kKmM])?$/.exec(t);
+  if (!m) return { value: null, hint: 'Enter a price such as 1,200,000 or 1.2M.' };
+  const v = Number(m[1]) * (m[2] ? (m[2].toLowerCase() === 'm' ? 1_000_000 : 1_000) : 1);
+  return v > 0 ? { value: v, hint: null } : { value: null, hint: 'Enter a price above zero.' };
 }

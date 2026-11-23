@@ -86,6 +86,8 @@ export interface SceneBuilding extends SceneFeature {
   grossSqFt: Sourced<number> | null;
   units: Sourced<number> | null;
   height: SceneHeight;
+  /** Stories at the foot of the building that are parking levels of a garage it stands over; 0 when it has none. */
+  parkingLevels: number;
   /** A point inside the footprint and clear of any court, in local feet. */
   labelPoint: Pt;
   display: BuildingDisplay;
