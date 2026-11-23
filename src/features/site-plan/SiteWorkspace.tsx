@@ -5,6 +5,7 @@ import { SitePlannerErrorBoundary } from '../../components/ErrorBoundary';
 import type { InvestmentAnalysis, SelectedParcel } from '../../types/parcel';
 import { createFallbackParcel, isValidParcel } from '../../types/parcel';
 import { useBuildableEnvelope } from './api/useBuildableEnvelope';
+import type { HomePlacement } from './housing/placement';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
@@ -131,6 +132,8 @@ type SiteWorkspaceProps = {
   parcel: SelectedParcel;
 };
 
+const HomeStudio = React.lazy(() => import('./housing/HomeStudio'));
+
 const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const {
     config,
@@ -184,6 +187,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     try { return new URLSearchParams(window.location.search).get('drawing') === 'classic'; } catch { return false; }
   }, []);
   const [sheetsOpen, setSheetsOpen] = useState(false);
+  const [homesOpen, setHomesOpen] = useState(false);
+  const closeHomes = useCallback(() => setHomesOpen(false), []);
+  const [houseStudy, setHouseStudy] = useState<{ parcel: string; base: Element[]; study: HomePlacement } | null>(null);
   // which sheet the Export menu opened, and whether it asked for the whole set
   const [sheetsAsk, setSheetsAsk] = useState<{ initial: 'plan' | 'view' | 'section'; printSet: boolean }>({ initial: 'plan', printSet: false });
   const [sceneSelection, setSceneSelection] = useState<SelectionCache | null>(null);
@@ -3143,8 +3149,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   useEffect(() => {
     if (!quickMassingAvailable) setShowSeed(false);
   }, [quickMassingAvailable]);
-  const displayElements = seedViewOn && seedRender ? seedRender.elements : elements;
-  const displayBasis = seedViewOn && seedRender
+  const baseElements = seedViewOn && seedRender ? seedRender.elements : elements;
+  const activeHome = houseStudy?.parcel === parcelIdStr && houseStudy.base === baseElements ? houseStudy.study : null;
+  const displayElements = activeHome?.elements ?? baseElements;
+  const displayBasis = activeHome ? activeHome.name + ' · original home design study. ' + activeHome.basis : seedViewOn && seedRender
     ? seedRender.basis + (seedRender.inFamily ? ` · in-family: ${seedRender.inFamily}` : '')
     : planBasis;
 
@@ -3301,11 +3309,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           parcelGeometry: (parcel.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined) ?? null,
           envelope: envelopeMeters ?? null,
           context: neighbors,
-          schedule: seedViewOn ? null : { units: metrics?.totalUnits ?? null, stalls: metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null },
+          schedule: seedViewOn || activeHome ? null : { units: metrics?.totalUnits ?? null, stalls: metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null },
           generator: planLineage?.generatorVersion ?? null,
-          housingDesignId,
+          housingDesignId: activeHome?.elements.find(e=>e.id===activeHome.house)?.properties.housingDesignId ?? housingDesignId,
         })),
-    [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion, housingDesignId],
+    [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, activeHome, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion, housingDesignId],
   );
   // One selection for the plan and the 3D view, remembered for this parcel and scheme.
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
@@ -3523,6 +3531,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const data = schedule.length ? (sheetsTitle.data ?? []).filter(r => r.label !== 'Parking') : sheetsTitle.data;
     return {
       ...sheetsTitle,
+      ...(activeHome ? { subtitle: activeHome.name + ' · original home design study', notes:[activeHome.basis,...(sheetsTitle.notes ?? [])] } : {}),
       data,
       ...(schedule.length ? { decision: schedule } : {}),
       ...(garageEntries.length && scene ? { garageEntries: garageEntries.map(p => scene.frame.toFeet(p)) } : {}),
@@ -3542,7 +3551,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         : {}),
     };
-  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet, thV3OnSheet, thV3Summary, garageEntries]);
+  }, [sheetsTitle, routeBreak, scene, displayElements, metrics, maxBuildout, contextState, seedViewOn, sfPlanOnSheet, thV3OnSheet, thV3Summary, garageEntries, activeHome]);
   // What the layout comparison may say about the layout on the sheet: the same parking and floor
   // area rows the exported sheet carries. Retained per kind so switching twice keeps both sides.
   const layoutShownFacts = useMemo(() => {
@@ -3949,6 +3958,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
+          <button type="button" onClick={() => setHomesOpen(true)} className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Home designs</button>
           {!classicDrawing && scene && scene.buildings.length > 0 && (
             <button
               data-testid="view-section"
@@ -4020,6 +4030,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
+      {homesOpen && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening home designs…</div>}>
+        <HomeStudio siteBoundary={scene?.parcel?.polygons.length === 1 ? {type:'Polygon', coordinates:scene.parcel.polygons[0]!.map(r=>r.map(p=>scene.frame.fromFeet(p)))} : null} elements={baseElements} selected={sceneSelectedIds[0] ?? null} onClose={closeHomes}
+          onPreview={study => {setHouseStudy({parcel:parcelIdStr,base:baseElements,study});setHomesOpen(false);}} />
+      </React.Suspense>}
+      {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
+        <span><strong>{activeHome.name} · site preview.</strong> The yield, site checks and underwriting figures describe the base scheme.</span>
+        <button type="button" className="underline" onClick={() => setHouseStudy(null)}>Return to base scheme</button></div>}
       {!seedViewOn && <BuiltHeadline metrics={metrics} elements={elements} />}
       {/* 2026-09-04 (Eric, 2622 W Heiman: "difficult to see the site planner,
           there is a ton of data"): the basis line, the context lineage, the
@@ -4303,7 +4320,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 onSelect={scene ? (id => handleSceneSelection(id ? [id] : [])) : undefined}
                 topo={topo}
                 accessBreak={routeBreak}
-                grossSf={seedViewOn ? null : metrics?.totalBuiltSF}
+                grossSf={seedViewOn || activeHome ? null : metrics?.totalBuiltSF}
                 savedPlanId={scene && savedRenderPlan?.parcel === scene.identity.parcelId && savedRenderPlan.revision === scene.identity.revision
                   ? savedRenderPlan.id : undefined}
               />
