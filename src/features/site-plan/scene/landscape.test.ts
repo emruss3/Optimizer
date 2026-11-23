@@ -94,6 +94,9 @@ describe('the sheet', () => {
     const mark = broken.querySelector('[data-role="route-break"]');
     expect(mark?.querySelectorAll('circle').length).toBe(2);
     expect(mark?.textContent).toMatch(/no drawn connection to the street/);
+    const measured = new DOMParser().parseFromString(
+      renderSitePlanSheet(scene, { ...title, routeBreak: { from: [0, 18], to: [0, -30], gapFt: 20.85 } }, 'tabloid').svg, 'image/svg+xml');
+    expect(measured.querySelector('[data-role="route-break"]')?.textContent).toMatch(/21 ft short/);
   });
 
   it('prints the decision figures ahead of the other site data, and says so when a legend is cut short', () => {

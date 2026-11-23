@@ -48,6 +48,16 @@ describe('accessBreak — where the route to the street stops', () => {
     expect(b?.from[1]).toBe(20);
     expect(b?.to[1]).toBe(0);
     expect(b?.from[0]).toBe(b?.to[0]);
+    expect(b?.gapM).toBeCloseTo(20, 6);
+    expect(b?.gapFt).toBeCloseTo(20 / 0.3048, 4);
+  });
+
+  // Live Design P2: partner sheet / inspector must name the measured gap (W Heiman ~21 ft)
+  it('reports the gap in feet so a reviewer can check it against the graphic scale', () => {
+    const b = accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], parcel);
+    expect(b).not.toBeNull();
+    expect(b!.gapFt).toBeGreaterThan(65);
+    expect(b!.gapFt).toBeLessThan(66);
   });
 
   it('aims at the street edge when the frontage is known, not at whichever parcel line is nearest', () => {

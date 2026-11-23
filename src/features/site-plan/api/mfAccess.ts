@@ -99,11 +99,23 @@ function nearestPair(a: number[][], b: number[][]): { from: number[]; to: number
   return best;
 }
 
+/** Metres (EPSG:3857 canvas) → feet for partner-sheet and inspector copy. */
+const M_TO_FT = 1 / 0.3048;
+
+export type AccessBreak = {
+  from: number[];
+  to: number[];
+  /** Gap length in canvas metres. */
+  gapM: number;
+  /** Same gap in feet (Live Design P2: W Heiman ~21 ft short of frontage). */
+  gapFt: number;
+};
+
 /**
  * Where the route to the street breaks, when no drive reaches the parcel line:
- * the end of the drive nearest the street, and the point on the street edge it
- * would have to reach. It marks a place on the drawing. It carries no length:
- * the app does not measure the gap, it shows where the engine's drive stops.
+ * the end of the drive nearest the street, the point on the street edge it
+ * would have to reach, and the measured gap. Endpoints mark the drawing;
+ * gapFt is what a reviewer reads against the graphic scale.
  */
 export function accessBreak(
   elements: Element[],
@@ -111,7 +123,7 @@ export function accessBreak(
   /** the street edge of the parcel, when the frontage layer has one; else the parcel line stands in */
   frontageLine: number[][] | null = null,
   tolM = 3,
-): { from: number[]; to: number[] } | null {
+): AccessBreak | null {
   const drives = elements.filter(e => e.type === 'circulation').map(ringOf).filter((r): r is number[][] => r != null);
   if (drives.length === 0 || !parcelRing || parcelRing.length < 4) return null;
   if (drives.some(d => ringDistance(d, parcelRing) <= tolM)) return null;
@@ -121,5 +133,6 @@ export function accessBreak(
     const pair = nearestPair(d, edge);
     if (pair && (!best || pair.d < best.d)) best = pair;
   }
-  return best ? { from: best.from, to: best.to } : null;
+  if (!best) return null;
+  return { from: best.from, to: best.to, gapM: best.d, gapFt: best.d * M_TO_FT };
 }

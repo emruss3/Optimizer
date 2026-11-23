@@ -3418,13 +3418,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   );
   const [showFrontage, setShowFrontage] = useState(false);
   // Where the route breaks, when the finding is that no drive reaches the street: the same two
-  // points mark it on the plan and in the 3D review. A place, not a length.
+  // points mark it on the plan and in the 3D review; gapFt is the measured shortfall.
   const routeBreak = useMemo(
     () => (access?.headline === NO_DRIVE_TO_STREET && displayElements.some(e => e.id.startsWith('mfgen-'))
       ? accessBreak(displayElements, parcelRing3857, access.frontageLine)
       : null),
     [access, displayElements, parcelRing3857],
   );
+  const routeBreakLabel = routeBreak
+    ? `Drive stops here · no drawn connection to the street · ${routeBreak.gapFt < 10 ? routeBreak.gapFt.toFixed(1) : Math.round(routeBreak.gapFt)} ft short`
+    : null;
   // the download carries the unresolved connection too: marked on the sheet and said in its notes
   // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
   // required parking, what the floor area is a share of, the parking and residential stack, and
@@ -3452,8 +3455,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ...(schedule.length ? { decision: schedule } : {}),
       ...(routeBreak && scene
         ? {
-            notes: ['Access unresolved: no drive on this plan reaches the street. The break is marked in red.', ...(sheetsTitle.notes ?? [])],
-            routeBreak: { from: scene.frame.toFeet(routeBreak.from), to: scene.frame.toFeet(routeBreak.to) },
+            notes: [`Access unresolved: no drive on this plan reaches the street (${Math.round(routeBreak.gapFt)} ft short). The break is marked in red.`, ...(sheetsTitle.notes ?? [])],
+            routeBreak: { from: scene.frame.toFeet(routeBreak.from), to: scene.frame.toFeet(routeBreak.to), gapFt: routeBreak.gapFt },
           }
         : {}),
     };
@@ -3473,14 +3476,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [sheetsTitleWithAccess, thV3OnSheet, thV3Summary, metrics, maxBuildout]);
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
-    const withBreak = routeBreak
-      ? [...sheetAnnotations, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: 'Drive stops here · no drawn connection to the street' }]
+    const withBreak = routeBreak && routeBreakLabel
+      ? [...sheetAnnotations, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: routeBreakLabel }]
       : sheetAnnotations;
     if (!showFrontage || !line || line.length < 2) return withBreak;
     const mid = line[Math.floor(line.length / 2)] ?? line[0]!;
     const prev = line[Math.floor(line.length / 2) - 1] ?? line[0]!;
     return [...withBreak, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
-  }, [sheetAnnotations, access, showFrontage, routeBreak]);
+  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel]);
 
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation
