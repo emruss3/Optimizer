@@ -11,6 +11,11 @@
 export interface LayoutFacts {
   parking?: string | null;
   floorArea?: string | null;
+  /** Townhome guest stalls drawn — retained so Compare cannot invent a generic count. */
+  guestSupply?: number | null;
+  /** Townhome guest-parking target (e.g. Mt View 8). */
+  guestTarget?: number | null;
+  guestBasis?: 'engine-target' | 'engine-graded' | null;
   /** scheme revision these facts were measured against, when known */
   revision?: string | null;
 }
@@ -25,6 +30,9 @@ export interface LayoutOption {
   /** facts of a rendered option: retained after the sheet switches away */
   parking?: string | null;
   floorArea?: string | null;
+  guestSupply?: number | null;
+  guestTarget?: number | null;
+  guestBasis?: 'engine-target' | 'engine-graded' | null;
 }
 
 export type LayoutFactsByKind = Partial<Record<'multifamily' | 'neighborhood', LayoutFacts>>;
@@ -49,14 +57,21 @@ export function retainLayoutFacts(
   const rev = revision ?? facts.revision ?? null;
   const revisionMoved = prev?.revision != null && rev != null && prev.revision !== rev;
   const next: LayoutFacts = revisionMoved
-    ? { parking: facts.parking ?? null, floorArea: facts.floorArea ?? null, revision: rev }
+    ? {
+        parking: facts.parking ?? null,
+        floorArea: facts.floorArea ?? null,
+        guestSupply: facts.guestSupply ?? null,
+        guestTarget: facts.guestTarget ?? null,
+        guestBasis: facts.guestBasis ?? null,
+        revision: rev,
+      }
     : {
         ...(prev ?? {}),
         ...facts,
         revision: rev ?? prev?.revision ?? null,
       };
   // only store when at least one figure is present (nulls alone are not a rendered set)
-  if (next.parking == null && next.floorArea == null) {
+  if (next.parking == null && next.floorArea == null && next.guestSupply == null) {
     if (!revisionMoved) return prior;
     // a regenerate that cleared both figures drops the stale kind
     const { [shown]: _drop, ...rest } = prior;
