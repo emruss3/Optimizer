@@ -163,9 +163,9 @@ export function approachShot(
 export function streetShot(
   subjects: Subject[], obstacles: number[][][], roads: number[][][], aspect = 16 / 9,
   trees: Array<[number, number, number]> = [], groundAt: (x: number, y: number) => number = () => 0,
-  foreground: readonly ForegroundObstacle[] = [],
+  foreground: readonly ForegroundObstacle[] = [], preferredHouse?: string,
 ): Shot | null {
-  const ordered = subjects.filter(s => s.points.length >= 3).map(subject => ({
+  const ordered = subjects.filter(s => s.points.length >= 3 && (!preferredHouse || s.id === preferredHouse)).map(subject => ({
     subject, size: extent(subject.points), road: nearestRoad(centre(subject.points), roads),
   })).sort((a, b) => b.size - a.size);
   if (ordered.length && ordered.every(x => x.subject.facing)) {

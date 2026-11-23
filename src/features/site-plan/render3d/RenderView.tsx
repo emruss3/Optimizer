@@ -106,6 +106,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // where the camera stood, so a change of style redraws the same view of the same plan
   const revision = useRef(scene.identity.revision);
   revision.current = scene.identity.revision;
+  const previewHouse = useRef<string | undefined>(undefined);
+  previewHouse.current = useMemo(() => elements.find(el => Array.isArray(el.properties.homeOrigin))?.id, [elements]);
   const stood = useRef<{ revision: string; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
@@ -155,8 +157,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
       const { subjects, obstacles, roads, trees, approaches, foreground } = r.model.ground;
-      const arrival = shot === 'approach' ? approachShot(approaches, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
-        : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground) : null;
+      const house = previewHouse.current;
+      const entranceWalks = house ? approaches.filter(a => a.building === house) : approaches;
+      const arrival = shot === 'approach' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
+        : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : null;
       r.controls.minDistance = arrival && shot === 'approach' ? 0.55 : 8;
       r.controls.maxPolarAngle = arrival && shot === 'approach' ? 2.05 : Math.PI / 2;
       setShotNote((shot === 'street' || shot === 'approach') && !arrival ? 'A clear entrance view is unavailable for this scheme. Showing the aerial.' : null);

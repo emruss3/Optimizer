@@ -1,3 +1,5 @@
+import { findHome } from '../housing/originalDesigns';
+import { placedArchitecture } from '../housing/architecture';
 import { makeTerrain } from '../render3d/terrain';
 import { point2274To3857 } from '../api/parcelTopo';
 import type { Element } from '../../../engine/types';
@@ -346,7 +348,11 @@ export function buildMassingData(
       const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
       const use = buildingUse(el), properties = el.properties;
       const garage = garageOf(el), deck = deckUnder(el);
-      const a = buildArchitecture(el.id, label, rings, use, heightOf(el), pavement, scale, style, outlines.filter((_, j) => j !== i), frontage,
+      const neighbours = outlines.filter((_, j) => j !== i);
+      const design = findHome(properties.housingDesignId);
+      const authored = design && Array.isArray(properties.homeOrigin) && Array.isArray(properties.homeAxis)
+        ? placedArchitecture(design, el.id, label, m(properties.homeOrigin), m(properties.homeAxis), scale > 1.6, neighbours) : null;
+      const a = authored ?? buildArchitecture(el.id, label, rings, use, heightOf(el), pavement, scale, style, neighbours, frontage,
         use === 'house' ? houseAccessFor(el, driveways) : undefined,
         garage ? { ring: garage.ring, deckM: garage.deckM, over: properties?.overGarage === true } : null);
       if (deck) {

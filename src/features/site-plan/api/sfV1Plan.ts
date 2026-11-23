@@ -809,6 +809,7 @@ export function sfV1ToElements(
       geometry: poly,
       properties: props({
         lotKind: kind ?? undefined,
+        homeSetbacksFt: resp.setbacks ?? undefined,
         // the engine's house plan for this lot, read on the sheet as "4 bed · 3,184 sf" (2026-11-09)
         houseLabel: houseLabel(house) ?? undefined,
         houseBeds: house?.beds ?? undefined,
