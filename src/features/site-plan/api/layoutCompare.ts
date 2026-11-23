@@ -4,6 +4,16 @@
 // A figure the app does not have is "unknown", never zero, and no option borrows the other's
 // drawing or figures. The land price is the reviewer's assumption: it is kept apart from what
 // the plan measures and is never stored with it.
+//
+// When an alternative has rendered in this session, its facts are retained against its own
+// kind and revision so switching layouts does not erase the first option's parking or floor area.
+
+export interface LayoutFacts {
+  parking?: string | null;
+  floorArea?: string | null;
+  /** scheme revision these facts were measured against, when known */
+  revision?: string | null;
+}
 
 export interface LayoutOption {
   key: 'multifamily' | 'neighborhood';
@@ -12,9 +22,47 @@ export interface LayoutOption {
   homes: number | null;
   /** true when this option is the one drawn on the sheet now */
   shown: boolean;
-  /** facts of the drawn option only: the other option's are not known until it is drawn */
+  /** facts of a rendered option: retained after the sheet switches away */
   parking?: string | null;
   floorArea?: string | null;
+}
+
+export type LayoutFactsByKind = Partial<Record<'multifamily' | 'neighborhood', LayoutFacts>>;
+
+/**
+ * Keep each rendered option's parking and floor area against its kind (and revision when
+ * known). Switching layouts twice must still show both sides' values. An undrawn option
+ * stays absent here so compareLayouts can name the missing fact.
+ *
+ * When the same kind comes back under a new revision (retry / regenerate), replace that
+ * kind's entry rather than merging — otherwise an omitted field keeps the earlier run's
+ * value. Parcel changes remount the panel (`key={parcelId}`); this only guards revision.
+ */
+export function retainLayoutFacts(
+  prior: LayoutFactsByKind,
+  shown: 'multifamily' | 'neighborhood' | null,
+  facts: LayoutFacts | null | undefined,
+  revision?: string | null,
+): LayoutFactsByKind {
+  if (!shown || !facts) return prior;
+  const prev = prior[shown];
+  const rev = revision ?? facts.revision ?? null;
+  const revisionMoved = prev?.revision != null && rev != null && prev.revision !== rev;
+  const next: LayoutFacts = revisionMoved
+    ? { parking: facts.parking ?? null, floorArea: facts.floorArea ?? null, revision: rev }
+    : {
+        ...(prev ?? {}),
+        ...facts,
+        revision: rev ?? prev?.revision ?? null,
+      };
+  // only store when at least one figure is present (nulls alone are not a rendered set)
+  if (next.parking == null && next.floorArea == null) {
+    if (!revisionMoved) return prior;
+    // a regenerate that cleared both figures drops the stale kind
+    const { [shown]: _drop, ...rest } = prior;
+    return rest;
+  }
+  return { ...prior, [shown]: next };
 }
 
 export interface LayoutComparison {

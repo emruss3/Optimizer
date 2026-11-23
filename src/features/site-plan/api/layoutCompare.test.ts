@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareLayouts, parseLandPrice, type LayoutOption } from './layoutCompare';
+import { compareLayouts, parseLandPrice, retainLayoutFacts, type LayoutOption } from './layoutCompare';
 
 describe('two layouts of one parcel, side by side', () => {
   // 5525 Mt View Rd: 30 lane townhomes on the sheet against 24 surface apartments
@@ -26,6 +26,35 @@ describe('two layouts of one parcel, side by side', () => {
     expect(c.rows.find(r => r.label === 'Land per home')?.b).toBe('Unknown');
     expect(c.tradeOff).toBeNull();
     expect(c.missing).toContain('Home count of apartments');
+  });
+
+  // Live Design handoff: 30/24 and 70/25 retain their own values after switching twice
+  it('retains each rendered option’s facts after switching twice (30/24 Mt View)', () => {
+    let kept = retainLayoutFacts({}, 'neighborhood', { parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }, 'rev-town');
+    kept = retainLayoutFacts(kept, 'multifamily', { parking: '42 drawn · 42 required', floorArea: '43,203 GSF' }, 'rev-mf');
+    kept = retainLayoutFacts(kept, 'neighborhood', { parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }, 'rev-town');
+    const c = compareLayouts(
+      { ...town, parking: kept.neighborhood?.parking, floorArea: kept.neighborhood?.floorArea },
+      { ...apts, parking: kept.multifamily?.parking, floorArea: kept.multifamily?.floorArea },
+      null,
+    );
+    expect(c.rows.find(r => r.label === 'Parking')).toMatchObject({ a: 'Guest parking 0 of 8', b: '42 drawn · 42 required' });
+    expect(c.rows.find(r => r.label === 'Floor area')).toMatchObject({ a: 'Unknown · upper bound 49,600 GSF', b: '43,203 GSF' });
+    expect(c.missing).toEqual([]);
+  });
+
+  it('retains each rendered option’s facts after switching twice (70/25 W Heiman)', () => {
+    let kept = retainLayoutFacts({}, 'multifamily', { parking: '127 drawn · 20 reported · 122 required', floorArea: '106,776 GSF' }, 'rev-a');
+    kept = retainLayoutFacts(kept, 'neighborhood', { parking: 'Guest parking 2 of 7', floorArea: null }, 'rev-b');
+    kept = retainLayoutFacts(kept, 'multifamily', { parking: '127 drawn · 20 reported · 122 required', floorArea: '106,776 GSF' }, 'rev-a');
+    expect(kept.multifamily?.parking).toMatch(/127 drawn/);
+    expect(kept.neighborhood?.parking).toMatch(/Guest parking 2 of 7/);
+  });
+
+  it('replaces a kind on revision change instead of keeping an omitted field from the earlier run', () => {
+    let kept = retainLayoutFacts({}, 'multifamily', { parking: '42 drawn · 42 required', floorArea: '43,203 GSF' }, 'rev-1');
+    kept = retainLayoutFacts(kept, 'multifamily', { parking: '40 drawn · 40 required', floorArea: null }, 'rev-2');
+    expect(kept.multifamily).toEqual({ parking: '40 drawn · 40 required', floorArea: null, revision: 'rev-2' });
   });
 });
 
