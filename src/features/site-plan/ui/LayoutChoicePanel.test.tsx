@@ -162,3 +162,43 @@ describe('LayoutChoicePanel (multifamily by default where it places more homes; 
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── the Compare action beside the two yields (site-review brief, 2026-11-23) ──
+import { fireEvent as fire, render as draw, screen as page } from '@testing-library/react';
+import { LayoutChoicePanel as Panel } from './LayoutChoicePanel';
+
+describe('comparing the two layouts', () => {
+  const choice = {
+    multifamilyHomes: 24, multifamilyProduct: 'apartments' as const, densityCap: 32, defaultKind: 'neighborhood' as const,
+    sentence: 'The neighborhood places more homes here.', floodHold: false,
+    neighborhood: { homes: 30, requested: 'townhome', label: 'townhomes (lane)', buildable: true, drawable: true },
+  };
+  const open = (facts?: { parking?: string | null; floorArea?: string | null }) => {
+    draw(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={facts ?? null} />);
+    fire.click(page.getByTestId('layout-compare'));
+  };
+
+  it('names both yields on the button and opens the table beside them', () => {
+    open();
+    expect(page.getByTestId('layout-compare').textContent).toBe('Hide the comparison');
+    expect(page.getByTestId('layout-compare-tradeoff').textContent).toBe('30 townhomes (lane) places 6 more homes than 24 apartments.');
+  });
+
+  it('Mt View: a $1.2M land price reads $50,000 against $40,000 a home', () => {
+    open({ parking: 'Guest parking 0 of 8', floorArea: null });
+    fire.change(page.getByTestId('layout-compare-land'), { target: { value: '1,200,000' } });
+    const row = document.querySelector('[data-compare-row="Land per home"]');
+    expect(row?.textContent).toContain('$50,000');
+    expect(row?.textContent).toContain('$40,000');
+    expect(page.getByTestId('layout-compare-tradeoff').textContent).toMatch(/\$10,000 less land per home/);
+  });
+
+  it('shows the facts of the layout on the sheet only, and names what is unknown', () => {
+    open({ parking: 'Guest parking 0 of 8', floorArea: null });
+    const parking = document.querySelector('[data-compare-row="Parking"]');
+    expect(parking?.textContent).toContain('Unknown');
+    expect(parking?.textContent).toContain('Guest parking 0 of 8');
+    expect(page.getByTestId('layout-compare-missing').textContent).toMatch(/Parking of 24 apartments: open that layout to draw it/);
+  });
+});
