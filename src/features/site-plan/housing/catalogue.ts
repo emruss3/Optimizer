@@ -211,32 +211,80 @@ export const ABHP_5633_00358 = abhpPadRanch({
   depthFt: 32,
 });
 
-/** Compact 36×28 ranch — small-lot Mid-South product. */
-export const ABHP_5633_00372 = abhpPadRanch({
-  planNumber: '5633-00372',
-  name: 'ABHP 5633-00372 · compact three-bedroom ranch',
-  listingPath: '/floorplans/563300372',
-  heatedSf: 980,
-  beds: 3,
-  baths: 2,
-  widthFt: 36,
-  depthFt: 28,
-});
-
-/** Narrow 28×50 cottage — deep urban / alley-loaded lots. */
-export const ABHP_4848_00390 = abhpPadRanch({
-  planNumber: '4848-00390',
-  name: 'ABHP 4848-00390 · narrow three-bedroom cottage',
-  listingPath: '/floorplans/484800390',
-  heatedSf: 1180,
-  beds: 3,
-  baths: 2,
-  widthFt: 28,
-  depthFt: 50,
+/** Ultra-narrow 24×30 starter ranch — 2 bed / 1 ba, 720 heated sf (0 cars). */
+export const ABHP_5633_00014 = abhpPadRanch({
+  planNumber: '5633-00014',
+  name: 'ABHP 5633-00014 · narrow two-bedroom ranch',
+  listingPath: '/floorplans/563300014/ranch-plan-720-square-feet-2-bedrooms-1-bathroom',
+  heatedSf: 720,
+  beds: 2,
+  baths: 1,
+  widthFt: 24,
+  depthFt: 30,
   notes: [
     'Public listing facts only — purchase the ABHP construction package before building.',
     'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
-    'Narrow 28′ front suits deep lots; porch faces the short front.',
+    '24′ width clears tight urban / flag-lot envelopes that wider ranches cannot.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
+/** 44×30 ranch, 1,200 heated sf, pad parking. */
+export const ABHP_340_00011 = abhpPadRanch({
+  planNumber: '340-00011',
+  name: 'ABHP 340-00011 · three-bedroom ranch',
+  listingPath: '/floorplans/34000011/ranch-plan-1200-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1200,
+  beds: 3,
+  baths: 2,
+  widthFt: 44,
+  depthFt: 30,
+});
+
+/** Narrow 31×42′5″ ranch — mid-depth urban product. */
+export const ABHP_526_00035 = abhpPadRanch({
+  planNumber: '526-00035',
+  name: 'ABHP 526-00035 · narrow three-bedroom ranch',
+  listingPath: '/floorplans/52600035/ranch-plan-1315-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1315,
+  beds: 3,
+  baths: 2,
+  widthFt: 31,
+  depthFt: 42 + 5 / 12,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '31′ width suits narrow lots that still have mid depth after setbacks.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
+/** 47′7″ × 35′4″ ranch, 1,438 heated sf. */
+export const ABHP_526_00030 = abhpPadRanch({
+  planNumber: '526-00030',
+  name: 'ABHP 526-00030 · three-bedroom ranch',
+  listingPath: '/floorplans/52600030/ranch-plan-1438-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1438,
+  beds: 3,
+  baths: 2,
+  widthFt: 47 + 7 / 12,
+  depthFt: 35 + 4 / 12,
+});
+
+/** Wide shallow 50×28 ranch — broad frontage, shallow depth. */
+export const ABHP_526_00051 = abhpPadRanch({
+  planNumber: '526-00051',
+  name: 'ABHP 526-00051 · wide three-bedroom ranch',
+  listingPath: '/floorplans/52600051/traditional-plan-1400-square-feet-3-bedrooms-2-bathrooms',
+  heatedSf: 1400,
+  beds: 3,
+  baths: 2,
+  widthFt: 50,
+  depthFt: 28,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '50′ × 28′ suits wide-shallow lots that reject deeper ranches.',
     'No attached garage on the listing; use an independent parking pad or street stall.',
   ],
 });
@@ -283,8 +331,11 @@ export const HOUSING_CATALOGUE: HousingDesignRecord[] = [
   ABHP_110_00108,
   ABHP_4848_00368,
   ABHP_5633_00358,
-  ABHP_5633_00372,
-  ABHP_4848_00390,
+  ABHP_5633_00014,
+  ABHP_340_00011,
+  ABHP_526_00035,
+  ABHP_526_00030,
+  ABHP_526_00051,
 ];
 
 export function buildableStockPlans(): HousingDesignRecord[] {
