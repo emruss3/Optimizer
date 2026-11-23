@@ -473,7 +473,10 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     const dock = await page.getByTestId('dock').getAttribute('data-open').catch(() => null);
     if (inspector !== 'true' || dock !== 'true') throw new Error(`the inspector (${inspector}) or the schedule (${dock}) is not open: the battery's keys no longer match workspaceLayout.ts`);
     await page.waitForTimeout(12000);
-    await page.screenshot({ path: `${OUT}/${p.ogc_fid}_2d.png` });
+    // 2D canvas paints can exceed Playwright's 30s default on heavy parcels
+    // (0 Martingale Dr / 680719 fill override). Match the 3D screenshot budget.
+    const shot = (name) => page.screenshot({ path: `${OUT}/${p.ogc_fid}_${name}.png`, timeout: 60000 });
+    await shot('2d');
     // Order-6 item 1: when the refusal card offers the server-verified house,
     // tap it and shoot the render — the SF seed is the deliverable.
     const sfSwitch = page.getByTestId('sf-seed-switch');
@@ -481,7 +484,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     if (await sfSwitch.isVisible().catch(() => false)) {
       await sfSwitch.click();
       await page.waitForTimeout(4000);
-      await page.screenshot({ path: `${OUT}/${p.ogc_fid}_house.png` });
+      await shot('house');
       houseRendered = await page.evaluate(() =>
         /sf_seed|single_family as-of-right/.test(window.__planEvidence?.basis ?? ''));
     }
@@ -530,7 +533,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
       if (await view.isVisible().catch(() => false)) {
         await view.click();
         await page.waitForTimeout(4000);
-        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_structured.png` });
+        await shot('structured');
         evidence._viewStructured = await page.evaluate(() => {
           const ev = window.__planEvidence ?? null;
           return ev?.sfV1
@@ -550,7 +553,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
       if (await btn.isVisible().catch(() => false) && await btn.isEnabled().catch(() => false)) {
         await btn.click();
         await page.waitForTimeout(6000);
-        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_layout_${other}.png` });
+        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_layout_${other}.png`, timeout: 60000 });
         const after = await page.evaluate(() => {
           const ev = window.__planEvidence ?? null;
           return {
@@ -574,7 +577,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
       if (await btn.isVisible().catch(() => false)) {
         await btn.click();
         await page.waitForTimeout(9000);
-        await page.screenshot({ path: `${OUT}/${p.ogc_fid}_override.png` });
+        await shot('override');
         evidence._override = await page.evaluate(() => {
           const ev = window.__planEvidence ?? null;
           return ev
@@ -591,7 +594,7 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     if (await seedToggle.isVisible().catch(() => false)) {
       await seedToggle.click();
       await page.waitForTimeout(2500);
-      await page.screenshot({ path: `${OUT}/${p.ogc_fid}_seed.png` });
+      await shot('seed');
       await seedToggle.click();
       await page.waitForTimeout(800);
     }
