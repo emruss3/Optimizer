@@ -73,3 +73,53 @@ export function mfAccessSummary(elements: Element[], parcelRing: number[][] | nu
   const served = bays.filter(b => drives.some(d => ringDistance(b, d) <= tolM)).length;
   return { curb, bays: bays.length, served, drives: drives.length };
 }
+
+/** Nearest pair of points between two polylines: vertices of each against the segments of the other. */
+function nearestPair(a: number[][], b: number[][]): { from: number[]; to: number[]; d: number } | null {
+  let best: { from: number[]; to: number[]; d: number } | null = null;
+  const one = (p: number[][], q: number[][], flip: boolean) => {
+    for (const pt of p) {
+      const px = pt[0] ?? 0;
+      const py = pt[1] ?? 0;
+      for (let i = 1; i < q.length; i++) {
+        const ax = q[i - 1]?.[0] ?? 0;
+        const ay = q[i - 1]?.[1] ?? 0;
+        const ex = (q[i]?.[0] ?? 0) - ax;
+        const ey = (q[i]?.[1] ?? 0) - ay;
+        const len2 = ex * ex + ey * ey;
+        const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * ex + (py - ay) * ey) / len2)) : 0;
+        const on = [ax + t * ex, ay + t * ey];
+        const d = Math.hypot(px - on[0]!, py - on[1]!);
+        if (!best || d < best.d) best = flip ? { from: on, to: [px, py], d } : { from: [px, py], to: on, d };
+      }
+    }
+  };
+  one(a, b, false);
+  one(b, a, true);
+  return best;
+}
+
+/**
+ * Where the route to the street breaks, when no drive reaches the parcel line:
+ * the end of the drive nearest the street, and the point on the street edge it
+ * would have to reach. It marks a place on the drawing. It carries no length:
+ * the app does not measure the gap, it shows where the engine's drive stops.
+ */
+export function accessBreak(
+  elements: Element[],
+  parcelRing: number[][] | null,
+  /** the street edge of the parcel, when the frontage layer has one; else the parcel line stands in */
+  frontageLine: number[][] | null = null,
+  tolM = 3,
+): { from: number[]; to: number[] } | null {
+  const drives = elements.filter(e => e.type === 'circulation').map(ringOf).filter((r): r is number[][] => r != null);
+  if (drives.length === 0 || !parcelRing || parcelRing.length < 4) return null;
+  if (drives.some(d => ringDistance(d, parcelRing) <= tolM)) return null;
+  const edge = frontageLine && frontageLine.length >= 2 ? frontageLine : parcelRing;
+  let best: { from: number[]; to: number[]; d: number } | null = null;
+  for (const d of drives) {
+    const pair = nearestPair(d, edge);
+    if (pair && (!best || pair.d < best.d)) best = pair;
+  }
+  return best ? { from: best.from, to: best.to } : null;
+}

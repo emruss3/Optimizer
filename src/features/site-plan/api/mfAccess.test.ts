@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Element } from '../../../engine/types';
-import { mfAccessSummary, ringDistance } from './mfAccess';
+import { accessBreak, mfAccessSummary, ringDistance } from './mfAccess';
 
 const meta = { createdAt: 't', updatedAt: 't', source: 'ai-generated' as const };
 const rect = (x1: number, y1: number, x2: number, y2: number) => [[x1, y1], [x2, y1], [x2, y2], [x1, y2], [x1, y1]];
@@ -32,5 +32,37 @@ describe('mfAccessSummary — does the parking have a road?', () => {
     expect(ringDistance(rect(0, 0, 10, 10), rect(8, 8, 12, 12))).toBe(0);
     // a ring wholly inside another reads as the gap between the boundaries
     expect(ringDistance(rect(0, 0, 10, 10), rect(5, 5, 6, 6))).toBe(4);
+  });
+});
+
+describe('accessBreak — where the route to the street stops', () => {
+  it('is null when a drive reaches the parcel line, or when the plan has no drive', () => {
+    expect(accessBreak([el('drive', 'circulation', rect(0, 0, 8, 60))], parcel)).toBeNull();
+    expect(accessBreak([el('bay', 'parking', rect(60, 20, 80, 40))], parcel)).toBeNull();
+    expect(accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], null)).toBeNull();
+  });
+
+  it('marks the end of the drive and the nearest point on the parcel line', () => {
+    const b = accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], parcel);
+    // the south edge (y = 0) is the nearest line: 20 below the drive's south end
+    expect(b?.from[1]).toBe(20);
+    expect(b?.to[1]).toBe(0);
+    expect(b?.from[0]).toBe(b?.to[0]);
+  });
+
+  it('aims at the street edge when the frontage is known, not at whichever parcel line is nearest', () => {
+    // frontage is the east edge, though the south edge is closer
+    const frontage = [[100, 0], [100, 100]];
+    const b = accessBreak([el('drive', 'circulation', rect(40, 20, 48, 50))], parcel, frontage);
+    expect(b?.to[0]).toBe(100);
+    expect(b?.from[0]).toBe(48);
+  });
+
+  it('uses the drive nearest the street when the plan has several', () => {
+    const b = accessBreak([
+      el('a', 'circulation', rect(40, 40, 48, 60)),
+      el('b', 'circulation', rect(40, 6, 48, 30)),
+    ], parcel);
+    expect(b?.from[1]).toBe(6);
   });
 });

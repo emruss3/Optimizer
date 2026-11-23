@@ -10,8 +10,9 @@ import type { Element } from '../../../engine/types';
 import { TopoGrid, line2274To3857, point2274To3857, stationLabel } from './parcelTopo';
 
 export interface SheetAnnotation {
-  kind: 'station' | 'spot' | 'label' | 'radius' | 'highlight';
-  /** highlight: the line to draw attention to, canvas frame; `text` labels it at (x, y) */
+  kind: 'station' | 'spot' | 'label' | 'radius' | 'highlight' | 'gap';
+  /** gap: a missing connection, drawn dashed between the two ends of `line` with a leader to `text`.
+   *  highlight: the line to draw attention to, canvas frame; `text` labels it at (x, y) */
   line?: number[][];
   /** canvas frame (EPSG:3857 metres) */
   x: number;

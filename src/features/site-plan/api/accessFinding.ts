@@ -19,6 +19,7 @@ export interface AccessFinding {
   frontageLabel: string | null;
 }
 
+export const NO_DRIVE_TO_STREET = 'The drive does not reach the street';
 const SURVEY = 'A boundary survey or recorded plat that shows the parcel line on a public right-of-way.';
 const EASEMENT = 'A recorded access easement across the neighbouring parcel, with its width.';
 const CURB = 'A driveway permit or approved curb cut for the street the plan enters from.';
@@ -91,9 +92,9 @@ export function accessFinding(input: {
     return {
       ...base,
       state: 'needs_verification',
-      headline: 'The drive does not reach the street',
+      headline: NO_DRIVE_TO_STREET,
       why: 'No drive on this plan touches the parcel line, so the parking has no drawn way out.',
-      clears: ['A plan whose entry drive meets the highlighted frontage. Recalculate, or draw the drive to the street edge.', CURB],
+      clears: ['A plan whose entry drive meets the street edge. The break is marked in red on the plan and in the 3D review. Recalculate, or draw the drive to the street edge.', CURB],
     };
   }
   if (!frontage && !engineAccess) return null;

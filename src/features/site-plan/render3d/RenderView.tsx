@@ -32,6 +32,7 @@ export interface RenderViewProps {
   topo?: import('../api/parcelTopo').ParcelTopo | null | undefined;
   grossSf?: number | null | undefined;
   savedPlanId?: string | undefined;
+  accessBreak?: { from: number[]; to: number[] } | null | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
@@ -57,7 +58,7 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   const [look, setLook] = useState<'review' | 'rendering'>('review');
@@ -68,6 +69,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       buildMassingData(elements, {
         ...(parcelRing ? { parcelRing } : {}),
         ...(envelopeRing ? { envelopeRing } : {}),
+        ...(accessBreak ? { accessBreak } : {}),
         ...(neighbors?.buildings ? { contextBuildings: neighbors.buildings } : {}),
         ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
         ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
@@ -76,7 +78,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         style: archStyle,
         ...(topo ? { topo } : {}),
       }),
-    [elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, archStyle, topo],
+    [elements, parcelRing, envelopeRing, accessBreak, neighbors, edgeClassifications, scene, archStyle, topo],
   );
 
   const host = useRef<HTMLDivElement>(null);
@@ -479,6 +481,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
           <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-slate-600" />Parcel</span>
           {envelopeRing && <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-blue-600" />Buildable envelope</span>}
           {data.curbs.length > 0 && <span className="flex items-center gap-1" data-testid="legend-access"><i className="inline-block w-4 border-t-2 border-amber-500" />Access</span>}
+          {accessBreak && <span className="flex items-center gap-1 text-red-700" data-testid="legend-access-break"><i className="inline-block w-4 border-t-2 border-dashed border-red-600" />No drawn connection to the street</span>}
           {data.polygons.some(p => p.privateDrive) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 rounded-sm bg-slate-700" />Shared private drive</span>}
           {hazards.has('wetland') && <span className="flex items-center gap-1" data-testid="legend-wetland"><i className="inline-block h-2 w-3 bg-teal-200 border border-teal-600" />Wetland / water buffer</span>}
           {(hazards.has('floodplain') || hazards.has('floodway')) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 bg-blue-200 border border-blue-600" />Flood hazard area</span>}

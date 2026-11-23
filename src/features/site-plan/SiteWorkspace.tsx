@@ -81,7 +81,7 @@ import { fetchMassingProgram, type MassingProgram } from './api/massingProgram';
 import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, contextStateLabel, type PlanLineage } from './ui/ContextLineage';
 import { PlanBasisDisclosure, type BasisTone } from './ui/PlanBasisDisclosure';
-import { mfAccessSummary } from './api/mfAccess';
+import { accessBreak, mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
 import ExportMenu from './ui/ExportMenu';
@@ -89,7 +89,7 @@ import AuthChip from '../../components/AuthChip';
 import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
-import { accessFinding } from './api/accessFinding';
+import { accessFinding, NO_DRIVE_TO_STREET } from './api/accessFinding';
 import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
@@ -3415,13 +3415,24 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     [frontage, engineAccess, planLineage?.flags, plannerCtx, displayElements, mfAccess],
   );
   const [showFrontage, setShowFrontage] = useState(false);
+  // Where the route breaks, when the finding is that no drive reaches the street: the same two
+  // points mark it on the plan and in the 3D review. A place, not a length.
+  const routeBreak = useMemo(
+    () => (access?.headline === NO_DRIVE_TO_STREET && displayElements.some(e => e.id.startsWith('mfgen-'))
+      ? accessBreak(displayElements, parcelRing3857, access.frontageLine)
+      : null),
+    [access, displayElements, parcelRing3857],
+  );
   const canvasAnnotations = useMemo(() => {
     const line = access?.frontageLine;
-    if (!showFrontage || !line || line.length < 2) return sheetAnnotations;
+    const withBreak = routeBreak
+      ? [...sheetAnnotations, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: 'Drive stops here · no drawn connection to the street' }]
+      : sheetAnnotations;
+    if (!showFrontage || !line || line.length < 2) return withBreak;
     const mid = line[Math.floor(line.length / 2)] ?? line[0]!;
     const prev = line[Math.floor(line.length / 2) - 1] ?? line[0]!;
-    return [...sheetAnnotations, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
-  }, [sheetAnnotations, access, showFrontage]);
+    return [...withBreak, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
+  }, [sheetAnnotations, access, showFrontage, routeBreak]);
 
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation
@@ -3573,6 +3584,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       scene: sceneEvidence(scene),
       sceneSelection: sceneSelectedIds,
       mfAccess,
+      routeBreak,
       // 2026-11-09 (the scope's P0.2): the precondition the sketched plan rests on, if any.
       conditional: metrics?.conditional ?? null,
       spOrdinance: spOrdinance ? { ordinance: spOrdinance.ordinance, caseNo: spOrdinance.caseNo } : null,
@@ -3610,7 +3622,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       utilizationPct:
         !draftMode && capturePct != null ? Math.round(capturePct * 10) / 10 : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
+  }, [routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -4140,6 +4152,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 selectedId={sceneSelectedIds.length === 1 ? sceneSelectedIds[0] : null}
                 onSelect={scene ? (id => handleSceneSelection(id ? [id] : [])) : undefined}
                 topo={topo}
+                accessBreak={routeBreak}
                 grossSf={seedViewOn ? null : metrics?.totalBuiltSF}
                 savedPlanId={scene && savedRenderPlan?.parcel === scene.identity.parcelId && savedRenderPlan.revision === scene.identity.revision
                   ? savedRenderPlan.id : undefined}

@@ -110,3 +110,19 @@ garage and residential levels in a section (delivery 3).
 ## Still to do in part 1
 
 W Heiman access route, Mt View floor area.
+
+## Where the route to the street breaks (W Heiman)
+
+When no drive reaches the parcel line, the plan now marks the place: a red
+ring at the end of the drive nearest the street, a dashed line to the street
+edge, and the words "Drive stops here · no drawn connection to the street".
+The 3D review marks the same two points with a red ring and names it in the
+legend. The marker is a place, not a length: the app does not measure the gap.
+
+The committed W Heiman fixture reaches the street, so the proof drive grew the
+parcel outline by 12% in the browser while leaving every engine answer as it
+was. That is a test device only. `route-break-2d.png` and
+`route-break-3d-top.png` are from that drive.
+
+Not done here: the marker is not yet on the exported sheets, and a bay that no
+drive touches is still only counted, not marked.
