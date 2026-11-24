@@ -153,6 +153,29 @@ by default; `?parcelTiles=candidate` reads this release. The partial release
 `..._7d6232f` from the first attempt (6,898 objects) stays in the bucket,
 unreferenced; nothing points at it.
 
+### The release becomes the default (2026-11-24)
+
+At about 15:00 UTC the production map stopped showing parcels: the live
+edge tiles answered 503. They are built in the database per request, and
+the database (a 280 MB cache for 5 GB, 82% cache hits, 60 connections) ran
+them past the API statement timeout, 30 times between 15:00 and 15:40. The
+planner's calls failed the same way on parcels nobody had opened recently
+(a cold context compile took 9 to 23 s).
+
+- #209 made the release the default, with the live tiles as fallback, and
+  re-requests a tile that failed with a server error.
+- #210 ships the release with the app: the live manifest took longer than
+  the map's 4 s limit (storage looks each public file up in the same
+  database), so the map had fallen back to the live tiles. The manifest is
+  now read in the background and a newer release is used from the next load.
+- Live check on production after #210 (run 45440431694, 16:45 UTC): the
+  release loaded at zooms 12 to 15, 39 tile requests, all 200, no console
+  errors, and a click opened the parcel by its id (`get_parcel_by_id`).
+  Forced onto the live tiles (`?parcelTiles=legacy`), the map drew nothing.
+
+The planner's timeouts on a first open are not fixed by this; they need a
+larger database compute size, an owner decision.
+
 ### Tile benchmark: live edge tiles against the release
 
 Run 45402806911, 2026-11-24 13:22 UTC, from a GitHub runner, 20 samples per
@@ -287,9 +310,10 @@ time is measured.
 | Full build | Done | Run 45325384376, release `2026-11-24_regrid-2025-05-29_7d6232f` |
 | Tile size and density by zoom | Done | Table in section 2; largest 458 KB |
 | Tile delivery | Partial | Benchmark above: release p50 37 to 57 ms, live 154 to 690 ms. Browser timings open |
-| Initial view at zoom 12 | Open | Browser run: lines visible, cold p95 ≤ 1.0 s desktop |
+| Initial view at zoom 12 | Partial | Production browser: release tiles at zoom 12 loaded, all 200 (run 45440431694). Timing not yet measured |
 | Usable viewport and pan | Open | Browser run, paired with the control |
-| Click correctness | Open | Every verified interior point opens its `ogc_fid`; seam, hole, multipart, narrow lots, rapid clicks |
+| Click correctness | Partial | Production browser: a click opens the parcel by its tile id. Fixture points still open |
+| Click correctness (full) | Open | Every verified interior point opens its `ogc_fid`; seam, hole, multipart, narrow lots, rapid clicks |
 | Filters, colours, highlights | Open | Repeat each at the thresholds in both modes |
 | Saved work and downstream | Open | Project open/save, assemblage, drawer to planner to pro forma on the same fixtures |
 | Performance isolation | Open | Downstream timings during browsing and during a build |
