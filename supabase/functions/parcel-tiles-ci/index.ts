@@ -8,7 +8,7 @@
 // runtime already holds, for exactly these operations:
 //
 //   GET  ?op=snapshot                 fn_parcel_tile_snapshot()
-//   GET  ?op=export&after=N&limit=N   one page of fn_parcel_tile_export
+//   GET  ?op=export&after=N&limit=N   one page of fn_parcel_tile_export_page
 //   POST ?op=bucket                   create the public parcel-tiles bucket if missing
 //   PUT  ?op=object&key=K             write one release tile, a release manifest,
 //                                     or the live manifest.json
@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
       if (!Number.isInteger(after) || after < 0 || !Number.isInteger(limit) || limit < 1 || limit > MAX_EXPORT_PAGE) {
         return json(400, { error: 'after and limit must be whole numbers, limit 1 to 5000' });
       }
-      const rows = await rpc('fn_parcel_tile_export', { p_after: after, p_limit: limit });
+      const rows = await rpc('fn_parcel_tile_export_page', { p_after: after, p_limit: limit });
       return json(200, Array.isArray(rows) ? rows[0] ?? null : rows);
     }
     if (op === 'bucket' && req.method === 'POST') return json(200, await ensureBucket());

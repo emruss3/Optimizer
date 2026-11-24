@@ -74,7 +74,7 @@ export function directClient({ supabaseUrl, key, fetchImpl = fetch }) {
     mode: 'direct',
     snapshot: () => rpc('fn_parcel_tile_snapshot', {}),
     exportPage: async (after, limit) => {
-      const rows = await rpc('fn_parcel_tile_export', { p_after: after, p_limit: limit });
+      const rows = await rpc('fn_parcel_tile_export_page', { p_after: after, p_limit: limit });
       return Array.isArray(rows) ? rows[0] ?? null : rows;
     },
     ensureBucket: async () => {

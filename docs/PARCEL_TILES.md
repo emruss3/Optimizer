@@ -66,6 +66,19 @@ Recorded 2026-11-24 from `main` at `9dab84d`, the live database and the code.
    30 s. `20261124010000_parcel_tile_export_plan.sql` plans each page with its
    own values: the same page, byte for byte, in 0.8 s. A full export is about
    134 such pages, roughly two minutes.
+9. **The first snapshot read the whole table.** `fn_parcel_tile_snapshot`
+   took `count(*)`, `max(ll_updated_at)` and the distinct geoids over the
+   1.1 GB heap. On the first CI build (run 45318262559, 2026-11-24 03:15 UTC)
+   it ran past the Edge Function's time limit and was retried. The run was
+   cancelled and the queries stopped. `20261124020000_parcel_tile_snapshot_cheap.sql`
+   makes the snapshot the highest `ogc_fid` plus the table's running count of
+   inserts, updates and deletes, and has each export page report its own data
+   date and counties, in a new page function `fn_parcel_tile_export_page`.
+   It drops nothing (a version that dropped the old function waited on a
+   confirmation that never reached the owner); the old `fn_parcel_tile_export`
+   stays, service_role only, unused. Applied 2026-11-24: the snapshot takes
+   47 ms, a 2,000-parcel page 1.1 s, and the broker (version 3) calls the new
+   page function.
 
 ### Not yet captured
 
