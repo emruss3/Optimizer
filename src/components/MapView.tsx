@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import MapUnavailable from './MapUnavailable';
 import { MAPBOX_TOKEN, MAP_STYLE, NASHVILLE_CENTER, SUPABASE_URL } from '../lib/mapbox';
-import { currentParcelTilesMode, defaultManifestUrl, isMissingParcelTile, loadParcelSource } from '../lib/parcelTiles';
+import { currentParcelTilesMode, defaultManifestUrl, isMissingParcelTile, isRetryableParcelTileError, loadParcelSource } from '../lib/parcelTiles';
 import mapboxgl from 'mapbox-gl';
 import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
@@ -105,9 +105,23 @@ const MapView = React.memo(function MapView({
           promoteId: parcelSource.promoteId
         });
 
+        // A tile that failed with a server error is asked for again a few seconds
+        // later, at most three times per minute: Mapbox does not retry it itself.
+        let retries = 0, retryTimer: ReturnType<typeof setTimeout> | null = null;
+        const retryWindow = setInterval(() => { retries = 0; }, 60000);
+        map.once("remove", () => { clearInterval(retryWindow); if (retryTimer) clearTimeout(retryTimer); });
+
         // Listen for tile loading errors
         map.on("error", (e) => {
           if (isMissingParcelTile(e as never)) return; // an empty tile in the release, not a failure
+          if (isRetryableParcelTileError(e as never) && !retryTimer && retries < 3) {
+            retries += 1;
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              const src = map.getSource("parcels") as mapboxgl.VectorTileSource | undefined;
+              if (src && mapRef.current === map) src.setTiles(parcelSource.tiles);
+            }, 3000);
+          }
           if (e.error?.message?.includes("parcels") || e.error?.message?.includes("mvt")) {
             console.error("Parcel tile error:", e.error);
           }

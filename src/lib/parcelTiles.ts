@@ -64,10 +64,21 @@ export function defaultManifestUrl(supabaseUrl: string | undefined): string | nu
 
 const asMode = (v: unknown): ParcelTilesMode | null => (v === 'candidate' || v === 'legacy' ? v : null);
 
+/**
+ * The published release is the default since 2026-11-24: the live edge tiles
+ * are built in the database per request and time out under load (30 statement
+ * timeouts between 15:00 and 15:40 UTC that day, tiles answering 503, no
+ * parcels on the map). The release is static files and never touches the
+ * parcels table. If its manifest cannot be read, loadParcelSource falls back
+ * to the live tiles on its own. ?parcelTiles=legacy, the saved choice, or
+ * VITE_PARCEL_TILES=legacy still selects the live tiles.
+ */
+export const DEFAULT_PARCEL_TILES_MODE: ParcelTilesMode = 'candidate';
+
 export function resolveParcelTilesMode(input: { search?: string; stored?: string | null; env?: string | undefined }): ParcelTilesMode {
   let fromQuery: ParcelTilesMode | null = null;
   try { fromQuery = asMode(new URLSearchParams(input.search ?? '').get('parcelTiles')); } catch { /* a malformed address is no choice */ }
-  return fromQuery ?? asMode(input.stored) ?? asMode(input.env) ?? 'legacy';
+  return fromQuery ?? asMode(input.stored) ?? asMode(input.env) ?? DEFAULT_PARCEL_TILES_MODE;
 }
 
 /** The reasons a manifest cannot be used; empty when it can. */
@@ -153,4 +164,15 @@ export function isMissingParcelTile(e: { sourceId?: string; error?: { status?: n
   const status = e.error?.status;
   if (status !== 400 && status !== 404) return false;
   return typeof e.error?.url === 'string' && e.error.url.includes('/storage/v1/object/public/');
+}
+
+/**
+ * A parcel tile that failed with a server error (a timeout on the live tiles,
+ * a 5xx from storage on a cold release tile) is worth asking for again:
+ * Mapbox does not retry a failed tile until the view changes.
+ */
+export function isRetryableParcelTileError(e: { sourceId?: string; error?: { status?: number } } | null | undefined): boolean {
+  if (!e || e.sourceId !== 'parcels') return false;
+  const status = e.error?.status ?? 0;
+  return status >= 500 || status === 429;
 }
