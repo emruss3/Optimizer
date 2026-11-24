@@ -8,7 +8,7 @@
 // the source the map says it used (data-parcel-tiles on the map container)
 // and any fallback reason; every parcel tile response by status; console
 // errors; and a screenshot at the opening view (zoom 12) and after zooming in
-// two steps (zoom 14, where the live tiles start). Then it clicks the middle of
+// to about zoom 15 (the live tiles start at 14). Then it clicks the middle of
 // the map and records whether a parcel lookup or drawer followed.
 //
 // It fails (exit 1) when the map never says which source it used, when a
@@ -64,7 +64,8 @@ for (const mode of ['legacy', 'candidate']) {
       const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
       await page.mouse.move(cx, cy);
       const before = tiles.length;
-      for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -240); await page.waitForTimeout(400); }
+      // zoom 12 to about 15: the live tiles start at 14
+      for (let i = 0; i < 9; i++) { await page.mouse.wheel(0, -240); await page.waitForTimeout(400); }
       await page.waitForTimeout(8000);
       row.afterZoom = summarize(tiles.slice(before));
       await page.screenshot({ path: path.join(out, `${mode}-zoomed.png`) });
@@ -112,7 +113,7 @@ for (const r of results) {
   if (r.pageText) console.log(`  page text: ${r.pageText}`);
   if (r.mapDom) console.log(`  map DOM: ${JSON.stringify(r.mapDom)}`);
   console.log(`  open (z12): ${JSON.stringify(r.atOpen)}`);
-  console.log(`  zoomed (z14): ${JSON.stringify(r.afterZoom)}`);
+  console.log(`  zoomed (~z15): ${JSON.stringify(r.afterZoom)}`);
   console.log(`  click: ${JSON.stringify(r.click)}`);
   console.log(`  console errors: ${r.consoleErrorCount}${r.consoleErrors?.length ? ' e.g. ' + r.consoleErrors.slice(0, 3).join(' || ') : ''}`);
 }
