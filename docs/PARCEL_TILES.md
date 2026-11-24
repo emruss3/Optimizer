@@ -52,6 +52,20 @@ Recorded 2026-11-24 from `main` at `9dab84d`, the live database and the code.
    cancelled.
 6. **No neighbouring county is imported.** The scope's Williamson and
    county-line fixtures cannot be run until one is.
+7. **An earlier pre-built tile attempt is still in the database.**
+   `public.parcel_tiles (z, x, y, tile bytea)` has no rows but 20 MB on disk,
+   so it was filled once and emptied; anon can read it and no job refills it.
+   `get_parcel_tile(z,x,y)` (layer `default`, `parcelnumb`, reads
+   `wkb_geometry`) and `parcels_mvt(z,x,y)` (no `sqft`) are earlier tile
+   functions. Nothing in the app, the edge functions or the scripts calls any
+   of the three (searched 2026-11-24). They are left as they are; this design
+   publishes files to storage instead of caching tiles in a table.
+8. **The first export function was planned for the whole table.** As a SQL
+   function its page query got a generic plan: a bitmap scan of about a third
+   of `public.parcels` and a sort, on every page. A 2,000-parcel page took
+   30 s. `20261124010000_parcel_tile_export_plan.sql` plans each page with its
+   own values: the same page, byte for byte, in 0.8 s. A full export is about
+   134 such pages, roughly two minutes.
 
 ### Not yet captured
 
@@ -71,8 +85,8 @@ public.parcels ──fn_parcel_tile_export──▶ parcels.geojsonl ──tippe
  map ──▶ manifest.json ──▶ releases/<release>/{z}/{x}/{y}.pbf   Supabase Storage, public bucket parcel-tiles
 ```
 
-- **Export** (`supabase/migrations/20261124000000_parcel_tile_export.sql`,
-  not applied). `fn_parcel_tile_export(p_after, p_limit)` returns pages of
+- **Export** (`supabase/migrations/20261124000000_parcel_tile_export.sql`
+  and `20261124010000_parcel_tile_export_plan.sql`, both applied 2026-11-24). `fn_parcel_tile_export(p_after, p_limit)` returns pages of
   newline-delimited GeoJSON in `ogc_fid` order. The geometry is
   `ST_CollectionExtract(ST_MakeValid(wkb_geometry_4326), 3)` at 7 decimals.
   `sqft` is computed the same way the live tiles compute it, so filters and
@@ -111,7 +125,9 @@ public.parcels ──fn_parcel_tile_export──▶ parcels.geojsonl ──tippe
 | Candidate vs live tile, 12 South `17/33930/51412` | Same 67 parcels, same `zoning`, same `sqft`. The candidate also carries `ogc_fid` as a property (test in `scripts/parcel-tiles/lib.test.mjs`) |
 | Build on that sample | 20 tiles z10–17; at z10, 63 of 67 parcels kept; validation clean |
 | Benchmark harness | Runs end to end against a local release; counts decoded features per response |
-| Full Davidson build | Not run: needs the export function applied and the service-role secret |
+| Export function | Applied. anon, authenticated and authenticator cannot execute it; service_role can. 2,000 parcels a page in 0.8 s |
+| CI broker | `parcel-tiles-ci` deployed. Refuses a call with no token and a forged token (401). Reaches GitHub's signing keys |
+| Full Davidson build | Next: run `build` from main |
 
 ## 3. Runbook
 
@@ -121,13 +137,25 @@ workflow).
 | Job | Needs | Does |
 |---|---|---|
 | `bench` | nothing | Fetches every fixture tile from the live tiles (and a release, given its manifest URL), `samples` times each, interleaved. Artifact `bench.json`: raw samples, p50/p95 per tile and source, statuses, decoded feature counts |
-| `build` | migration applied, secret | Export, build, validate. Uploads the manifest and report as an artifact. Publishes nothing |
-| `publish` | the same | Build, then publish and make live. `confirm_public: yes` the first time, to create the public bucket |
-| `rollback` | secret | Makes the named earlier release live |
+| `build` | run from main | Export, build, validate. Uploads the manifest and report as an artifact. Publishes nothing |
+| `publish` | run from main | Build, then publish and make live. Creates the public bucket the first time |
+| `rollback` | run from main | Makes the named earlier release live |
 
-The secret is `PARCEL_TILES_SERVICE_ROLE_KEY`, the project's service-role key,
-added under repository settings. The workflow reads it only in the build and
-rollback jobs and never prints it.
+No Supabase key is stored in GitHub. `build`, `publish` and `rollback` ask
+GitHub for an OIDC token (`id-token: write`, audience `parcel-tiles`) and send
+it to the `parcel-tiles-ci` Edge Function
+(`supabase/functions/parcel-tiles-ci`). The function checks GitHub's
+signature, then accepts only a hand-started run of
+`.github/workflows/parcel-tiles.yml` on `main` of `emruss3/Optimizer`
+(`policy.ts`). It uses the service key the Edge runtime already holds for four
+things only: the snapshot, one export page, creating the public bucket, and
+writing a release tile, a release manifest or the live `manifest.json`. It
+cannot delete and cannot write anywhere else, and the live manifest must point
+at a release in the bucket. By hand, the scripts still work directly with
+`SUPABASE_SERVICE_ROLE_KEY` set (`scripts/parcel-tiles/broker.mjs`).
+
+Redeploy the function from the repository files with `verify_jwt` off: the
+GitHub token is its authentication.
 
 ### Adding the next licensed county
 
@@ -153,8 +181,8 @@ time is measured.
 | Control frozen | Partial | SHA, SQL, indexes, schema and consumers recorded above. Browser traces and staging probes are open |
 | Fixtures verified | Partial | Seven parcels from saved authoritative records. Interior click points, DELUX WeHo, The Lanes, multipart, shared edge and county line are open (`fixtures.json` → `pending`) |
 | Geometry audit | Partial | Findings 2–4. A full validity and bounds audit was not run on the saturated database |
-| Licence for public tiles | Open | Owner confirms the Regrid agreement allows public, CDN-delivered parcel tiles |
-| Full build | Open | Migration applied, secret added, `build` run, report read |
+| Licence for public tiles | Decided | Section 5, decision 1 |
+| Full build | Open | `build` run from main, report read |
 | Tile size and density by zoom | Open | From the full build report |
 | Initial view at zoom 12 | Open | Browser run: lines visible, cold p95 ≤ 1.0 s desktop |
 | Usable viewport and pan | Open | Browser run, paired with the control |
@@ -167,19 +195,32 @@ time is measured.
 | Economics | Open | GB, objects, build and refresh time, egress per session, priced at 10k, 100k and 1M sessions |
 | Independent review | Open | Signed against the tested candidate SHA |
 
-## 5. Owner decisions
+## 5. Decisions
 
-1. **Licence.** Does the Regrid agreement allow these tiles to be public on a
-   CDN? The live edge tiles are already public without a key, but a bucket of
-   files is easier to copy in bulk.
-2. **Service-role secret.** Add `PARCEL_TILES_SERVICE_ROLE_KEY` so CI can
-   export and publish.
-3. **The export migration.** Approve applying
-   `20261124000000_parcel_tile_export.sql`. It adds two read-only functions,
-   service_role only.
-4. **Where builds read from.** The scope prefers a replica or snapshot. The
-   database was I/O-bound during this work. A full export reads every row
-   once; running it at a quiet hour is the minimum. A Supabase branch or read
-   replica costs money.
-5. **The duplicate indexes** (finding 4) and the **empty projected columns**
-   (finding 3): drop, keep or refill.
+The owner asked Claude Code to make these on 2026-11-24.
+
+1. **Public tiles on a CDN: yes.** The tiles carry exactly what the live edge
+   tiles have carried publicly, without a key, since they shipped: the parcel
+   outline, `ogc_fid`, `zoning` and `sqft`. No owner names, addresses, values
+   or other Regrid fields. Anyone can already fetch every live tile by
+   walking z/x/y, so a public bucket adds no field and no reach. Storage does
+   not list a public bucket to anonymous callers. If the Regrid agreement says
+   otherwise, `rollback` cannot remove files; the bucket would be made private
+   in the dashboard and the map falls back to the live tiles on its own.
+2. **No service-role secret in GitHub.** The `parcel-tiles-ci` broker
+   replaces it (section 3). The key never leaves Supabase, and only a
+   hand-started run of this workflow on main is accepted.
+3. **The export migration: applied,** with its planning fix (finding 8).
+   Execute is granted to service_role only, checked after applying.
+4. **Builds read the primary, at a quiet moment, with no replica.** With the
+   fix, a full export is about two minutes of primary-key reads, 0.8 s a page.
+   The snapshot check refuses an export that straddles an import. A replica
+   or branch costs money every month for a two-minute read. Check
+   `pg_stat_activity` before a run; on 2026-11-24 at 02:40 UTC no client
+   query was active.
+5. **Duplicate indexes, empty projected columns and the old tile table: keep
+   for now.** None of them is on the tile path any more: the export walks the
+   primary key and tiles come from storage. Dropping five indexes would save
+   disk and write cost on a table that is rarely written, and recreating one
+   took 47 minutes on this database. Dropping columns is a data change. Both
+   are worth doing in a maintenance window, not as part of this work.

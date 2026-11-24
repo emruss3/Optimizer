@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Publish a built release of parcel tiles to Supabase Storage, then make it live.
 //
-//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/parcel-tiles/publish.mjs --build build/ --confirm-public
+//   SUPABASE_URL=... node scripts/parcel-tiles/publish.mjs --build build/ --confirm-public
+//   (writes through the parcel-tiles-ci broker in the workflow, or directly with
+//   SUPABASE_SERVICE_ROLE_KEY by hand; see broker.mjs)
 //   ... publish.mjs --rollback <release>      make an earlier release live again
 //
 // Order matters and is the point of this script:
@@ -14,6 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { listTiles, loadConfig, tileKey } from './lib.mjs';
+import { clientFromEnv } from './broker.mjs';
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -21,58 +24,26 @@ const arg = (name, fallback) => {
 };
 const has = name => process.argv.includes(`--${name}`);
 
-const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!url || !key) {
-  console.error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
-  process.exit(2);
-}
+const url = (process.env.SUPABASE_URL ?? '').replace(/\/$/, '');
+const client = clientFromEnv();
 const config = loadConfig();
-const auth = { apikey: key, Authorization: `Bearer ${key}` };
-const objectUrl = k => `${url}/storage/v1/object/${config.bucket}/${k}`;
 const publicUrl = k => `${url}/storage/v1/object/public/${config.bucket}/${k}`;
 
-async function retry(fn, label) {
-  for (let attempt = 1; ; attempt++) {
-    try { return await fn(); } catch (e) {
-      if (attempt >= 5) throw new Error(`${label}: ${e.message}`);
-      await new Promise(r => setTimeout(r, 500 * 2 ** attempt));
-    }
-  }
-}
-
-async function put(k, body, contentType, cacheControl) {
-  return retry(async () => {
-    const r = await fetch(objectUrl(k), {
-      method: 'POST',
-      headers: { ...auth, 'Content-Type': contentType, 'cache-control': cacheControl, 'x-upsert': 'true' },
-      body,
-    });
-    if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 200)}`);
-  }, `upload ${k}`);
-}
+// the client sets each object's content type and cache header from its key:
+// release objects immutable for a year, manifest.json for 60 s
+const put = (k, body) => client.put(k, body);
 
 async function ensureBucket() {
-  const r = await fetch(`${url}/storage/v1/bucket/${config.bucket}`, { headers: auth });
-  if (r.ok) {
-    const b = await r.json();
-    if (!b.public) throw new Error(`bucket ${config.bucket} exists but is not public; the map cannot read it`);
-    return;
-  }
   if (!has('confirm-public')) {
-    throw new Error(`bucket ${config.bucket} does not exist. Creating it makes the tiles public: rerun with --confirm-public once the owner has confirmed the data licence allows it`);
+    throw new Error(`publishing makes the tiles public; rerun with --confirm-public (docs/PARCEL_TILES.md section 5, decision 1)`);
   }
-  const c = await fetch(`${url}/storage/v1/bucket`, {
-    method: 'POST',
-    headers: { ...auth, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: config.bucket, name: config.bucket, public: true, file_size_limit: config.maxTileBytes * 2, allowed_mime_types: ['application/vnd.mapbox-vector-tile', 'application/json'] }),
-  });
-  if (!c.ok) throw new Error(`could not create bucket: ${c.status} ${(await c.text()).slice(0, 200)}`);
-  console.log(`created public bucket ${config.bucket}`);
+  const b = await client.ensureBucket();
+  if (!b.public) throw new Error(`bucket ${config.bucket} exists but is not public; the map cannot read it`);
+  if (b.created) console.log(`created public bucket ${config.bucket}`);
 }
 
 async function makeLive(manifest) {
-  await put(config.manifestKey, JSON.stringify(manifest, null, 2), 'application/json', 'public, max-age=60');
+  await put(config.manifestKey, JSON.stringify(manifest, null, 2));
   const check = await fetch(`${publicUrl(config.manifestKey)}?v=${Date.now()}`);
   const live = check.ok ? await check.json() : null;
   if (live?.release !== manifest.release) throw new Error(`the live manifest reads ${live?.release ?? 'nothing'}, expected ${manifest.release}`);
@@ -103,14 +74,14 @@ const queue = [...tiles];
 await Promise.all(Array.from({ length: concurrency }, async () => {
   for (let t = queue.shift(); t; t = queue.shift()) {
     const body = fs.readFileSync(t.file);
-    await put(tileKey(config, release, t.z, t.x, t.y), body, 'application/vnd.mapbox-vector-tile', 'public, max-age=31536000, immutable');
+    await put(tileKey(config, release, t.z, t.x, t.y), body);
     done += 1; bytes += body.length;
     if (done % 2000 === 0) console.log(`  ${done}/${tiles.length} tiles, ${Math.round((Date.now() - t0) / 1000)} s`);
   }
 }));
 console.log(`uploaded ${done} tiles, ${(bytes / 1e6).toFixed(1)} MB, in ${Math.round((Date.now() - t0) / 1000)} s`);
 
-await put(`${config.releasePrefix}/${release}/manifest.json`, JSON.stringify(manifest, null, 2), 'application/json', 'public, max-age=31536000, immutable');
+await put(`${config.releasePrefix}/${release}/manifest.json`, JSON.stringify(manifest, null, 2));
 
 // read back through the public URL: every zoom, then a random sample
 const sample = [];

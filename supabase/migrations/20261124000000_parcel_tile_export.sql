@@ -1,7 +1,8 @@
 -- Parcel tile export: the read side of the tile build (docs/PARCEL_TILES.md).
 --
--- NOT APPLIED. It waits on the owner's approval of the build plan. Apply it
--- with the MCP apply_migration tool or the SQL editor, never with db push.
+-- Applied 2026-11-24 with the MCP apply_migration tool (decision 3 in the doc).
+-- fn_parcel_tile_export is replaced by 20261124010000_parcel_tile_export_plan.sql,
+-- which plans each page with its own values.
 --
 -- The tile build reads the licensed parcel data once per release through these
 -- two functions, page by page, and turns it into static vector tiles. Neither
