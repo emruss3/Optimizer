@@ -64,7 +64,8 @@ jobs:
           retention-days: 14
 
   live-battery:
-    if: github.event_name == 'schedule'
+    # nightly, and on demand: a hand-started run checks the real backend too
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
