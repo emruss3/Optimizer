@@ -76,7 +76,9 @@ Recorded 2026-11-24 from `main` at `9dab84d`, the live database and the code.
    date and counties, in a new page function `fn_parcel_tile_export_page`.
    It drops nothing (a version that dropped the old function waited on a
    confirmation that never reached the owner); the old `fn_parcel_tile_export`
-   stays, service_role only, unused.
+   stays, service_role only, unused. Applied 2026-11-24: the snapshot takes
+   47 ms, a 2,000-parcel page 1.1 s, and the broker (version 3) calls the new
+   page function.
 
 ### Not yet captured
 

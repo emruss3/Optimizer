@@ -1,7 +1,7 @@
 -- Parcel tile export: a snapshot that does not read the whole table
 -- (docs/PARCEL_TILES.md, finding 9).
 --
--- Apply with the MCP apply_migration tool. It drops nothing.
+-- Applied 2026-11-24 with the MCP apply_migration tool. It drops nothing.
 --
 -- The first fn_parcel_tile_snapshot took count(*), max(ll_updated_at) and the
 -- distinct geoids over public.parcels: a scan of the whole 1.1 GB heap. On the
