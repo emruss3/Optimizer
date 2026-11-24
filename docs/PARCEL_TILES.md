@@ -140,7 +140,32 @@ public.parcels ──fn_parcel_tile_export──▶ parcels.geojsonl ──tippe
 | Benchmark harness | Runs end to end against a local release; counts decoded features per response |
 | Export function | Applied. anon, authenticated and authenticator cannot execute it; service_role can. 2,000 parcels a page in 0.8 s |
 | CI broker | `parcel-tiles-ci` deployed. Refuses a call with no token and a forged token (401). Reaches GitHub's signing keys |
-| Full Davidson build | Next: run `build` from main |
+| Full Davidson build | Run 45325384376, 2026-11-24 04:17 UTC, from `7d6232f`. Clean. Table below |
+
+### First full build: release `2026-11-24_regrid-2025-05-29_7d6232f`
+
+| Step | Result |
+|---|---|
+| Export | 282,338 parcels, all with a polygon, in 142 pages of 2,000, 118 s. Data up to 2025-05-29. One county, 47037. Snapshot unchanged before and after |
+| Build | 30,289 tiles, 103.8 MB, 34 s. Validation clean |
+
+| Zoom | Tiles | Size | Largest tile | Most features in a tile |
+|---|---|---|---|---|
+| 10 | 7 | 0.9 MB | 401 KB | 6,204 |
+| 11 | 14 | 2.1 MB | 458 KB | 8,083 |
+| 12 | 39 | 4.2 MB | 392 KB | 7,308 |
+| 13 | 118 | 9.8 MB | 381 KB | 7,616 |
+| 14 | 414 | 17.1 MB | 240 KB | 4,836 |
+| 15 | 1,516 | 19.0 MB | 104 KB | 1,960 |
+| 16 | 5,769 | 22.2 MB | 53 KB | 915 |
+| 17 | 22,412 | 28.5 MB | 42 KB | 668 |
+
+Every tile is under the 500 KB limit. The live tiles stop at zoom 14 because
+one zoom-12 tile would hold about 42,000 parcels and cannot be built inside
+the database's time limit; here the zoom-12 tile with the most parcels holds
+7,308 after tippecanoe drops the smallest at low zoom, and every zoom from 10
+up has lines. The table's planner estimate is 266,958 rows; the export read
+282,338, so the estimate is stale.
 
 ## 3. Runbook
 
@@ -195,8 +220,8 @@ time is measured.
 | Fixtures verified | Partial | Seven parcels from saved authoritative records. Interior click points, DELUX WeHo, The Lanes, multipart, shared edge and county line are open (`fixtures.json` → `pending`) |
 | Geometry audit | Partial | Findings 2–4. A full validity and bounds audit was not run on the saturated database |
 | Licence for public tiles | Decided | Section 5, decision 1 |
-| Full build | Open | `build` run from main, report read |
-| Tile size and density by zoom | Open | From the full build report |
+| Full build | Done | Run 45325384376, release `2026-11-24_regrid-2025-05-29_7d6232f` |
+| Tile size and density by zoom | Done | Table in section 2; largest 458 KB |
 | Initial view at zoom 12 | Open | Browser run: lines visible, cold p95 ≤ 1.0 s desktop |
 | Usable viewport and pan | Open | Browser run, paired with the control |
 | Click correctness | Open | Every verified interior point opens its `ogc_fid`; seam, hole, multipart, narrow lots, rapid clicks |
