@@ -32,7 +32,13 @@ for (const mode of ['legacy', 'candidate']) {
   await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); } catch { /* private mode */ } });
   const page = await context.newPage();
   const tiles = [], errors = [], lookups = [];
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
+  const warnings = [], hosts = {}, failed = [];
+  page.on('console', m => {
+    if (m.type() === 'error') errors.push(m.text().slice(0, 300));
+    if (m.type() === 'warning') warnings.push(m.text().slice(0, 200));
+  });
+  page.on('request', r => { try { const h = new URL(r.url()).host; hosts[h] = (hosts[h] ?? 0) + 1; } catch { /* data: urls */ } });
+  page.on('requestfailed', r => failed.push(`${r.url().slice(0, 120)} ${r.failure()?.errorText ?? ''}`));
   page.on('pageerror', e => errors.push(`pageerror: ${String(e.message).slice(0, 300)}`));
   page.on('response', r => {
     const u = r.url();
@@ -83,6 +89,9 @@ for (const mode of ['legacy', 'candidate']) {
     row.mapDom = await page.evaluate(() => ({ mapboxContainers: document.querySelectorAll('.mapboxgl-map').length, canvases: document.querySelectorAll('canvas.mapboxgl-canvas').length })).catch(() => null);
     await page.screenshot({ path: path.join(out, `${mode}-problem.png`) }).catch(() => {});
   }
+  row.warnings = warnings.slice(0, 10);
+  row.hosts = hosts;
+  row.failedRequests = failed.slice(0, 10);
   row.consoleErrors = errors.slice(0, 20);
   row.consoleErrorCount = errors.length;
   results.push(row);
@@ -112,6 +121,9 @@ for (const r of results) {
   console.log(`${r.mode}: source=${r.source} release=${r.release ?? '-'} fallback=${r.fallback ?? '-'} start page ${r.startPage ?? 'not seen'}`);
   if (r.pageText) console.log(`  page text: ${r.pageText}`);
   if (r.mapDom) console.log(`  map DOM: ${JSON.stringify(r.mapDom)}`);
+  console.log(`  requests by host: ${JSON.stringify(r.hosts)}`);
+  if (r.failedRequests?.length) console.log(`  failed requests: ${r.failedRequests.join(' || ')}`);
+  if (r.warnings?.length) console.log(`  warnings: ${r.warnings.join(' || ')}`);
   console.log(`  open (z12): ${JSON.stringify(r.atOpen)}`);
   console.log(`  zoomed (~z15): ${JSON.stringify(r.afterZoom)}`);
   console.log(`  click: ${JSON.stringify(r.click)}`);
