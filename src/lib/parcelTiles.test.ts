@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LEGACY_PARCEL_SOURCE, candidateSource, isMissingParcelTile, isRetryableParcelTileError, defaultManifestUrl, loadParcelSource, manifestProblems, resolveParcelTilesMode, type ParcelTilesManifest } from './parcelTiles';
+import { BUNDLED_PARCEL_MANIFEST, LEGACY_PARCEL_SOURCE, candidateSource, isMissingParcelTile, isRetryableParcelTileError, newerParcelManifest, defaultManifestUrl, loadParcelSource, manifestProblems, resolveParcelTilesMode, type ParcelTilesManifest } from './parcelTiles';
 
 const manifest: ParcelTilesManifest = {
   schemaVersion: 1,
@@ -83,5 +83,21 @@ describe('which parcel tiles the map reads', () => {
     expect(isRetryableParcelTileError({ sourceId: 'parcels', error: { status: 429 } })).toBe(true);
     expect(isRetryableParcelTileError({ sourceId: 'parcels', error: { status: 400 } })).toBe(false);
     expect(isRetryableParcelTileError({ sourceId: 'roads', error: { status: 503 } })).toBe(false);
+  });
+
+  it('starts on the known release without the network, and notices a newer one in the background', async () => {
+    const fetchImpl = answer(manifest);
+    const src = await loadParcelSource({ mode: 'candidate', manifestUrl: 'https://m', known: BUNDLED_PARCEL_MANIFEST, fetchImpl });
+    expect(src).toMatchObject({ mode: 'candidate', release: BUNDLED_PARCEL_MANIFEST.release, fallback: null, minzoom: 10 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(manifestProblems(BUNDLED_PARCEL_MANIFEST)).toEqual([]);
+    expect((await newerParcelManifest({ manifestUrl: 'https://m', current: BUNDLED_PARCEL_MANIFEST.release, fetchImpl }))?.release).toBe(manifest.release);
+    expect(await newerParcelManifest({ manifestUrl: 'https://m', current: manifest.release, fetchImpl })).toBeNull();
+    expect(await newerParcelManifest({ manifestUrl: 'https://m', current: 'x', fetchImpl: answer({}, 503) })).toBeNull();
+  });
+
+  it('ignores an unusable known release and reads the live manifest instead', async () => {
+    const src = await loadParcelSource({ mode: 'candidate', manifestUrl: 'https://m', known: { release: 'broken' }, fetchImpl: answer(manifest) });
+    expect(src.release).toBe(manifest.release);
   });
 });

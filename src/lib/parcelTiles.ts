@@ -113,32 +113,94 @@ export function candidateSource(m: ParcelTilesManifest): ParcelSourceConfig {
 }
 
 /**
- * The source the map should add. Never throws: any failure to read or trust
- * the candidate's manifest gives the legacy source, with the reason attached.
+ * The release this build ships with. Supabase Storage answers a public file
+ * by looking it up in the database; under load the live manifest took longer
+ * than the map's 4 s limit and the map fell back to the live tiles (production,
+ * 2026-11-24 16:11 UTC). With the release known up front the map starts on it
+ * at once; the live manifest is read in the background only to notice a newer
+ * release, which is used from the next page load (parcelTiles manifest saved
+ * on the device). Publishing a release still works without a deploy.
+ */
+export const BUNDLED_PARCEL_MANIFEST: ParcelTilesManifest = {
+  schemaVersion: 1,
+  release: '2026-11-24_regrid-2025-05-29_743214e',
+  layer: 'parcels',
+  tiles: ['https://okxrvetbzpoazrybhcqj.supabase.co/storage/v1/object/public/parcel-tiles/releases/2026-11-24_regrid-2025-05-29_743214e/{z}/{x}/{y}.pbf'],
+  minzoom: 10,
+  maxzoom: 17,
+  bounds: [-87.05566, 34.53598, -86.50909, 36.40581],
+  fields: ['ogc_fid', 'zoning', 'sqft'],
+  idField: 'ogc_fid',
+  attribution: 'Parcel data © Regrid',
+};
+
+export const PARCEL_MANIFEST_STORAGE_KEY = 'pp.parcelTilesManifest';
+
+/**
+ * The source the map should add. Never throws. With a known release (one saved
+ * on this device from an earlier background read, else the bundled one) it
+ * answers at once without the network. Without one it reads the live manifest,
+ * and any failure to read or trust it gives the legacy source with the reason.
  */
 export async function loadParcelSource(opts: {
   mode: ParcelTilesMode;
   manifestUrl: string | null;
+  known?: unknown;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }): Promise<ParcelSourceConfig> {
   if (opts.mode !== 'candidate') return LEGACY_PARCEL_SOURCE;
+  if (opts.known != null && manifestProblems(opts.known).length === 0) return candidateSource(opts.known as ParcelTilesManifest);
   if (!opts.manifestUrl) return { ...LEGACY_PARCEL_SOURCE, fallback: 'no manifest address is configured' };
+  const read = await readManifest(opts.manifestUrl, opts.fetchImpl, opts.timeoutMs ?? 4000);
+  return 'manifest' in read ? candidateSource(read.manifest) : { ...LEGACY_PARCEL_SOURCE, fallback: read.problem };
+}
+
+/** The live manifest when it names a usable release other than `current`, else null. Never throws. */
+export async function newerParcelManifest(opts: {
+  manifestUrl: string | null;
+  current: string | null;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}): Promise<ParcelTilesManifest | null> {
+  if (!opts.manifestUrl) return null;
+  const read = await readManifest(opts.manifestUrl, opts.fetchImpl, opts.timeoutMs ?? 30000);
+  return 'manifest' in read && read.manifest.release !== opts.current ? read.manifest : null;
+}
+
+async function readManifest(url: string, fetchImpl: typeof fetch | undefined, timeoutMs: number): Promise<{ manifest: ParcelTilesManifest } | { problem: string }> {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), opts.timeoutMs ?? 4000);
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const r = await (opts.fetchImpl ?? fetch)(opts.manifestUrl, { signal: ctl.signal, cache: 'no-cache' });
-    if (!r.ok) return { ...LEGACY_PARCEL_SOURCE, fallback: `the manifest answered ${r.status}` };
+    const r = await (fetchImpl ?? fetch)(url, { signal: ctl.signal, cache: 'no-cache' });
+    if (!r.ok) return { problem: `the manifest answered ${r.status}` };
     const m = await r.json();
     const problems = manifestProblems(m);
-    if (problems.length) return { ...LEGACY_PARCEL_SOURCE, fallback: `the manifest is not usable: ${problems.join('; ')}` };
-    return candidateSource(m as ParcelTilesManifest);
+    if (problems.length) return { problem: `the manifest is not usable: ${problems.join('; ')}` };
+    return { manifest: m as ParcelTilesManifest };
   } catch (e) {
     const name = (e as { name?: string })?.name;
-    return { ...LEGACY_PARCEL_SOURCE, fallback: name === 'AbortError' ? 'the manifest did not answer in time' : `the manifest could not be read (${String((e as Error)?.message ?? e)})` };
+    return { problem: name === 'AbortError' ? 'the manifest did not answer in time' : `the manifest could not be read (${String((e as Error)?.message ?? e)})` };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** The release saved on this device by an earlier background read, else the bundled one. */
+export function knownParcelManifest(): unknown {
+  try {
+    const saved = window.localStorage.getItem(PARCEL_MANIFEST_STORAGE_KEY);
+    if (saved) {
+      const m = JSON.parse(saved);
+      if (manifestProblems(m).length === 0) return m;
+    }
+  } catch { /* storage or JSON unavailable */ }
+  return BUNDLED_PARCEL_MANIFEST;
+}
+
+/** Remember a newer release for the next page load. */
+export function saveParcelManifest(m: ParcelTilesManifest): void {
+  try { window.localStorage.setItem(PARCEL_MANIFEST_STORAGE_KEY, JSON.stringify(m)); } catch { /* storage unavailable */ }
 }
 
 /** The mode for this page load, read from the address, this device and the build. */

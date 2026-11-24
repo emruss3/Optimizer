@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import MapUnavailable from './MapUnavailable';
 import { MAPBOX_TOKEN, MAP_STYLE, NASHVILLE_CENTER, SUPABASE_URL } from '../lib/mapbox';
-import { currentParcelTilesMode, defaultManifestUrl, isMissingParcelTile, isRetryableParcelTileError, loadParcelSource } from '../lib/parcelTiles';
+import { currentParcelTilesMode, defaultManifestUrl, isMissingParcelTile, isRetryableParcelTileError, knownParcelManifest, loadParcelSource, newerParcelManifest, saveParcelManifest } from '../lib/parcelTiles';
 import mapboxgl from 'mapbox-gl';
 import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
@@ -81,10 +81,12 @@ const MapView = React.memo(function MapView({
     map.on("load", async () => {
       // Which parcel tiles to read: the live edge tiles (legacy, the default) or a
       // published release of static tiles (candidate). See src/lib/parcelTiles.ts.
-      const parcelSource = await loadParcelSource({
-        mode: currentParcelTilesMode(),
-        manifestUrl: import.meta.env.VITE_PARCEL_TILES_MANIFEST || defaultManifestUrl(SUPABASE_URL),
-      });
+      const manifestUrl = import.meta.env.VITE_PARCEL_TILES_MANIFEST || defaultManifestUrl(SUPABASE_URL);
+      const parcelSource = await loadParcelSource({ mode: currentParcelTilesMode(), manifestUrl, known: knownParcelManifest() });
+      // a newer published release is noticed in the background and used from the next page load
+      if (parcelSource.mode === 'candidate') {
+        void newerParcelManifest({ manifestUrl, current: parcelSource.release }).then(m => { if (m) saveParcelManifest(m); });
+      }
       if (mapRef.current !== map) return; // the map was taken down while the manifest loaded
       if (parcelSource.fallback) console.warn(`Parcel tiles: using the live edge tiles because ${parcelSource.fallback}.`);
       // what the page is drawing from, readable by a test or a reviewer without opening the console
