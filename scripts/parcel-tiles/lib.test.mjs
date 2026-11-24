@@ -97,3 +97,38 @@ describe('the build command and the manifest', () => {
     expect(percentiles([])).toEqual({ n: 0, p50: null, p95: null, max: null });
   });
 });
+
+describe('how the tile scripts reach Supabase', async () => {
+  const { brokerClient, clientFromEnv, githubToken } = await import('./broker.mjs');
+
+  it('uses the broker with a GitHub token when no key is set, and the key directly when one is', () => {
+    expect(clientFromEnv({ SUPABASE_URL: 'https://p.supabase.co', ACTIONS_ID_TOKEN_REQUEST_URL: 'u', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 't' }).mode).toBe('broker');
+    expect(clientFromEnv({ SUPABASE_URL: 'https://p.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'k' }).mode).toBe('direct');
+    expect(() => clientFromEnv({})).toThrow(/SUPABASE_URL/);
+  });
+
+  it('asks GitHub for a token for the parcel-tiles audience and reuses it', async () => {
+    const calls = [];
+    const fetchImpl = async (u, init) => { calls.push([u, init.headers.Authorization]); return new Response(JSON.stringify({ value: 'jwt' })); };
+    const token = githubToken({ ACTIONS_ID_TOKEN_REQUEST_URL: 'https://gh/token?x=1', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'req' }, fetchImpl);
+    expect(await token()).toBe('jwt');
+    expect(await token()).toBe('jwt');
+    expect(calls).toEqual([['https://gh/token?x=1&audience=parcel-tiles', 'bearer req']]);
+    await expect(githubToken({})()).rejects.toThrow(/id-token: write/);
+  });
+
+  it('sends every broker call with the token, and does not retry a refusal', async () => {
+    const seen = [];
+    const fetchImpl = async (u, init) => {
+      seen.push({ u, method: init.method, auth: init.headers.Authorization });
+      return u.includes('op=object') ? new Response('{"error":"no"}', { status: 401 }) : new Response('{"parcels":1}');
+    };
+    const c = brokerClient({ supabaseUrl: 'https://p.supabase.co/', token: async () => 'jwt', fetchImpl });
+    expect(await c.snapshot()).toEqual({ parcels: 1 });
+    await expect(c.put('manifest.json', '{}')).rejects.toThrow(/401/);
+    expect(seen).toEqual([
+      { u: 'https://p.supabase.co/functions/v1/parcel-tiles-ci?op=snapshot', method: 'GET', auth: 'Bearer jwt' },
+      { u: 'https://p.supabase.co/functions/v1/parcel-tiles-ci?op=object&key=manifest.json', method: 'PUT', auth: 'Bearer jwt' },
+    ]);
+  });
+});

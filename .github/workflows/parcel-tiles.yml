@@ -9,9 +9,10 @@ name: parcel-tiles
 #   publish  build, then upload the release to storage and make it live.
 #   rollback make an earlier release live again.
 #
-# build, publish and rollback need the repository secret
-# PARCEL_TILES_SERVICE_ROLE_KEY (the project's service-role key). It is read here
-# and nowhere else, and is never printed.
+# build, publish and rollback hold no Supabase key. They prove who they are with
+# a GitHub OIDC token (id-token: write), and the parcel-tiles-ci Edge Function
+# accepts only a hand-started run of this workflow on main
+# (supabase/functions/parcel-tiles-ci/policy.ts). Run them from main.
 
 on:
   workflow_dispatch:
@@ -34,10 +35,6 @@ on:
         description: rollback to this release id
         required: false
         default: ''
-      confirm_public:
-        description: publish only - type yes to allow creating the public bucket (the data licence must allow public tiles)
-        required: false
-        default: 'no'
 
 permissions:
   contents: read
@@ -78,16 +75,19 @@ jobs:
     if: inputs.job == 'build' || inputs.job == 'publish'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
     env:
       SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PARCEL_TILES_SERVICE_ROLE_KEY }}
     steps:
-      - name: Check the service-role secret is set
+      - name: Check this run can be accepted
         run: |
-          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$SUPABASE_URL" ]; then
-            echo "::error::Add the repository secret PARCEL_TILES_SERVICE_ROLE_KEY before building tiles."
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run the parcel-tiles workflow from main; the broker refuses other branches."
             exit 1
           fi
+          if [ -z "$SUPABASE_URL" ]; then echo "::error::BATTERY_SUPABASE_URL is not set."; exit 1; fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -115,22 +115,18 @@ jobs:
             parcels.geojsonl.snapshot.json
       - name: Publish and make live
         if: inputs.job == 'publish'
-        env:
-          CONFIRM_PUBLIC: ${{ inputs.confirm_public }}
-        run: |
-          if [ "$CONFIRM_PUBLIC" = "yes" ]; then
-            node scripts/parcel-tiles/publish.mjs --build build --confirm-public
-          else
-            node scripts/parcel-tiles/publish.mjs --build build
-          fi
+        # public tiles: decided 2026-11-24 (docs/PARCEL_TILES.md section 5, decision 1)
+        run: node scripts/parcel-tiles/publish.mjs --build build --confirm-public
 
   rollback:
     if: inputs.job == 'rollback'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
     env:
       SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PARCEL_TILES_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
