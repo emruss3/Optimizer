@@ -11,11 +11,13 @@
 const AUDIENCE = 'parcel-tiles';
 const BUCKET = 'parcel-tiles';
 
-async function retry(fn, label, attempts = 5) {
+// Up to 8 tries, waiting 1, 2, 4 ... up to 30 s with jitter: storage under
+// load answers lock timeouts that clear within seconds.
+async function retry(fn, label, attempts = 8) {
   for (let attempt = 1; ; attempt++) {
     try { return await fn(); } catch (e) {
       if (attempt >= attempts || e.permanent) throw new Error(`${label}: ${e.message}`);
-      await new Promise(r => setTimeout(r, 500 * 2 ** attempt));
+      await new Promise(r => setTimeout(r, Math.min(30_000, 500 * 2 ** attempt) * (0.75 + Math.random() / 2)));
     }
   }
 }
@@ -24,7 +26,8 @@ async function check(r, label) {
   if (r.ok) return r;
   const text = (await r.text()).slice(0, 300);
   const err = new Error(`${label} answered ${r.status}: ${text}`);
-  err.permanent = r.status >= 400 && r.status < 500 && r.status !== 429;
+  // a 4xx is a refusal, except a lock or timeout that storage reports as 400
+  err.permanent = r.status >= 400 && r.status < 500 && r.status !== 429 && !/lock|timeout|"statusCode":"5\d\d"/i.test(text);
   throw err;
 }
 

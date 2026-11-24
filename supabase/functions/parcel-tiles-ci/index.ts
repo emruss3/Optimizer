@@ -92,7 +92,15 @@ async function putObject(key: string, req: Request) {
     headers: { ...service, 'Content-Type': rule.contentType, 'cache-control': rule.cacheControl, 'x-upsert': 'true' },
     body: bytes,
   });
-  if (!r.ok) return json(r.status >= 500 ? 502 : r.status, { error: `storage answered ${r.status}: ${(await r.text()).slice(0, 200)}` });
+  if (!r.ok) {
+    const text = (await r.text()).slice(0, 300);
+    // Storage can answer HTTP 400 with a 5xx inside the body (a lock timeout
+    // under load, for one). Pass that on as 503 so the caller retries it.
+    let inner = 0;
+    try { inner = Number(JSON.parse(text).statusCode) || 0; } catch { /* not JSON */ }
+    const transient = r.status >= 500 || r.status === 429 || inner >= 500 || inner === 429 || /lock|timeout/i.test(text);
+    return json(transient ? 503 : r.status, { error: `storage answered ${r.status}: ${text}` });
+  }
   return json(200, { key, bytes: bytes.length });
 }
 

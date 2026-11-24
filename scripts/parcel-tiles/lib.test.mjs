@@ -132,3 +132,20 @@ describe('how the tile scripts reach Supabase', async () => {
     ]);
   });
 });
+
+describe('retrying storage under load', async () => {
+  const { brokerClient } = await import('./broker.mjs');
+  it('retries a lock timeout that storage reports as a 400, but not a plain refusal', async () => {
+    let calls = 0;
+    const lock = async () => (++calls < 2
+      ? new Response('{"error":"storage answered 400: {\\"statusCode\\":\\"503\\",\\"error\\":\\"acquiring_lock_timeout\\"}"}', { status: 400 })
+      : new Response('{"key":"k"}'));
+    const c = brokerClient({ supabaseUrl: 'https://p', token: async () => 't', fetchImpl: lock });
+    expect(await c.put('manifest.json', '{}')).toEqual({ key: 'k' });
+    expect(calls).toBe(2);
+    let refusals = 0;
+    const refuse = async () => { refusals++; return new Response('{"error":"the key x is not a release tile"}', { status: 400 }); };
+    await expect(brokerClient({ supabaseUrl: 'https://p', token: async () => 't', fetchImpl: refuse }).put('x', 'b')).rejects.toThrow(/400/);
+    expect(refusals).toBe(1);
+  }, 10_000);
+});

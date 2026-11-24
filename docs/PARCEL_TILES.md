@@ -142,6 +142,19 @@ public.parcels ──fn_parcel_tile_export──▶ parcels.geojsonl ──tippe
 | CI broker | `parcel-tiles-ci` deployed. Refuses a call with no token and a forged token (401). Reaches GitHub's signing keys |
 | Full Davidson build | Run 45325384376, 2026-11-24 04:17 UTC, from `7d6232f`. Clean. Table below |
 
+### First publish attempt
+
+Run 45326208426, 2026-11-24 04:24 UTC. The public bucket `parcel-tiles` was
+created and about 6,000 of 30,289 tiles uploaded at 16 at a time, then storage
+answered a lock timeout (`acquiring_lock_timeout`). Storage sends that as HTTP
+400 with a 503 inside the body; the broker passed on the 400, the client took
+it as a refusal and stopped. The live manifest was never written, so the map
+could not have read the partial release. Fixes: the broker (version 4) turns a
+storage answer that is really a 5xx or a lock timeout into a 503; the client
+retries such answers up to eight times with backoff to 30 s, also when an
+older broker reports them as 400; uploads run six at a time. Uploads are
+upserts, so the next publish overwrites the partial release.
+
 ### First full build: release `2026-11-24_regrid-2025-05-29_7d6232f`
 
 | Step | Result |
