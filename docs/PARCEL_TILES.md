@@ -142,6 +142,17 @@ public.parcels ──fn_parcel_tile_export──▶ parcels.geojsonl ──tippe
 | CI broker | `parcel-tiles-ci` deployed. Refuses a call with no token and a forged token (401). Reaches GitHub's signing keys |
 | Full Davidson build | Run 45325384376, 2026-11-24 04:17 UTC, from `7d6232f`. Clean. Table below |
 
+### First live release: `2026-11-24_regrid-2025-05-29_743214e`
+
+Run 45399257475, 2026-11-24 13:01 UTC, from `743214e`. Export 116 s, build
+36 s, then 30,289 tiles (103.8 MB) uploaded six at a time in 926 s with no
+failed upload. 48 tiles (one per zoom plus 40 random) were read back through
+the public URL and matched byte for byte, then `manifest.json` was rewritten
+and read back naming the new release. The map still reads the live edge tiles
+by default; `?parcelTiles=candidate` reads this release. The partial release
+`..._7d6232f` from the first attempt (6,898 objects) stays in the bucket,
+unreferenced; nothing points at it.
+
 ### First publish attempt
 
 Run 45326208426, 2026-11-24 04:24 UTC. The public bucket `parcel-tiles` was
