@@ -67,7 +67,8 @@ const tiles = listTiles(path.join(buildDir, 'tiles'));
 
 await ensureBucket();
 
-const concurrency = Number(arg('concurrency', '16'));
+// six at a time: sixteen ran storage into lock timeouts on 2026-11-24
+const concurrency = Number(arg('concurrency', '6'));
 const t0 = Date.now();
 let done = 0, bytes = 0;
 const queue = [...tiles];
