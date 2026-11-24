@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "layer": "parcels",
+  "minzoom": 10,
+  "maxzoom": 17,
+  "baseZoom": 12,
+  "fields": ["ogc_fid", "zoning", "sqft"],
+  "idField": "ogc_fid",
+  "maxTileBytes": 500000,
+  "maxTileFeatures": 200000,
+  "bucket": "parcel-tiles",
+  "releasePrefix": "releases",
+  "manifestKey": "manifest.json",
+  "attribution": "Parcel data © Regrid",
+  "markets": [
+    {
+      "id": "tn-davidson",
+      "name": "Davidson County, TN",
+      "geoid": "47037",
+      "exportFilter": "all parcels in public.parcels with geoid 47037"
+    }
+  ]
+}

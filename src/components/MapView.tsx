@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import MapUnavailable from './MapUnavailable';
-import { MAPBOX_TOKEN, MAP_STYLE, PARCELS_TILE_URL, NASHVILLE_CENTER } from '../lib/mapbox';
+import { MAPBOX_TOKEN, MAP_STYLE, NASHVILLE_CENTER, SUPABASE_URL } from '../lib/mapbox';
+import { currentParcelTilesMode, defaultManifestUrl, loadParcelSource } from '../lib/parcelTiles';
 import mapboxgl from 'mapbox-gl';
 import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
@@ -47,6 +48,10 @@ const MapView = React.memo(function MapView({
     ["all", sizeFilter, zoningFilter],
     [sizeFilter, zoningFilter]
   );
+  // the parcel layers can be added after the filters were last applied (the
+  // source waits for its manifest): they take the current filter when they arrive
+  const combinedFilterRef = useRef(combinedFilter);
+  combinedFilterRef.current = combinedFilter;
 
   // Create map once and add vector tiles
   useEffect(() => {
@@ -73,20 +78,31 @@ const MapView = React.memo(function MapView({
     // on some devices.
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
 
-    map.on("load", () => {
+    map.on("load", async () => {
+      // Which parcel tiles to read: the live edge tiles (legacy, the default) or a
+      // published release of static tiles (candidate). See src/lib/parcelTiles.ts.
+      const parcelSource = await loadParcelSource({
+        mode: currentParcelTilesMode(),
+        manifestUrl: import.meta.env.VITE_PARCEL_TILES_MANIFEST || defaultManifestUrl(SUPABASE_URL),
+      });
+      if (mapRef.current !== map) return; // the map was taken down while the manifest loaded
+      if (parcelSource.fallback) console.warn(`Parcel tiles: using the live edge tiles because ${parcelSource.fallback}.`);
+      // what the page is drawing from, readable by a test or a reviewer without opening the console
+      const host = map.getContainer();
+      host.dataset.parcelTiles = parcelSource.mode;
+      host.dataset.parcelTilesRelease = parcelSource.release ?? '';
+      host.dataset.parcelTilesFallback = parcelSource.fallback ?? '';
       if (!map.getSource("parcels")) {
         map.addSource("parcels", {
           type: "vector",
-          tiles: [
-            "https://okxrvetbzpoazrybhcqj.supabase.co/functions/v1/mvt-parcels?z={z}&x={x}&y={y}"
-          ],
-          // Lot-level tiles only exist at z >= 14 — below that a tile spans
-          // tens of thousands of parcels and the tile RPC refuses (it used to
-          // burn the full 20s DB statement timeout per tile to render
-          // nothing). Keep in sync with parcels_mvt_b64 and the edge gate.
-          minzoom: 14,
-          maxzoom: 17,
-          promoteId: "ogc_fid"   // <-- matches the SQL feature id
+          tiles: parcelSource.tiles,
+          // Legacy: lot-level tiles only exist at z >= 14 (below that the tile RPC
+          // refuses). Candidate: the release says its own zoom range and coverage.
+          minzoom: parcelSource.minzoom,
+          maxzoom: parcelSource.maxzoom,
+          ...(parcelSource.bounds ? { bounds: parcelSource.bounds } : {}),
+          ...(parcelSource.attribution ? { attribution: parcelSource.attribution } : {}),
+          promoteId: parcelSource.promoteId
         });
 
         // Listen for tile loading errors
@@ -119,6 +135,9 @@ const MapView = React.memo(function MapView({
           }
         });
         
+        map.setFilter("parcels-fill", combinedFilterRef.current as unknown as mapboxgl.FilterSpecification);
+        map.setFilter("parcels-outline", combinedFilterRef.current as unknown as mapboxgl.FilterSpecification);
+
         // Mouse cursor for interactivity
         map.on("mouseenter", "parcels-fill", () => (map.getCanvas().style.cursor = "pointer"));
         map.on("mouseleave", "parcels-fill", () => (map.getCanvas().style.cursor = ""));
