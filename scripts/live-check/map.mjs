@@ -28,6 +28,8 @@ const browser = await chromium.launch();
 
 for (const mode of ['legacy', 'candidate']) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // a returning visitor: the first visit shows the marketing page, not the map
+  await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); } catch { /* private mode */ } });
   const page = await context.newPage();
   const tiles = [], errors = [], lookups = [];
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
@@ -41,6 +43,12 @@ for (const mode of ['legacy', 'candidate']) {
   const row = { mode, url: `${base}/?parcelTiles=${mode}` };
   try {
     await page.goto(row.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // the start page, then the map, the way a visitor gets there
+    const browse = page.locator('[data-testid="start-browse-map"]').first();
+    await browse.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
+    if (await browse.isVisible().catch(() => false)) { await browse.click(); row.startPage = 'passed'; }
+    const skip = page.getByText('Skip Tour').first();
+    if (await skip.isVisible({ timeout: 3000 }).catch(() => false)) await skip.click();
     const container = page.locator('[data-parcel-tiles]').first();
     await container.waitFor({ state: 'attached', timeout: 60000 });
     row.source = await container.getAttribute('data-parcel-tiles');
@@ -70,6 +78,8 @@ for (const mode of ['legacy', 'candidate']) {
     }
   } catch (e) {
     row.problem = String(e.message ?? e).slice(0, 300);
+    row.pageText = (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 600);
+    row.mapDom = await page.evaluate(() => ({ mapboxContainers: document.querySelectorAll('.mapboxgl-map').length, canvases: document.querySelectorAll('canvas.mapboxgl-canvas').length })).catch(() => null);
     await page.screenshot({ path: path.join(out, `${mode}-problem.png`) }).catch(() => {});
   }
   row.consoleErrors = errors.slice(0, 20);
@@ -98,7 +108,9 @@ for (const r of results) {
 }
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, problems }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.mode}: source=${r.source} release=${r.release ?? '-'} fallback=${r.fallback ?? '-'}`);
+  console.log(`${r.mode}: source=${r.source} release=${r.release ?? '-'} fallback=${r.fallback ?? '-'} start page ${r.startPage ?? 'not seen'}`);
+  if (r.pageText) console.log(`  page text: ${r.pageText}`);
+  if (r.mapDom) console.log(`  map DOM: ${JSON.stringify(r.mapDom)}`);
   console.log(`  open (z12): ${JSON.stringify(r.atOpen)}`);
   console.log(`  zoomed (z14): ${JSON.stringify(r.afterZoom)}`);
   console.log(`  click: ${JSON.stringify(r.click)}`);
