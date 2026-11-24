@@ -153,6 +153,38 @@ by default; `?parcelTiles=candidate` reads this release. The partial release
 `..._7d6232f` from the first attempt (6,898 objects) stays in the bucket,
 unreferenced; nothing points at it.
 
+### First planner load: database moved to Small (2026-11-24)
+
+The planner's first calls for a parcel nobody had opened read the parcels
+table from disk: 2,415 pages for one context compile, 5 to 23 s, sometimes
+past the 20 s API limit. The rows are wide (about 3.9 KB each, every Regrid
+column), so each parcel the planner touches is its own random read, and the
+Micro instance had a 280 MB cache for a 1.1 GB table.
+
+The owner moved the project to Small (2 GB) at 19:20 UTC: 512 MB of shared
+buffers, about 1.5 GB counting the operating system's cache, 90 connections.
+`pg_prewarm` (migration `20261124030000_pg_prewarm.sql`) then loaded the
+planner's parcel indexes into the database cache and the parcels and
+buildings tables into the operating system's cache, in under 10 s.
+
+| Parcel nobody had opened | Before (Micro) | After (Small, warmed) |
+|---|---|---|
+| Context compile, direct | 5.4 to 23 s | 1.6, 2.0, 2.9 s |
+| Context, topography, neighbours through the public API | context alone past 20 s on some parcels | all three 200 in 10.8 s |
+
+**After any restart** (maintenance, a size change) the cache is empty again.
+Reload it:
+
+```sql
+select extensions.pg_prewarm(r, 'buffer') from unnest(array['public.tn_davidson_pk','public.idx_parcels_ogc_fid','public.idx_parcels_centroid_2274','public.idx_parcels_geom_2274','public.idx_parcels_geom_4326','public.idx_parcels_lot_sqft_2274']::regclass[]) r;
+select extensions.pg_prewarm('public.parcels'::regclass, 'read');
+select extensions.pg_prewarm('public.buildings'::regclass, 'read');
+```
+
+The lasting fix, so the planner does not depend on a warmed cache as more
+counties arrive, is a slim parcels table (the columns the planner reads,
+about 150 MB) that stays in memory. Not built yet.
+
 ### The release becomes the default (2026-11-24)
 
 At about 15:00 UTC the production map stopped showing parcels: the live
