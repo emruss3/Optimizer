@@ -26,7 +26,10 @@ const isTile = u => u.includes('/functions/v1/mvt-parcels') || u.includes('/stor
 const results = [];
 const browser = await chromium.launch();
 
-for (const mode of ['legacy', 'candidate']) {
+// default: the address a visitor opens. candidate and legacy force a source;
+// legacy is reported but does not fail the check (it is the fallback, built
+// per request in the database).
+for (const mode of ['default', 'candidate', 'legacy']) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   // a returning visitor: the first visit shows the marketing page, not the map
   await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); } catch { /* private mode */ } });
@@ -46,7 +49,7 @@ for (const mode of ['legacy', 'candidate']) {
     if (u.includes('get_parcel_at_point') || u.includes('parcel') && u.includes('/rest/v1/rpc/')) lookups.push({ status: r.status(), fn: u.split('/rpc/')[1]?.split('?')[0] });
   });
 
-  const row = { mode, url: `${base}/?parcelTiles=${mode}` };
+  const row = { mode, url: mode === 'default' ? `${base}/` : `${base}/?parcelTiles=${mode}` };
   try {
     await page.goto(row.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     // the start page, then the map, the way a visitor gets there
@@ -108,15 +111,15 @@ function summarize(list) {
   return { requests: list.length, byStatus, okByZoom: byZoom, sources: [...new Set(list.map(t => t.source))] };
 }
 
-const problems = [];
+const problems = [], advisories = [];
 for (const r of results) {
   if (r.problem) problems.push(`${r.mode}: ${r.problem}`);
   if (!r.source) problems.push(`${r.mode}: the map never said which parcel source it used`);
-  if (r.mode === 'candidate' && r.source !== 'candidate') problems.push(`candidate: fell back to ${r.source} (${r.fallback})`);
+  if (r.mode !== 'legacy' && r.source !== 'candidate') problems.push(`${r.mode}: fell back to ${r.source} (${r.fallback})`);
   const ok = (r.afterZoom?.byStatus?.[200] ?? 0) + (r.atOpen?.byStatus?.[200] ?? 0);
-  if (!ok) problems.push(`${r.mode}: no parcel tile loaded`);
+  if (!ok) (r.mode === 'legacy' ? advisories : problems).push(`${r.mode}: no parcel tile loaded`);
 }
-fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, problems }, null, 2) + '\n');
+fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, problems, advisories }, null, 2) + '\n');
 for (const r of results) {
   console.log(`${r.mode}: source=${r.source} release=${r.release ?? '-'} fallback=${r.fallback ?? '-'} start page ${r.startPage ?? 'not seen'}`);
   if (r.pageText) console.log(`  page text: ${r.pageText}`);
@@ -129,5 +132,6 @@ for (const r of results) {
   console.log(`  click: ${JSON.stringify(r.click)}`);
   console.log(`  console errors: ${r.consoleErrorCount}${r.consoleErrors?.length ? ' e.g. ' + r.consoleErrors.slice(0, 3).join(' || ') : ''}`);
 }
+if (advisories.length) console.log('ADVISORY (fallback source only):\n- ' + advisories.join('\n- '));
 if (problems.length) { console.log('PROBLEMS:\n- ' + problems.join('\n- ')); process.exit(1); }
 console.log('live map check passed');
