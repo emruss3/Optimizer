@@ -23,7 +23,8 @@ function table(result: { data: unknown; error: unknown }, delayMs = 0) {
   const chain = {
     select: () => chain,
     or: (f: string) => { orFilters.push(f); return chain; },
-    limit: () => new Promise(res => setTimeout(() => res(result), delayMs)),
+    limit: () => chain,
+    abortSignal: () => new Promise(res => setTimeout(() => res(result), delayMs)),
   };
   return chain;
 }
