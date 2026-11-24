@@ -1,7 +1,7 @@
 -- Parcel tile export: a snapshot that does not read the whole table
 -- (docs/PARCEL_TILES.md, finding 9).
 --
--- Applied 2026-11-24 with the MCP apply_migration tool.
+-- Apply with the MCP apply_migration tool. It drops nothing.
 --
 -- The first fn_parcel_tile_snapshot took count(*), max(ll_updated_at) and the
 -- distinct geoids over public.parcels: a scan of the whole 1.1 GB heap. On the
@@ -12,6 +12,9 @@
 --     during an export, the export is refused;
 --   * each export page reports its own newest ll_updated_at and its geoids,
 --     so the data date and the counties come from the rows already being read.
+--     That changes the page's columns, so it is a new function,
+--     fn_parcel_tile_export_page. Nothing is dropped: the old
+--     fn_parcel_tile_export stays, service_role only, and nothing calls it.
 
 create or replace function public.fn_parcel_tile_snapshot()
 returns jsonb
@@ -27,9 +30,7 @@ as $$
   );
 $$;
 
-drop function if exists public.fn_parcel_tile_export(integer, integer);
-
-create function public.fn_parcel_tile_export(p_after integer default 0, p_limit integer default 2000)
+create or replace function public.fn_parcel_tile_export_page(p_after integer default 0, p_limit integer default 2000)
 returns table (last_ogc_fid integer, features integer, rows_read integer, max_updated text, geoids text[], body text)
 language plpgsql
 stable
@@ -71,6 +72,6 @@ end;
 $$;
 
 revoke all on function public.fn_parcel_tile_snapshot() from public, anon, authenticated;
-revoke all on function public.fn_parcel_tile_export(integer, integer) from public, anon, authenticated;
+revoke all on function public.fn_parcel_tile_export_page(integer, integer) from public, anon, authenticated;
 grant execute on function public.fn_parcel_tile_snapshot() to service_role;
-grant execute on function public.fn_parcel_tile_export(integer, integer) to service_role;
+grant execute on function public.fn_parcel_tile_export_page(integer, integer) to service_role;

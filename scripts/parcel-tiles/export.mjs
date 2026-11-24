@@ -5,7 +5,7 @@
 //
 // In the workflow it reads through the parcel-tiles-ci Edge Function with a
 // GitHub OIDC token; by hand, set SUPABASE_SERVICE_ROLE_KEY (broker.mjs).
-// Either way the rows come from fn_parcel_tile_export (service_role only). Takes the snapshot
+// Either way the rows come from fn_parcel_tile_export_page (service_role only). Takes the snapshot
 // figures before and after; if the data changed while it was read, it stops and
 // writes nothing usable, so a release is never built from two imports at once.
 import fs from 'node:fs';

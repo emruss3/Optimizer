@@ -73,8 +73,10 @@ Recorded 2026-11-24 from `main` at `9dab84d`, the live database and the code.
    cancelled and the queries stopped. `20261124020000_parcel_tile_snapshot_cheap.sql`
    makes the snapshot the highest `ogc_fid` plus the table's running count of
    inserts, updates and deletes, and has each export page report its own data
-   date and counties. Not applied yet: Supabase asked the owner to confirm,
-   because it drops and recreates the export function.
+   date and counties, in a new page function `fn_parcel_tile_export_page`.
+   It drops nothing (a version that dropped the old function waited on a
+   confirmation that never reached the owner); the old `fn_parcel_tile_export`
+   stays, service_role only, unused.
 
 ### Not yet captured
 
