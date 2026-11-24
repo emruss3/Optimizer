@@ -6,6 +6,7 @@
  * audited public RPC contract; planner.* tables remain private.
  */
 import { supabase } from '../../../lib/supabase';
+import { withRpcRetry } from '../../../lib/rpcRetry';
 import { normalizeSetbacksOrdinance, normalizeHeightPlane, type DesignContext } from './designContext';
 
 // ── Shared value shapes ──────────────────────────────────────────────────────
@@ -347,11 +348,12 @@ async function compileOnce(
 ): Promise<PlannerContextResponse | null> {
   try {
     if (!supabase) return null;
-    const { data, error } = await supabase.rpc('fn_compile_planner_context', {
+    const client = supabase;
+    const { data, error } = await withRpcRetry(() => client.rpc('fn_compile_planner_context', {
       p_ogc_fid: ogcFid,
       p_use: selectedUse,
       p_user_intent: userIntent,
-    });
+    }), { label: 'plannerContext' });
     if (error) {
       console.warn('[plannerContext] compile failed:', error.message ?? error);
       return null;

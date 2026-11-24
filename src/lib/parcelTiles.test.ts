@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LEGACY_PARCEL_SOURCE, candidateSource, isMissingParcelTile, defaultManifestUrl, loadParcelSource, manifestProblems, resolveParcelTilesMode, type ParcelTilesManifest } from './parcelTiles';
+import { LEGACY_PARCEL_SOURCE, candidateSource, isMissingParcelTile, isRetryableParcelTileError, defaultManifestUrl, loadParcelSource, manifestProblems, resolveParcelTilesMode, type ParcelTilesManifest } from './parcelTiles';
 
 const manifest: ParcelTilesManifest = {
   schemaVersion: 1,
@@ -16,12 +16,12 @@ const manifest: ParcelTilesManifest = {
 const answer = (body: unknown, status = 200) => vi.fn(async () => ({ ok: status === 200, status, json: async () => body }) as unknown as Response);
 
 describe('which parcel tiles the map reads', () => {
-  it('stays on the live edge tiles unless something asks for the candidate', () => {
-    expect(resolveParcelTilesMode({})).toBe('legacy');
-    expect(resolveParcelTilesMode({ env: 'candidate' })).toBe('candidate');
-    expect(resolveParcelTilesMode({ env: 'candidate', stored: 'legacy' })).toBe('legacy');
-    expect(resolveParcelTilesMode({ search: '?parcelTiles=candidate', stored: 'legacy', env: 'legacy' })).toBe('candidate');
-    expect(resolveParcelTilesMode({ search: '?parcelTiles=nonsense', env: 'garbage' })).toBe('legacy');
+  it('reads the published release unless something asks for the live tiles', () => {
+    expect(resolveParcelTilesMode({})).toBe('candidate');
+    expect(resolveParcelTilesMode({ env: 'legacy' })).toBe('legacy');
+    expect(resolveParcelTilesMode({ env: 'legacy', stored: 'candidate' })).toBe('candidate');
+    expect(resolveParcelTilesMode({ search: '?parcelTiles=legacy', stored: 'candidate', env: 'candidate' })).toBe('legacy');
+    expect(resolveParcelTilesMode({ search: '?parcelTiles=nonsense', env: 'garbage' })).toBe('candidate');
   });
 
   it('keeps the legacy source exactly as production has it', () => {
@@ -75,5 +75,13 @@ describe('which parcel tiles the map reads', () => {
     expect(isMissingParcelTile({ sourceId: 'parcels', error: { status: 400, url: 'https://okxrvetbzpoazrybhcqj.supabase.co/functions/v1/mvt-parcels?z=14' } })).toBe(false);
     expect(isMissingParcelTile({ sourceId: 'roads', error: { status: 400, url } })).toBe(false);
     expect(isMissingParcelTile(null)).toBe(false);
+  });
+
+  it('asks again for a parcel tile that failed with a server error, not for a refusal', () => {
+    expect(isRetryableParcelTileError({ sourceId: 'parcels', error: { status: 503 } })).toBe(true);
+    expect(isRetryableParcelTileError({ sourceId: 'parcels', error: { status: 544 } })).toBe(true);
+    expect(isRetryableParcelTileError({ sourceId: 'parcels', error: { status: 429 } })).toBe(true);
+    expect(isRetryableParcelTileError({ sourceId: 'parcels', error: { status: 400 } })).toBe(false);
+    expect(isRetryableParcelTileError({ sourceId: 'roads', error: { status: 503 } })).toBe(false);
   });
 });
