@@ -1,4 +1,5 @@
 import { supabase } from '../../../lib/supabase';
+import { withRpcRetry } from '../../../lib/rpcRetry';
 
 /**
  * Stage-1+2 seed plan (SEND_TO_CLAUDE_CODE_4 item 1): the engine's COMPLETE
@@ -68,10 +69,12 @@ export async function fetchSeedPlan(ogcFid: number, typology = 'multifamily'): P
   if (hit) return hit;
   const p = (async () => {
     try {
-      const { data, error } = await supabase.rpc('fn_seed_parking', {
+      const client = supabase;
+      if (!client) return null;
+      const { data, error } = await withRpcRetry(() => client.rpc('fn_seed_parking', {
         p_ogc_fid: ogcFid,
         p_typology: typology,
-      });
+      }), { label: 'seedParking' });
       if (error || !data || (data as { error?: string }).error) return null;
       const seed = data as SeedPlan;
       // A seed with neither native structures nor a placed leg draws nothing.
