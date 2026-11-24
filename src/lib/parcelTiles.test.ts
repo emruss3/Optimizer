@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LEGACY_PARCEL_SOURCE, candidateSource, defaultManifestUrl, loadParcelSource, manifestProblems, resolveParcelTilesMode, type ParcelTilesManifest } from './parcelTiles';
+import { LEGACY_PARCEL_SOURCE, candidateSource, isMissingParcelTile, defaultManifestUrl, loadParcelSource, manifestProblems, resolveParcelTilesMode, type ParcelTilesManifest } from './parcelTiles';
 
 const manifest: ParcelTilesManifest = {
   schemaVersion: 1,
@@ -65,5 +65,15 @@ describe('which parcel tiles the map reads', () => {
     expect(p.join('\n')).toMatch(/minzoom first/);
     expect(p.join('\n')).toMatch(/bounds/);
     expect(p.join('\n')).toMatch(/zoning and sqft/);
+  });
+
+  it('treats a missing release tile as empty, and nothing else', () => {
+    const url = 'https://okxrvetbzpoazrybhcqj.supabase.co/storage/v1/object/public/parcel-tiles/releases/r/17/1/1.pbf';
+    expect(isMissingParcelTile({ sourceId: 'parcels', error: { status: 400, url } })).toBe(true);
+    expect(isMissingParcelTile({ sourceId: 'parcels', error: { status: 404, url } })).toBe(true);
+    expect(isMissingParcelTile({ sourceId: 'parcels', error: { status: 500, url } })).toBe(false);
+    expect(isMissingParcelTile({ sourceId: 'parcels', error: { status: 400, url: 'https://okxrvetbzpoazrybhcqj.supabase.co/functions/v1/mvt-parcels?z=14' } })).toBe(false);
+    expect(isMissingParcelTile({ sourceId: 'roads', error: { status: 400, url } })).toBe(false);
+    expect(isMissingParcelTile(null)).toBe(false);
   });
 });

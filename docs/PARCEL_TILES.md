@@ -142,6 +142,57 @@ public.parcels ──fn_parcel_tile_export──▶ parcels.geojsonl ──tippe
 | CI broker | `parcel-tiles-ci` deployed. Refuses a call with no token and a forged token (401). Reaches GitHub's signing keys |
 | Full Davidson build | Run 45325384376, 2026-11-24 04:17 UTC, from `7d6232f`. Clean. Table below |
 
+### First live release: `2026-11-24_regrid-2025-05-29_743214e`
+
+Run 45399257475, 2026-11-24 13:01 UTC, from `743214e`. Export 116 s, build
+36 s, then 30,289 tiles (103.8 MB) uploaded six at a time in 926 s with no
+failed upload. 48 tiles (one per zoom plus 40 random) were read back through
+the public URL and matched byte for byte, then `manifest.json` was rewritten
+and read back naming the new release. The map still reads the live edge tiles
+by default; `?parcelTiles=candidate` reads this release. The partial release
+`..._7d6232f` from the first attempt (6,898 objects) stays in the bucket,
+unreferenced; nothing points at it.
+
+### Tile benchmark: live edge tiles against the release
+
+Run 45402806911, 2026-11-24 13:22 UTC, from a GitHub runner, 20 samples per
+tile and source, interleaved. Time to the full response; each response
+decoded and its parcels counted.
+
+| Tile | Live p50 | Live p95 | Release p50 | Release p95 | Parcels live / release |
+|---|---|---|---|---|---|
+| 14/4242/6426 | 690 ms | 2,327 ms | 41 ms | 468 ms | 3,970 / 4,167 |
+| 14/4243/6423 | 613 ms | 1,781 ms | 57 ms | 201 ms | 3,153 / 3,418 |
+| 14/4240/6423 | 456 ms | 2,424 ms | 42 ms | 197 ms | 1,530 / 1,681 |
+| 14/4240/6424 | 447 ms | 2,460 ms | 46 ms | 154 ms | 2,244 / 2,466 |
+| 14/4249/6431 | 411 ms | 2,642 ms | 41 ms | 140 ms | 1,631 / 1,758 |
+| 14/4248/6424 | 364 ms | 2,198 ms | 46 ms | 138 ms | 1,147 / 1,247 |
+| 16/16968/25706 | 211 ms | 345 ms | 37 ms | 84 ms | 262 / 280 |
+| 16/16963/25696 | 179 ms | 396 ms | 44 ms | 181 ms | 184 / 196 |
+| 16/16995/25699 | 163 ms | 362 ms | 56 ms | 139 ms | 165 / 170 |
+| 17/33930/51412 | not in the log tail | | 43 ms | 376 ms | 74 |
+| 12/1060/1605 | none (zoom 12) | | 46 ms | 109 ms | 3,961 |
+
+- The release answers in about a tenth of the time at the median, and its
+  worst case is lower than the live median on busy zoom-14 tiles.
+- Every release tile carries at least as many parcels as the live tile, a few
+  percent more: tippecanoe keeps parcels that cross into the tile's edge
+  buffer. No parcel the live tile shows is missing.
+- At zoom 12 the live source draws nothing; the release has every parcel.
+- **Empty tiles.** A tile with no parcels has no file in the release, and
+  storage answers a missing public object with HTTP 400 (Atlanta fixture,
+  14/4351/6558); the live edge answers 204. Mapbox treats only 404 as empty
+  and fires a map error otherwise, which the app's general handler logged and
+  turned into its `general-error` state. `isMissingParcelTile`
+  (`src/lib/parcelTiles.ts`) now has both map error handlers skip a 400 or
+  404 from the release bucket for the `parcels` source; every other error is
+  handled as before. The manifest's `bounds` keep the map from asking for
+  tiles outside the county at all.
+
+These are network numbers from one runner, not browser numbers: drawing,
+the first-parcel time and pan behaviour still need a browser run against
+production.
+
 ### First publish attempt
 
 Run 45326208426, 2026-11-24 04:24 UTC. The public bucket `parcel-tiles` was
@@ -235,6 +286,7 @@ time is measured.
 | Licence for public tiles | Decided | Section 5, decision 1 |
 | Full build | Done | Run 45325384376, release `2026-11-24_regrid-2025-05-29_7d6232f` |
 | Tile size and density by zoom | Done | Table in section 2; largest 458 KB |
+| Tile delivery | Partial | Benchmark above: release p50 37 to 57 ms, live 154 to 690 ms. Browser timings open |
 | Initial view at zoom 12 | Open | Browser run: lines visible, cold p95 ≤ 1.0 s desktop |
 | Usable viewport and pan | Open | Browser run, paired with the control |
 | Click correctness | Open | Every verified interior point opens its `ogc_fid`; seam, hole, multipart, narrow lots, rapid clicks |

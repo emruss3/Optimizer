@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import MapUnavailable from './MapUnavailable';
 import { MAPBOX_TOKEN, MAP_STYLE, NASHVILLE_CENTER, SUPABASE_URL } from '../lib/mapbox';
-import { currentParcelTilesMode, defaultManifestUrl, loadParcelSource } from '../lib/parcelTiles';
+import { currentParcelTilesMode, defaultManifestUrl, isMissingParcelTile, loadParcelSource } from '../lib/parcelTiles';
 import mapboxgl from 'mapbox-gl';
 import { useActiveProject } from '../store/project';
 import { useUIStore } from '../store/ui';
@@ -107,6 +107,7 @@ const MapView = React.memo(function MapView({
 
         // Listen for tile loading errors
         map.on("error", (e) => {
+          if (isMissingParcelTile(e as never)) return; // an empty tile in the release, not a failure
           if (e.error?.message?.includes("parcels") || e.error?.message?.includes("mvt")) {
             console.error("Parcel tile error:", e.error);
           }
@@ -233,6 +234,7 @@ const MapView = React.memo(function MapView({
     })
 
     map.on('error', (e) => {
+      if (isMissingParcelTile(e as never)) return; // an empty tile in the release, not a failure
       console.error('Map error:', e.error);
       if (e.error?.message?.includes('access token')) {
         setMapError('invalid-token');
