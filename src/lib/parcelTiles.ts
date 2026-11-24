@@ -141,3 +141,16 @@ export function currentParcelTilesMode(): ParcelTilesMode {
   } catch { /* storage can be unavailable */ }
   return resolveParcelTilesMode({ search: window.location.search, stored, env: import.meta.env.VITE_PARCEL_TILES });
 }
+
+/**
+ * A release has no file for a tile with no parcels in it (open water, parks),
+ * and Supabase Storage answers a missing public object with HTTP 400, where
+ * Mapbox only treats 404 as an empty tile. Such an error is an empty tile, not
+ * a map failure: the map handlers skip it. Anything else stays an error.
+ */
+export function isMissingParcelTile(e: { sourceId?: string; error?: { status?: number; url?: string } } | null | undefined): boolean {
+  if (!e || e.sourceId !== 'parcels') return false;
+  const status = e.error?.status;
+  if (status !== 400 && status !== 404) return false;
+  return typeof e.error?.url === 'string' && e.error.url.includes('/storage/v1/object/public/');
+}
