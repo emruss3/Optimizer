@@ -508,7 +508,12 @@ export function buildMassingData(
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
   const terrain = ground?.topo ? makeTerrain(ground.topo, q => { const v = m(point2274To3857(q)); return [v[0] ?? 0, v[1] ?? 0]; }) : null;
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg }, structures, terrain,
+  // no walk through a stormwater pond or a mapped wetland or stream: the walk ribbon stops at its edge (owner, 2026-11-24)
+  const keepOut = drawable
+    .filter(el => el.properties?.kind === 'pond' || el.name === 'Stormwater' || el.properties?.hazardKind === 'wetland' || el.properties?.hazardKind === 'stream')
+    .map(el => el.geometry.coordinates.map(ring => ring.map(p => m(p))));
+  const clippedWalks = clipWalksOutside(walks, keepOut);
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks: clippedWalks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg }, structures, terrain,
     aerialAzimuth: clearestAzimuth(
       contextPolygons.filter(c => c.elevation > 1).map(c => {
         const r = c.polygon[0] ?? [];
@@ -593,4 +598,54 @@ export function streetConnection(paved: Array<Array<[number, number]>>, roads: A
   const reach = byLine ? best.d - STREET_HALF_M + 0.6 : best.d + 6;
   if (reach < 0.9) return null;
   return [best.a, best.b, [best.b[0] + best.n[0] * reach, best.b[1] + best.n[1] * reach], [best.a[0] + best.n[0] * reach, best.a[1] + best.n[1] * reach]];
+}
+
+
+type WalkPath = { id: string; path: number[][]; widthM: number; strip: boolean };
+function distToRings(x: number, y: number, rings: number[][][]): number {
+  if (pointInPolygon(x, y, rings as unknown as ArrayLike<ArrayLike<[number, number]>>)) return 0;
+  let best = Infinity;
+  for (const ring of rings) for (let i = 0; i + 1 < ring.length; i++) {
+    const [ax, ay] = ring[i] as [number, number], [bx, by] = ring[i + 1] as [number, number];
+    const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+    const t = L > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L)) : 0;
+    best = Math.min(best, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+  }
+  return best;
+}
+/** Splits each walk where its ribbon would cross a keep-out area (pond, wetland, stream); the pieces outside are kept. */
+export function clipWalksOutside(walks: WalkPath[], keepOut: number[][][][], stepM = 0.5): WalkPath[] {
+  if (!keepOut.length) return walks;
+  const boxes = keepOut.map(rings => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of rings) for (const p of r) { x0 = Math.min(x0, p[0] ?? 0); y0 = Math.min(y0, p[1] ?? 0); x1 = Math.max(x1, p[0] ?? 0); y1 = Math.max(y1, p[1] ?? 0); }
+    return [x0, y0, x1, y1] as const;
+  });
+  const out: WalkPath[] = [];
+  for (const w of walks) {
+    const half = w.widthM / 2;
+    const blocked = (x: number, y: number) => keepOut.some((rings, k) => {
+      const b = boxes[k]!;
+      if (x < b[0] - half || x > b[2] + half || y < b[1] - half || y > b[3] + half) return false;
+      return distToRings(x, y, rings) < half;
+    });
+    const start = out.length;
+    let run: number[][] = [], part = 0, cut = false;
+    const flush = () => {
+      if (run.length >= 2) out.push({ ...w, id: cut || part > 0 ? `${w.id}~${part}` : w.id, path: run });
+      if (run.length >= 2) part++;
+      run = [];
+    };
+    for (let i = 0; i + 1 < w.path.length; i++) {
+      const a = w.path[i]!, b = w.path[i + 1]!;
+      const n = Math.max(1, Math.ceil(Math.hypot((b[0] ?? 0) - (a[0] ?? 0), (b[1] ?? 0) - (a[1] ?? 0)) / stepM));
+      for (let j = i === 0 ? 0 : 1; j <= n; j++) {
+        const t = j / n, p = a.map((v, d) => v + ((b[d] ?? v) - v) * t);
+        if (blocked(p[0] ?? 0, p[1] ?? 0)) { cut = true; flush(); } else run.push(p);
+      }
+    }
+    flush();
+    if (!cut) { out.length = start; out.push(w); }
+  }
+  return out;
 }

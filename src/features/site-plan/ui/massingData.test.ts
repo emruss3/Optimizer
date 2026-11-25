@@ -245,3 +245,21 @@ describe('a parking structure in the model', () => {
     expect(beyond).toHaveLength(0);
   });
 });
+
+describe('clipWalksOutside: no walk through a pond (owner, 2026-11-24)', () => {
+  it('stops a walk at a pond edge and keeps the pieces outside', async () => {
+    const { clipWalksOutside } = await import('./massingData');
+    const pond = [[[10, -5], [20, -5], [20, 5], [10, 5], [10, -5]]];
+    const walk = { id: 'w', path: [[0, 0], [30, 0]], widthM: 2, strip: false };
+    const out = clipWalksOutside([walk], [pond]);
+    expect(out.length).toBe(2);
+    expect(Math.max(...out[0]!.path.map(p => p[0]!))).toBeLessThanOrEqual(9.01);
+    expect(Math.min(...out[1]!.path.map(p => p[0]!))).toBeGreaterThanOrEqual(20.99);
+  });
+  it('leaves a walk that clears the pond untouched', async () => {
+    const { clipWalksOutside } = await import('./massingData');
+    const pond = [[[10, -5], [20, -5], [20, 5], [10, 5], [10, -5]]];
+    const walk = { id: 'w', path: [[0, 8], [30, 8]], widthM: 2, strip: false };
+    expect(clipWalksOutside([walk], [pond])).toEqual([walk]);
+  });
+});
