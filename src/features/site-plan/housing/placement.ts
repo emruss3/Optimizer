@@ -173,7 +173,7 @@ function fitHome(
   const drives = local
     .filter(({ el }) => el.name === 'Driveway' || el.properties.kind === 'driveway')
     .map((o) => o.poly);
-  const streets = local
+  const mappedStreets = local
     .filter(
       ({ el }) =>
         el.type === 'road' ||
@@ -182,7 +182,6 @@ function fitHome(
     )
     .map((o) => o.poly);
   const walks = local.filter(({ el }) => /^(walk|sidewalk|footpath)/i.test(el.name)).map((o) => o.poly);
-  if (!streets.length) return { reason: 'The scheme has no mapped vehicle approach for a driveway check.' };
   const accessBands = local
     .filter(
       ({ el }) => el.properties.kind === 'row' || el.name === 'Access easement' || el.name === 'Right-of-way',
@@ -190,6 +189,16 @@ function fitHome(
     .map((o) => o.poly);
   const site = siteBoundary?.coordinates.map((r) => r.map((p) => frame.toFeet(p))) ?? null;
   if (!lot && !site) return { reason: 'A parcel or lot boundary is needed to check the porch and approaches.' };
+  // Frontage lots with no new street (Brittany Park, Nashboro): pave/street geometry is empty,
+  // but each lot still has a driveway that meets the parcel edge at the public street. Treat
+  // those edge-meeting drives as the mapped vehicle approach so fit is not blocked wholesale.
+  const FRONTAGE_TOUCH_FT = 1.25;
+  const frontageApproaches =
+    !mappedStreets.length && site
+      ? drives.filter((d) => d[0]!.some((p) => closest(p, [site]).distance < FRONTAGE_TOUCH_FT))
+      : [];
+  const streets = mappedStreets.length ? mappedStreets : frontageApproaches;
+  if (!streets.length) return { reason: 'The scheme has no mapped vehicle approach for a driveway check.' };
   const routeLimit = lot ? polygonClipping.union(snap(lot.poly), ...accessBands.map(snap)) : site ? [site] : null;
   const allParts = local
     .filter(
