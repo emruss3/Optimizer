@@ -251,6 +251,20 @@ describe('a clubhouse', () => {
   });
 });
 
+describe('an outdoor pool deck', () => {
+  it('draws a paved surface with no windows or roof (Main St live audit)', () => {
+    const h = buildingHeight('amenity', 1);
+    const a = buildArchitecture('pool', 'Pool deck', rect(18, 9), 'amenity', h, [[9, -4]], 1, 'modern');
+    expect(a.glass).toHaveLength(0);
+    expect(a.flats).toHaveLength(0);
+    expect(Math.max(...a.slabs.map(top))).toBeLessThan(0.35);
+    expect(walls(a).length).toBeGreaterThan(0);
+    // Clubhouse path still encloses; pool must not reuse that glass count
+    const club = buildArchitecture('club', 'Clubhouse', rect(18, 9), 'amenity', h, [[9, -4]], 1, 'modern');
+    expect(club.glass.length).toBeGreaterThan(0);
+  });
+});
+
 describe('ground shadows', () => {
   it('is the hull of the footprint and the footprint moved down-sun', () => {
     const ring = rect(10, 10)[0] as number[][];

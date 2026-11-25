@@ -7,6 +7,7 @@ import type { Segment } from '../../../components/site-planner/planRendering';
 import { plantTrees } from './landscape';
 import { frameForRings, interiorPoint, polygonArea, type GroundFrame, type Pt } from './frame';
 import { buildingHeight, cleanFloors, type BuildingUse } from './heights';
+import { isOutdoorAmenityName, OUTDOOR_DECK_HEIGHT_FT } from './outdoorAmenity';
 import type {
   BuildingDisplay, DrawingScene, FeatureRole, FrameCheck, SceneBuilding, SceneFeature, SceneIdentity,
   ScenePolygons, Sourced, StyleRole,
@@ -180,8 +181,11 @@ function toPolygons(geom: Polygon | MultiPolygon | null | undefined, frame: Grou
 
 function describe(b: Omit<SceneBuilding, 'display'>): BuildingDisplay {
   // an amenity says what it is when the plan names it (a pool, a clubhouse)
-  const named = (b.use === 'amenity' || b.provenance.generator === 'Original home design') && b.label ? b.label : null;
-  const floors = `${b.floors.value} ${b.floors.value === 1 ? 'story' : 'stories'}`;
+  const amenityName = b.use === 'amenity' ? (b.label ?? b.name) : null;
+  const named = amenityName
+    || (b.provenance.generator === 'Original home design' && b.label ? b.label : null);
+  const outdoor = b.use === 'amenity' && b.height.note.startsWith('Outdoor amenity');
+  const floors = outdoor ? 'outdoor deck' : `${b.floors.value} ${b.floors.value === 1 ? 'story' : 'stories'}`;
   const footprint = b.footprintSqFt ? `${fmt(b.footprintSqFt.value)} sf` : 'not reported';
   const gross = b.grossSqFt ? `${fmt(b.grossSqFt.value)} sf` : 'not reported';
   const units = b.units ? fmt(b.units.value) : 'not reported';
@@ -189,7 +193,7 @@ function describe(b: Omit<SceneBuilding, 'display'>): BuildingDisplay {
   const heightShort = b.height.basis === 'estimated' ? `est. ${height}` : height;
   const use = named ?? USE_LABEL[b.use];
   return {
-    title: `Building ${b.tag}`,
+    title: outdoor ? use : `Building ${b.tag}`,
     use,
     floors,
     footprint,
@@ -248,17 +252,30 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     if (authored) base.provenance = { ...base.provenance, generator: 'Original home design' };
     const small = use === 'house' || use === 'townhome';
     const tag = use === 'house' ? `H${++houses}` : use === 'townhome' ? `T${++towns}` : letterTag(letters++);
-    const floorsN = cleanFloors(num(p.floors) ?? num(p.stories) ?? 1);
+    const outdoor = use === 'amenity' && (p.outdoor === true || isOutdoorAmenityName(el.name));
+    const floorsN = outdoor ? 1 : cleanFloors(num(p.floors) ?? num(p.stories) ?? 1);
     const floors: Sourced<number> = { value: floorsN, authority: authored || p.storiesAssumed ? 'estimated' : 'engine' };
     const fp = num(p.areaSqFt);
     const footprintSqFt: Sourced<number> | null = fp != null && fp > 0 ? { value: fp, authority: authored ? 'estimated' : 'engine' } : null;
-    const grossSqFt: Sourced<number> | null = footprintSqFt ? { value: (authored ? num(p.homeGrossSf) : null) ?? footprintSqFt.value * floorsN, authority: 'derived' } : null;
+    // Outdoor decks are open use: gross area is the pad, not pad × stories.
+    const grossSqFt: Sourced<number> | null = footprintSqFt
+      ? { value: (authored ? num(p.homeGrossSf) : null) ?? (outdoor ? footprintSqFt.value : footprintSqFt.value * floorsN), authority: 'derived' }
+      : null;
     const mix = Array.isArray(p.unitMix) ? (p.unitMix as Array<{ count?: number }>) : null;
     const mixUnits = mix ? mix.reduce((s, m) => s + (num(m.count) ?? 0), 0) : null;
     // the count the plan's own caption states, then the element's, then its mix
     const unitsN = num(p.planUnits) ?? num(p.units) ?? (mixUnits != null && mixUnits > 0 ? mixUnits : null);
     const units: Sourced<number> | null = use === 'amenity' || unitsN == null ? null : { value: unitsN, authority: 'engine' };
-    const height = authored ? { ...buildingHeight(use, floorsN, roofHeight(authored)),
+    const height = outdoor
+      ? {
+          aboveGradeFt: OUTDOOR_DECK_HEIGHT_FT,
+          basis: 'estimated' as const,
+          label: 'Estimated height' as const,
+          levelsFt: [OUTDOOR_DECK_HEIGHT_FT],
+          assumption: null,
+          note: 'Outdoor amenity pad: paved deck surface, not an enclosed story.',
+        }
+      : authored ? { ...buildingHeight(use, floorsN, roofHeight(authored)),
       levelsFt: authored.heights.map((_,i)=>floorBase(authored,i+1)), note: 'Original schematic design, from grade to the highest ridge or parapet.' }
       : buildingHeight(use, floorsN, p.heightFt);
     // a building that stands over a garage: its lower stories are parking, by the engine's own count of residential levels
