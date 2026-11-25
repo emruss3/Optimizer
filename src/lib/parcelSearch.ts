@@ -17,9 +17,7 @@ interface ParcelSearchRow {
 }
 
 export async function searchParcels(query: string, limit = 10, signal?: AbortSignal): Promise<ParcelHit[]> {
-  // PostgREST reads commas and quotes as filter grammar and ilike treats
-  // asterisks and underscores as wildcards. Preserve the existing address search.
-  const term = query.replace(/[,()"\\*%_]/g, ' ').replace(/'/g, '_').replace(/\s+/g, ' ').trim();
+  const term = query.replace(/[,()"\\*%_]/g, ' ').replace(/\s+/g, ' ').trim();
   if (term.length < 2) return [];
   if (!supabase) throw new Error('the database client is not configured');
   signal?.throwIfAborted();
@@ -31,15 +29,28 @@ export async function searchParcels(query: string, limit = 10, signal?: AbortSig
     controller.abort(new Error(`no answer after ${SEARCH_TIMEOUT_MS / 1000} seconds`));
   }, SEARCH_TIMEOUT_MS);
   try {
-    const apn = term.replace(/[^0-9a-z]/gi, '');
-    const filters = [`address.ilike.%${term}%`, `parcelnumb.ilike.%${term}%`];
-    if (apn.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${apn}%`);
-    const request = supabase.from('parcels').select('ogc_fid, parcelnumb, address, zoning')
-      .or(filters.join(',')).limit(limit).abortSignal(controller.signal);
+    const client = supabase;
+    const request = async () => {
+      // The exact-first lookup is designed for the address and APN expression
+      // indexes. The old raw-column ILIKE OR cannot use those indexes.
+      const result = await client.rpc('find_planner_parcels', { p_query: term, p_limit: limit })
+        .abortSignal(controller.signal);
+      if (result.error?.code !== 'PGRST202') return result;
+
+      // Older development databases may not expose the RPC. Do not issue a
+      // second, expensive query for real production errors or cancellations.
+      controller.signal.throwIfAborted();
+      const legacyTerm = term.replace(/'/g, '_');
+      const apn = legacyTerm.replace(/[^0-9a-z]/gi, '');
+      const filters = [`address.ilike.%${legacyTerm}%`, `parcelnumb.ilike.%${legacyTerm}%`];
+      if (apn.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${apn}%`);
+      return client.from('parcels').select('ogc_fid, parcelnumb, address, zoning')
+        .or(filters.join(',')).limit(limit).abortSignal(controller.signal);
+    };
     const cancelled = new Promise<never>((_, reject) => {
       controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
     });
-    const { data, error } = await Promise.race([request, cancelled]);
+    const { data, error } = await Promise.race([request(), cancelled]);
     if (error) throw new Error(error.message ?? String(error));
     return ((data ?? []) as ParcelSearchRow[]).map(p => ({
       ogcFid: p.ogc_fid,
