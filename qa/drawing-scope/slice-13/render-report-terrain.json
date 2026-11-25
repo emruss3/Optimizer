@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "units": "ft",
+  "blender": "4.5.16 LTS",
+  "site": {
+    "parcel_id": "488278",
+    "scheme_id": "mf:seed_v2",
+    "revision": "de87f8d2"
+  },
+  "glb_sha256": "b6f1f5a1f6e2749e855c41faf7d894c56ea0261d3712774a97428688c0e0679a",
+  "preset": "daylight",
+  "bounds_ft": {
+    "job": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -7.405
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        75.284
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        82.689
+      ]
+    },
+    "blender": {
+      "min": [
+        -6916.789,
+        -6916.789,
+        -7.405
+      ],
+      "max": [
+        6916.789,
+        6916.789,
+        75.284
+      ],
+      "size": [
+        13833.578,
+        13833.578,
+        82.689
+      ]
+    },
+    "worst_difference_ft": 0.0,
+    "axes": [
+      "east",
+      "north",
+      "up"
+    ]
+  },
+  "known_dimensions": {
+    "what": "building mfgen-bldg-1: top, extent east, extent north",
+    "job_ft": [
+      58.081,
+      158.524,
+      214.163
+    ],
+    "blender_ft": [
+      58.081,
+      158.524,
+      214.163
+    ]
+  },
+  "camera_parity_at_1920x1080": {
+    "street": {
+      "points": 14,
+      "worst_error_px": 0.006,
+      "tolerance_px": 2.0
+    },
+    "drone": {
+      "points": 14,
+      "worst_error_px": 0.006,
+      "tolerance_px": 2.0
+    }
+  },
+  "checks_passed": true,
+  "failures": [],
+  "kit": {
+    "version": "kit-2",
+    "source": "Poly Haven (polyhaven.com), CC0",
+    "photographed_slots": [
+      "asphalt",
+      "brick",
+      "concrete",
+      "grass",
+      "plaster",
+      "shingle",
+      "siding"
+    ],
+    "other_slots": [
+      "glass",
+      "paint",
+      "panel",
+      "plain",
+      "railing",
+      "wood"
+    ]
+  },
+  "sky": {
+    "id": "kloofendal_48d_partly_cloudy_puresky",
+    "sun_altitude_deg": 47.9,
+    "job_sun_altitude_deg": 49.34
+  },
+  "planting": {
+    "trees": 727,
+    "shrubs": 120,
+    "grass_clumps": 285346
+  },
+  "images": {
+    "street": {
+      "file": "terrain-street-960.png",
+      "width": 960,
+      "height": 540,
+      "samples": 64
+    },
+    "drone": {
+      "file": "terrain-drone-960.png",
+      "width": 960,
+      "height": 540,
+      "samples": 64
+    }
+  },
+  "terrain": {
+    "source": "USGS 3DEP 1 m DEM (elevation.nationalmap.gov, getSamples), NAVD88 feet",
+    "datum": "NAVD88",
+    "samples": 570,
+    "zero_elevation_ft": 500.5,
+    "sampled_range_ft": [
+      493.1,
+      521.2
+    ],
+    "coverage": "Sampled on a 20 ft grid over the parcel and a 100 ft margin. Past that there are no elevations: the edge is held and eased to one level over 197 ft.",
+    "grading": {
+      "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+      "existing_slope_pct": 4.4,
+      "graded_slope_pct": 4,
+      "deepest_cut_ft": 7.2,
+      "deepest_fill_ft": 5.6
+    },
+    "pads": [
+      {
+        "building": "mfgen-bldg-1",
+        "pad_elevation_ft": 505.1,
+        "lowest_ground_ft": 499.4,
+        "highest_ground_ft": 509,
+        "deepest_cut_ft": 3.9,
+        "deepest_fill_ft": 5.7
+      }
+    ]
+  },
+  "lighting": {
+    "sun_azimuth_deg": 95.42,
+    "sun_altitude_deg": 49.34,
+    "sun_date": "jun21",
+    "solar_hour": 9,
+    "exposure_ev": 0,
+    "seed": 1,
+    "sky": "clear"
+  },
+  "quantities": {
+    "buildings": 1,
+    "stories": [
+      4
+    ],
+    "units": 30,
+    "stalls": 52,
+    "gross_sf": 54244
+  }
+}

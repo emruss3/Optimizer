@@ -1,0 +1,94 @@
+{
+  "scene": {
+    "parcelId": "553450",
+    "address": "2600 W Heiman St",
+    "zoning": "RM40",
+    "product": "Garden apartments and amenity"
+  },
+  "source": {
+    "kind": "fixture replay",
+    "store": "scripts/visual-battery/fixtures/mock_store.json",
+    "commit": "c52fdc2e"
+  },
+  "revision": {
+    "schemeId": "mf:seed_v2",
+    "revision": "4daa644f",
+    "productionRevisionAudited": "c1d84ac9",
+    "matchesProduction": false
+  },
+  "solver": {
+    "solvedBy": "server",
+    "basisLine": "130190 GSF seed plan @ 5 st · 96.5% of 134850 max · 1 structure(s) · 73 units @ ~1550 GSF · 126/126 stalls (100.0% of placed need, 83.4% of max) · aisle_first · access: right lane · generator: seed_v2 · relaxed: none · score 0.965",
+    "envelopeSource": "brief_2274_true"
+  },
+  "figures": {
+    "buildings": 1,
+    "buildingList": [
+      "A · mfgen-bldg-1 · Apartments · 5 stories · 26,038 sf footprint · estimated height 54 ft"
+    ],
+    "apartments": {
+      "units": 73,
+      "stallsDrawn": 126,
+      "stallsReported": 126,
+      "stallsRequired": 126,
+      "parkingStatus": "verified"
+    },
+    "townhomes": null,
+    "subdivision": null,
+    "capturePct": 96.5
+  },
+  "access": {
+    "drives": 1,
+    "driveReachesParcelLine": true,
+    "bays": 3,
+    "baysServed": 3,
+    "routeBreak": null
+  },
+  "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80643,
+    "check": {
+      "status": "verified",
+      "samples": 1,
+      "worstPct": 0,
+      "note": "Areas in the drawing frame match the engine's within 0.1%."
+    }
+  },
+  "tasks": {
+    "context": {
+      "state": "done",
+      "reason": null,
+      "ms": null
+    },
+    "terrain": {
+      "state": "done",
+      "ms": null
+    },
+    "lotFit": {
+      "state": "none",
+      "reason": null,
+      "ms": null
+    },
+    "massing": {
+      "state": "done",
+      "reason": null,
+      "ms": null
+    }
+  },
+  "warnings": {
+    "violationCodes": [],
+    "gate": []
+  },
+  "view": {
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "plan": "553450_2d.png",
+    "model": "553450_3d.png",
+    "view3dState": "ready",
+    "rendererTier": "light",
+    "camera": "default on open"
+  },
+  "passed": true
+}

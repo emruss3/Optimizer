@@ -13,7 +13,7 @@ import {
   pointInPolygon, polygonArea, renderSitePlanSheet, sceneEvidence, sceneRevision, selectionFor, LABEL_PRIORITY,
   STORY_ASSUMPTIONS, type Pt,
 } from './index';
-import { crossings, renderSectionSheet } from './sheetSvg';
+import { crossings, renderSectionSheet, unitDividers } from './sheetSvg';
 
 // The engine draws in EPSG:2274 (Tennessee state plane, feet): a true ground
 // frame. The app reprojects that to EPSG:3857 for the canvas. These tests take
@@ -159,6 +159,47 @@ describe('scene from the saved multifamily plan (488278, 1710 Meharry Blvd)', ()
     expect(sheet.svg).toContain('data-role="scale-bar"');
     expect(sheet.svg).toContain('Heights are estimated from story counts');
     expect(sheet.svg).toContain(`rev ${scene.identity.revision}`);
+  });
+
+  it('draws the zoning height control on the section and says when the building is above it', () => {
+    const title = { project: '1710 MEHARRY BLVD', subtitle: 'RM20', date: '2026-11-12', notes: [] };
+    // no record of a limit: no line, no finding
+    const bare = renderSectionSheet(scene, title, 'slide');
+    expect(bare.overLimit).toBe(false);
+    expect(bare.svg).not.toContain('data-role="height-limit"');
+    // the record's single figure: a 44 ft estimate is above 30 ft
+    const flat = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 30 });
+    expect(flat.svg).toContain('Screening height 30 ft');
+    expect(flat.overLimit).toBe(true);
+    expect(flat.svg).toContain('estimated at 44 ft. Screening height at this cut is 30 ft. Verify the applicable height control.');
+    // a limit the building is under: the line, and nothing to verify
+    const roomy = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 60 });
+    expect(roomy.overLimit).toBe(false);
+    expect(roomy.svg).not.toContain('data-role="height-finding"');
+    // the ordinance's plane, where the record states one, is drawn as a plane
+    const plane = renderSectionSheet(scene, title, 'slide', { maxHeightFt: 30, plane: { heightAtSetbackFt: 30, slopeHorizontal: 1, slopeVertical: 1.5 } });
+    expect(plane.svg).toContain('data-role="height-plane"');
+    expect(plane.svg).toContain('30 ft at the setback line, then 1H:1.5V');
+    expect(plane.svg).not.toContain('data-role="height-limit"');
+  });
+
+  it('draws distinct terrain lines and seats the floors on the model pad', () => {
+    const building = scene.buildings[0]!;
+    const sheet = renderSectionSheet(scene, { project: 'Meharry', subtitle: 'RM20', date: '2026-11-16', notes: [] }, 'slide', null, {
+      at: ([x, y]) => ({ existing: (x + y) / 17, assumed: 3 }),
+      padsFt: new Map([[building.id, 3]]),
+      source: 'USGS 3DEP',
+      grading: { deepest_cut_ft: 7.1, deepest_fill_ft: 5.6 },
+    });
+    const existing = sheet.svg.match(/data-role="existing-grade" d="([^"]+)"/)?.[1];
+    const assumed = sheet.svg.match(/data-role="assumed-grade" d="([^"]+)"/)?.[1];
+    expect(existing).toBeTruthy();
+    expect(assumed).toBeTruthy();
+    expect(existing).not.toBe(assumed);
+    expect(sheet.svg).toContain('site cut 7.1 ft · fill 5.6 ft');
+    const gradeY = assumed?.match(/M[^ ]+ ([^ ]+)/)?.[1];
+    expect(sheet.svg).toContain(`y1="${gradeY}"`);
+    expect(sheet.svg).toContain('est. 44 ft');
   });
 
   it('finds where a line crosses a ring', () => {
@@ -314,5 +355,170 @@ describe('label placement', () => {
   it('keeps labels inside the drawing', () => {
     const out = placeLabels([box('edge', 1, 95, 0, { alternates: [[80, 0]] })], { bounds: { minX: 0, minY: -50, maxX: 100, maxY: 50 } });
     expect(out[0]).toMatchObject({ placed: true, x: 80 });
+  });
+});
+
+describe('what the plan says about parking structures and small homes', () => {
+  const apt = el('apt', 'building', to3857(rect2274(200, 70, 0)), { floors: 4, areaSqFt: 14000, units: 80 });
+  const garage = el('g', 'parking', to3857(rect2274(120, 90, 0, X0 + 300)), { structured: true, stalls: 240 });
+  const lot = el('p', 'parking', to3857(rect2274(120, 60, 0, X0 + 300, Y0 + 200)), { stalls: 20 });
+  const row = el('th', 'building', to3857(rect2274(100, 40, 0, X0, Y0 + 300)), { floors: 3, townhome: true, units: 5 });
+  const house = el('h', 'building', to3857(rect2274(40, 30, 0, X0 + 200, Y0 + 300)), { floors: 2, house: true });
+
+  it('draws a garage apart from a surface lot and names it', () => {
+    const scene = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [apt, garage, lot] })!;
+    expect(scene.features.find(f => f.id === 'g')?.styleRole).toBe('garage');
+    expect(scene.features.find(f => f.id === 'p')?.styleRole).toBe('parking');
+    const sheet = renderSitePlanSheet(scene, { project: 'T', date: 'd' });
+    expect(sheet.svg).toContain('Garage · 240 stalls');
+    expect(sheet.svg).toContain('data-legend="garage"');
+  });
+
+  it('captions houses and townhome rows when there are no lots to read them by', () => {
+    const scene = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [row, house] })!;
+    const sheet = renderSitePlanSheet(scene, { project: 'T', date: 'd' });
+    expect(sheet.svg).toContain('Townhome · 5 units');
+    expect(sheet.svg).toContain('data-label="home"');
+    const lotted = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [house, el('l1', 'other', to3857(rect2274(60, 100, 0, X0 + 200, Y0 + 300)), {}, 'Lot 1')] })!;
+    expect(renderSitePlanSheet(lotted, { project: 'T', date: 'd' }).svg).not.toContain('data-label="home"');
+  });
+});
+
+describe('party walls in a row of homes', () => {
+  it('cuts a townhome row into the homes it reports and leaves a single home whole', () => {
+    const row = el('th', 'building', to3857(rect2274(100, 40, 0)), { floors: 3, townhome: true, units: 5 });
+    const one = el('h', 'building', to3857(rect2274(40, 30, 0, X0 + 200)), { floors: 2, house: true });
+    const apt = el('apt', 'building', to3857(rect2274(200, 70, 0, X0, Y0 + 300)), { floors: 4, units: 80 });
+    const sheet = renderSitePlanSheet(buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [row, one, apt] })!, { project: 'T', date: 'd' });
+    expect(sheet.divided).toEqual([{ id: 'th', units: 5 }]);
+    expect(sheet.svg).toContain('data-role="unit-walls" data-for="th"');
+    const walls = must(unitDividers([[0, 0], [100, 0], [100, 40], [0, 40], [0, 0]], 5));
+    expect(walls).toHaveLength(4);
+    expect(must(walls[0])[0]).toEqual([20, 0]);
+    expect(unitDividers([[0, 0], [100, 0], [100, 40], [50, 60], [0, 40], [0, 0]], 5)).toBeNull();
+  });
+});
+
+describe('cars and the floor plate', () => {
+  it('parks a car in each lined stall and says cars are illustration', () => {
+    const bay = el('p', 'parking', to3857(rect2274(90, 18, 0)), { stalls: 10 });
+    const apt = el('apt', 'building', to3857(rect2274(200, 70, 0, X0, Y0 + 200)), { floors: 4, units: 80 });
+    const sheet = renderSitePlanSheet(buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [bay, apt] })!, { project: 'T', date: 'd' });
+    expect(sheet.striped).toEqual([{ id: 'p', stalls: 10 }]);
+    const cars = must(/data-role="cars"[^>]*>/.exec(sheet.svg.replace(/\n/g, ' ')));
+    expect(cars[0]).toContain('data-illustration="true"');
+    const d = must(/<path d="([^"]+)"[^>]*data-role="cars"/.exec(sheet.svg))[1] ?? '';
+    expect(d.split('Z').length - 1).toBe(10);
+    expect(sheet.svg).toContain('cars and shadows are illustration');
+    // no mix on the building, so no floor plate is invented for it
+    expect(sheet.plated).toEqual([]);
+  });
+
+  it('draws units and a corridor in an apartment building that carries a unit mix', () => {
+    const mix = [{ type: '1br', count: 60, avgSqft: 700 }, { type: '2br', count: 20, avgSqft: 1100 }];
+    const apt = el('apt', 'building', to3857(rect2274(240, 65, 0)), { floors: 4, units: 80, unitMix: mix, areaSqFt: 15600 });
+    const sheet = renderSitePlanSheet(buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [apt] })!, { project: 'T', date: 'd' });
+    expect(sheet.plated).toHaveLength(1);
+    expect(must(sheet.plated[0]).corridors).toBe(1);
+    expect(must(sheet.plated[0]).units).toBeGreaterThan(4);
+    expect(sheet.svg).toContain('data-role="floor-plate"');
+  });
+
+  it('draws the saved Meharry plan with whatever plate its buildings carry', () => {
+    const { elements } = seedFamilyPlanToElements(meharry);
+    const scene = buildDrawingScene({ parcelId: 488278, schemeId: 'mf:test', elements, parcelGeometry: meharryParcel })!;
+    const sheet = renderSitePlanSheet(scene, { project: '1710 MEHARRY BLVD', date: 'd' });
+    const withMix = scene.buildings.filter(b => b.use === 'apartments' && b.unitMix?.length).length;
+    expect(sheet.plated.length).toBeLessThanOrEqual(withMix);
+    if (withMix) expect(sheet.plated.length).toBeGreaterThan(0);
+  });
+});
+
+describe('walks and an element\'s own label', () => {
+  it('draws a walk as a walk and prints the label a drive or an open space carries', () => {
+    const walkEl = el('w', 'circulation', to3857(rect2274(120, 5, 0)), {}, 'Walk');
+    const entry = el('d', 'circulation', to3857(rect2274(60, 24, 0, X0, Y0 + 100)), { label: 'Garage entry' }, 'Drive');
+    const court = el('c', 'greenspace', to3857(rect2274(80, 60, 0, X0, Y0 + 200)), { label: 'Pool courtyard' }, 'Open space');
+    const pool = el('pool', 'building', to3857(rect2274(40, 20, 0, X0 + 200, Y0 + 200)), { floors: 1, use: 'amenity', label: 'Pool' });
+    const scene = buildDrawingScene({ parcelId: 7, schemeId: 's', elements: [walkEl, entry, court, pool] })!;
+    expect(scene.features.find(f => f.id === 'w')?.styleRole).toBe('walk');
+    expect(scene.features.find(f => f.id === 'd')?.styleRole).toBe('drive');
+    expect(must(scene.buildings[0]).display.use).toBe('Pool');
+    const sheet = renderSitePlanSheet(scene, { project: 'T', date: 'd' });
+    expect(sheet.svg).toContain('data-role="walk" data-feature-id="w"');
+    expect(sheet.svg).toContain('>Garage entry<');
+    expect(sheet.svg).toContain('>Pool courtyard<');
+    expect(sheet.svg).toContain('data-legend="walk"');
+  });
+});
+
+// ── the wrap in section: a floor that needs a use (535 Main St, layout review 2026-11-23) ──
+import { sectionCut } from './sheetSvg';
+
+describe('section through a wrap (469303, 535 Main St)', () => {
+  const main = (() => { const v = store['rpc:fn_generate_mf_site_plan_v2:469303:multifamily']; return (Array.isArray(v) ? v[0] : v) as SeedFamilyResponse; })();
+  const mainParcel = (() => {
+    const v = store['rpc:get_parcel_by_id:469303:']; const row = Array.isArray(v) ? v[0] : v;
+    const g = (row.geometry ?? row.geom) as Polygon | MultiPolygon;
+    const c = (g.type === 'Polygon' ? g.coordinates[0] : g.coordinates[0]?.[0]) ?? [];
+    return (Math.abs(c[0]?.[0] ?? 0) > 1000 ? g : feature4326To3857(g)) as Polygon | MultiPolygon;
+  })();
+  const { elements } = seedFamilyPlanToElements(main);
+  const scene = buildDrawingScene({ parcelId: 469303, schemeId: 'mf:wrap_v1', elements, parcelGeometry: mainParcel, schedule: { units: 131, stalls: 238 } })!;
+  const title = { project: '535 MAIN ST', subtitle: 'MUG-A', date: '2026-11-23', notes: [] };
+
+  it('knows which buildings stand over the garage, and how many of their levels are parking', () => {
+    const byName = Object.fromEntries(scene.buildings.map(b => [b.name.split(' · ')[0], b.parkingLevels]));
+    expect(byName['Frontage bar']).toBe(0);
+    expect(byName['Rear bar']).toBe(2);
+    expect(byName['Side bar']).toBe(2);
+  });
+
+  it('labels parking levels as parking and homes as residential, and draws the garage with the court on its deck', () => {
+    const doc = new DOMParser().parseFromString(renderSectionSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    expect(doc.querySelector('parsererror')).toBeNull();
+    const text = doc.documentElement.textContent ?? '';
+    expect(doc.querySelectorAll('[data-level-use="parking"]').length).toBe(2);
+    expect(text).toMatch(/Level 1 · Parking P1 · 14 ft/);
+    expect(text).toMatch(/Level 2 · Parking P2 · 10 ft/);
+    expect(text).toMatch(/Level 3 · Residential · 10 ft/);
+    // the liner bar on the street is homes from the ground up
+    expect(text).toMatch(/Level 1 · Residential · 14 ft/);
+    expect(doc.querySelector('[data-role="section-garage"]')).not.toBeNull();
+    expect(doc.querySelector('[data-role="section-court"]')?.textContent).toBe('Court on the garage deck · est. 24 ft above grade');
+    expect(doc.querySelector('[data-role="section-garage-label"]')?.textContent).toBe('Garage · 2 parking levels · 238 stalls');
+  });
+
+  it('marks the same cut on the site plan that the section draws', () => {
+    expect(sectionCut(scene)).not.toBeNull();
+    const doc = new DOMParser().parseFromString(renderSitePlanSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    const cut = doc.querySelector('[data-role="section-cut"]');
+    expect(cut?.querySelectorAll('circle').length).toBe(2);
+    expect(cut?.textContent).toBe('AA');
+  });
+});
+
+describe('a plan with no garage keeps its section as it was', () => {
+  it('labels levels without a use, since nothing on the plan says otherwise', () => {
+    const { elements } = seedFamilyPlanToElements(meharry);
+    const scene = buildDrawingScene({ parcelId: 488278, schemeId: 'mf:test', elements, parcelGeometry: meharryParcel, schedule: { units: 30, stalls: 52 } })!;
+    const text = new DOMParser().parseFromString(renderSectionSheet(scene, { project: 'P', date: 'd', notes: [] }, 'slide').svg, 'image/svg+xml').documentElement.textContent ?? '';
+    expect(text).toMatch(/Level 1 · 14 ft/);
+    expect(text).not.toMatch(/Parking P1|Residential/);
+  });
+});
+
+describe('garage entries on the site plan sheet', () => {
+  it('draws a marker and a name at each entry it is given, and none otherwise', () => {
+    const { elements } = seedFamilyPlanToElements(meharry);
+    const scene = buildDrawingScene({ parcelId: 488278, schemeId: 'mf:test', elements, parcelGeometry: meharryParcel, schedule: { units: 30, stalls: 52 } })!;
+    const title = { project: 'P', date: 'd', notes: [] };
+    const none = new DOMParser().parseFromString(renderSitePlanSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    expect(none.querySelectorAll('[data-role="garage-entry"]').length).toBe(0);
+    const some = new DOMParser().parseFromString(renderSitePlanSheet(scene, { ...title, garageEntries: [[10, 10], [60, 40]] }, 'tabloid').svg, 'image/svg+xml');
+    expect(some.querySelector('parsererror')).toBeNull();
+    const marks = some.querySelectorAll('[data-role="garage-entry"]');
+    expect(marks.length).toBe(2);
+    expect(marks[0]?.textContent).toBe('Garage entry');
   });
 });

@@ -1,0 +1,119 @@
+{
+  "scene": {
+    "parcelId": "660125",
+    "address": "5525 Mt View Rd",
+    "zoning": "RM15",
+    "product": "Attached rows on a slope"
+  },
+  "source": {
+    "kind": "fixture replay",
+    "store": "scripts/visual-battery/fixtures/mock_store.json",
+    "commit": "c52fdc2e"
+  },
+  "revision": {
+    "schemeId": "neighborhood:townhome",
+    "revision": "409af080",
+    "productionRevisionAudited": "dca61670",
+    "matchesProduction": false
+  },
+  "solver": {
+    "solvedBy": "server",
+    "basisLine": "27 townhomes (mews) by right · 20 × 40 ft homes, three stories assumed for the massing · 12.6 homes / ac · every required test passes · guest parking 2 of 7, not tested · generator: th_v3",
+    "envelopeSource": "brief_2274_true"
+  },
+  "figures": {
+    "buildings": 27,
+    "buildingList": [
+      "T1 · thv3-home-1 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T2 · thv3-home-2 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T3 · thv3-home-3 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T4 · thv3-home-4 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T5 · thv3-home-5 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T6 · thv3-home-6 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T7 · thv3-home-7 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T8 · thv3-home-8 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T9 · thv3-home-9 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T10 · thv3-home-10 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T11 · thv3-home-11 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T12 · thv3-home-12 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T13 · thv3-home-13 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T14 · thv3-home-14 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T15 · thv3-home-15 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T16 · thv3-home-16 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T17 · thv3-home-17 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T18 · thv3-home-18 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T19 · thv3-home-19 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T20 · thv3-home-20 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T21 · thv3-home-21 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T22 · thv3-home-22 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T23 · thv3-home-23 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T24 · thv3-home-24 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T25 · thv3-home-25 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T26 · thv3-home-26 · Townhome · 3 stories · footprint not reported · estimated height 30 ft",
+      "T27 · thv3-home-27 · Townhome · 3 stories · footprint not reported · estimated height 30 ft"
+    ],
+    "apartments": null,
+    "townhomes": {
+      "homes": 27,
+      "homesDrawn": 27,
+      "pattern": "mews",
+      "requiredFails": []
+    },
+    "subdivision": null,
+    "capturePct": null
+  },
+  "access": {
+    "drives": 1,
+    "driveReachesParcelLine": true,
+    "bays": 1,
+    "baysServed": 1,
+    "routeBreak": null
+  },
+  "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80774,
+    "check": {
+      "status": "unverified",
+      "samples": 0,
+      "worstPct": null,
+      "note": "No footprint or lot with an engine-reported area to check the frame against."
+    }
+  },
+  "tasks": {
+    "context": {
+      "state": "done",
+      "reason": null,
+      "ms": 28
+    },
+    "terrain": {
+      "state": "done",
+      "ms": null
+    },
+    "lotFit": {
+      "state": "done",
+      "reason": null,
+      "ms": 60
+    },
+    "massing": {
+      "state": "none",
+      "reason": null,
+      "ms": null
+    }
+  },
+  "warnings": {
+    "violationCodes": [],
+    "gate": []
+  },
+  "view": {
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "plan": "660125_2d.png",
+    "model": "660125_3d.png",
+    "view3dState": "ready",
+    "rendererTier": "light",
+    "camera": "default on open"
+  },
+  "passed": true
+}

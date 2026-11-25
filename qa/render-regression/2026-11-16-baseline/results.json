@@ -1,0 +1,543 @@
+{
+  "at": "2026-11-16T16:28:45.385Z",
+  "rows": [
+    {
+      "fid": 488278,
+      "address": "1710 MEHARRY BLVD",
+      "zoning": "RM20",
+      "class": "apartments, small, gentle",
+      "errors": [],
+      "modelMs": 1028,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 4.4,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 7.2,
+        "deepest_fill_ft": 5.6,
+        "pads": 1
+      },
+      "shots": {
+        "drone": {
+          "file": "488278-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "488278-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "bar_on_frontage_rear_field",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 553450,
+      "address": "2600 W HEIMAN ST",
+      "zoning": "RM40",
+      "class": "apartments, small, flat",
+      "errors": [],
+      "modelMs": 1250,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 2.3,
+        "graded_slope_pct": 2.3,
+        "deepest_cut_ft": 2.2,
+        "deepest_fill_ft": 3.3,
+        "pads": 1
+      },
+      "shots": {
+        "drone": {
+          "file": "553450-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "553450-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "court_scheme_perpendicular_bars",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 660125,
+      "address": "5525 MT VIEW RD",
+      "zoning": "RM15",
+      "class": "apartments, steep (85 ft of relief)",
+      "errors": [],
+      "modelMs": 884,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 12.8,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 16.7,
+        "deepest_fill_ft": 14,
+        "pads": 27
+      },
+      "shots": {
+        "drone": {
+          "file": "660125-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "660125-street.jpg",
+          "got": "iso"
+        }
+      },
+      "streetNote": "No clear street-level view of this building was found: neighbours stand in every line of sight. Showing the aerial.",
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "bar_on_frontage_rear_field",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 680339,
+      "address": "0 WHITES CREEK PIKE",
+      "zoning": "RM9",
+      "class": "apartments, mid size, sloped",
+      "errors": [],
+      "modelMs": 1730,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 8.1,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 12.3,
+        "deepest_fill_ft": 8.3,
+        "pads": 4
+      },
+      "shots": {
+        "drone": {
+          "file": "680339-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "680339-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "court_scheme_perpendicular_bars",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 670533,
+      "address": "0 SMITH SPRINGS RD",
+      "zoning": "RM6",
+      "class": "apartments, larger, sloped",
+      "errors": [],
+      "modelMs": 3966,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 5.5,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 15.5,
+        "deepest_fill_ft": 7.5,
+        "pads": 1
+      },
+      "shots": {
+        "drone": {
+          "file": "670533-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "670533-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "court_scheme_perpendicular_bars",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 669046,
+      "address": "1200 W H DAVIS DR",
+      "zoning": "RM40",
+      "class": "apartments, no survey",
+      "errors": [],
+      "modelMs": 526,
+      "ground": {
+        "kind": "flat"
+      },
+      "shots": {
+        "drone": {
+          "file": "669046-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "669046-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "landlocked_axis_bar",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 469303,
+      "address": "535 MAIN ST",
+      "zoning": "MUG-A",
+      "class": "mixed use, urban",
+      "errors": [],
+      "modelMs": 1347,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 3.1,
+        "graded_slope_pct": 3.1,
+        "deepest_cut_ft": 3.8,
+        "deepest_fill_ft": 4.7,
+        "pads": 5
+      },
+      "shots": {
+        "drone": {
+          "file": "469303-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "469303-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "wrap_garage_courtyard",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 393306,
+      "address": "303 E PALESTINE AVE",
+      "zoning": "RS10",
+      "class": "single lot, infill, no survey",
+      "errors": [],
+      "modelMs": 381,
+      "ground": {
+        "kind": "flat"
+      },
+      "shots": {
+        "drone": {
+          "file": "393306-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "393306-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": null,
+        "pattern": "house_on_lot",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 680001,
+      "address": "0 UNION HILL RD",
+      "zoning": "RS40",
+      "class": "subdivision, 3 lots",
+      "errors": [],
+      "modelMs": 1142,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 1.8,
+        "graded_slope_pct": 1.8,
+        "deepest_cut_ft": 2.3,
+        "deepest_fill_ft": 2.7,
+        "pads": 3
+      },
+      "shots": {
+        "drone": {
+          "file": "680001-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "680001-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "house_on_lot",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 661661,
+      "address": "6404 EATONS CREEK RD",
+      "zoning": "R40",
+      "class": "subdivision, 3 lots, sloped",
+      "errors": [],
+      "modelMs": 958,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 6,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 3.2,
+        "deepest_fill_ft": 3.4,
+        "pads": 5
+      },
+      "shots": {
+        "drone": {
+          "file": "661661-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "661661-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "subdivision_row_spine",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 672526,
+      "address": "0 HICKORY BEND DR",
+      "zoning": "RS10",
+      "class": "subdivision, 9 lots, flat",
+      "errors": [],
+      "modelMs": 934,
+      "ground": {
+        "kind": "survey",
+        "pads": 0
+      },
+      "shots": {
+        "drone": {
+          "file": "672526-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "672526-street.jpg",
+          "got": "iso"
+        }
+      },
+      "streetNote": "No clear street-level view of this building was found: neighbours stand in every line of sight. Showing the aerial.",
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "subdivision_row_spine",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 680391,
+      "address": "0 HILLS LN",
+      "zoning": "R10",
+      "class": "subdivision, 14 lots",
+      "errors": [],
+      "modelMs": 1427,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 5,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 3.7,
+        "deepest_fill_ft": 5.4,
+        "pads": 17
+      },
+      "shots": {
+        "drone": {
+          "file": "680391-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "680391-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "subdivision_row_spine",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 682644,
+      "address": "4701 BOWFIELD DR",
+      "zoning": "R8",
+      "class": "subdivision, 35 lots, sloped",
+      "errors": [],
+      "modelMs": 2496,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 8.1,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 15.7,
+        "deepest_fill_ft": 18.6,
+        "pads": 35
+      },
+      "shots": {
+        "drone": {
+          "file": "682644-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "682644-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "subdivision_street_grid",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 680719,
+      "address": "0 MARTINGALE DR",
+      "zoning": "R10",
+      "class": "subdivision, 147 lots, 70 acres",
+      "errors": [],
+      "modelMs": 2272,
+      "ground": {
+        "kind": "survey",
+        "pads": 0
+      },
+      "shots": {
+        "drone": {
+          "file": "680719-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "680719-street.jpg",
+          "got": "iso"
+        }
+      },
+      "streetNote": "No clear street-level view of this building was found: neighbours stand in every line of sight. Showing the aerial.",
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "subdivision_street_grid",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 686430,
+      "address": "4255 BRICK CHURCH PIKE",
+      "zoning": "R20",
+      "class": "very steep (28% average)",
+      "errors": [],
+      "modelMs": 1073,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 10.8,
+        "graded_slope_pct": 4,
+        "deepest_cut_ft": 3.3,
+        "deepest_fill_ft": 1.7,
+        "pads": 1
+      },
+      "shots": {
+        "drone": {
+          "file": "686430-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "686430-street.jpg",
+          "got": "street"
+        }
+      },
+      "streetNote": null,
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "subdivision_row_spine",
+        "lots": null,
+        "error": null
+      },
+      "opened": true
+    },
+    {
+      "fid": 550510,
+      "address": "2400 W HEIMAN ST",
+      "zoning": "R6",
+      "class": "large site, 13 acres",
+      "errors": [],
+      "modelMs": 2180,
+      "ground": {
+        "kind": "graded",
+        "rule": "Assumed for the picture, not a grading plan: the paved area and the buildings stand on one even surface fitted to the existing ground, no steeper than 4%; each building's pad is level on it; the graded ground meets the existing ground over 39 ft round the work.",
+        "existing_slope_pct": 1.9,
+        "graded_slope_pct": 1.9,
+        "deepest_cut_ft": 15.4,
+        "deepest_fill_ft": 15.7,
+        "pads": 0
+      },
+      "shots": {
+        "drone": {
+          "file": "550510-drone.jpg",
+          "got": "iso"
+        },
+        "street": {
+          "file": "550510-street.jpg",
+          "got": "iso"
+        }
+      },
+      "streetNote": "No clear street-level view of this building was found: neighbours stand in every line of sight. Showing the aerial.",
+      "plan": {
+        "solvedBy": "server",
+        "pattern": "subdivision_row_spine",
+        "lots": 34,
+        "error": null
+      },
+      "opened": true
+    }
+  ]
+}

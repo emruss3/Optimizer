@@ -13,7 +13,7 @@ const walls = (a: Architecture) => a.slabs.filter(s => s.part === 'base' || s.pa
 const solid = (a: Architecture) => a.slabs.filter(s => s.part !== 'detail');
 const span = (slabs: RenderSlab[]) => {
   const xs = slabs.flatMap(s => s.polygon.flatMap(r => r.map(p => p[0] ?? 0))), ys = slabs.flatMap(s => s.polygon.flatMap(r => r.map(p => p[1] ?? 0)));
-  return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)].map(v => Math.round(v * 1000) / 1000);
+  return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)].map(v => Math.round(v * 1000) / 1000 || 0);
 };
 const surfaces = (a: Architecture) => new Set([...a.slabs, ...a.flats].map(p => p.surface ?? 'plain'));
 /** A street to the south of the pad, and a drive from it to the given stretch of the front wall. */
@@ -39,8 +39,8 @@ describe('walls', () => {
 });
 
 describe('a style', () => {
-  it('is one of four, and anything else is not a style', () => {
-    expect(STYLES).toEqual(['mansard', 'farmhouse', 'modern', 'heritage']);
+  it('accepts the published styles', () => {
+    expect(STYLES).toEqual(['infill', 'urban-brick', 'mansard', 'farmhouse', 'modern', 'heritage']);
     expect(isArchStyle('modern')).toBe(true);
     expect(isArchStyle('castle')).toBe(false);
     expect(isArchStyle(null)).toBe(false);
@@ -118,11 +118,24 @@ describe('houses', () => {
     expect(apronOn(front, [[2, -9], [6, -9], [10, -9]])).toBeNull();
   });
 
-  it('fall back to a plain building on a pad that is not a rectangle', () => {
+  it('fits a pitched house and driveway to a catalog pad with a notch', () => {
     const ell = [[[0, 0], [12, 0], [12, 6], [6, 6], [6, 12], [0, 12], [0, 0]]];
-    const a = buildArchitecture('odd', 'House', ell, 'house', buildingHeight('house', 2), [], 1, 'farmhouse');
+    const drives: Array<Array<[number, number]>> = [[[2, -7], [6, -7], [6, 0], [2, 0], [2, -7]]];
+    const build = (garage: boolean) => buildArchitecture('odd', 'House', ell, 'house', buildingHeight('house', 2),
+      [], 1, 'infill', [], [], { driveways: drives, garage, catalogued: true });
+    const a = build(true);
     expect(span(solid(a))).toEqual([0, 12, 0, 12]);
     expect(a.glass.length).toBeGreaterThan(4);
+    expect(a.flats.some(f => f.surface === 'shingle')).toBe(true);
+    const apron = a.slabs.find(s => s.approach?.kind === 'apron')?.approach;
+    expect(apron?.start[0]).toBeCloseTo(4, 3);
+    expect(apron?.end[1]).toBeCloseTo(-1.06, 2);
+    expect(build(false).slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
+    // With a designId, unknown garage must not invent a door (Housing design brief).
+    // Legacy catalogued pads without a designId keep the pre-catalogue meeting rule.
+    expect(buildArchitecture('odd', 'House', ell, 'house', buildingHeight('house', 2),
+      [], 1, 'infill', [], [], { driveways: drives, garage: null, catalogued: true, designId: 'abhp:test' })
+      .slabs.some(s => s.approach?.kind === 'apron')).toBe(false);
   });
 });
 
@@ -153,11 +166,16 @@ describe.each(STYLES)('an apartment building in the %s style', style => {
   const h = buildingHeight('apartments', 4);
   const zT = h.aboveGradeFt * METERS_PER_FOOT;
   const a = buildArchitecture('bldg-1', 'Apartments', rect(60, 20), 'apartments', h, [[30, -12]], 1, style);
+  const newFacade = style === 'infill' || style === 'urban-brick';
 
-  it('has a base to the first level, and walls or a mansard to the roof line', () => {
+  it('keeps the plan footprint and builds to the roof line', () => {
+    expect(span(solid(a))).toEqual([0, 60, 0, 20]);
+    if (newFacade) {
+      expect(Math.max(...a.slabs.map(top))).toBeCloseTo(zT, 6);
+      return;
+    }
     const base = a.slabs.find(s => s.part === 'base');
     expect(base?.elevation).toBeCloseTo(14 * METERS_PER_FOOT, 6);
-    expect(span(solid(a))).toEqual([0, 60, 0, 20]);
     if (style === 'mansard') {
       expect(Math.max(...walls(a).map(top))).toBeCloseTo((h.levelsFt[2] ?? 0) * METERS_PER_FOOT, 6);
       expect(Math.max(...a.slabs.filter(s => s.part === 'parapet').map(top))).toBeCloseTo(zT, 6);
@@ -169,15 +187,18 @@ describe.each(STYLES)('an apartment building in the %s style', style => {
   });
 
   it('has balconies with railings, an entrance, planting and roof equipment', () => {
-    expect([...a.flats].filter(f => f.surface === 'railing' || f.surface === 'glassrail').length).toBeGreaterThan(6);
+    expect([...a.flats, ...a.slabs].filter(f => f.surface === 'metalwork' || f.surface === 'railing' || f.surface === 'glassrail').length).toBeGreaterThan(6);
     expect(a.glass.length).toBeGreaterThan(150);
     expect(a.shrubs.length).toBeGreaterThan(10);
-    // nothing but what is on the roof sits inside the footprint
+    let roofEquipment = 0;
     for (const d of a.slabs.filter(s => s.part === 'detail')) {
       const ring = d.polygon[0] ?? [];
       const inside = ring.every(p => (p[0] ?? 0) > 1.2 && (p[0] ?? 0) < 58.8 && (p[1] ?? 0) > 1.2 && (p[1] ?? 0) < 18.8);
-      if (inside) expect(ring[0]?.[2] ?? 0).toBeGreaterThanOrEqual((style === 'mansard' ? (h.levelsFt[2] ?? 0) * METERS_PER_FOOT : zT) - 0.2);
+      const z = ring[0]?.[2] ?? 0;
+      if (inside && z > zT - 1 && d.elevation > 0.4) roofEquipment++;
+      if (inside && !newFacade) expect(z).toBeGreaterThanOrEqual((style === 'mansard' ? (h.levelsFt[2] ?? 0) * METERS_PER_FOOT : zT) - 0.2);
     }
+    if (newFacade) expect(roofEquipment).toBeGreaterThan(0);
   });
 
   it('widens its bays and draws its openings plainly when asked, to keep a very large model light', () => {
@@ -198,6 +219,25 @@ describe.each(STYLES)('an apartment building in the %s style', style => {
       return over && !holed;
     };
     expect(b.slabs.filter(covers)).toHaveLength(0);
+  });
+});
+
+describe('infill apartment elevations', () => {
+  it('uses the street frontage for the recessed lobby when parking is behind the building', () => {
+    const a = buildArchitecture('infill', 'Apartments', rect(40, 16), 'apartments',
+      buildingHeight('apartments', 4), [[20, 19]], 1, 'infill', [], [[20, -10]]);
+    const doors = a.glass.filter(g => g.clear && g.polygon.some(p => (p[2] ?? 9) < 0.3));
+    expect(doors).toHaveLength(4);
+    expect(doors.every(g => g.polygon.every(p => (p[1] ?? 0) > 0.04 && (p[1] ?? 0) < 0.2))).toBe(true);
+    expect(a.flats.some(f => f.polygon.every(p => Math.abs((p[1] ?? 0) - 1.85) < 0.001))).toBe(true);
+  });
+
+  it('keeps the warm fiber-cement bays distinct from a brick-only apartment elevation', () => {
+    const build = (style: ArchStyle) => buildArchitecture('infill', 'Apartments', rect(40, 16), 'apartments',
+      buildingHeight('apartments', 4), [[20, -10]], 1, style);
+    expect([...surfaces(build('infill'))]).toEqual(expect.arrayContaining(['brick', 'siding', 'panel', 'membrane']));
+    expect(surfaces(build('urban-brick')).has('siding')).toBe(false);
+    expect(surfaces(build('urban-brick')).has('brick')).toBe(true);
   });
 });
 

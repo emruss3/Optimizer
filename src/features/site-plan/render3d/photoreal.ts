@@ -4,6 +4,7 @@
 // building stands on the site. The key to the image model is never here.
 import { supabase } from '../../../lib/supabase';
 import type { DrawingScene } from '../scene/types';
+import type { ArchStyle } from '../ui/architecture';
 
 export interface PhotorealRequest {
   /** The view as a `data:image/jpeg;base64,…` URL. */
@@ -12,7 +13,7 @@ export interface PhotorealRequest {
   product: 'houses' | 'townhomes' | 'apartments';
   stories: number;
   /** The architectural style the view is drawn in, so the picture keeps it. */
-  style?: 'mansard' | 'farmhouse' | 'modern' | 'heritage';
+  style?: ArchStyle;
 }
 
 export interface PhotorealResult {

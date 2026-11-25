@@ -11,8 +11,11 @@ import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
+import { aerialShot, approachShot, prominentSubject, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
+import { Render4kPanel } from './Render4kPanel';
+import type { RenderCameraId } from './exportJob';
 
 export interface RenderViewProps {
   elements: Element[];
@@ -25,11 +28,19 @@ export interface RenderViewProps {
   envelopeRing?: number[][] | undefined;
   selectedId?: string | null | undefined;
   onSelect?: ((id: string | null) => void) | undefined;
+  /** The parcel's surveyed elevations: the scene stands on them. */
+  topo?: import('../api/parcelTopo').ParcelTopo | null | undefined;
+  grossSf?: number | null | undefined;
+  savedPlanId?: string | undefined;
+  accessBreak?: { from: number[]; to: number[] } | null | undefined;
+  /** Home-design study: frame this building when focusHomeToken changes. */
+  focusHomeId?: string | null | undefined;
+  focusHomeToken?: number | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
 
-type Shot = 'iso' | 'top' | 'street';
+type Shot = 'iso' | 'top' | 'street' | 'approach';
 
 interface Rig {
   /** Set once the sun has been placed for this model: nothing is drawn before it. */
@@ -50,7 +61,7 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   const [look, setLook] = useState<'review' | 'rendering'>('review');
@@ -61,20 +72,25 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       buildMassingData(elements, {
         ...(parcelRing ? { parcelRing } : {}),
         ...(envelopeRing ? { envelopeRing } : {}),
+        ...(accessBreak ? { accessBreak } : {}),
         ...(neighbors?.buildings ? { contextBuildings: neighbors.buildings } : {}),
         ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
         ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
         frontEdges: (edgeClassifications ?? []).filter(e => e.type === 'front' && e.edge.length >= 2).map(e => [e.edge[0], e.edge[1]] as never),
         treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
         style: archStyle,
+        ...(topo ? { topo } : {}),
       }),
-    [elements, parcelRing, neighbors, edgeClassifications, scene, archStyle],
+    [elements, parcelRing, envelopeRing, accessBreak, neighbors, edgeClassifications, scene, archStyle, topo],
   );
 
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const rig = useRef<Rig | null>(null);
   const [ready, setReady] = useState(false);
+  // true when the model stands on surveyed ground that was graded for the picture: the view says so
+  const [graded, setGraded] = useState(false);
+  const [ground, setGround] = useState<Record<string, unknown>>({ kind: 'flat' });
   // counts the models built: a new one needs its sun and its selection set again
   const [built, setBuilt] = useState(0);
   const [present, setPresent] = useState(false);
@@ -85,14 +101,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [present]);
-  const [sunKey, setSunKey] = useState('mar21');
-  const [sunHour, setSunHour] = useState(16.5);
+  const [sunKey, setSunKey] = useState<string>(DEFAULT_RENDER_SUN.key);
+  const [sunHour, setSunHour] = useState<number>(DEFAULT_RENDER_SUN.hour);
+  const [renderCamera, setRenderCamera] = useState<RenderCameraId | null>(null);
   const fail = useRef(onFail);
   fail.current = onFail;
   // where the camera stood, so a change of style redraws the same view of the same plan
   const revision = useRef(scene.identity.revision);
   revision.current = scene.identity.revision;
-  const stood = useRef<{ revision: string; position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const previewHouse = useRef<string | undefined>(undefined);
+  previewHouse.current = useMemo(() => elements.find(el => Array.isArray(el.properties.homeOrigin))?.id, [elements]);
+  const stood = useRef<{ revision: string; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -104,25 +123,71 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // the aerial looks from the diagonal the neighbours block least
   const aerial = useRef(-38);
   aerial.current = data.aerialAzimuth;
+  // the last preset the camera was put on, so a capture can be regenerated from it
+  const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number; lift?: number } | null>(null);
+  const [shotNote, setShotNote] = useState<string | null>(null);
+  const [, setShotStamp] = useState(0);
+  // lens shift of the street view (render3d/shots): 1 is none
+  const lift = useRef(1);
+  const lens = useCallback((camera: THREE.PerspectiveCamera, w: number, h: number) => {
+    if (lift.current > 1) {
+      camera.aspect = w / (h * lift.current);
+      camera.setViewOffset(w, h * lift.current, 0, 0, w, h);
+    } else {
+      camera.clearViewOffset();
+      camera.aspect = w / h;
+    }
+    camera.updateProjectionMatrix();
+  }, []);
   const frame = useCallback((shot: Shot | 'fit') => {
     const r = rig.current;
     if (!r) return;
     // every camera centres on the parcel and stands far enough back to hold all of it:
     // the radius that holds the parcel, seen through half the lens's angle, with room to spare
     const { x, y, radius } = r.model.focus;
+    // the level a camera centres on: the main building's pad, or the ground at the middle of the parcel
+    const padOf = (c: { x: number; y: number }) => prominentSubject(r.model.ground.subjects)?.base ?? r.model.groundAt(c.x, c.y);
     const fits = (radius * 1.2) / Math.sin((r.camera.fov * Math.PI) / 360 * Math.min(1, r.camera.aspect));
     const t = r.controls.target;
     if (shot === 'fit') {
       const dir = r.camera.position.clone().sub(t).normalize();
-      t.set(x, radius * 0.06, -y);
+      t.set(x, radius * 0.06 + padOf(r.model.focus), -y);
       r.camera.position.copy(t).addScaledVector(dir, fits);
     } else {
       const review = r.review;
-      const [el, az, dist] = shot === 'top' ? [89.2, 0, fits] : shot === 'street' ? [6, aerial.current - 14, fits * 0.62] : [review ? 32 : 22, aerial.current, fits];
-      const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180;
-      t.set(x, radius * 0.06, -y);
-      r.camera.position.set(t.x + dist * Math.cos(e) * Math.sin(a), t.y + dist * Math.sin(e), t.z + dist * Math.cos(e) * Math.cos(a));
+      // Street arrival: a person's eye on the approach, with a clear line to the building
+      // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
+      const cv = canvas.current;
+      const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
+      const { subjects, obstacles, roads, trees, approaches, foreground } = r.model.ground;
+      const house = previewHouse.current;
+      const entranceWalks = house ? approaches.filter(a => a.building === house) : approaches;
+      const arrival = shot === 'approach' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
+        : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : null;
+      r.controls.minDistance = arrival && shot === 'approach' ? 0.55 : 8;
+      r.controls.maxPolarAngle = arrival && shot === 'approach' ? 2.05 : Math.PI / 2;
+      setShotNote((shot === 'street' || shot === 'approach') && !arrival ? 'A clear entrance view is unavailable for this scheme. Showing the aerial.' : null);
+      if (arrival) {
+        // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
+        lift.current = arrival.lift;
+        r.camera.fov = (2 * Math.atan(Math.tan((arrival.fovDeg * Math.PI) / 360) * arrival.lift) * 180) / Math.PI;
+        if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+        t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
+        r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
+        lastShot.current = { shot, ...arrival };
+      } else {
+        lift.current = 1;
+        r.camera.fov = AERIAL_FOV;
+        if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+        // the drone view of a rendering centres on what is built; review centres on the parcel
+        const c = shot === 'top' || review ? r.model.focus : r.model.built;
+        const camera = aerialShot(c, shot === 'top' ? 0 : aerial.current, r.camera.aspect, padOf(c), shot === 'top' ? 89.2 : review ? 32 : 28);
+        t.set(camera.target[0], camera.target[2], -camera.target[1]);
+        r.camera.position.set(camera.position[0], camera.position[2], -camera.position[1]);
+        lastShot.current = { shot: shot === 'top' ? 'top' : 'iso', ...camera, ...(shot === 'top' ? { basis: 'Straight down on the parcel' } : {}) };
+      }
     }
+    setShotStamp(s => s + 1);
     r.controls.update();
     r.request();
   }, []);
@@ -151,15 +216,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       return;
     }
     const E = model.extent;
-    const camera = new THREE.PerspectiveCamera(30, Math.max(0.1, el.clientWidth / Math.max(1, el.clientHeight)), 1.5, E * 40);
+    const camera = new THREE.PerspectiveCamera(AERIAL_FOV, Math.max(0.1, el.clientWidth / Math.max(1, el.clientHeight)), 0.305, Math.max(609.6, E * 80));
     const controls = new OrbitControls(camera, cv);
     controls.enableDamping = true;
     controls.dampingFactor = 0.12;
-    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+    controls.maxPolarAngle = Math.PI / 2;
     controls.minDistance = 8;
     controls.maxDistance = E * 12;
     let raf = 0;
     let frames = 0;
+    let moving = false;
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const draw = () => {
       raf = 0;
       // a frame before the sun is placed would be drawn in the dark and thrown away
@@ -167,19 +234,26 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       controls.update();
       try {
         const t = performance.now();
-        stage.render(camera);
+        stage.render(camera, moving);
         if (frames++ < 3 && (window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] frame ${frames}: ${Math.round(performance.now() - t)} ms`);
       } catch (err) {
         fail.current(err instanceof Error ? err : new Error(String(err)));
       }
     };
     const request = () => { if (!raf) raf = requestAnimationFrame(draw); };
+    const startMoving = () => { clearTimeout(settle); moving = true; };
+    const stopMoving = () => {
+      clearTimeout(settle);
+      settle = setTimeout(() => { moving = false; request(); }, 160);
+    };
     controls.addEventListener('change', request);
+    controls.addEventListener('start', startMoving);
+    controls.addEventListener('end', stopMoving);
     const ro = new ResizeObserver(() => {
       const w = Math.max(2, el.clientWidth), h = Math.max(2, el.clientHeight);
       stage.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      // keeps the street view's lens shift when the window changes size
+      lens(camera, w, h);
       request();
     });
     ro.observe(el);
@@ -197,20 +271,38 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     cv.addEventListener('pointerdown', onDown);
     cv.addEventListener('pointerup', onUp);
     rig.current = { lit: false, review: look === 'review' && !present, stage, model, camera, controls, request, highlight: null };
+    setGraded(!!model.grade?.grading);
+    // what ground this model stands on, for a reader of the page and for the regression runner
+    setGround(model.grade ? { kind: model.grade.grading ? 'graded' : 'survey', ...(model.grade.grading ?? {}), pads: model.grade.padList.length } : { kind: 'flat' });
+    const modelRevision = revision.current;
     const was = stood.current;
-    if (was && was.revision === revision.current) {
+    if (was && was.revision === modelRevision) {
+      if (lastShot.current?.shot === 'approach') {
+        controls.minDistance = 0.55;
+        controls.maxPolarAngle = 2.05;
+      }
       camera.position.copy(was.position);
       controls.target.copy(was.target);
+      camera.fov = was.fov;
+      lens(camera, Math.max(2, el.clientWidth), Math.max(2, el.clientHeight));
       controls.update();
     } else {
       frame('iso');
     }
     setReady(true);
     setBuilt(n => n + 1);
-    // leaf and bark pictures arrive a moment after the model: draw again when they have
-    void model.ready.then(request);
+    let active = true;
+    const refresh = () => { if (active) request(); };
+    void model.ready.then(() => {
+      if (!active) return;
+      stage.invalidateShadows();
+      request();
+    });
+    void stage.ready.then(refresh);
     return () => {
-      stood.current = { revision: revision.current, position: camera.position.clone(), target: controls.target.clone() };
+      active = false;
+      clearTimeout(settle);
+      stood.current = { revision: modelRevision, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
       setReady(false);
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
@@ -221,7 +313,20 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, quality, look, present]);
+  }, [data, frame, lens, quality, look, present]);
+
+  // Home designs → 3D: frame the previewed house once per token after the model includes it.
+  // Do not re-frame on later rebuilds of the same token (avoids fighting the user).
+  const framedHomeToken = useRef(0);
+  useEffect(() => {
+    if (!ready || !focusHomeToken || !focusHomeId) return;
+    if (previewHouse.current !== focusHomeId) return;
+    if (framedHomeToken.current === focusHomeToken) return;
+    const r = rig.current;
+    if (!r?.model.ground.subjects.some((s) => s.id === focusHomeId)) return;
+    frame('street');
+    framedHomeToken.current = focusHomeToken;
+  }, [ready, built, focusHomeToken, focusHomeId, frame]);
 
   useEffect(() => {
     const r = rig.current;
@@ -246,13 +351,14 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     if (target) {
       const mesh = new THREE.Mesh(target.geometry, new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       mesh.scale.setScalar(1.003);
+      mesh.position.copy(target.position);
       r.model.root.add(mesh);
       r.highlight = mesh;
     }
     r.request();
   }, [selectedId, ready, built]);
 
-  const snapshot = useCallback(() => {
+  const snapshot = useCallback((fileName?: string) => {
     const r = rig.current, cv = canvas.current;
     if (!r || !cv) return;
     // twice the screen's pixels for the saved picture, then back
@@ -262,12 +368,18 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     r.stage.render(r.camera);
     const a = document.createElement('a');
     a.href = cv.toDataURL('image/png');
-    a.download = 'rendering.png';
+    a.download = fileName || 'rendering.png';
     a.click();
     r.stage.renderer.setPixelRatio(before);
     r.stage.setSize(cv.clientWidth, cv.clientHeight);
     r.request();
   }, []);
+  // The Export menu asks for the view as it is turned now.
+  useEffect(() => {
+    const save = (e: Event) => snapshot((e as CustomEvent<{ fileName?: string }>).detail?.fileName);
+    window.addEventListener('pp:save-3d-image', save);
+    return () => window.removeEventListener('pp:save-3d-image', save);
+  }, [snapshot]);
 
   // The photoreal pass: this view, repainted as a photograph by an image
   // model. The picture is sent to the app's own function; nothing else is.
@@ -294,11 +406,22 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const tagged = scene.buildings.filter(b => b.tagOnPlan);
   const selected = selectedId ? scene.buildings.find(b => b.id === selectedId) ?? null : null;
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
+  // light, style and photoreal are for showing the plan, not for reading it
+  const showy = look === 'rendering' || present;
+  const hazards = new Set(data.polygons.map(p => p.hazard));
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-buildings={scene.buildings.length} data-ground={JSON.stringify(ground)} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
+      {/* Review reads the site data; light, style and photoreal belong to showing it */}
+      {!showy && (
+        <div className="absolute top-2 left-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm" data-testid="look-note">
+          Review · the plan's footprints, parcel, envelope and access
+        </div>
+      )}
+      {showy && (
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
+        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium" data-testid="look-illustration" title="Materials, planting, light and the surroundings are illustration, not site data">Illustration</span>
         <select value={sunKey} onChange={e => setSunKey(e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 bg-white" data-testid="sun-date" aria-label="Date of the sun study">
           {SUN_DATES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
         </select>
@@ -307,6 +430,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <span className="w-px h-4 bg-gray-200" aria-hidden="true" />
         <ArchStylePicker />
       </div>
+      )}
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
         <div className="inline-flex rounded border border-gray-200 overflow-hidden mr-1" role="group" aria-label="View">
           {(['review', 'rendering'] as const).map(k => (
@@ -320,21 +444,35 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <button className={btn} onClick={() => frame('iso')} data-testid="camera-iso">Aerial</button>
         <button className={btn} onClick={() => frame('top')} data-testid="camera-top">Top</button>
         <button className={btn} onClick={() => frame('street')} data-testid="camera-street">Street</button>
+        {showy && data.slabs.some(s => s.approach?.kind === 'walk') && <button className={btn} onClick={() => frame('approach')} data-testid="camera-approach">Entry</button>}
         <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="Bring the whole site back into view, keeping the angle">Fit site</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
-        <button
+        {showy && <button
           className="px-1.5 py-0.5 rounded bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50"
           onClick={makePhotoreal}
           disabled={photo.status === 'working'}
           data-testid="render-photoreal"
           title="Repaint this view as a photograph. Sends this picture, and only this picture, to an image model."
         >
-          {photo.status === 'working' ? 'Painting…' : 'Photoreal'}
-        </button>
+          {photo.status === 'working' ? 'Painting…' : 'AI impression'}
+        </button>}
+        {showy && ready && scene.buildings.length > 0 && (
+          <button type="button" className={btn} data-testid="render-4k" aria-expanded={renderCamera !== null}
+            onClick={() => setRenderCamera(previous => previous ? null : lastShot.current?.shot === 'street' ? 'street' : lastShot.current?.shot === 'approach' ? 'approach' : 'drone')}>
+            Render 4K
+          </button>
+        )}
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
-        <button onClick={snapshot} className="px-1.5 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700" title="Save this view as a picture, at twice the screen's resolution" data-testid="massing-snapshot">PNG</button>
       </div>
+      {scene.buildings.length === 0 && (
+        <div className="absolute top-11 left-1/2 -translate-x-1/2 bg-white/95 border border-gray-300 text-gray-800 rounded-lg px-3 py-1.5 text-[11px] shadow-sm max-w-md" data-testid="empty-scheme" role="status">
+          No building is drawn here: the current plan places none on this parcel. The view shows the land and what surrounds it. The plan's own reason is in the workspace.
+        </div>
+      )}
+      {shotNote && scene.buildings.length > 0 && (
+        <div className="absolute top-11 left-1/2 -translate-x-1/2 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 text-[11px] shadow-sm max-w-md" data-testid="shot-note" role="status">{shotNote}</div>
+      )}
       {onSelect && tagged.length > 0 && (
         <div className="absolute top-11 right-2 flex flex-wrap justify-end items-center gap-1 max-w-[50%] bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm" role="group" aria-label="Buildings">
           <span className="text-gray-500 px-0.5">Buildings</span>
@@ -354,7 +492,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         </div>
       )}
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/85 rounded px-2 py-1 pointer-events-none">
-        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
+        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{graded ? ' · ground graded to 4% or less: assumed, not a grading plan' : ''}{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
       </div>
       {look === 'review' && !present && (
         <div className="absolute bottom-9 left-2 flex items-center gap-3 text-[11px] text-gray-700 bg-white/90 rounded px-2 py-1 pointer-events-none" data-testid="review-legend">
@@ -362,10 +500,20 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
           <span className="flex items-center gap-1"><i className="inline-block w-3 h-2 rounded-sm bg-white border border-gray-300" />Existing</span>
           <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-slate-600" />Parcel</span>
           {envelopeRing && <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-blue-600" />Buildable envelope</span>}
-          <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-amber-500" />Access</span>
+          {data.curbs.length > 0 && <span className="flex items-center gap-1" data-testid="legend-access"><i className="inline-block w-4 border-t-2 border-amber-500" />Access</span>}
+          {accessBreak && <span className="flex items-center gap-1 text-red-700" data-testid="legend-access-break"><i className="inline-block w-4 border-t-2 border-dashed border-red-600" />No drawn connection to the street</span>}
+          {data.polygons.some(p => p.privateDrive) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 rounded-sm bg-slate-700" />Shared private drive</span>}
+          {hazards.has('wetland') && <span className="flex items-center gap-1" data-testid="legend-wetland"><i className="inline-block h-2 w-3 bg-teal-200 border border-teal-600" />Wetland / water buffer</span>}
+          {(hazards.has('floodplain') || hazards.has('floodway')) && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 bg-blue-200 border border-blue-600" />Flood hazard area</span>}
+          {hazards.has('slope') && <span className="flex items-center gap-1"><i className="inline-block h-2 w-3 bg-amber-200 border border-amber-600" />Hillside</span>}
         </div>
       )}
       {selected && photo.status !== 'done' && <SceneInspector building={selected} onClose={onSelect ? () => onSelect(null) : undefined} className="absolute right-2 bottom-2" />}
+      {showy && renderCamera !== null && (
+        <Render4kPanel key={JSON.stringify([scene.identity.key, scene.identity.revision, archStyle, sunKey, sunHour, savedPlanId])}
+          data={data} scene={scene} style={archStyle} sunKey={sunKey} sunHour={sunHour} camera={renderCamera}
+          grossSf={grossSf} savedPlanId={savedPlanId} onClose={() => setRenderCamera(null)} />
+      )}
       {photo.status === 'working' && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/35 text-white text-sm" role="status" data-testid="photoreal-working">
           <span className="bg-slate-900/80 rounded-lg px-4 py-2">Painting the photoreal picture. This takes about a minute.</span>

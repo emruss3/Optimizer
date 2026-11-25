@@ -162,3 +162,75 @@ describe('LayoutChoicePanel (multifamily by default where it places more homes; 
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── the Compare action beside the two yields (site-review brief, 2026-11-23) ──
+import { fireEvent as fire, render as draw, screen as page } from '@testing-library/react';
+import { LayoutChoicePanel as Panel } from './LayoutChoicePanel';
+
+describe('comparing the two layouts', () => {
+  const choice = {
+    multifamilyHomes: 24, multifamilyProduct: 'apartments' as const, densityCap: 32, defaultKind: 'neighborhood' as const,
+    sentence: 'The neighborhood places more homes here.', floodHold: false,
+    neighborhood: { homes: 30, requested: 'townhome', label: 'townhomes (lane)', buildable: true, drawable: true },
+  };
+  const open = (facts?: { parking?: string | null; floorArea?: string | null }) => {
+    draw(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={facts ?? null} />);
+    fire.click(page.getByTestId('layout-compare'));
+  };
+
+  it('names both yields on the button and opens the table beside them', () => {
+    open();
+    expect(page.getByTestId('layout-compare').textContent).toBe('Hide the comparison');
+    expect(page.getByTestId('layout-compare-tradeoff').textContent).toBe('30 townhomes (lane) places 6 more homes than 24 apartments.');
+  });
+
+  it('Mt View: a $1.2M land price reads $50,000 against $40,000 a home', () => {
+    open({ parking: 'Guest parking 0 of 8', floorArea: null });
+    fire.change(page.getByTestId('layout-compare-land'), { target: { value: '1,200,000' } });
+    const row = document.querySelector('[data-compare-row="Land per home"]');
+    expect(row?.textContent).toContain('$50,000');
+    expect(row?.textContent).toContain('$40,000');
+    expect(page.getByTestId('layout-compare-tradeoff').textContent).toMatch(/\$10,000 less land per home/);
+  });
+
+  it('shows the facts of the layout on the sheet only, and names what is unknown', () => {
+    open({ parking: 'Guest parking 0 of 8', floorArea: null });
+    const parking = document.querySelector('[data-compare-row="Parking"]');
+    expect(parking?.textContent).toContain('Unknown');
+    expect(parking?.textContent).toContain('Guest parking 0 of 8');
+    expect(page.getByTestId('layout-compare-missing').textContent).toMatch(/Parking of 24 apartments: open that layout to draw it/);
+  });
+
+  it('retains both options’ facts after switching twice (30/24 Mt View)', () => {
+    const { rerender } = draw(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }} factsRevision="rev-town" />);
+    // switch to the apartment plan, then back: both sides keep what they rendered
+    rerender(<Panel choice={choice as never} competition={null} shown="multifamily" shownRequested={null} auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: '42 drawn · 42 required', floorArea: '43,203 GSF' }} factsRevision="rev-mf" />);
+    rerender(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }} factsRevision="rev-town" />);
+    fire.click(page.getByTestId('layout-compare'));
+    const parking = document.querySelector('[data-compare-row="Parking"]');
+    expect(parking?.textContent).toContain('Guest parking 0 of 8');
+    expect(parking?.textContent).toContain('42 drawn · 42 required');
+    const floor = document.querySelector('[data-compare-row="Floor area"]');
+    expect(floor?.textContent).toContain('43,203 GSF');
+    expect(floor?.textContent).toContain('49,600');
+  });
+
+  it('prefers live shownFacts for the side on the sheet over a retained copy', () => {
+    const { rerender } = draw(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 0 of 8', floorArea: 'Unknown · upper bound 49,600 GSF' }} factsRevision="rev-town" />);
+    // regenerate the townhome plan: new parking, floor area omitted — must not keep the retained ceiling
+    rerender(<Panel choice={choice as never} competition={null} shown="neighborhood" shownRequested="townhome" auto={false}
+      onChoose={() => {}} onViewCandidate={() => {}} shownFacts={{ parking: 'Guest parking 2 of 8', floorArea: null }} factsRevision="rev-town-2" />);
+    fire.click(page.getByTestId('layout-compare'));
+    const parking = document.querySelector('[data-compare-row="Parking"]');
+    expect(parking?.textContent).toContain('Guest parking 2 of 8');
+    expect(parking?.textContent).not.toContain('Guest parking 0 of 8');
+    const floor = document.querySelector('[data-compare-row="Floor area"]');
+    expect(floor?.textContent).toMatch(/Unknown/);
+    expect(floor?.textContent).not.toContain('49,600');
+  });
+});

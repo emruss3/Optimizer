@@ -7,6 +7,8 @@ type ResultsPanelProps = {
   investmentAnalysis: InvestmentAnalysis | null;
   isGenerating: boolean;
   violations: FeasibilityViolation[];
+  /** The scheme and revision these figures are for. */
+  schemeLabel?: string | null;
 };
 
 /** Format a number as USD with no decimal places */
@@ -19,11 +21,16 @@ const fmtUSD = (value: number | null | undefined): string => {
   }).format(value);
 };
 
+/** A figure the plan reports, or "not reported": the engine's zero is a missing value, not a measurement. */
+const reported = (v: number | null | undefined, show: (v: number) => string): string =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? show(v) : 'not reported';
+
 const ResultsPanel: React.FC<ResultsPanelProps> = ({
   metrics,
   investmentAnalysis,
   isGenerating,
   violations,
+  schemeLabel,
 }) => {
   return (
     <div className="w-full xl:w-80 bg-white border border-gray-200 rounded-lg p-4">
@@ -33,10 +40,11 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
         <div className="mb-4 p-3 bg-blue-50 rounded-lg">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-blue-600">Generating site plan…</span>
+            <span className="text-sm text-blue-600" data-testid="results-updating">Updating the plan. The figures below are the previous plan's until this finishes.</span>
           </div>
         </div>
       )}
+      <div className={isGenerating ? 'opacity-40' : ''} aria-busy={isGenerating}>
 
       {!metrics && !investmentAnalysis && !isGenerating && (
         <div className="text-sm text-gray-600">Generate a plan to see results.</div>
@@ -46,11 +54,11 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
         <div className="space-y-3 text-sm text-gray-700 mb-6">
           <div className="flex justify-between">
             <span className="text-gray-600">FAR</span>
-            <span className="font-medium">{metrics.achievedFAR.toFixed(2)}</span>
+            <span className="font-medium" data-testid="results-far">{reported(metrics.achievedFAR, v => v.toFixed(2))}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Coverage</span>
-            <span className="font-medium">{metrics.siteCoveragePct.toFixed(1)}%</span>
+            <span className="font-medium" data-testid="results-coverage">{reported(metrics.siteCoveragePct, v => `${v.toFixed(1)}%`)}</span>
           </div>
           {metrics.stallsProvided !== undefined && metrics.stallsRequired !== undefined && (
             <div className="flex justify-between">
@@ -93,14 +101,18 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
           )}
           <div className="flex justify-between">
             <span className="text-gray-600">Open Space</span>
-            <span className="font-medium">{metrics.openSpacePct.toFixed(1)}%</span>
+            <span className="font-medium">{reported(metrics.openSpacePct, v => `${v.toFixed(1)}%`)}</span>
           </div>
         </div>
       )}
 
       {investmentAnalysis && (
         <div className="space-y-1">
-          <h4 className="text-sm font-semibold text-gray-900 mb-2">Pro Forma</h4>
+          <h4 className="text-sm font-semibold text-gray-900">Scheme pro forma</h4>
+          <p className="text-xs text-gray-500 mb-2" data-testid="results-basis">
+            {schemeLabel ? `${schemeLabel}. ` : ''}A rental pro forma on this app's default rents, costs and rates.
+            The sale margin in the header is a different measure: local sale prices against cost. The two can disagree.
+          </p>
 
           {/* Revenue */}
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-1">Revenue</div>
@@ -188,6 +200,7 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({
           </ul>
         </div>
       )}
+      </div>
     </div>
   );
 };

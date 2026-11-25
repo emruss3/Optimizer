@@ -1,0 +1,98 @@
+{
+  "scene": {
+    "parcelId": "675423",
+    "address": "0 Delk Ave",
+    "zoning": "RS5",
+    "product": "Private-lane cottages"
+  },
+  "source": {
+    "kind": "fixture replay",
+    "store": "scripts/visual-battery/fixtures/mock_store.json",
+    "commit": "c52fdc2e"
+  },
+  "revision": {
+    "schemeId": "neighborhood:deep search",
+    "revision": "316a0d36",
+    "productionRevisionAudited": "316a0d36",
+    "matchesProduction": true
+  },
+  "solver": {
+    "solvedBy": "server",
+    "basisLine": "5 lots @ 50 × 100 ft by right on a shared private drive (no new public street) · 3.37 du/ac gross · 21.3% easement / 40.9% lots / 37.8% open · flood hold: sfha · 15 checks pass · generator: sf_v1 · from the pattern competition",
+    "envelopeSource": "brief_2274_true"
+  },
+  "figures": {
+    "buildings": 5,
+    "buildingList": [
+      "H1 · sfv1-pad-1 · House · 1 story · 917 sf footprint · estimated height 10 ft",
+      "H2 · sfv1-pad-2 · House · 1 story · 917 sf footprint · estimated height 10 ft",
+      "H3 · sfv1-pad-3 · House · 1 story · 917 sf footprint · estimated height 10 ft",
+      "H4 · sfv1-pad-4 · House · 1 story · 917 sf footprint · estimated height 10 ft",
+      "H5 · sfv1-pad-5 · House · 1 story · 917 sf footprint · estimated height 10 ft"
+    ],
+    "apartments": null,
+    "townhomes": null,
+    "subdivision": {
+      "status": "done",
+      "lots": 5,
+      "pattern": "shared private drive",
+      "basis": "by_right",
+      "fails": []
+    },
+    "capturePct": null
+  },
+  "access": {
+    "drives": 6,
+    "driveReachesParcelLine": true,
+    "bays": 0,
+    "baysServed": 0,
+    "routeBreak": null
+  },
+  "frame": {
+    "crs": "EPSG:3857",
+    "groundScale": 0.80637,
+    "check": {
+      "status": "verified",
+      "samples": 5,
+      "worstPct": 0.15,
+      "note": "Areas in the drawing frame match the engine's within 0.2%."
+    }
+  },
+  "tasks": {
+    "context": {
+      "state": "done",
+      "reason": null,
+      "ms": 25
+    },
+    "terrain": {
+      "state": "none",
+      "ms": null
+    },
+    "lotFit": {
+      "state": "done",
+      "reason": null,
+      "ms": 104
+    },
+    "massing": {
+      "state": "none",
+      "reason": null,
+      "ms": null
+    }
+  },
+  "warnings": {
+    "violationCodes": [],
+    "gate": []
+  },
+  "view": {
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "plan": "675423_2d.png",
+    "model": "675423_3d.png",
+    "view3dState": "ready",
+    "rendererTier": "light",
+    "camera": "default on open"
+  },
+  "passed": true
+}

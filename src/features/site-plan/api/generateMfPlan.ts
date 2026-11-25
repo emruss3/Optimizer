@@ -112,7 +112,8 @@ export function mfPlanToElements(resp: MfPlanResponse): {
   for (const b of resp.buildings ?? []) {
     const poly = toCanvasPolygon(b.geom);
     if (!poly) continue;
-    const floors = Math.max(1, Math.round(b.floors ?? 3));
+    // either name, as in the seed family (storyCount): this family says `floors`
+    const floors = storyCount(b as { stories?: unknown; floors?: unknown }, (resp.metrics ?? {}) as { stories?: unknown; floors?: unknown }, b.footprint_sqft ?? null, null).stories;
     // Townhome rows carry their real unit count; apartment bars estimate
     // from GFA at the server's average-unit assumption.
     const unitsForBar = Math.max(
@@ -464,11 +465,57 @@ function apportionMix(
  * elements + planner metrics. Geometry: EPSG:2274 feet → 4326 → 3857 (the
  * canvas frame); every displayed AREA is the engine's own number.
  */
+/**
+ * Account for a summary total that differs from the drawn bays, from the
+ * engine's own payload and nothing else. Two things must both hold:
+ *  1. the summary equals the stalls of the bays that carry an area field,
+ *     and some bays carry none (the summary skipped them);
+ *  2. the engine's own parking ratio times its unit count lands on the drawn
+ *     total (within 3 stalls or 3%).
+ * 2600 W Heiman St, audit 2026-11-22: 127 drawn, 20 reported, 122 required.
+ * The summary is the two area-bearing bays (10 + 10); 1.84 per home on 70
+ * homes is 129. Anything short of both is left unexplained: null.
+ * The ratio comes from the same bays, so this explains the summary and
+ * verifies nothing: the status stays "needs verification".
+ */
+export function explainStallCounts(
+  bays: ReadonlyArray<{ stalls?: number | null; area_sqft?: number | null }>,
+  stallsReported: number | null | undefined,
+  units: number | null | undefined,
+  ratioProvided: number | null | undefined,
+): string | null {
+  if (stallsReported == null || bays.length === 0) return null;
+  if (!bays.every(b => typeof b.stalls === 'number' && b.stalls >= 0)) return null;
+  const drawn = bays.reduce((a, b) => a + Math.round(b.stalls as number), 0);
+  if (drawn === stallsReported) return null;
+  const withArea = bays.filter(b => typeof b.area_sqft === 'number' && b.area_sqft > 0);
+  if (withArea.length === 0 || withArea.length === bays.length) return null;
+  const counted = withArea.reduce((a, b) => a + Math.round(b.stalls as number), 0);
+  if (counted !== stallsReported) return null;
+  if (units == null || ratioProvided == null || !(units > 0) || !(ratioProvided > 0)) return null;
+  const byRatio = Math.round(units * ratioProvided);
+  if (Math.abs(byRatio - drawn) > Math.max(3, 0.03 * drawn)) return null;
+  const rest = bays.length - withArea.length;
+  return `the engine's summary of ${stallsReported} adds up only the ${withArea.length} of ${bays.length} bays that carry an area; the other ${rest} bay${rest === 1 ? '' : 's'} hold${rest === 1 ? 's' : ''} ${drawn - stallsReported} more. Its own ratio, ${ratioProvided} per home on ${units} homes, gives ${byRatio}, in line with the ${drawn} drawn`;
+}
+
 /** The parking status the sheet stands on (SiteMetrics.parkingStatus). */
 export function parkingStatusOf(
   stallsDrawn: number | null | undefined,
   stallsReported: number | null | undefined,
-): { parkingStatus: 'verified' | 'needs_verification'; parkingStatusReason?: string } {
+  /** from explainStallCounts: where the difference comes from */
+  explained?: string | null,
+): { parkingStatus: 'verified' | 'needs_verification'; parkingStatusReason?: string; parkingCountNote?: string } {
+  if (explained && stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported) {
+    // Knowing where the difference comes from does not verify the supply. The ratio is
+    // derived from the same bays (0 Todd Preis Dr: 428 drawn on 94 homes, summary 49,
+    // accounted for the same way), so the count still passes nothing on its own.
+    return {
+      parkingStatus: 'needs_verification',
+      parkingStatusReason: `${explained}. That accounts for the difference; it does not verify the supply, which needs each counted bay reached from the street through a drive and an aisle`,
+      parkingCountNote: explained,
+    };
+  }
   if (stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported) {
     return {
       parkingStatus: 'needs_verification',
@@ -476,6 +523,31 @@ export function parkingStatusOf(
     };
   }
   return { parkingStatus: 'verified' };
+}
+
+/**
+ * How many stories a building of a plan has, and where that came from.
+ *
+ * The engines name the field two ways: the seed family says `stories`, the max-buildout family
+ * says `floors`. A plan that carried only `floors` was drawn three stories high whatever it said
+ * (2600 W Heiman, 2026-11-23: five floors in the answer, three on the sheet). The building's own
+ * count is read first under either name, then the scheme's, then the count its floor area implies.
+ * Only when the plan says nothing at all is three assumed, and the plan is flagged.
+ */
+export function storyCount(
+  b: { stories?: unknown; floors?: unknown },
+  m: { stories?: unknown; floors?: unknown },
+  footprintSqft?: number | null,
+  gsf?: number | null,
+): { stories: number; basis: 'building' | 'scheme' | 'floor_area' | 'assumed'; conflict: boolean } {
+  const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.round(v) : null);
+  const own = [n(b.stories), n(b.floors)].filter((v): v is number => v != null);
+  // two names that disagree on one building: the taller is drawn, and the plan is flagged
+  if (own.length) return { stories: Math.max(...own), basis: 'building', conflict: own.length === 2 && own[0] !== own[1] };
+  const scheme = [n(m.stories), n(m.floors)].filter((v): v is number => v != null);
+  if (scheme.length) return { stories: Math.max(...scheme), basis: 'scheme', conflict: scheme.length === 2 && scheme[0] !== scheme[1] };
+  if (footprintSqft && gsf && footprintSqft > 0 && gsf >= footprintSqft * 0.75) return { stories: Math.max(1, Math.round(gsf / footprintSqft)), basis: 'floor_area', conflict: false };
+  return { stories: 3, basis: 'assumed', conflict: false };
 }
 
 export function seedFamilyPlanToElements(
@@ -491,6 +563,7 @@ export function seedFamilyPlanToElements(
     typeof v === 'number' && Number.isFinite(v) ? v : null;
 
   const structures = (resp.buildings ?? []).filter(b => b?.geom_2274);
+  const storyFlags = new Set<string>();
   const gsfShares = (() => {
     const gsfs = structures.map(s => num(s.gsf) ?? num(s.footprint_sqft) ?? 0);
     const total = gsfs.reduce((a, b) => a + b, 0);
@@ -520,9 +593,13 @@ export function seedFamilyPlanToElements(
     } catch {
       return; // one malformed geometry must not sink the plan
     }
-    const stories = Math.max(1, Math.round(num(b.stories) ?? num(m.stories) ?? 3));
     const footprint = num(b.footprint_sqft);
-    const gsf = num(b.gsf) ?? (footprint != null ? footprint * stories : null);
+    const reportedGsf = num(b.gsf) ?? num((b as { gfa_sqft?: unknown }).gfa_sqft);
+    const count = storyCount(b, m, footprint, reportedGsf);
+    const stories = count.stories;
+    if (count.basis === 'assumed') storyFlags.add('stories_assumed_no_count_in_plan');
+    if (count.conflict) storyFlags.add('stories_conflict_in_plan');
+    const gsf = reportedGsf ?? (footprint != null ? footprint * stories : null);
     const unitsEst = Math.max(1, Math.round((gsf ?? 0) / AVG_UNIT_SF));
     // The building is named by what it is — stories and units — never by the
     // generator's composition token ("bars connected S form × 5 st" read as
@@ -553,6 +630,8 @@ export function seedFamilyPlanToElements(
         areaSqFt: footprint ?? undefined,
         floors: stories,
         stories,
+        // where the story count came from: the building's own record, the scheme, its floor area, or an assumption
+        storiesBasis: count.basis,
         // The unit count this building's caption states. The drawing scene
         // reads it, so a tag or a sheet cannot state another (the mix rows
         // below can sum one short of it).
@@ -623,6 +702,15 @@ export function seedFamilyPlanToElements(
       const poly = seedTo3857(garage.geom_2274 as Polygon);
       const levels = Math.max(1, Math.round(num(garage.levels) ?? 1));
       const garageStalls = Math.max(0, Math.round(num(garage.stalls) ?? 0));
+      // where a car enters the garage, as the engine places it: the model and the plan mark the same points
+      const entries: number[][] = [];
+      for (const pt of [garage.entry_2274, garage.entry_rear_2274]) {
+        if (!pt || (pt as { type?: string }).type !== 'Point') continue;
+        try {
+          const c = (seedTo3857(pt) as unknown as { coordinates: number[] }).coordinates;
+          if (Number.isFinite(c?.[0]) && Number.isFinite(c?.[1])) entries.push([c[0] as number, c[1] as number]);
+        } catch { /* an entry that cannot be placed is left off */ }
+      }
       elements.push({
         id: `${prefix}-garage`,
         type: 'parking',
@@ -633,6 +721,7 @@ export function seedFamilyPlanToElements(
           parkingSpaces: garageStalls,
           structured: true,
           levels,
+          ...(entries.length ? { garageEntries: entries } : {}),
           label: `Garage · ${levels} lvl · ${garageStalls} stalls`,
           areaSqFt: num(garage.area_sqft) ?? undefined,
           styleOverride: true,
@@ -801,7 +890,7 @@ export function seedFamilyPlanToElements(
         stallsReported: stallsReported ?? undefined,
         ...(opts.house
           ? { parkingStatus: 'not_evaluated' as const, parkingStatusReason: 'the house sketch draws no parking and the district\'s requirement for one house was not evaluated' }
-          : parkingStatusOf(stallsDrawn, stallsReported)),
+          : parkingStatusOf(stallsDrawn, stallsReported, explainStallCounts(bays, stallsReported, units, num((m as { parking_ratio_provided?: unknown }).parking_ratio_provided)))),
         violations: [],
         warnings: [],
         zoningCompliant: true,
@@ -819,6 +908,7 @@ export function seedFamilyPlanToElements(
       ...(Array.isArray(resp.flags) ? (resp.flags as unknown[]).filter((f): f is string => typeof f === 'string') : []),
       ...(m.parking_limited === true ? ['parking_limited'] : []),
       ...(summaryDisagrees ? ['parking_summary_disagrees'] : []),
+      ...storyFlags,
     ]),
   ];
 

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Building, TrendingUp, Map, DollarSign } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Building, TrendingUp, Map } from 'lucide-react';
 import HBUAnalysisPanel from './HBUAnalysisPanel';
 import { SelectedParcel, isValidParcel } from '../types/parcel';
 import SitePlanDesigner from './SitePlanDesigner';
@@ -13,6 +13,13 @@ interface FullAnalysisModalProps {
 
 const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen, onClose }: FullAnalysisModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'hbu' | 'site' | 'financial'>('overview');
+  // Escape closes this, the topmost surface. On the planner tab the planner owns Escape.
+  useEffect(() => {
+    if (!isOpen || activeTab === 'site') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [isOpen, activeTab, onClose]);
   
   // Use useParcelDetail hook to fetch and normalize full parcel data
   const { parcelDetail, loading: isLoadingDetail, error: parcelError } = useParcelDetail(
@@ -27,8 +34,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
   const tabs = [
     { id: 'overview', label: 'Overview', icon: Map },
     { id: 'hbu', label: 'HBU Analysis', icon: TrendingUp },
-    { id: 'site', label: 'Site Plan', icon: Building },
-    { id: 'financial', label: 'Financial', icon: DollarSign }
+    { id: 'site', label: 'Site Plan', icon: Building }
   ];
 
   return (
@@ -47,6 +53,7 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
           </div>
           <button
             onClick={onClose}
+            aria-label="Close full analysis"
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-6 h-6 text-gray-500" />
@@ -174,17 +181,6 @@ const FullAnalysisModal = React.memo(function FullAnalysisModal({ parcel, isOpen
                   {/* The recommendation is a starting point, not a dead end:
                       hand the user straight to the planner tab from here. */}
                   <HBUAnalysisPanel parcel={p} onDesignSitePlan={() => setActiveTab('site')} />
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'financial' && (
-              <div className="space-y-6">
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Financial Analysis</h2>
-                  <div className="text-gray-600">
-                    Financial analysis tools will be integrated here.
-                  </div>
                 </div>
               </div>
             )}

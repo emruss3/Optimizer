@@ -43,7 +43,7 @@ const wanted = (process.env.CAPTURE_VIEWPORTS || '').split(',').filter(Boolean);
       try {
         await page.goto('http://localhost:5199/' + (process.env.CAPTURE_QUERY || ''), { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2500);
-        const trial = page.getByText('Start Free Trial').first();
+        const trial = page.locator('[data-testid="landing-start"]').first();
         if (await trial.isVisible().catch(() => false)) { await trial.click(); await page.waitForTimeout(2500); }
         const skip = page.getByText('Skip Tour').first();
         if (await skip.isVisible().catch(() => false)) { await skip.click(); await page.waitForTimeout(800); }

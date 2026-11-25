@@ -28,7 +28,11 @@ export const LABEL_PRIORITY = {
   buildingTag: 1,
   buildingCaption: 2,
   parkingCount: 3,
+  /** A house's or a townhome row's own caption: gives way to tags and stall counts. */
+  homeCaption: 3.5,
   dimension: 4,
+  /** A drive's, walk's or open space's own label: after lot numbers, before street names. */
+  featureLabel: 4.5,
   streetName: 5,
   context: 6,
 } as const;

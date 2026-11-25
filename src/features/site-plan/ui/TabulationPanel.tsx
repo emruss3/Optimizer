@@ -220,13 +220,13 @@ const TabulationPanel: React.FC<{
         <span
           title={
             typeof metrics?.stallsDrawn === 'number' && typeof metrics?.stallsReported === 'number' && metrics.stallsDrawn !== metrics.stallsReported
-              ? `The drawn bays hold ${metrics.stallsDrawn} stalls; the engine's summary said ${metrics.stallsReported}. The sheet counts the drawn bays.`
+              ? `The drawn bays hold ${metrics.stallsDrawn} stalls; the engine's summary said ${metrics.stallsReported}. The sheet counts the drawn bays.${metrics.parkingCountNote ? ` Accounted for: ${metrics.parkingCountNote}.` : ''}`
               : undefined
           }
         >
           Stalls <b>{metrics?.stallsProvided ?? 0} / {notEvaluated ? 'not evaluated' : (metrics?.stallsRequired ?? 0)}</b>
           {typeof metrics?.stallsDrawn === 'number' && typeof metrics?.stallsReported === 'number' && metrics.stallsDrawn !== metrics.stallsReported && (
-            <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">(engine summary {metrics.stallsReported}{unverified ? ' · needs verification' : ''})</span>
+            <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">(engine summary {metrics.stallsReported}{metrics.parkingCountNote ? ' · difference accounted for' : ''}{unverified ? ' · needs verification' : ''})</span>
           )}
         </span>
         {metrics?.totalUnits ? (

@@ -22,7 +22,7 @@ describe('SchemeCompare', () => {
     // a figure a scheme did not store is missing, not zero
     expect(screen.getByTestId('compare-far-1').textContent).toBe('not reported');
     await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.getAllByText('Drawing not available')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText('Metrics only · drawing not saved')).toHaveLength(2));
   });
 
   it('underwrites the scheme whose button was pressed', () => {

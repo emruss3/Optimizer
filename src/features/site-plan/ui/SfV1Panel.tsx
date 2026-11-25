@@ -6,12 +6,14 @@
  * answer the user asks for here, and the result is labelled as one.
  */
 import { useState } from 'react';
-import type { HoleOverlap, SfV1AutoBest, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
-import { FILL_BANDS, autoBestSentence, edgeClassSentence, isOverride, isRemainderNote, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
+import type { HoleOverlap, SfV1AutoBest, SfV1DeepProgress, SfV1Options, SfV1Summary, SfV1Test } from '../api/sfV1Plan';
+import { FILL_BANDS, checkCounts, deepSearchLine, autoBestSentence, edgeClassSentence, isOverride, isRemainderNote, parseEdgeClasses, passesOverLimit, privateDriveSentence, remainderSentence, steepGroundNote } from '../api/sfV1Plan';
 
 /** What the by-right generator does not evaluate, named beside its passing checks (the scope's P0.2). */
 export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
+import { HousingDesignPicker } from './HousingDesignPicker';
+import type { DesignFitResult, HousingDesignRecord } from '../housing/types';
 
 function testLabel(id: string): string {
   return id.replace(/\./g, ' · ').replace(/_/g, ' ');
@@ -77,6 +79,13 @@ function yieldSentence(t: SfV1Test): string | null {
   return `${lots} lot${lots === 1 ? '' : 's'}; a 62% net-to-gross estimate would say ${ar}${ratio}`;
 }
 
+/** The scope of the count beside the tests: graded checks, and measurements that carry no verdict. */
+export function checksLine(tests: ReadonlyArray<{ pass: boolean | null }>): string {
+  const c = checkCounts(tests);
+  const graded = `${c.graded} check${c.graded === 1 ? '' : 's'} from the district's standards.`;
+  return c.measured > 0 ? `${graded} ${c.measured} more ${c.measured === 1 ? 'is a measurement' : 'are measurements'} with no pass or fail.` : graded;
+}
+
 function TestRow({ t }: { t: SfV1Test }) {
   // a figure over its limit (engine g18: access.lane_on_held_land) is a flag, not a failed check
   const figure = t.figure === true;
@@ -118,8 +127,11 @@ function TestRow({ t }: { t: SfV1Test }) {
 export function SfV1Panel({
   summary, override, onOverride, busy, onDrawHouse, houseDrawn, houseError,
   competition, shownRequested, onViewCandidate, onRetryCompetition, terrain, site,
-  autoBest, holeOverlap, frontageLandlocked,
+  autoBest, holeOverlap, frontageLandlocked, deepSearch,
+  housing,
 }: {
+  /** the deep search that keeps looking after the quick plan is drawn (fn_sf_v1_deep_search) */
+  deepSearch?: SfV1DeepProgress | null;
   summary: SfV1Summary;
   override: SfV1Options;
   /** absent on multifamily land (the layout choice): the overrides re-run the by-right lot fit, which routes there to the townhome engine */
@@ -146,6 +158,14 @@ export function SfV1Panel({
   holeOverlap?: HoleOverlap | null;
   /** the frontage layer finds no street on the parcel */
   frontageLandlocked?: boolean;
+  /** Delk cottage picker (Housing design brief slice) — absent on other parcels */
+  housing?: {
+    parcelId: string;
+    designs: HousingDesignRecord[];
+    selectedId: string | null;
+    fits: DesignFitResult[] | null;
+    onSelect: (designId: string) => void;
+  } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
   const [lotD, setLotD] = useState<string>(override.lot_d_ft != null ? String(override.lot_d_ft) : '');
@@ -170,6 +190,7 @@ export function SfV1Panel({
   // Engine g20 says the unplanned land in a note of its own ("6.10 ac is carried inside 3 oversized lot(s)
   // and is not planned…"); the panel already says it once from remainder_ac, so the note is not repeated.
   const remainderShown = summary.remainder != null && summary.lots > 0;
+  const deadEndText = `${summary.deadEnds != null ? ` · ${summary.deadEnds} dead end${summary.deadEnds === 1 ? '' : 's'}` : ''}${summary.deadEndMaxFt != null && summary.deadEndMaxFt > 0 ? ` (max ${Math.round(summary.deadEndMaxFt)} ft)` : ''}`;
   const otherNotes = summary.notes.filter(n => n !== steep && !(remainderShown && isRemainderNote(n)));
   // An answer that drew nothing on steep ground the engine did not remark on
   // (930 Morton Mill Rd: 28.5% mean slope, "no lot of 20000 sf fits"): the
@@ -369,6 +390,17 @@ export function SfV1Panel({
                 </dd>
               </>
             )}
+            {housing && housing.designs.length > 0 && (
+              <div className="col-span-2">
+                <HousingDesignPicker
+                  parcelId={housing.parcelId}
+                  designs={housing.designs}
+                  selectedId={housing.selectedId}
+                  fits={housing.fits}
+                  onSelect={housing.onSelect}
+                />
+              </div>
+            )}
             <dt className="text-slate-500">Land</dt>
             <dd>
               {[
@@ -378,11 +410,24 @@ export function SfV1Panel({
                 summary.imperviousPct != null ? `${summary.imperviousPct}% impervious` : null,
               ].filter(Boolean).join(' · ') || '—'}
             </dd>
-            <dt className="text-slate-500">{summary.privateDrive ? 'Private drive' : 'Street'}</dt>
-            <dd>
+            {summary.privateDrive && (
+              // a shared private drive and a new public street are different quantities (0 Delk Ave:
+              // a 300 ft lane was listed as "Private drive 0 ft", the public street length)
+              <>
+                <dt className="text-slate-500">Private drive</dt>
+                <dd data-testid="sfv1-private-drive-length">
+                  {summary.privateDrive.lengthFt != null ? `${Math.round(summary.privateDrive.lengthFt).toLocaleString()} ft` : '—'}
+                  {summary.privateDrive.laneFt != null && summary.privateDrive.easementFt != null
+                    ? ` · ${Math.round(summary.privateDrive.laneFt)} ft of pavement in a ${Math.round(summary.privateDrive.easementFt)} ft easement` : ''}
+                  {deadEndText}
+                </dd>
+              </>
+            )}
+            <dt className="text-slate-500">{summary.privateDrive ? 'New public street' : 'Street'}</dt>
+            <dd data-testid="sfv1-street-length">
               {summary.streetFt != null ? `${Math.round(summary.streetFt).toLocaleString()} ft` : '—'}
-              {summary.deadEnds != null ? ` · ${summary.deadEnds} dead end${summary.deadEnds === 1 ? '' : 's'}` : ''}
-              {summary.deadEndMaxFt != null && summary.deadEndMaxFt > 0 ? ` (max ${Math.round(summary.deadEndMaxFt)} ft)` : ''}
+              {/* the dead end is the drive's when the plan has no new public street (0 Delk Ave) */}
+              {summary.privateDrive ? '' : deadEndText}
             </dd>
             {summary.densityDuAc != null && (
               <>
@@ -431,7 +476,7 @@ export function SfV1Panel({
           {summary.lots > 0 && (
             // "All tests pass" names its scope: these checks, and not the civil work still ahead (4727 Post Rd)
             <p data-testid="sfv1-diligence" className="mt-1 text-[10.5px] leading-snug text-slate-500">
-              {summary.tests.length} check{summary.tests.length === 1 ? '' : 's'} from the district's standards. Not evaluated here: {CIVIL_DILIGENCE}.
+              {checksLine(summary.tests)} Not evaluated here: {CIVIL_DILIGENCE}.
             </p>
           )}
         </div>
@@ -445,6 +490,12 @@ export function SfV1Panel({
         <ul data-testid="sfv1-notes" className="mt-2 space-y-0.5 text-[11px] text-amber-800">
           {otherNotes.map((n, i) => <li key={i}>⚠ {n}</li>)}
         </ul>
+      )}
+
+      {deepSearch && (
+        <p className="mt-2 text-xs text-slate-600" data-testid="sfv1-deep-search" aria-live="polite">
+          {deepSearchLine(deepSearch, summary.status === 'error')}
+        </p>
       )}
 
       {competition && (

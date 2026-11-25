@@ -3,7 +3,8 @@ import { ChevronDown, ChevronRight, RotateCcw, MousePointer, MousePointer2 } fro
 import { useUIStore } from '../store/ui';
 
 interface MapControlsProps {
-  onReload: () => void;
+  /** Reloads the map's parcels. The button shows only when a reload is wired. */
+  onReload?: () => void;
   parcelStats?: {
     total: number;
     visible: number;
@@ -28,7 +29,7 @@ export default function MapControls({ onReload, parcelStats }: MapControlsProps)
   const changeFilterMode = (mode: 'all' | 'large' | 'huge') => {
     setFilterMode(mode);
     // Trigger reload after mode change
-    setTimeout(onReload, 100);
+    if (onReload) setTimeout(onReload, 100);
   };
 
   return (
@@ -237,6 +238,7 @@ export default function MapControls({ onReload, parcelStats }: MapControlsProps)
             )}
           </div>
 
+{onReload && (
           <button
             onClick={onReload}
             className="w-full bg-blue-600 text-white px-3 py-2 rounded text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
@@ -246,6 +248,7 @@ export default function MapControls({ onReload, parcelStats }: MapControlsProps)
             <RotateCcw className="w-4 h-4" />
             <span>Reload Parcels</span>
           </button>
+          )}
         </div>
       )}
     </div>

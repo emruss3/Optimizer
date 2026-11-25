@@ -1,0 +1,40 @@
+name: live-check
+
+# Opens the deployed app in a real browser and checks the parcel map on both
+# tile sources (scripts/live-check/map.mjs). Run by hand. Needs no secret: it
+# uses the public site, as a visitor would.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: the deployed app to check
+        required: true
+        default: https://optimizer-omega-three.vercel.app
+
+permissions:
+  contents: read
+
+jobs:
+  map:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Check the live map
+        env:
+          APP_URL: ${{ inputs.app_url }}
+          OUT: live-check
+        run: node scripts/live-check/map.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-check-${{ github.run_id }}
+          path: live-check/
+          retention-days: 14

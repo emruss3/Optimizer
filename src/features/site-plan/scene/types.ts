@@ -26,10 +26,15 @@ export interface SceneIdentity {
   revision: string;
   /** `parcel|scheme`: what a selection or a camera position is remembered for. */
   key: string;
+  /**
+   * Housing design chosen for this scheme in the session (`abhp:1754-00010`).
+   * Not yet part of the persisted candidate schema — see housing/index.ts save gap.
+   */
+  housingDesignId?: string | null;
 }
 
 export type FeatureRole = 'building' | 'parking' | 'drive' | 'street' | 'open-space' | 'lot' | 'other';
-export type StyleRole = 'building' | 'amenity' | 'house' | 'parking' | 'drive' | 'driveway' | 'street' | 'open-space' | 'lot' | 'other';
+export type StyleRole = 'building' | 'amenity' | 'house' | 'parking' | 'garage' | 'walk' | 'drive' | 'driveway' | 'street' | 'open-space' | 'lot' | 'other';
 
 /** Polygons of one feature in local ground feet: polygon, ring (0 is the outer, the rest are holes), point. */
 export type ScenePolygons = Pt[][][];
@@ -41,6 +46,8 @@ export interface SceneFeature {
   styleRole: StyleRole;
   name: string;
   polygons: ScenePolygons;
+  /** The element's own on-plan label (`properties.label`), as the plan view shows it, or null. */
+  label: string | null;
   /** Stalls on a parking feature, as the plan reports them. */
   stalls: number | null;
   /** The feature's area as the plan reports it, square feet. Never measured here. */
@@ -84,9 +91,30 @@ export interface SceneBuilding extends SceneFeature {
   grossSqFt: Sourced<number> | null;
   units: Sourced<number> | null;
   height: SceneHeight;
+  /** Stories at the foot of the building that are parking levels of a garage it stands over; 0 when it has none. */
+  parkingLevels: number;
   /** A point inside the footprint and clear of any court, in local feet. */
   labelPoint: Pt;
   display: BuildingDisplay;
+  /** The building's unit mix as the plan gives it, or null. Drives the floor plate on the sheet. */
+  unitMix: Array<{ type: string; count: number; avgSqft: number }> | null;
+  /**
+   * One placement identity for every view (SF adapter → scene → A-01 / section /
+   * Three.js / Cycles). Absent on legacy CubiCasa pads that only carry a plan
+   * number — those stay schematic massing with `status: 'schematic'`.
+   */
+  housing?: {
+    designId: string;
+    assetVersion: string;
+    elevation: string;
+    mirror: string;
+    rotationDeg: number;
+    parking: string;
+    status: 'placed' | 'unplaced' | 'schematic';
+    fitReason: string | null;
+    entryAnchorFt: [number, number] | null;
+    vehicleAnchorFt: [number, number] | null;
+  } | null;
 }
 
 export interface SceneContext {

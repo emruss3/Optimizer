@@ -35,6 +35,8 @@ const VIEWS = {
 
 // What each architectural style of the app is built of, in a photographer's words.
 const STYLES = {
+  infill: 'contemporary Nashville infill in clay brick and fiber-cement lap and panel siding, shingled gables and standing-seam porch roofs on homes, and low-slope roofs and punched windows on apartments',
+  'urban-brick': 'brick-led urban infill with deep punched openings, restrained stone sills, simple metal coping and slender dark metal guards',
   mansard: 'brick ground floors, lap siding and board-and-batten above in tan, blue-grey, sage green and cream, steep shingled mansard top floors with boxed dormers, black-framed windows with grids, black metal balcony railings and window boxes',
   farmhouse: 'white and dark board-and-batten siding, steep gabled roofs in dark shingles and standing-seam metal, black-framed windows, metal porch roofs on timber posts and cedar accents',
   modern: 'flat roofs, white stucco over charcoal panels, cedar accent walls, large black-framed windows without grids, glass railings and roof decks',
@@ -42,10 +44,10 @@ const STYLES = {
 };
 
 /** The instruction to the model. `view`, `product`, `stories` and `style` come from fixed lists. */
-export function buildPrompt({ view = 'aerial', product = 'houses', stories = 2, style = 'mansard' } = {}) {
+export function buildPrompt({ view = 'aerial', product = 'houses', stories = 2, style = 'infill' } = {}) {
   const v = VIEWS[view] ?? VIEWS.aerial;
   const p = PRODUCTS[product] ?? PRODUCTS.houses;
-  const s = STYLES[style] ?? STYLES.mansard;
+  const s = STYLES[style] ?? STYLES.infill;
   const n = Math.max(1, Math.min(12, Math.round(Number(stories) || 2)));
   return [
     `Turn this computer render of a proposed residential development into ${v}, photorealistic, the kind a real estate developer uses in marketing. The development is ${p}, ${n} ${n === 1 ? 'story' : 'stories'} tall.`,

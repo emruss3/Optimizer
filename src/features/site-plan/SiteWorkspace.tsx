@@ -5,13 +5,22 @@ import { SitePlannerErrorBoundary } from '../../components/ErrorBoundary';
 import type { InvestmentAnalysis, SelectedParcel } from '../../types/parcel';
 import { createFallbackParcel, isValidParcel } from '../../types/parcel';
 import { useBuildableEnvelope } from './api/useBuildableEnvelope';
+import type { HomePlacement } from './housing/placement';
+import { residentialHomes } from './housing/placement';
+import { HOME_DESIGNS } from './housing/originalDesigns';
+import {
+  HOME_DESIGNS_NONE_FIT_TITLE,
+  schemeAllowsHomeDesigns,
+  eligibleHomeDesigns,
+  typologyEligibleHomeDesigns,
+} from './housing/homeDesignsGate';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
 import type { Element, FeasibilityViolation } from '../../engine/types';
 import type { EdgeClassification } from '../../engine/setbacks';
 import { normalizeToPolygon, calculatePolygonCentroid, correctedAreaM2, buffer, intersection, polygons, areaM2 } from '../../engine/geometry';
 import { feature4326To3857, feature3857To4326 } from '../../utils/reproject';
-import { feetToMeters } from '../../engine/units';
+import { feetToMeters, METERS_PER_FOOT } from '../../engine/units';
 import { typologyToBuildingType, generateDefaultUnitMix, generateUnitMixForCount, type BuildingSpec } from '../../engine/model';
 import { placeBarsAlongEdges } from '../../engine/edgePlacement';
 import { buildBuildingFootprint } from '../../engine/buildingGeometry';
@@ -26,7 +35,7 @@ import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, permittedUs
 import { CommercialCapacityCard } from './ui/CommercialCapacityCard';
 import { fetchPlanPattern, type PlanPattern } from './api/planPattern';
 import { PlanPatternPanel } from './ui/PlanPatternPanel';
-import { generateSfSitePlan, sfPlanToElements, isSfPlanElement } from './api/generateSfPlan';
+import { generateSfSitePlan, sfPlanToElements, isSfPlanElement, isDetachedSfPlanElement } from './api/generateSfPlan';
 import {
   generateSubdivision, subdivisionToElements, subdivisionSummaryLine,
   type SubdivisionParams, type SubdivisionSummary,
@@ -35,14 +44,20 @@ import { SubdivisionPanel, schemeParams, type SubdivisionScheme } from './ui/Sub
 import {
   fetchSfV1Plan, fetchSfV1Site, fetchPadFill, fetchBfeContour, earthworkHasFlood,
   sfV1ToElements, sfV1Route, isOverride, withoutPattern,
+  fetchSfV1DeepSearch, deepSearchOpt, deepWinnerPrecedent,
   fetchSfV1Candidates, summarizeCandidates, competitionErrorText, patternPhrase,
   parcelHoles3857, lotsOnParcelHoles, chooseAutoBest, candidateOpt, RM_COMPETITION_TH_BUDGET_MS,
-  accessBanner, isNoStreetAccess,
-  type HoleOverlap, type SfV1AutoBest,
+  accessBanner, isNoStreetAccess, checkCounts,
+  type HoleOverlap, type SfV1AutoBest, type SfV1DeepProgress,
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
-import { fetchThV3Plan, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
+import {
+  applyHousingDesign,
+  designsForParcel,
+  type DesignFitResult,
+} from './housing';
+import { fetchThV3Plan, guestParkingLine, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
 import { chooseLayout, isFloodSkip, type LayoutKind } from './api/layoutChoice';
 import { LayoutChoicePanel } from './ui/LayoutChoicePanel';
 import { line2274To3857 } from './api/parcelTopo';
@@ -50,12 +65,12 @@ import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToE
 import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
-import FlagsPanel from './ui/FlagsPanel';
+import FlagsPanel, { isActionableFlag } from './ui/FlagsPanel';
 import HbuStrip from './ui/HbuStrip';
 import BuiltHeadline from './ui/BuiltHeadline';
 import ExportReport from './ui/ExportReport';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
-import { fetchMaxBuildout, type MaxBuildout } from './api/maxBuildout';
+import { fetchMaxBuildout, captureBasis, captureBasisParts, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
 import { fetchParcelTopo, topoView, TopoGrid, type ParcelTopo } from './api/parcelTopo';
 import { buildSheetAnnotations, buildSheetTitleBlock } from './api/sheetAnnotations';
@@ -80,13 +95,21 @@ import { fetchMassingProgram, type MassingProgram } from './api/massingProgram';
 import { recordPlannerFeedback } from './api/plannerFeedback';
 import ContextLineage, { resolveContextApplication, contextStateLabel, type PlanLineage } from './ui/ContextLineage';
 import { PlanBasisDisclosure, type BasisTone } from './ui/PlanBasisDisclosure';
-import { mfAccessSummary } from './api/mfAccess';
+import { accessBreak, formatGapFt, mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
+import ExportMenu from './ui/ExportMenu';
+import AuthChip from '../../components/AuthChip';
+import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
+import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
+import AccessCard from './ui/AccessCard';
+import { accessFinding, NO_DRIVE_TO_STREET, PARKING_NOT_REACHABLE } from './api/accessFinding';
+import { layoutDecisionFacts, resolveExhibitProduct } from './api/exhibitSchedule';
+import { createRequestGeneration } from './api/requestGeneration';
 import { loadSchemeDrawing } from './api/schemeDrawing';
 import { useSitePlans } from '../../hooks/useSitePlans';
 import type { SavedSitePlan } from '../../lib/sitePlanStorage';
-import { buildDrawingScene, sceneEvidence, selectionFor, type SelectionCache } from './scene/buildScene';
+import { buildDrawingScene, sceneEvidence, sceneRevision, selectionFor, type SelectionCache } from './scene/buildScene';
 import { ExhibitSheets } from './ui/ExhibitSheets';
 import { useArchStyle } from './ui/archStyle';
 import { DOCK_KEY, INSPECTOR_KEY } from './ui/workspaceLayout';
@@ -99,9 +122,24 @@ const Massing3D = React.lazy(() => import('./ui/Massing3D'));
  * posture is that nothing renders without a compiled ordinance context.
  */
 
+/** What identifies a server plan: replaying it draws the same plan. */
+interface ServerPlanState {
+  seed: number;
+  pins: MfPin[];
+  product: 'apartments' | 'townhomes';
+  /** undefined = the active context; a string = a stored one; null = the pre-context path. */
+  contextId: string | null | undefined;
+  /** The saved option this plan is, when it is one. */
+  candidateId: string | null;
+  summary: PlanSummary;
+}
+type HistoryEntry = { kind: 'local'; buildings: BuildingSpec[] } | { kind: 'server'; state: ServerPlanState };
+
 type SiteWorkspaceProps = {
   parcel: SelectedParcel;
 };
+
+const HomeStudio = React.lazy(() => import('./housing/HomeStudio'));
 
 const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const {
@@ -156,6 +194,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     try { return new URLSearchParams(window.location.search).get('drawing') === 'classic'; } catch { return false; }
   }, []);
   const [sheetsOpen, setSheetsOpen] = useState(false);
+  const [homesOpen, setHomesOpen] = useState(false);
+  const closeHomes = useCallback(() => setHomesOpen(false), []);
+  const [houseStudy, setHouseStudy] = useState<{ parcel: string; base: Element[]; study: HomePlacement } | null>(null);
+  /** Bumped when a home-design preview lands so 3D massing reframes on that house. */
+  const [homePreviewFocus, setHomePreviewFocus] = useState(0);
+  // which sheet the Export menu opened, and whether it asked for the whole set
+  const [sheetsAsk, setSheetsAsk] = useState<{ initial: 'plan' | 'view' | 'section'; printSet: boolean }>({ initial: 'plan', printSet: false });
   const [sceneSelection, setSceneSelection] = useState<SelectionCache | null>(null);
   // Exit artifact (P1-5): print-ready scheme report with a plan snapshot.
   const [exportOpen, setExportOpen] = useState(false);
@@ -178,7 +223,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // ── Design-context engine (brief Phase 1) ────────────────────────────────
   const contextOgcFid = useMemo(() => {
     const n = Number(parcel.ogc_fid);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    // a combined site (an assemblage) carries a negative id
+    return Number.isInteger(n) && n !== 0 ? n : null;
   }, [parcel.ogc_fid]);
   // Initial use is a placeholder — the workspace corrects it to the parcel's
   // highest-intensity as-of-right use unless the user picked one.
@@ -265,6 +311,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sfV1CandidatesRef = useRef<SfV1CandidatesResponse | null>(null);
   const sfV1DefaultRespRef = useRef<SfV1Response | null>(null);
   const competitionSeqRef = useRef(0);
+  // The deep search (engine g41): keeps looking after the plan is on the sheet and swaps in a plan with more lots.
+  const [sfV1Deep, setSfV1Deep] = useState<SfV1DeepProgress | null>(null);
+  useEffect(() => { setSfV1Deep(null); }, [contextOgcFid]);
   // Every massing call carries a run number; a response that comes back
   // after a newer call started, or after the parcel changed, is discarded
   // (the scope's P0.1: a delayed response from an old parcel or scheme cannot
@@ -277,6 +326,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [physicalBlockReason, setPhysicalBlockReason] = useState<string | null>(null);
   // Drawn lots lying in the parcel's holes (other owners' lots inside it: 0 Longwood Pl).
   const [sfV1HoleOverlap, setSfV1HoleOverlap] = useState<HoleOverlap | null>(null);
+  // Housing design brief (Delk cottage slice): session choice + per-lot fit reasons.
+  const [housingDesignId, setHousingDesignId] = useState<string | null>(null);
+  const [housingFits, setHousingFits] = useState<DesignFitResult[] | null>(null);
   // The competition's best on the sheet in place of the default answer, and why
   // (the default drew no lots, the same lots on a worse plan, or fewer lots).
   const [sfV1AutoBest, setSfV1AutoBest] = useState<SfV1AutoBest | null>(null);
@@ -394,6 +446,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [showSeed, setShowSeed] = useState(false);
   // Live-drag pump (dynamic site plans): drag events coalesce latest-wins
   // into preview solves (persist=false); the release commits the candidate.
+  // which plan request is the latest: a late answer never replaces a newer choice (api/requestGeneration)
+  const planRequests = useRef(createRequestGeneration()).current;
   const pendingMfRegenRef = useRef<{ pins: MfPin[]; final: boolean; dropPinIndex: number | null } | null>(null);
   const dragPinRef = useRef<{
     elementId: string;
@@ -423,18 +477,27 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // The undo unit is the worker's canonical BuildingSpec[] — restoring a
   // snapshot replays it through the worker (SET_BUILDINGS) so parking, metrics
   // and pro forma all regenerate consistently. Max 50 steps.
+  // One history for both engines: a step is either the worker's building set
+  // or the server plan's identity (seed, locked buildings, product, context),
+  // which replays to the same drawing. The user does not need to know which.
   const currentBuildingsRef = useRef<BuildingSpec[]>([]);
-  const pastRef = useRef<BuildingSpec[][]>([]);
-  const futureRef = useRef<BuildingSpec[][]>([]);
+  const pastRef = useRef<HistoryEntry[]>([]);
+  const futureRef = useRef<HistoryEntry[]>([]);
+  const serverStateRef = useRef<ServerPlanState | null>(null);
+  const [planChange, setPlanChange] = useState<PlanChange | null>(null);
+  const [lockCounts, setLockCounts] = useState({ locked: 0, free: 0 });
   const gestureActiveRef = useRef(false);
   const [historyVersion, setHistoryVersion] = useState(0);
+  const setVersionSavedRef = useRef<((v: null) => void) | null>(null);
 
   const trackBuildings = useCallback((buildings?: BuildingSpec[]) => {
     if (buildings) currentBuildingsRef.current = buildings;
   }, []);
 
   const pushHistory = useCallback(() => {
-    pastRef.current.push(structuredClone(currentBuildingsRef.current));
+    // a local edit is a new plan: an earlier "Saved as" no longer describes the sheet
+    setVersionSavedRef.current?.(null);
+    pastRef.current.push({ kind: 'local', buildings: structuredClone(currentBuildingsRef.current) });
     if (pastRef.current.length > 50) pastRef.current.shift();
     futureRef.current = [];
     setHistoryVersion(v => v + 1);
@@ -482,8 +545,37 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis, activeCandidateId]
   );
 
+  /** Save version: keep the plan on the sheet under a name, and say whether it worked. */
+  const [versionSaved, setVersionSaved] = useState<{ name: string; ok: boolean } | null>(null);
+  const [savedRenderPlan, setSavedRenderPlan] = useState<{ id: string; parcel: string; revision: string }>();
+  // the saved-plans error belongs to this save only once a save has been asked for: the hook clears it at the start of each save
+  const saveVersionAskedRef = useRef(false);
+  setVersionSavedRef.current = setVersionSaved;
+  const handleSaveVersion = useCallback((given?: string) => {
+    if (draftModeRef.current || compileBlockedRef.current) {
+      setViolations(v => [...v, {
+        code: 'draft-not-saved',
+        message: 'This plan uses default assumptions (context unavailable) — retry the context compile before saving.',
+        severity: 'warning',
+      }]);
+      return;
+    }
+    const option = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Plan';
+    const name = given?.trim() || `${option}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+    saveVersionAskedRef.current = true;
+    savePlanToDb({ parcel_id: parcelIdStr, name, config, elements, metrics, violations, investment: investmentAnalysis })
+      .then(saved => {
+        setVersionSaved({ name, ok: !!saved });
+        if (saved) setSavedRenderPlan({ id: saved.id, parcel: saved.parcel_id, revision: sceneRevision(saved.elements ?? []) });
+        // only a save that happened is a save in the feedback stream
+        if (saved) void recordPlannerFeedback(plannerCtxRef.current?.context_id, 'candidate_saved', activeCandidateId, { name, kind: 'saved_version' });
+      })
+      .catch(() => setVersionSaved({ name, ok: false }));
+  }, [savePlanToDb, parcelIdStr, config, elements, metrics, violations, investmentAnalysis, activeCandidateId, mfCandidates]);
+
   const handleLoadPlan = useCallback(
     (plan: SavedSitePlan) => {
+      setSavedRenderPlan({ id: plan.id, parcel: plan.parcel_id, revision: sceneRevision(plan.elements ?? []) });
       setPlanOutput(plan.elements ?? [], plan.metrics ?? null);
       setViolations(plan.violations ?? []);
       setInvestmentAnalysis(plan.investment ?? null);
@@ -607,6 +699,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     /** Explicit product override (candidate replays); defaults to the
      *  active product selection. */
     product?: 'apartments' | 'townhomes';
+    /** A live-drag frame: not a step in the history, not a change to report. */
+    preview?: boolean;
+    /** Whether this replaces the sheet as an undoable step. Defaults to: it was saved. */
+    undoStep?: boolean;
+    /** A replay from undo or redo: the stacks are already updated. */
+    fromHistory?: boolean;
+    /** The saved option this replay is (view, undo); a new save reports its own. */
+    candidateId?: string | null;
+    /** What the user did, for the note that says what changed. */
+    action?: string;
+    /** A replay: the figures this plan had when the user last saw it. */
+    expected?: PlanSummary;
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     serverRejectRef.current = null;
@@ -777,6 +881,47 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     mfSeedRef.current = opts.seed;
     mfPinsRef.current = resp.pins ?? [];
     if (resp.candidate_id) setActiveCandidateId(resp.candidate_id);
+    if (!opts.preview) {
+      const buildingsNow = generated.filter(el => el.type === 'building');
+      const lockedNow = buildingsNow.filter(el => el.properties?.pinned).length;
+      const summary: PlanSummary = {
+        units: serverMetrics?.totalUnits ?? null,
+        stalls: serverMetrics?.stallsProvided ?? null,
+        gsf: serverMetrics?.totalBuiltSF ?? null,
+        buildings: buildingsNow.length,
+        locked: lockedNow,
+      };
+      const before = serverStateRef.current;
+      const step = opts.undoStep ?? (opts.persist !== false);
+      if (step && before && !opts.fromHistory) {
+        pastRef.current.push({ kind: 'server', state: before });
+        if (pastRef.current.length > 50) pastRef.current.shift();
+        futureRef.current = [];
+        setHistoryVersion(v => v + 1);
+      }
+      serverStateRef.current = {
+        seed: opts.seed,
+        pins: resp.pins ?? [],
+        product: effectiveProduct,
+        // the context this plan was actually solved under, so a replay uses the same one
+        contextId: opts.contextId !== undefined ? opts.contextId : (effectiveContextId ?? undefined),
+        candidateId: resp.candidate_id ?? opts.candidateId ?? (step ? null : before?.candidateId ?? null),
+        summary,
+      };
+      setLockCounts({ locked: lockedNow, free: buildingsNow.length - lockedNow });
+      setVersionSaved(null);
+      saveVersionAskedRef.current = false;
+      // A replay is a fresh solve. If it does not match what the user saw, say so.
+      const e = opts.expected;
+      // only figures both plans report can show a difference
+      const differs = (a: number | null, b: number | null) => a != null && b != null && a !== b;
+      const redrawn = !!e && (differs(e.units, summary.units) || differs(e.stalls, summary.stalls) || differs(e.gsf, summary.gsf) || e.buildings !== summary.buildings);
+      setPlanChange(
+        redrawn && e
+          ? { action: `${opts.action ?? 'Replay'} redrew this plan and it differs from the one you saw`, before: e, after: summary }
+          : before && opts.action ? { action: opts.action, before: before.summary, after: summary } : null,
+      );
+    }
     const base = elements.filter(el => !isMfPlanElement(el) && !isSfPlanElement(el));
     setPlanOutput([...base, ...generated], serverMetrics ?? metrics);
     // The multifamily side of the layout choice is the plan last drawn here;
@@ -873,6 +1018,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       parentId: activeCandidateId,
       persist: pending.final,
       dropPinIndex: pending.dropPinIndex,
+      preview: !pending.final,
+      action: 'Moved a building',
     })
       .catch(() => undefined)
       .finally(() => {
@@ -920,6 +1067,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           seed: mfSeedRef.current + 1,
           pins: mfPinsRef.current,
           parentId: activeCandidateId,
+          action: 'New option',
         });
         if (!ok) {
           // Regeneration failure mid-session: the CURRENT plan (a real server
@@ -1308,21 +1456,100 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
   }, [setPlanOutput, trackBuildings]);
 
-  const undo = useCallback(() => {
-    const prev = pastRef.current.pop();
-    if (!prev) return;
-    futureRef.current.push(structuredClone(currentBuildingsRef.current));
-    setHistoryVersion(v => v + 1);
-    void applyBuildingSet(prev);
-  }, [applyBuildingSet]);
+  /** Put a server plan back on the sheet from its identity. Nothing is saved. */
+  const restoreServerPlan = useCallback((state: ServerPlanState, action: string): Promise<boolean> => {
+    if (mfRegenInFlightRef.current) return Promise.resolve(false);
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    if (productRef.current !== state.product) {
+      productRef.current = state.product;
+      setProduct(state.product);
+    }
+    return runServerMfPlan({
+      seed: state.seed,
+      pins: state.pins,
+      persist: false,
+      ...(state.contextId !== undefined ? { contextId: state.contextId } : {}),
+      product: state.product,
+      fromHistory: true,
+      candidateId: state.candidateId,
+      expected: state.summary,
+      action,
+    })
+      .then(ok => { if (ok) setActiveCandidateId(state.candidateId); return ok; })
+      .catch(() => false)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan]);
 
-  const redo = useCallback(() => {
-    const next = futureRef.current.pop();
-    if (!next) return;
-    pastRef.current.push(structuredClone(currentBuildingsRef.current));
-    setHistoryVersion(v => v + 1);
-    void applyBuildingSet(next);
-  }, [applyBuildingSet]);
+  /** The plan on the sheet as a history step, whichever engine drew it. */
+  const snapshotNow = useCallback((): HistoryEntry => (
+    planModeRef.current === 'mf-server' && serverStateRef.current
+      ? { kind: 'server', state: serverStateRef.current }
+      : { kind: 'local', buildings: structuredClone(currentBuildingsRef.current) }
+  ), []);
+  const applyHistoryEntry = useCallback((entry: HistoryEntry, action: string): Promise<boolean> => {
+    if (entry.kind === 'server') return restoreServerPlan(entry.state, action);
+    if (planModeRef.current === 'mf-server') planModeRef.current = 'mf';
+    return applyBuildingSet(entry.buildings).then(() => true);
+  }, [restoreServerPlan, applyBuildingSet]);
+
+  /** One step back or forward. The stacks move only once the plan is back on
+   *  the sheet: a replay that fails leaves the plan and the history as they were. */
+  const stepHistory = useCallback((from: React.MutableRefObject<HistoryEntry[]>, to: React.MutableRefObject<HistoryEntry[]>, action: string) => {
+    if (mfRegenInFlightRef.current) return;
+    const target = from.current[from.current.length - 1];
+    if (!target) return;
+    const here = snapshotNow();
+    void applyHistoryEntry(target, action).then(ok => {
+      if (ok) {
+        from.current.pop();
+        to.current.push(here);
+        setHistoryVersion(v => v + 1);
+      } else {
+        setViolations(v => [...v.filter(x => x.code !== 'history-replay'), {
+          code: 'history-replay',
+          message: `${action} did not go through: ${serverFailCauseRef.current ?? 'the plan could not be redrawn.'} The current plan is unchanged.`,
+          severity: 'warning',
+        }]);
+      }
+    });
+  }, [snapshotNow, applyHistoryEntry]);
+  const undo = useCallback(() => stepHistory(pastRef, futureRef, 'Undo'), [stepHistory]);
+  const redo = useCallback(() => stepHistory(futureRef, pastRef, 'Redo'), [stepHistory]);
+
+  /** Recalculate this design: the same option and the same locked buildings,
+   *  run again. No new saved option, no history step. */
+  const handleRecalculate = useCallback(() => {
+    if (planModeRef.current !== 'mf-server') { void handleGenerate(0); return; }
+    if (mfRegenInFlightRef.current || generationBlockedRef.current) return;
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: mfSeedRef.current, pins: mfPinsRef.current, persist: false, action: 'Recalculated' })
+      .then(ok => {
+        if (!ok) setViolations(v => [...v, { code: 'server-unreachable', message: `${serverFailCauseRef.current ?? 'The massing service did not respond.'} The current plan is unchanged.`, severity: 'warning' }]);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan, handleGenerate]);
+
+  /** Release every locked building and run the design again. An undoable step. */
+  const handleUnlockAll = useCallback(() => {
+    if (planModeRef.current !== 'mf-server' || mfRegenInFlightRef.current) return;
+    mfRegenInFlightRef.current = true;
+    setIsGenerating(true);
+    runServerMfPlan({ seed: mfSeedRef.current, pins: [], parentId: activeCandidateId, action: 'Unlocked all buildings' })
+      .catch(() => undefined)
+      .finally(() => {
+        mfRegenInFlightRef.current = false;
+        setIsGenerating(false);
+      });
+  }, [runServerMfPlan, activeCandidateId]);
 
   const handleDeleteBuildings = useCallback((ids: string[]) => {
     // Server plans: deleting a PINNED bar releases its pin and re-solves the
@@ -1551,6 +1778,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       warnings: [...answer.fails.map(f => `fails ${f}`), ...answer.notes],
       optimizationStatus: answer.generatorVersion ?? 'sf_v1',
     } as NonNullable<typeof metrics>;
+    setHousingDesignId(null);
+    setHousingFits(null);
     setPlanOutput([...base, ...drawn], answerMetrics);
     setSubdivisionSummary(null);
     setSfV1Summary(answer);
@@ -1606,12 +1835,70 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // lots; the default stays only when it draws strictly more.
       const auto = chooseAutoBest(r.data, sfV1DefaultRespRef.current);
       const seedDrawn = elementsRef.current.some(e => e.id.startsWith('sfseed-'));
+      let sheetLots = sfV1DefaultRespRef.current?.lots ?? 0;
       if (auto && r.data.best && sfV1ShownRef.current === 'loop' && !seedDrawn && renderSfV1Ref.current) {
         setSfV1AutoBest(auto);
         void renderSfV1Ref.current(r.data.best, opt, auto.requested);
+        sheetLots = Math.max(sheetLots, r.data.best.lots ?? 0);
       }
+      // under the fill scenario every run is the heavy one, so the search waits to be asked (as the comparison does)
+      if (!opt.flood) void runDeepSearch(fid, opt, seq, sheetLots);
     });
   }, []);
+
+  /** The deep search: after the comparison, the engine keeps trying layouts
+   *  (its patterns, street layouts adapted from built subdivisions, varied
+   *  settings) a few seconds per call. A plan with more lots and no code
+   *  failure replaces the one on the sheet, unless the user has since chosen
+   *  a plan themselves. A newer ask (competitionSeqRef) ends the loop. */
+  const runDeepSearch = async (fid: number, opt: SfV1Options, seq: number, sheetLots0: number): Promise<void> => {
+    const live = () => seq === competitionSeqRef.current;
+    const shownAtStart = sfV1ShownRef.current;
+    let sheetLots = sheetLots0;
+    let searchId: string | null = null;
+    let onSheet = false;
+    let precedentFrom: string | null = null;
+    let failures = 0;
+    let skipNext = false;
+    let last: SfV1DeepProgress = { done: false, triesDone: 0, triesTotal: 0, baselineLots: null, bestLots: null, onSheet: false, precedentFrom: null, stopped: false };
+    setSfV1Deep(last);
+    // the reply carries tries_total; the cap only stops a loop that makes no progress
+    for (let call = 0; call < 200; call += 1) {
+      const first = searchId == null;
+      const res = await fetchSfV1DeepSearch(fid, first ? deepSearchOpt(opt) : (skipNext ? { skip_try: 'true' } : {}), searchId);
+      if (!live()) return;
+      skipNext = false;
+      const d = res.data;
+      if (!d || d.error) {
+        failures += 1;
+        if (first || failures >= 3) { last = { ...last, stopped: true }; setSfV1Deep(last); return; }
+        skipNext = res.timedOut;
+        continue;
+      }
+      failures = 0;
+      searchId = d.search_id ?? searchId;
+      const userChose = sfV1ShownRef.current !== shownAtStart && sfV1ShownRef.current !== 'deep search';
+      const seedDrawn = elementsRef.current.some(e => e.id.startsWith('sfseed-'));
+      if (d.plan && (d.best_try ?? 0) > 0 && (d.best_lots ?? 0) > sheetLots && !userChose && !seedDrawn && renderSfV1Ref.current) {
+        await renderSfV1Ref.current(d.plan, opt, 'deep search');
+        if (!live()) return;
+        // the comparison's sentence described the plan it put on the sheet (0 Delk Ave: "draws 4 lots"
+        // over a 5-lot plan). The search line now carries the history: found N, up from M.
+        setSfV1AutoBest(null);
+        sheetLots = d.best_lots ?? sheetLots;
+        onSheet = true;
+        precedentFrom = deepWinnerPrecedent(d);
+      }
+      last = {
+        done: !!d.done, triesDone: d.tries_done ?? last.triesDone, triesTotal: d.tries_total ?? last.triesTotal,
+        baselineLots: sheetLots0, bestLots: onSheet ? sheetLots : (d.best_lots ?? null), onSheet, precedentFrom, stopped: false,
+      };
+      setSfV1Deep(last);
+      if (d.done) return;
+      if (!searchId) { last = { ...last, stopped: true }; setSfV1Deep(last); return; }
+    }
+    setSfV1Deep({ ...last, stopped: true });
+  };
 
   /**
    * Brief Phase 2: market-grounded SF lot fit, appended to the plan.
@@ -1643,7 +1930,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         ?? null;
       if (sfV1Route(zoningBase) === 'sf_v1') {
         const opt = sfV1OverrideRef.current;
+        const ticket = planRequests.begin(contextOgcFid);
         const resp = await fetchSfV1Plan(contextOgcFid, opt);
+        // answered after a newer choice, or for a parcel no longer open: the sheet is left as it is
+        if (!planRequests.isCurrent(ticket, contextOgcFid)) return;
         if (resp) {
           sfV1DefaultRespRef.current = resp;
           await renderSfV1Answer(resp, opt, 'loop');
@@ -1786,6 +2076,30 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     handleGenerateLots().catch(() => undefined);
   }, [handleGenerateLots]);
 
+  /** Housing design picker (Delk cottage): stamp design id / parking / fit onto pads for this session. */
+  const handleHousingDesignSelect = useCallback((designId: string) => {
+    const schemeKey = `${parcelIdStr}|${sfV1Shown}`;
+    // Match the sheet / envelope: ordinance setbacks from the zoning brief (RS5 → 20/5/20),
+    // not a hard-coded table that can disagree with fit reasons on the picker.
+    const hc = plannerCtx?.solver_brief?.hard_constraints;
+    const setbacks = {
+      front: rpcMetrics?.setbacks?.front ?? hc?.front_setback_ft ?? 20,
+      side: rpcMetrics?.setbacks?.side ?? hc?.side_setback_ft ?? 5,
+      rear: rpcMetrics?.setbacks?.rear ?? hc?.rear_setback_ft ?? 20,
+    };
+    const applied = applyHousingDesign({
+      parcelId: parcelIdStr,
+      schemeKey,
+      designId,
+      elements,
+      setbacks,
+    });
+    if (!applied) return;
+    setHousingDesignId(applied.design.id);
+    setHousingFits(applied.fits);
+    setPlanOutput(applied.elements, metrics);
+  }, [parcelIdStr, sfV1Shown, elements, metrics, setPlanOutput, rpcMetrics, plannerCtx]);
+
   /** "View this plan" on a row of the pattern competition: `best` and
    *  `structured` arrive whole with the competition; the default is the plan
    *  already drawn; any other row is drawn on request (opt.pattern — still by
@@ -1800,9 +2114,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     else if (raw?.best && bestRequestedOf(raw) === requested) resp = raw.best;
     else if (raw?.structured && requested === 'neighborhood') resp = raw.structured;
     setIsGeneratingLots(true);
+    const ticket = planRequests.begin(contextOgcFid);
     try {
       // the competition's own option set for the grammar (the drive carries its section)
       if (!resp) resp = await fetchSfV1Plan(contextOgcFid, candidateOpt(requested, opt));
+      // answered after a newer choice, or for a parcel no longer open: the sheet is left as it is
+      if (!planRequests.isCurrent(ticket, contextOgcFid)) return;
       if (!resp) {
         setViolations(v => [...v, {
           code: 'sfv1-candidate',
@@ -1833,7 +2150,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    */
   const renderThV3Plan = useCallback(async (): Promise<boolean> => {
     if (contextOgcFid == null) return false;
+    const ticket = planRequests.begin(contextOgcFid);
     const r = await fetchThV3Plan(contextOgcFid);
+    // answered after a newer choice, or for a parcel no longer open: the sheet is left as it is
+    if (!planRequests.isCurrent(ticket, contextOgcFid)) return false;
     if (r.error || !r.data) {
       setThV3Error(r.error ?? 'the townhome engine did not answer');
       return false;
@@ -2057,7 +2377,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         generatorVersion: seed.generator_version ?? 'sf_seed_v1',
         flags: mapped.flags,
         buildings: seed.buildings.length,
-        floors: typeof seed.metrics?.stories === 'number' ? seed.metrics.stories : null,
+        floors: typeof seed.metrics?.stories === 'number' ? seed.metrics.stories
+          : typeof (seed.metrics as { floors?: unknown } | undefined)?.floors === 'number' ? (seed.metrics as { floors: number }).floors : null,
         footprintSqft: seed.buildings.reduce(
           (s, b) => s + (typeof b.footprint_sqft === 'number' ? b.footprint_sqft : 0), 0
         ) || null,
@@ -2247,11 +2568,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const currentId = parcel.ogc_fid ?? parcel.id ?? null;
     if (lastParcelIdRef.current !== currentId) {
       lastParcelIdRef.current = currentId;
+      planRequests.invalidate();
+      setHousingDesignId(null);
+      setHousingFits(null);
       hasAutoGeneratedRef.current = false;
       setSolverReady(false);
       planModeRef.current = null;
       mfSeedRef.current = 1;
       mfPinsRef.current = [];
+      serverStateRef.current = null;
+      pastRef.current = [];
+      futureRef.current = [];
+      setHistoryVersion(v => v + 1);
+      setPlanChange(null);
+      setVersionSaved(null);
+      setLockCounts({ locked: 0, free: 0 });
       productRef.current = 'apartments';
       setProduct('apartments');
       draftModeRef.current = false;
@@ -2511,7 +2842,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // massing, not the lot fit (0 W Trinity Ln, the cohort retest: the
       // block curtained a finished zero-lot answer). It runs, under a banner.
       const byRightRoute = sfV1Route(typeof parcel.zoning === 'string' ? parcel.zoning : null) === 'sf_v1';
-      markCompileBlocked('The zoning context compile failed for this parcel.');
+      markCompileBlocked(contextOgcFid != null && contextOgcFid < 0
+        ? 'A combined site has no massing context yet.'
+        : 'The zoning context compile failed for this parcel.');
       hasAutoGeneratedRef.current = true; // no massing auto-plan may run while blocked
       planModeRef.current = null;
       setPlanBasis(byRightRoute
@@ -2703,6 +3036,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       persist: false,
       contextId: c.contextId ?? null,
       product: candidateProduct,
+      undoStep: true,
+      candidateId: c.id,
+      action: 'Opened a saved option',
     })
       .then(ok => {
         if (ok) {
@@ -2822,8 +3158,20 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   useEffect(() => {
     if (!quickMassingAvailable) setShowSeed(false);
   }, [quickMassingAvailable]);
-  const displayElements = seedViewOn && seedRender ? seedRender.elements : elements;
-  const displayBasis = seedViewOn && seedRender
+  const baseElements = seedViewOn && seedRender ? seedRender.elements : elements;
+  // Keep the study while this parcel's base plan is unchanged (same element ids + geometries).
+  // Reference equality alone drops the preview if React rebuilds the elements array without a plan change.
+  const basePlanKey = useMemo(
+    () => baseElements.map(e => `${e.id}:${e.type}:${Math.round((e.geometry?.coordinates?.[0]?.[0]?.[0] ?? 0) * 100)}`).join('|'),
+    [baseElements],
+  );
+  const houseStudyBaseKey = useMemo(
+    () => houseStudy?.base.map(e => `${e.id}:${e.type}:${Math.round((e.geometry?.coordinates?.[0]?.[0]?.[0] ?? 0) * 100)}`).join('|') ?? null,
+    [houseStudy],
+  );
+  const activeHome = houseStudy?.parcel === parcelIdStr && houseStudyBaseKey === basePlanKey ? houseStudy.study : null;
+  const displayElements = activeHome?.elements ?? baseElements;
+  const displayBasis = activeHome ? activeHome.name + ' · original home design study. ' + activeHome.basis : seedViewOn && seedRender
     ? seedRender.basis + (seedRender.inFamily ? ` · in-family: ${seedRender.inFamily}` : '')
     : planBasis;
 
@@ -2861,8 +3209,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const legacyLotCount = displayElements.filter(e => e.id.startsWith('gen-lot-')).length;
   // a by-right / lot-fit / house result on the sheet: complete in itself, whatever the massing context does
   const sfPlanOnSheet = displayElements.some(e => isSfPlanElement(e));
+  // Detached SF only — thv3 stays in isSfPlanElement for replace-on-regenerate but must not
+  // suppress townhome guest parking on the exhibit (Mt View 0 of 8).
+  const detachedSfOnSheet = displayElements.some(e => isDetachedSfPlanElement(e));
   const legacyLots = legacyLotCount > 0 ? legacyLotCount : null;
   const layoutZoningBase = plannerCtx?.context?.legal?.zoning_base ?? (typeof parcel.zoning === 'string' ? parcel.zoning : null);
+  // Detached SF stock stamps only on R/RS by-right sessions — not MF/CS unless a rezone label is set.
+  const sfStockDesigns = useMemo(
+    () => designsForParcel(parcelIdStr, { zoningBase: layoutZoningBase }),
+    [parcelIdStr, layoutZoningBase],
+  );
   const isRmLayout = sfV1Route(layoutZoningBase) === 'th' && plannerCtx?.context.typology === 'multifamily' && sfV1Competition != null;
   const layoutShown: LayoutKind | null = displayElements.some(e => isMfPlanElement(e)) ? 'multifamily'
     : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
@@ -2980,11 +3336,45 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           parcelGeometry: (parcel.geometry as import('geojson').Polygon | import('geojson').MultiPolygon | undefined) ?? null,
           envelope: envelopeMeters ?? null,
           context: neighbors,
-          schedule: seedViewOn ? null : { units: metrics?.totalUnits ?? null, stalls: metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null },
+          schedule: seedViewOn || activeHome ? null : { units: metrics?.totalUnits ?? null, stalls: metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null },
           generator: planLineage?.generatorVersion ?? null,
+          housingDesignId: activeHome?.elements.find(e=>e.id===activeHome.house)?.properties.housingDesignId ?? housingDesignId,
         })),
-    [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion],
+    [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, activeHome, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion, housingDesignId],
   );
+  // Home designs: SF / townhomes / neighborhood only, and only designs that fit a house lot.
+  // Must sit after `scene` — the studio boundary is read from the drawing scene frame.
+  const homeStudioBoundary = useMemo((): Element['geometry'] | null => {
+    if (scene?.parcel?.polygons.length !== 1) return null;
+    return {
+      type: 'Polygon',
+      coordinates: scene.parcel.polygons[0]!.map((r) => r.map((p) => scene.frame.fromFeet(p))),
+    };
+  }, [scene]);
+  const homeDesignsUi = useMemo(() => {
+    const houses = residentialHomes(baseElements);
+    if (
+      !schemeAllowsHomeDesigns({
+        layoutShown,
+        product,
+        houseCount: houses.length,
+      })
+    ) {
+      return { show: false as const, enabled: false as const, eligible: [] as typeof HOME_DESIGNS };
+    }
+    const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
+    const eligible = typed.length
+      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
+      : ([] as typeof HOME_DESIGNS);
+    // Scheme allows homes: keep the control visible; disable when nothing fits.
+    // SF stock can still open the studio when concept studies do not fit.
+    const stockOk = sfStockDesigns.length > 0;
+    return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
+  }, [baseElements, layoutShown, product, homeStudioBoundary, sfStockDesigns]);
+  useEffect(() => {
+    if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
+  }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
+
   // One selection for the plan and the 3D view, remembered for this parcel and scheme.
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
   const sceneKey = scene?.identity.key ?? null;
@@ -2994,6 +3384,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? prev
       : { key: sceneKey, ids }));
   }, [sceneKey]);
+  // the zoning height control the section draws: the record's limit, and its plane where it states one
+  const sectionHeightControl = useMemo(() => {
+    if (!plannerCtx) return null;
+    const hp = plannerContextToDesignContext(plannerCtx).heightPlane;
+    return {
+      maxHeightFt: plannerCtx.solver_brief.hard_constraints.max_height_ft ?? null,
+      plane: hp?.heightAtSetbackFt != null && hp.slopeHorizontal != null && hp.slopeVertical != null
+        ? { heightAtSetbackFt: hp.heightAtSetbackFt, slopeHorizontal: hp.slopeHorizontal, slopeVertical: hp.slopeVertical, ...(hp.law ? { law: hp.law } : {}) }
+        : null,
+    };
+  }, [plannerCtx]);
+  // a save refused for want of an account: the planner offers sign-in where the user is
+  const needsSignIn = !!versionSaved && !versionSaved.ok && saveVersionAskedRef.current && savedPlansError === SIGN_IN_REQUIRED_MSG;
+  // what the Export menu and the sheets call the scheme on screen
+  const exportSchemeName = (activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Current plan (not a saved option)';
   const sheetsTitle = useMemo(() => {
     // the site data table: the scheme's own figures, as the header states them
     const acres = mappedAcres ?? (typeof parcel.deeded_acres === 'number' ? parcel.deeded_acres : null);
@@ -3003,14 +3408,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const data: Array<{ label: string; value: string }> = [];
     if (parcel.zoning) data.push({ label: 'Zoning', value: String(parcel.zoning) });
     if (acres) data.push({ label: 'Site area', value: `${n(acres, 2)} ac` });
-    if (units) data.push({ label: sfPlanOnSheet ? 'Lots' : 'Homes', value: n(units) });
+    if (units) data.push({ label: detachedSfOnSheet ? 'Lots' : 'Homes', value: n(units) });
     if (units && acres) data.push({ label: 'Density', value: `${n(units / acres, 1)} per acre` });
-    if (!sfPlanOnSheet && metrics?.totalBuiltSF) data.push({ label: 'Gross floor area', value: `${n(metrics.totalBuiltSF)} sf` });
-    if (!sfPlanOnSheet && metrics?.achievedFAR) data.push({ label: 'Floor area ratio', value: n(metrics.achievedFAR, 2) });
-    if (!sfPlanOnSheet && metrics?.siteCoveragePct) data.push({ label: 'Building coverage', value: `${n(metrics.siteCoveragePct)}%` });
-    if (stalls) data.push({ label: 'Parking', value: `${n(stalls)} stalls${units ? ` · ${n(stalls / units, 2)} per home` : ''}` });
+    // a subdivision's count is the engine's lot count; the massing metrics carry none
+    if (!units && sfV1OnSheet && sfV1Summary) {
+      data.push({ label: 'Lots', value: n(sfV1Summary.lots) });
+      if (sfV1Summary.densityDuAc != null) data.push({ label: 'Density', value: `${n(sfV1Summary.densityDuAc, 1)} per acre` });
+    } else if (!units && thV3OnSheet && thV3Summary) {
+      data.push({ label: 'Homes', value: n(thV3Summary.homes) });
+      if (thV3Summary.homesPerAcre != null) data.push({ label: 'Density', value: `${n(thV3Summary.homesPerAcre, 1)} per acre` });
+    }
+    if (!detachedSfOnSheet && !thV3OnSheet && metrics?.totalBuiltSF) data.push({ label: 'Gross floor area', value: `${n(metrics.totalBuiltSF)} sf` });
+    if (!detachedSfOnSheet && !thV3OnSheet && metrics?.achievedFAR) data.push({ label: 'Floor area ratio', value: n(metrics.achievedFAR, 2) });
+    if (!detachedSfOnSheet && !thV3OnSheet && metrics?.siteCoveragePct) data.push({ label: 'Building coverage', value: `${n(metrics.siteCoveragePct)}%` });
+    // Townhome guest parking lives in decision rows — do not invent a total-stalls SITE DATA line.
+    if (stalls && !thV3OnSheet) data.push({ label: 'Parking', value: `${n(stalls)} stalls${units ? ` · ${n(stalls / units, 2)} per home` : ''}` });
     return { project: sheetTitle.project, subtitle: sheetTitle.subtitle, date: sheetTitle.date, notes: sheetTitle.notes, data: seedViewOn ? [] : data };
-  }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, sfPlanOnSheet, seedViewOn]);
+  }, [sheetTitle, mappedAcres, parcel.deeded_acres, parcel.zoning, metrics, detachedSfOnSheet, seedViewOn, sfV1OnSheet, sfV1Summary, thV3OnSheet, thV3Summary]);
   // The sheet's picture: the ground it shows, rendered from above from the
   // same model the 3D view draws. Loaded when a sheet first asks for it.
   const archStyle = useArchStyle();
@@ -3024,8 +3438,29 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ...(neighbors?.parcels ? { contextParcels: neighbors.parcels } : {}),
       ...(neighbors?.roads ? { contextRoads: neighbors.roads } : {}),
       treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
+      ...(topo ? { topo } : {}),
     });
-  }, [scene, displayElements, neighbors, archStyle]);
+  }, [scene, displayElements, neighbors, archStyle, topo]);
+  const readSectionGround = useCallback(async (): Promise<import('./scene/sheetSvg').SectionGround | null> => {
+    if (!scene) return null;
+    const [{ gradeMassingSite, latticeHeight }, data] = await Promise.all([import('./render3d/terrain'), sheetModelData()]);
+    const existing = data.terrain;
+    if (!existing) return null;
+    const grade = gradeMassingSite(data);
+    return {
+      at: point => {
+        const [x = 0, y = 0] = data.toLocal(scene.frame.fromFeet(point));
+        if (existing.outside(x, y) > 0) return null;
+        return {
+          existing: existing.heightAt(x, y) / METERS_PER_FOOT,
+          assumed: grade?.grading ? latticeHeight(grade.terrain, x, y) / METERS_PER_FOOT : null,
+        };
+      },
+      padsFt: new Map([...(grade?.pads ?? [])].map(([id, elevation]) => [id, elevation / METERS_PER_FOOT])),
+      source: existing.source,
+      grading: grade?.grading ?? null,
+    };
+  }, [scene, sheetModelData]);
   const renderSheetUnderlay = useCallback(async (layout: import('./scene/sheetSvg').SheetLayout, widthPx: number): Promise<string> => {
     if (!scene) throw new Error('no scene');
     const [{ renderPlanImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
@@ -3039,9 +3474,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const { requestPhotoreal, describeScene } = await import('./render3d/photoreal');
     return (await requestPhotoreal({ image, view: 'aerial', style: archStyle, ...describeScene(scene) })).image;
   }, [scene, archStyle]);
+  // true when the sheet's aerial picture stood on ground graded for it (the model says, not the survey's mere presence)
+  const [sheetGraded, setSheetGraded] = useState(false);
   const renderSheetView = useCallback(async (widthPx: number, heightPx: number): Promise<string> => {
     const [{ renderAerialImage }, data] = await Promise.all([import('./render3d/still'), sheetModelData()]);
-    return renderAerialImage({ data, widthPx, heightPx });
+    return renderAerialImage({ data, widthPx, heightPx, onGraded: setSheetGraded });
   }, [sheetModelData]);
   const contextState = resolveContextApplication({
     compiling: plannerLoading,
@@ -3050,6 +3487,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     activeContext: plannerCtx,
     lineage: planLineage,
   });
+  // the plan's floor area over the ceiling that applies to how it parks (535 Main St)
+  const capturePct = captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy)?.pct ?? null;
   const basisSummary = useMemo(() => {
     const parts: string[] = [];
     if (displayBasis) parts.push(displayBasis.split(' · ').slice(0, 2).join(' · '));
@@ -3057,8 +3496,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (metrics?.conditional && !seedViewOn) parts.push(`conditional: ${metrics.conditional}`);
     parts.push(contextStateLabel(contextState));
     if (maxBuildout && !draftMode && maxBuildout.max_gsf > 0) {
-      parts.push(`${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF upper bound`);
-      if (metrics?.totalBuiltSF) parts.push(`${Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 100)}% capture`);
+      // one claim, one denominator: a structure-parked plan is measured against the structured ceiling
+      const capture = captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy);
+      if (capture) parts.push(...captureBasisParts(capture));
+      else parts.push(`${Math.round(maxBuildout.max_gsf).toLocaleString()} GSF upper bound`);
     }
     return parts;
   }, [displayBasis, contextState, maxBuildout, draftMode, metrics, seedViewOn]);
@@ -3082,14 +3523,214 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return null;
     }
   }, [parcel?.geometry]);
-  // 2026-09-04 (Eric: "random parking, with no road to get to it"): does a
-  // drive reach the curb, and does one touch every bay?
-  const mfAccess = useMemo(() => mfAccessSummary(displayElements, parcelRing3857), [displayElements, parcelRing3857]);
+  // 2026-09-04 (Eric: "random parking, with no road to get to it") + field audit
+  // 32a264a: curb requires a street-edge-connected drive network; a bay counts
+  // as served only with a traversable trip on that network.
+  // Placeholder frontage (front_edge_is_placeholder): never use the guessed
+  // street edge as the strict curb — fall back to the parcel ring so live
+  // parcels (667574 / 408571 / Herman / W Heiman) do not false-red to
+  // NO_DRIVE_TO_STREET from placeholder geometry alone.
+  const frontageIsPlaceholder = !!plannerCtx?.solver_brief.geometry.front_edge_is_placeholder
+    || (planLineage?.flags ?? []).includes('frontage_geometry_is_placeholder_until_road_edge_upgrade');
+  const accessFlags = useMemo(
+    () => [...(planLineage?.flags ?? []), ...(plannerCtx?.solver_brief.geometry.front_edge_is_placeholder ? ['frontage_geometry_is_placeholder_until_road_edge_upgrade'] : [])],
+    [planLineage?.flags, plannerCtx],
+  );
+  const accessProbe = useMemo(
+    () => accessFinding({
+      frontage,
+      engineAccess,
+      flags: accessFlags,
+      drives: null,
+    }),
+    [frontage, engineAccess, accessFlags],
+  );
+  const streetEdgeForAccess = frontageIsPlaceholder ? null : (accessProbe?.frontageLine ?? null);
+  const mfAccess = useMemo(
+    () => mfAccessSummary(displayElements, parcelRing3857, 3, streetEdgeForAccess),
+    [displayElements, parcelRing3857, streetEdgeForAccess],
+  );
+  // Street access as a finding with a next step: the reason, the frontage it concerns, what clears it.
+  const access = useMemo(
+    () => accessFinding({
+      frontage,
+      engineAccess,
+      flags: accessFlags,
+      drives: displayElements.some(e => e.id.startsWith('mfgen-')) ? mfAccess : null,
+    }),
+    [frontage, engineAccess, accessFlags, displayElements, mfAccess],
+  );
+  const [showFrontage, setShowFrontage] = useState(false);
+  // Where the route breaks (no curb, or stranded bays): the same two points mark
+  // it on the plan and in the 3D review; gapFt is ground feet via scene.frame.
+  // Placeholder frontage: aim the red mark at the parcel ring, not the guess.
+  const routeBreak = useMemo(
+    () => ((access?.headline === NO_DRIVE_TO_STREET || access?.headline === PARKING_NOT_REACHABLE)
+      && displayElements.some(e => e.id.startsWith('mfgen-'))
+      ? accessBreak(
+        displayElements,
+        parcelRing3857,
+        frontageIsPlaceholder ? null : access.frontageLine,
+        3,
+        scene?.frame.distanceFt,
+      )
+      : null),
+    [access, displayElements, parcelRing3857, scene, frontageIsPlaceholder],
+  );
+  // Curb-reachable stalls for KPIs / headline / A-01 when access cuts striped supply.
+  const stallsUsable = useMemo(() => {
+    if (!displayElements.some(e => e.id.startsWith('mfgen-'))) return null;
+    if (mfAccess.stallsServed == null || mfAccess.stallsStriped == null) return null;
+    if (mfAccess.served >= mfAccess.bays) return null;
+    return mfAccess.stallsServed;
+  }, [displayElements, mfAccess]);
+  // Display metrics: stallsProvided stands on curb-reachable supply when known.
+  const accessAwareMetrics = useMemo(() => {
+    if (!metrics || stallsUsable == null) return metrics;
+    return { ...metrics, stallsProvided: stallsUsable };
+  }, [metrics, stallsUsable]);
+  const routeBreakLabel = routeBreak
+    ? routeBreak.gapFt != null
+      ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
+      : 'Drive stops here · no drawn connection to the street'
+    : null;
+  // the download carries the unresolved connection too: marked on the sheet and said in its notes
+  // where a car enters a parking structure, as the engine places it (the same points the 3D portals stand on)
+  const garageEntries = useMemo(
+    () => displayElements
+      .filter(e => e.type === 'parking' && e.properties?.structured === true && Array.isArray(e.properties?.garageEntries))
+      .flatMap(e => (e.properties!.garageEntries as number[][]).filter(p => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]))),
+    [displayElements],
+  );
+  // The decision figures a sheet has to carry out of the app (api/exhibitSchedule): drawn against
+  // required parking, what the floor area is a share of, the parking and residential stack, and
+  // whether a car can reach the street. They replace the single "Parking" row.
+  // Product selection (resolveExhibitProduct): townhome guest parking is chosen before detached
+  // SF suppression so Mt View 0 of 8 reaches A-01, Compare, and the layout panel.
+  const layoutDecision = useMemo(() => {
+    const garage = displayElements.find(e => e.type === 'parking' && e.properties?.structured === true);
+    const over = displayElements.find(e => e.type === 'building' && e.properties?.overGarage === true);
+    const mfOnSheet = displayElements.some(e => e.id.startsWith('mfgen-'));
+    const guest = thV3OnSheet && thV3Summary ? guestParkingLine(thV3Summary) : null;
+    const apartmentInput = {
+      units: metrics?.totalUnits ?? null,
+      stallsDrawn: metrics?.stallsDrawn ?? null,
+      stallsReported: metrics?.stallsReported ?? metrics?.stallsProvided ?? null,
+      stallsUsable,
+      stallsRequired: metrics?.stallsRequired ?? null,
+      builtGsf: metrics?.totalBuiltSF ?? null,
+      capture: captureBasis(metrics?.totalBuiltSF, maxBuildout, metrics?.parkingStrategy),
+      garageLevels: garage ? Number(garage.properties?.levels) || null : null,
+      residentialLevels: over ? Number(over.properties?.residentialLevels) || null : null,
+      routeUnresolved: !!routeBreak,
+      contextUnverified: contextState === 'unavailable',
+    };
+    // Conditional / landlocked massing has no MF routeBreak marker (that geometry is
+    // mfgen-only). Still force Street access / Context findings so the schedule does
+    // not read as a clean by-right apartment sheet.
+    const conditionalNote = metrics?.conditional ?? null;
+    const conditionalAccessUnresolved = !!conditionalNote && /easement|landlocked|no mapped street|no street/i.test(conditionalNote);
+    const conditionalInput = !mfOnSheet && !thV3OnSheet && !detachedSfOnSheet && conditionalNote
+      ? {
+          ...apartmentInput,
+          routeUnresolved: apartmentInput.routeUnresolved || conditionalAccessUnresolved,
+          contextUnverified: apartmentInput.contextUnverified || conditionalAccessUnresolved,
+        }
+      : null;
+    const product = resolveExhibitProduct({
+      seedViewOn,
+      homeStudyOn: !!activeHome,
+      apartmentOnSheet: mfOnSheet,
+      apartment: mfOnSheet ? apartmentInput : null,
+      townhomeOnSheet: thV3OnSheet && !!thV3Summary,
+      guestStalls: thV3Summary?.guestStalls ?? null,
+      guestTarget: thV3Summary?.guestTarget ?? null,
+      guestGraded: guest?.graded ?? false,
+      detachedSfOnSheet,
+      conditional: conditionalInput,
+      contextUnverified: contextState === 'unavailable',
+      revision: scene?.identity.revision ?? null,
+    });
+    return layoutDecisionFacts({
+      product,
+      builtGsf: metrics?.totalBuiltSF ?? null,
+      maxGsf: maxBuildout?.max_gsf ?? null,
+    });
+  }, [displayElements, metrics, maxBuildout, contextState, seedViewOn, activeHome, detachedSfOnSheet, thV3OnSheet, thV3Summary, routeBreak, scene?.identity.revision, stallsUsable]);
+  const sheetsTitleWithAccess = useMemo(() => {
+    const schedule = layoutDecision.rows;
+    // the one "Parking" row gives way to the decision figures, which name each count
+    const data = schedule.length ? (sheetsTitle.data ?? []).filter(r => r.label !== 'Parking') : sheetsTitle.data;
+    return {
+      ...sheetsTitle,
+      ...(activeHome ? { subtitle: activeHome.name + ' · original home design study', notes:[activeHome.basis,...(sheetsTitle.notes ?? [])] } : {}),
+      data,
+      ...(schedule.length ? { decision: schedule } : {}),
+      ...(garageEntries.length && scene ? { garageEntries: garageEntries.map(p => scene.frame.toFeet(p)) } : {}),
+      ...(routeBreak && scene
+        ? {
+            notes: [
+              routeBreak.gapFt != null
+                ? `Access unresolved: no drive on this plan reaches the street (${formatGapFt(routeBreak.gapFt)} ft short). The break is marked in red.`
+                : 'Access unresolved: no drive on this plan reaches the street. The break is marked in red.',
+              ...(sheetsTitle.notes ?? []),
+            ],
+            routeBreak: {
+              from: scene.frame.toFeet(routeBreak.from),
+              to: scene.frame.toFeet(routeBreak.to),
+              ...(routeBreak.gapFt != null ? { gapFt: routeBreak.gapFt } : {}),
+            },
+          }
+        : {}),
+    };
+  }, [sheetsTitle, routeBreak, scene, layoutDecision, garageEntries, activeHome]);
+  // What the layout comparison may say about the layout on the sheet: the same parking and floor
+  // area rows the exported sheet carries. Retained per kind so switching twice keeps both sides.
+  // Guest supply / target / basis travel as data so a generic stall count cannot stand in.
+  const layoutShownFacts = useMemo(() => ({
+    parking: layoutDecision.parking,
+    floorArea: layoutDecision.floorArea,
+    guestSupply: layoutDecision.guestSupply,
+    guestTarget: layoutDecision.guestTarget,
+    guestBasis: layoutDecision.guestBasis,
+  }), [layoutDecision]);
+  // revision of the plan on the sheet: facts stay bound to it when the comparison retains them
+  const layoutFactsRevision = layoutDecision.revision ?? scene?.identity.revision ?? null;
+  const canvasAnnotations = useMemo(() => {
+    const line = access?.frontageLine;
+    const marked = garageEntries.length
+      ? [...sheetAnnotations, ...garageEntries.map(p => ({ kind: 'entry' as const, x: p[0] as number, y: p[1] as number, text: 'Garage entry' }))]
+      : sheetAnnotations;
+    const withBreak = routeBreak && routeBreakLabel
+      ? [...marked, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: routeBreakLabel }]
+      : marked;
+    if (!showFrontage || !line || line.length < 2) return withBreak;
+    const mid = line[Math.floor(line.length / 2)] ?? line[0]!;
+    const prev = line[Math.floor(line.length / 2) - 1] ?? line[0]!;
+    return [...withBreak, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
+  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel, garageEntries]);
 
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation
   // codes, the capture — instead of scraping pixels. Production bundles
   // never ship it.
+  // Dev only: the scene handed to the offline renderer (scripts/render4k).
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const w = window as unknown as { __ppRenderJob?: unknown };
+    w.__ppRenderJob = async (opts?: { style?: string; sunKey?: string; sunHour?: number }) => {
+      if (!scene) return null;
+      const [{ buildRenderJob }, data] = await Promise.all([import('./render3d/exportJob'), sheetModelData()]);
+      if (!data) return null;
+      const { glb, job } = await buildRenderJob(data, scene, { style: archStyle, ...(opts?.sunKey ? { sunKey: opts.sunKey } : {}), ...(opts?.sunHour != null ? { sunHour: opts.sunHour } : {}), grossSf: metrics?.totalBuiltSF ?? null });
+      let bin = '';
+      const bytes = new Uint8Array(glb);
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return { glbBase64: btoa(bin), job };
+    };
+    return () => { delete w.__ppRenderJob; };
+  }, [scene, sheetModelData, archStyle, metrics?.totalBuiltSF]);
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     (window as unknown as { __planEvidence?: object }).__planEvidence = {
@@ -3219,6 +3860,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       scene: sceneEvidence(scene),
       sceneSelection: sceneSelectedIds,
       mfAccess,
+      routeBreak,
       // 2026-11-09 (the scope's P0.2): the precondition the sketched plan rests on, if any.
       conditional: metrics?.conditional ?? null,
       spOrdinance: spOrdinance ? { ordinance: spOrdinance.ordinance, caseNo: spOrdinance.caseNo } : null,
@@ -3227,7 +3869,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       tasks: {
         context: { state: plannerLoading ? 'working' : compileBlocked ? 'blocked' : spOrdinance ? 'unsupported' : plannerCtx ? 'done' : unsupportedUse ? 'unsupported' : 'none', reason: compileBlocked ?? (spOrdinance ? `sp_ordinance_not_loaded:${spOrdinance.ordinance ?? ''}` : null), ms: taskTimingsRef.current.compileMs },
         terrain: { state: topo ? 'done' : 'none', ms: null },
-        lotFit: { state: isGeneratingLots ? 'working' : sfPlanOnSheet ? 'done' : sfV1Summary?.status === 'skipped' ? 'skipped' : 'none', reason: sfV1Summary?.status === 'skipped' ? sfV1Summary.reason : null, ms: taskTimingsRef.current.lotFitMs },
+        lotFit: { state: isGeneratingLots ? 'working' : detachedSfOnSheet ? 'done' : sfV1Summary?.status === 'skipped' ? 'skipped' : 'none', reason: sfV1Summary?.status === 'skipped' ? sfV1Summary.reason : null, ms: taskTimingsRef.current.lotFitMs },
         massing: { state: isGenerating ? 'working' : serverPlanError ? 'failed' : displayElements.some(e => isMfPlanElement(e)) ? 'done' : 'none', reason: serverPlanError, ms: taskTimingsRef.current.massingMs },
       },
       taskTimingsVersion,
@@ -3254,11 +3896,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         : null,
       utilizationPct:
-        !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
-          ? Math.round((metrics.totalBuiltSF / maxBuildout.max_gsf) * 1000) / 10
-          : null,
+        !draftMode && capturePct != null ? Math.round(capturePct * 10) / 10 : null,
     };
-  }, [planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
+  }, [routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, detachedSfOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -3380,12 +4020,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         </div>
       )}
       {/* Live KPI bar — always visible, ticks during drags/slider moves */}
-      <div className="flex items-center justify-between gap-4 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+      {/* on a narrow screen the figures and the controls each take a line, so neither runs off the side */}
+      <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip
-          metrics={metrics}
+          metrics={accessAwareMetrics}
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
+          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); }}
           unverified={contextState === 'unavailable' || contextState === 'stale' ? contextStateLabel(contextState) : contextState === 'compiling' ? 'context still compiling' : null}
           empty={
             isGenerating || isGeneratingLots
@@ -3404,24 +4046,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             thV3OnSheet && thV3Summary
               ? { lots: thV3Summary.homes, densityDuAc: thV3Summary.homesPerAcre, fails: thV3Summary.requiredFails, status: 'done', label: 'Townhomes', densityLabel: 'homes / ac' }
               : sfV1Summary && !displayElements.some(e => e.id.startsWith('sfseed-'))
-              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status, tests: sfV1Summary.tests.map(t => t.id), offParcelLots: sfV1HoleOverlap?.lotsOnHoles ?? null, unplannedAcres: sfV1Summary.remainder?.acres ?? null }
+              ? { lots: sfV1Summary.lots, densityDuAc: sfV1Summary.densityDuAc, fails: sfV1Summary.fails, status: sfV1Summary.status, tests: sfV1Summary.tests.map(t => t.id), measuredOnly: checkCounts(sfV1Summary.tests).measured, offParcelLots: sfV1HoleOverlap?.lotsOnHoles ?? null, unplannedAcres: sfV1Summary.remainder?.acres ?? null }
               : legacyLots != null
               // the legacy lot generator's answer: a lot count, provisional (no code tests ran on it)
               ? { lots: legacyLots, densityDuAc: mappedAcres && mappedAcres > 0 ? Math.round((legacyLots / mappedAcres) * 100) / 100 : null, fails: [], status: 'done', legacy: true }
               : null
           }
           utilizationPct={
-            !draftMode && maxBuildout && maxBuildout.max_gsf > 0 && metrics?.totalBuiltSF
-              ? (metrics.totalBuiltSF / maxBuildout.max_gsf) * 100
-              : null
+            !draftMode ? capturePct : null
           }
         />
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 max-w-full xl:flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
             onClick={undo}
             disabled={!canUndo}
-            title={canUndo ? 'Undo (Ctrl+Z)' : 'Undo (Ctrl+Z) — applies to local-engine edits; server schemes have their history in the rail'}
+            title={canUndo ? 'Undo the last change to the plan (Ctrl+Z)' : 'Nothing to undo yet'}
             className="px-2.5 py-1.5 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Undo2 className="w-4 h-4" />
@@ -3448,6 +4088,35 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
+          {homeDesignsUi.show && (
+            <button
+              type="button"
+              data-testid="home-designs"
+              onClick={() => homeDesignsUi.enabled && setHomesOpen(true)}
+              disabled={!homeDesignsUi.enabled}
+              title={
+                homeDesignsUi.enabled
+                  ? // Parcel-level stock can enable the control even when the selected lot has none —
+                    // studio empty state covers that; do not promise fits here.
+                    'Browse buildable stock plans and concept studies for house lots on this plan'
+                  : HOME_DESIGNS_NONE_FIT_TITLE
+              }
+              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Buildable plans
+            </button>
+          )}
+          {!classicDrawing && scene && scene.buildings.length > 0 && (
+            <button
+              data-testid="view-section"
+              onClick={() => { setSheetsAsk({ initial: 'section', printSet: false }); setSheetsOpen(true); }}
+              disabled={draftMode || !!compileBlocked}
+              title="Section A–A: a schematic cut through the building, with the setbacks and the zoning height control"
+              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Section
+            </button>
+          )}
           {quickMassingAvailable && (
             <button
               data-testid="seed-toggle"
@@ -3469,43 +4138,68 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             </button>
           )}
         </div>
-        <button
-          onClick={openExport}
-          disabled={!metrics || draftMode || !!compileBlocked}
-          title={
+        <ExportMenu
+          address={parcel.address ?? parcelIdStr}
+          schemeName={exportSchemeName}
+          revision={scene?.identity.revision ?? null}
+          blocked={
             !metrics
               ? 'Generate a plan first'
               : draftMode || compileBlocked
-                ? 'Reports are only produced from context-verified plans'
-                : 'Print-ready scheme report with plan, tabulation, and solver receipts'
+                ? 'Exports are only produced from context-verified plans'
+                : null
           }
-          className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Export
-        </button>
-        {!classicDrawing && (
-          <button
-            data-testid="open-sheets"
-            onClick={() => setSheetsOpen(true)}
-            disabled={!scene || draftMode || !!compileBlocked}
-            title={
-              !scene
-                ? 'Nothing is drawn on the sheet yet'
-                : draftMode || compileBlocked
-                  ? 'Sheets are only produced from context-verified plans'
-                  : 'Exhibit sheets as vector drawings at page size: A-01 Site Plan'
-            }
-            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Sheets
-          </button>
-        )}
+          choices={[
+            ...(!classicDrawing
+              ? [
+                  { key: 'site-plan' as const, blocked: scene ? null : 'Nothing is drawn on the sheet yet', run: () => { setSheetsAsk({ initial: 'plan', printSet: false }); setSheetsOpen(true); } },
+                  {
+                    key: '3d-image' as const,
+                    blocked: scene ? null : 'Nothing is drawn on the sheet yet',
+                    run: () => {
+                      // in the 3D view: the view as it is turned now. Otherwise the aerial sheet.
+                      if (viewMode === '3d') {
+                        window.dispatchEvent(new CustomEvent('pp:save-3d-image', { detail: { fileName: `3d-view_${parcelIdStr}_rev-${scene?.identity.revision ?? 'draft'}.png` } }));
+                      } else {
+                        setSheetsAsk({ initial: 'view', printSet: false });
+                        setSheetsOpen(true);
+                      }
+                    },
+                  },
+                  { key: 'set' as const, blocked: scene ? null : 'Nothing is drawn on the sheet yet', run: () => { setSheetsAsk({ initial: 'plan', printSet: true }); setSheetsOpen(true); } },
+                ]
+              : []),
+            { key: 'report' as const, run: openExport },
+          ]}
+        />
         </div>
       </div>
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-      {!seedViewOn && <BuiltHeadline metrics={metrics} elements={elements} />}
+      {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
+        <HomeStudio
+          siteBoundary={homeStudioBoundary}
+          elements={baseElements}
+          selected={sceneSelectedIds[0] ?? null}
+          designs={homeDesignsUi.eligible}
+          stockPlans={sfStockDesigns}
+          onApplyStock={sfStockDesigns.length > 0 ? handleHousingDesignSelect : undefined}
+          onClose={closeHomes}
+          onPreview={study => {
+            setHouseStudy({ parcel: parcelIdStr, base: baseElements, study });
+            setHomesOpen(false);
+            // Concept previews land in the live 3D massing (same authored geometry as the gallery).
+            setViewMode('3d');
+            handleSceneSelection([study.house]);
+            setHomePreviewFocus(n => n + 1);
+          }}
+        />
+      </React.Suspense>}
+      {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
+        <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>
+        <button type="button" className="underline" onClick={() => { setHouseStudy(null); setHomePreviewFocus(0); }}>Return to base scheme</button></div>}
+      {!seedViewOn && <BuiltHeadline metrics={accessAwareMetrics} elements={elements} />}
       {/* 2026-09-04 (Eric, 2622 W Heiman: "difficult to see the site planner,
           there is a ton of data"): the basis line, the context lineage, the
           highest-and-best comparator and the buildout ladder fold into ONE
@@ -3559,6 +4253,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
           {isRmLayout && (
             <LayoutChoicePanel
+              // a land price typed for one parcel never carries to the next
+              key={parcelIdStr}
               choice={layoutChoice}
               competition={sfV1Competition}
               shown={layoutShown}
@@ -3570,6 +4266,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               onRetry={() => { if (contextOgcFid != null) runLayoutCompetition(contextOgcFid); }}
               thV3={thV3OnSheet ? thV3Summary : null}
               thV3Error={thV3Error}
+              shownFacts={layoutShownFacts}
+              factsRevision={layoutFactsRevision}
             />
           )}
           {planPattern && (
@@ -3615,6 +4313,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               houseDrawn={displayElements.some(e => e.id.startsWith('sfseed-'))}
               houseError={sfSeedError}
               competition={isRmLayout ? null : sfV1Competition}
+              deepSearch={isRmLayout ? null : sfV1Deep}
               shownRequested={sfV1Shown}
               onViewCandidate={(r: string) => { void handleViewSfV1Candidate(r); }}
               onRetryCompetition={handleRunCompetition}
@@ -3627,6 +4326,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               autoBest={sfV1AutoBest}
               holeOverlap={sfV1HoleOverlap}
               frontageLandlocked={noStreetAccess}
+              housing={sfStockDesigns.length > 0
+                ? {
+                    parcelId: parcelIdStr,
+                    designs: sfStockDesigns,
+                    selectedId: housingDesignId,
+                    fits: housingFits,
+                    onSelect: handleHousingDesignSelect,
+                  }
+                : null}
             />
           )}
           <ContextPanel
@@ -3656,7 +4364,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             rpcMetrics={rpcMetrics}
             status={status}
             isGenerating={isGenerating}
-            onGenerate={handleGenerate}
+            onGenerate={handleRecalculate}
             onGenerateAlternatives={handleGenerate}
             onGenerateLots={plannerCtx?.context.typology === 'multifamily' ? undefined : handleGenerateLots}
             isGeneratingLots={isGeneratingLots}
@@ -3694,17 +4402,36 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             onClick={() => setLeftRailCollapsed(c => !c)}
             title={leftRailCollapsed ? 'Show the inspector: layout, context and parameters' : 'Hide the inspector and give the drawing the room'}
             data-testid="inspector-toggle" aria-expanded={!leftRailCollapsed}
-            className={`absolute ${viewMode === '3d' ? 'top-12 left-2' : 'top-5 left-44'} z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white/95 border border-gray-200 text-xs font-medium text-gray-600 hover:text-gray-900 shadow-sm`}
+            className={`absolute ${viewMode === '3d' ? 'top-12 left-2' : 'top-2 left-36'} z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-white/95 border border-gray-200 text-xs font-medium text-gray-600 hover:text-gray-900 shadow-sm`}
           >
             {leftRailCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             {leftRailCollapsed && <span>Inspector</span>}
           </button>
-          {accessNote && !draftMode && (
-            <div
-              className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-orange-50 border border-orange-300 text-orange-800 text-xs font-medium rounded-md px-3 py-1.5 shadow-sm"
-              data-testid="landlocked-banner" data-access-type={engineAccess?.type ?? 'frontage-layer'} title={accessNote.detail ?? undefined}
-            >
-              {accessNote.text}
+          {displayElements.some(isMfPlanElement) && !seedViewOn && !draftMode && !compileBlocked && (
+            <div className={`absolute z-20 left-2 right-2 top-16 lg:right-auto ${viewMode === '3d' ? 'lg:top-12 lg:left-32' : 'lg:top-1 lg:left-[15.5rem]'}`}>
+              <PlanActions
+                busy={isGenerating}
+                onRecalculate={handleRecalculate}
+                onAnotherOption={() => { void handleGenerate(); }}
+                onSaveVersion={handleSaveVersion}
+                savedAs={(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || null}
+                suggestedName={`${(activeCandidateId && schemeNames(mfCandidates).get(activeCandidateId)) || 'Plan'}, ${new Date().toLocaleString([], { month: 'short', day: 'numeric' })}`}
+                justSaved={versionSaved?.ok ? versionSaved.name : null}
+                saveFailed={versionSaved && !versionSaved.ok
+                  ? (needsSignIn ? 'Sign in to save this plan. It stays on the sheet while you do; then press Save version again.' : ((saveVersionAskedRef.current ? savedPlansError : null) ?? 'The save did not go through. Check the connection and try again.'))
+                  : null}
+                signIn={needsSignIn ? <AuthChip /> : undefined}
+                locked={lockCounts.locked}
+                free={lockCounts.free}
+                onUnlockAll={handleUnlockAll}
+                change={planChange}
+                onDismissChange={() => setPlanChange(null)}
+              />
+            </div>
+          )}
+          {access && !draftMode && (accessNote || access.state === 'needs_verification') && (
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20" data-testid="landlocked-banner" data-access-type={engineAccess?.type ?? 'frontage-layer'} title={accessNote?.detail ?? undefined}>
+              <AccessCard finding={accessNote ? { ...access, headline: accessNote.text } : access} highlighted={showFrontage} onHighlight={setShowFrontage} />
             </div>
           )}
           {draftMode && (
@@ -3753,6 +4480,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 scene={scene}
                 selectedId={sceneSelectedIds.length === 1 ? sceneSelectedIds[0] : null}
                 onSelect={scene ? (id => handleSceneSelection(id ? [id] : [])) : undefined}
+                topo={topo}
+                accessBreak={routeBreak}
+                grossSf={seedViewOn || activeHome ? null : metrics?.totalBuiltSF}
+                savedPlanId={scene && savedRenderPlan?.parcel === scene.identity.parcelId && savedRenderPlan.revision === scene.identity.revision
+                  ? savedRenderPlan.id : undefined}
+                focusHomeId={activeHome?.house ?? null}
+                focusHomeToken={homePreviewFocus}
               />
               </React.Suspense>
             </SitePlannerErrorBoundary>
@@ -3763,7 +4497,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 suppressCurbCut={noStreetAccess}
                 neighbors={neighbors}
                 topo={showTopo ? topoCanvas : null}
-                annotations={sheetAnnotations}
+                annotations={canvasAnnotations}
                 sheet={sheetTitle}
                 scene={scene}
                 initialSelectedIds={sceneSelectedIds}
@@ -3846,13 +4580,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <div data-testid="dock" data-open={dockOpen ? 'true' : 'false'} className="mt-3 flex-shrink-0 bg-white border border-gray-200 rounded-lg flex flex-col max-h-72">
           <div className="flex items-center border-b border-gray-100 flex-shrink-0">
             {([
-              { key: 'tabulation', label: 'Tabulation', badge: null, alert: false },
+              { key: 'tabulation', label: 'Schedule', badge: null, alert: false },
               { key: 'schemes', label: 'Schemes', badge: mfCandidates.length || null, alert: false },
               {
                 key: 'flags',
-                label: 'Flags',
+                label: 'Checks',
+                // only what asks something of the user is counted: engine notes sit in the panel, uncounted
                 badge:
-                  (violations.length + (planLineage?.flags?.length ?? 0) + (solveRejected ? 1 : 0)) || null,
+                  (violations.length + (planLineage?.flags ?? []).filter(isActionableFlag).length + (solveRejected ? 1 : 0)) || null,
                 alert: violations.some(v => v.severity === 'error'),
               },
               { key: 'results', label: 'Results', badge: null, alert: false },
@@ -3922,6 +4657,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 investmentAnalysis={investmentAnalysis}
                 isGenerating={isGenerating}
                 violations={violations}
+                schemeLabel={`${exportSchemeName}${scene ? ` · revision ${scene.identity.revision}` : ''}`}
               />
             )}
             {dockTab === 'profile' && <StreetProfilePanel profiles={streetProfiles} topo={topo} />}
@@ -3941,7 +4677,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         />
       )}
       {sheetsOpen && scene && (
-        <ExhibitSheets scene={scene} title={sheetsTitle} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} photoreal={paintSheetView} look={archStyle} />
+        <ExhibitSheets scene={scene} title={sheetsTitleWithAccess} onClose={() => setSheetsOpen(false)} renderUnderlay={renderSheetUnderlay} renderView={renderSheetView} groundGraded={sheetGraded} photoreal={paintSheetView} look={archStyle} initial={sheetsAsk.initial} printSetOnOpen={sheetsAsk.printSet} schemeName={exportSchemeName} heightControl={sectionHeightControl} readSectionGround={topo && scene.buildings.length > 0 ? readSectionGround : undefined} />
       )}
       {exportOpen && (
         <ExportReport

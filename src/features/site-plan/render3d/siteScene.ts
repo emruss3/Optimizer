@@ -8,12 +8,22 @@ import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MassingData } from '../ui/massingData';
 import { convexHull, type RenderSlab, type RGBA, type Surface } from '../ui/renderModel';
+import type { ForegroundObstacle, Subject } from './shots';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
+import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
+import { carParts, carSpot, type CarSpot } from './cars';
+import { drape, gradeMassingSite, latticeHeight, lift, type Grade } from './terrain';
+import { approachCut, approachGeometry, cutGround, planCurb, streetDetails, type ApproachAnchor } from './streetDetails';
 import { Tree } from '@dgreenheck/ez-tree';
+
+/** One part of the model as it is handed to an exporter: local metres, z up. */
+export interface ModelPart { owner: string; slot: string; geometry: THREE.BufferGeometry }
+export interface ModelPlant { id: string; form: TreeForm; matrix: THREE.Matrix4 }
+export const plantId = (x: number, y: number, kind = 'tree') => `${kind}-${Math.round(x * 100)}-${Math.round(y * 100)}`;
 
 export interface SiteModel {
   root: THREE.Group;
@@ -23,6 +33,17 @@ export interface SiteModel {
   extent: number;
   /** The parcel a camera should centre on and fit: its middle (x east, y north) and the radius that holds all of it, metres. */
   focus: { x: number; y: number; radius: number };
+  /** The built part of the plan, where it is much smaller than the parcel; otherwise the parcel. */
+  built: Focus;
+  /** What a street camera needs (render3d/shots): the scheme's buildings, the neighbours that can stand in the way, and the street lines. */
+  ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]>; foreground: ForegroundObstacle[]; approaches: ApproachAnchor[] };
+  plants: ModelPlant[];
+  /** The height of the ground the model is drawn on at a point, metres: 0 everywhere on flat ground. */
+  groundAt(x: number, y: number): number;
+  /** The ground the model stands on, where the parcel has a survey (render3d/terrain): the graded surface, each building's pad, what was assumed. */
+  grade: Grade | null;
+  /** With `keepParts`: every part before merging, with the feature it belongs to and its material slot. Empty otherwise. */
+  parts: ModelPart[];
   surfaces: Surfaces;
   /** Settles when the pictures the trees are made of have arrived (or after a few seconds without them): a still waits for it. */
   ready: Promise<void>;
@@ -252,6 +273,11 @@ export interface SiteModelOptions {
   /** A lighter model of the same plan, for a device that draws on its processor
    *  (render3d/quality): the site's trees as painted cards, no shrubs, plain neighbours. */
   light?: boolean;
+  /** Keep each part with its feature and material slot, for an export (render3d/exportJob). */
+  keepParts?: boolean;
+  /** A picture for a sheet, where the reader must see at once which land is the scheme's: the
+   *  parcel line drawn on the ground, and the existing buildings as quiet pale solids. */
+  markSite?: boolean;
 }
 
 /** The style the existing houses round a site are drawn in: ordinary, and not the scheme's own. */
@@ -259,7 +285,6 @@ const NEIGHBOUR_STYLE: ArchStyle = 'heritage';
 
 const linear = (c: readonly number[]): THREE.Color => new THREE.Color().setRGB((c[0] ?? 0) / 255, (c[1] ?? 0) / 255, (c[2] ?? 0) / 255, THREE.SRGBColorSpace);
 /** A tint that may be brighter than white: a plain multiplier on what it colours. */
-const bright = (c: readonly number[]): THREE.Color => new THREE.Color((c[0] ?? 0) / 255, (c[1] ?? 0) / 255, (c[2] ?? 0) / 255);
 
 function paint(g: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry {
   const n = g.getAttribute('position').count;
@@ -283,14 +308,14 @@ function box(q: Array<[number, number]>, z0: number, h: number): THREE.BufferGeo
     uv[v * 2] = s; uv[v * 2 + 1] = t;
     v++;
   };
-  let run = 0;
   for (let i = 0; i < 4; i++) {
     const a = r[i] as [number, number], b = r[(i + 1) % 4] as [number, number];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-6;
     const nx = (b[1] - a[1]) / len, ny = -(b[0] - a[0]) / len;
+    // Project onto the wall direction so brick courses run through adjacent facade pieces.
+    const run = -ny * a[0] + nx * a[1];
     vert(a[0], a[1], z0, nx, ny, 0, run, z0); vert(b[0], b[1], z0, nx, ny, 0, run + len, z0); vert(b[0], b[1], z1, nx, ny, 0, run + len, z1);
     vert(a[0], a[1], z0, nx, ny, 0, run, z0); vert(b[0], b[1], z1, nx, ny, 0, run + len, z1); vert(a[0], a[1], z1, nx, ny, 0, run, z1);
-    run += len;
   }
   const [a, b, c, d] = r as [[number, number], [number, number], [number, number], [number, number]];
   for (const [p0, p1, p2] of [[a, b, c], [a, c, d]] as Array<Array<[number, number]>>) {
@@ -334,6 +359,54 @@ function prism(rings: number[][][], h: number): THREE.BufferGeometry | null {
   g.translate(0, 0, outer[0]?.[2] ?? 0);
   g.clearGroups();
   return g;
+}
+
+/**
+ * The gaps between parcels that are streets: for each parcel edge, a strip
+ * reaching out to the parcel that faces it, where one does within `maxM`.
+ * Edges that share a line with a neighbour, or face open land, get none.
+ */
+export function streetGaps(rings: number[][][], maxM = 32): number[][][] {
+  const parcels = rings
+    .filter(r => r.length >= 3)
+    .map(r => {
+      const xs = r.map(p => p[0] ?? 0), ys = r.map(p => p[1] ?? 0);
+      return { ring: r, minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    });
+  const owner = (x: number, y: number, skip: number): number =>
+    parcels.findIndex((q, j) => j !== skip && x >= q.minX && x <= q.maxX && y >= q.minY && y <= q.maxY && pointInPolygon(x, y, [q.ring as never]));
+  const out: number[][][] = [];
+  parcels.forEach((q, i) => {
+    const r = q.ring;
+    let area = 0;
+    for (let k = 0; k < r.length; k++) { const a = r[k]!, b = r[(k + 1) % r.length]!; area += (a[0] ?? 0) * (b[1] ?? 0) - (b[0] ?? 0) * (a[1] ?? 0); }
+    const sign = area > 0 ? 1 : -1;
+    for (let k = 0; k < r.length; k++) {
+      const a = r[k]!, b = r[(k + 1) % r.length]!;
+      const ax = a[0] ?? 0, ay = a[1] ?? 0, bx = b[0] ?? 0, by = b[1] ?? 0;
+      const len = Math.hypot(bx - ax, by - ay);
+      if (len < 3) continue;
+      // outward normal of the edge
+      const nx = (sign * (by - ay)) / len, ny = (-sign * (bx - ax)) / len;
+      let reach = 0;
+      for (const t of [0.25, 0.5, 0.75]) {
+        const mx = ax + (bx - ax) * t, my = ay + (by - ay) * t;
+        // a neighbour right against the edge: a lot line, not a street
+        if (owner(mx + nx * 2, my + ny * 2, i) >= 0) continue;
+        for (let d = 6; d <= maxM; d += 2) {
+          const facing = owner(mx + nx * d, my + ny * d, i);
+          // each gap is paved once, from the parcel listed first
+          if (facing >= 0) { if (facing > i) reach = Math.max(reach, d); break; }
+        }
+      }
+      if (reach > 0) {
+        // run on past both ends by the street's width, so crossings are paved too; parcels are drawn over it
+        const ux = ((bx - ax) / len) * reach, uy = ((by - ay) / len) * reach;
+        out.push([[ax - ux, ay - uy], [bx + ux, by + uy], [bx + ux + nx * reach, by + uy + ny * reach], [ax - ux + nx * reach, ay - uy + ny * reach]]);
+      }
+    }
+  });
+  return out;
 }
 
 /** A flat, convex polygon in space, with texture coordinates in metres along its first edge. */
@@ -427,10 +500,45 @@ const SITE: Record<string, { surface: Surface; color: RGBA }> = {
   parking: { surface: 'asphalt', color: [140, 140, 142, 255] },
   'parking-bay': { surface: 'asphalt', color: [140, 140, 142, 255] },
   driveway: { surface: 'concrete', color: [206, 202, 192, 255] },
+  walk: { surface: 'concrete', color: [196, 190, 176, 255] },
   greenspace: { surface: 'grass', color: [122, 142, 94, 255] },
+  pond: { surface: 'water', color: [87, 134, 142, 255] },
 };
-const LAWN: RGBA = [130, 148, 100, 255];
+const LAWN: RGBA = [146, 154, 111, 255];
 const WALK: RGBA = [214, 210, 200, 255];
+const HAZARD_COLORS: Record<NonNullable<MassingData['polygons'][number]['hazard']>, RGBA> = {
+  wetland: [140, 235, 218, 255], floodplain: [156, 199, 247, 255], floodway: [120, 175, 239, 255], slope: [236, 194, 123, 255],
+};
+
+/** Low crowns of sedges and rushes mark the recorded wetland edge in presentation views. */
+function wetlandPlants(polygon: number[][][], heightAt: (x: number, y: number) => number, id: string): THREE.BufferGeometry | null {
+  const ring = polygon[0] ?? [];
+  const xs = ring.map(p => p[0] ?? 0), ys = ring.map(p => p[1] ?? 0);
+  if (xs.length < 4) return null;
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), width = Math.max(...xs) - x0, depth = Math.max(...ys) - y0;
+  let seed = hashId(id);
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const positions: number[] = [], uv: number[] = [];
+  const count = Math.min(450, Math.ceil(width * depth / 2.8));
+  for (let i = 0; i < count; i++) {
+    const x = x0 + random() * width, y = y0 + random() * depth;
+    if (!pointInPolygon(x, y, polygon)) continue;
+    const z = heightAt(x, y) + 0.25;
+    for (let blade = 0; blade < 7; blade++) {
+      const theta = random() * Math.PI * 2, dx = Math.cos(theta), dy = Math.sin(theta);
+      const w = 0.024 + random() * 0.025, h = 0.26 + random() * 0.52, bend = 0.06 + random() * 0.22;
+      const a = [x - dy * w, y + dx * w, z], b = [x + dy * w, y - dx * w, z], c = [x + dx * bend, y + dy * bend, z + h];
+      positions.push(...a, ...b, ...c, ...b, ...a, ...c);
+      uv.push(0, 0, 1, 0, 0.5, 1, 1, 0, 0, 0, 0.5, 1);
+    }
+  }
+  if (!positions.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 /** Build the model. `data` is what the massing view already computes. */
 export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): SiteModel {
@@ -441,27 +549,84 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const root = new THREE.Group();
   root.rotation.x = -Math.PI / 2;          // z up in the model, y up on the stage
   const bins = new Map<string, THREE.BufferGeometry[]>();
-  const put = (key: string, g: THREE.BufferGeometry | null, color: readonly number[]) => {
+  // For an export (render3d/exportJob) each part is also kept with the feature it belongs to and
+  // the material slot it takes, before the parts of a slot are merged for drawing.
+  let owner = 'ground';
+  const parts: ModelPart[] = [];
+  const plants: ModelPlant[] = [];
+  // The ground. Where the parcel has a survey the model stands on it: graded where the work is
+  // (render3d/terrain), each building level on its pad. A building, a neighbour's building and a
+  // car are raised whole; every other part is laid over the ground point by point.
+  const grade = gradeMassingSite(data);
+  const laid = grade?.terrain;
+  // the live view lays its parts on a coarser lattice than a still does: the survey is sampled every
+  // 6 m, so nothing of the ground is lost, and the view opens sooner
+  const lattice = 6;
+  const groundAt = (x: number, y: number) => (laid ? latticeHeight(laid, x, y, lattice) : 0);
+  const approaches: ApproachAnchor[] = [];
+  const cuts = data.slabs.flatMap(s => {
+    const cut = s.approach && approachCut(s.approach);
+    return cut ? [cut] : [];
+  });
+  const apronCuts = data.slabs.flatMap(s => {
+    const cut = s.approach?.kind === 'apron' && approachCut(s.approach);
+    return cut ? [cut] : [];
+  });
+  /** What a whole piece is raised by, keyed by its owner. */
+  const seat = new Map<string, number>();
+  if (grade) for (const [id, z] of grade.pads) seat.set(`building:${id}`, z);
+  const put = (key: string, g: THREE.BufferGeometry | null, color: readonly number[], worldZ = false) => {
     if (!g) return;
     const list = bins.get(key) ?? [];
-    list.push(paint(g.index ? g.toNonIndexed() : g, linear(color)));
-    bins.set(key, list);
+    let painted = paint(g.index ? g.toNonIndexed() : g, linear(color));
+    if (laid && !worldZ) {
+      const dz = seat.get(owner);
+      const placed = dz != null ? lift(painted, dz) : drape(painted, laid, lattice);
+      painted.dispose();
+      painted = placed;
+    }
+    if (cuts.length && (owner === 'ground' || key === 'grass|flat' || owner.startsWith('driveway:'))) {
+      const clipped = cutGround(painted, owner.startsWith('driveway:') ? apronCuts : cuts);
+      if (clipped !== painted) painted.dispose();
+      painted = clipped;
+      if (!painted.getAttribute('position').count) { painted.dispose(); return; }
+    }
+    if (opts.keepParts) {
+      parts.push({ owner, slot: key.split('|')[0] ?? 'plain', geometry: painted });
+    } else {
+      list.push(painted);
+      bins.set(key, list);
+    }
   };
 
   // ground: a wide plate that runs out into the haze, then the neighbourhood on it
   const real = !opts.clayContext && !opts.review;
+  const paved = real ? data.polygons.flatMap(p => {
+    if (p.building || !p.kind || !SITE[p.kind] || p.kind === 'walk' || p.kind === 'greenspace') return [];
+    const ring = p.polygon[0] ?? [];
+    if (ring.length < 3) return [];
+    const xs = ring.map(q => q[0] ?? 0), ys = ring.map(q => q[1] ?? 0);
+    return [{ rings: p.polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }];
+  }) : [];
+  const pavedAt = (x: number, y: number) => paved.some(p => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings));
   const reach = Math.max(1600, data.extent * 16);
   put('plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
-  // Public streets. The record gives the neighbouring parcels, and often no street lines: what lies
-  // between parcels is right of way. A road-coloured plate under them shows it, so the streets read
-  // even where no line was sent. Where lines were sent they are drawn over it.
+  // Public streets. The record gives the neighbouring parcels, and often no street lines: a gap
+  // between two parcels is right of way. A road-coloured strip is laid across each such gap, so
+  // the streets read even where no line was sent. Open land beside a parcel is not a street: a
+  // strip is laid only where another parcel faces the edge within a street's width.
+  owner = 'streets';
   if (!opts.noContext) {
-    const corners: Array<[number, number]> = [];
-    for (const c of data.contextPolygons) if (c.elevation < 1) for (const p of c.polygon[0] ?? []) corners.push([p[0] ?? 0, p[1] ?? 0]);
-    const hull = corners.length >= 3 ? convexHull(corners) : [];
-    if (hull.length >= 3) put(opts.review || opts.clayContext ? 'plain|flat' : 'asphalt|flat', plane(hull.map(p => [p[0], p[1], -0.005])), opts.review || opts.clayContext ? [176, 178, 180, 255] : [120, 120, 122, 255]);
+    const streetColor = opts.review || opts.clayContext ? [176, 178, 180, 255] : [120, 120, 122, 255];
+    const streetKey = opts.review || opts.clayContext ? 'plain|flat' : 'asphalt|flat';
+    for (const q of streetGaps([
+      ...data.contextPolygons.filter(c => c.elevation < 1).map(c => c.polygon[0] ?? []),
+      ...(data.lawn[0]?.polygon[0] ? [data.lawn[0].polygon[0]] : []),
+    ])) put(streetKey, plane(q.map(p => [p[0] ?? 0, p[1] ?? 0, -0.005])), streetColor);
   }
   const neighbours: Array<{ ring: number[][]; minX: number; minY: number; maxX: number; maxY: number }> = [];
+  // every tree that stands in the model, as [x, y, crown radius]: a camera keeps them out of its line of sight
+  const standing: Array<[number, number, number]> = data.trees.map(t => [t.position[0] ?? 0, t.position[1] ?? 0, t.radiusM ?? 2.8]);
   // how far from the middle of the site a neighbour is still drawn with its windows and roof
   const detailReach = Math.max(110, data.extent * 0.95);
   const FAR_WALLS: RGBA[] = [[206, 196, 176, 255], [186, 180, 170, 255], [150, 104, 88, 255], [198, 192, 184, 255], [164, 170, 172, 255], [214, 206, 188, 255]];
@@ -470,7 +635,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     data.contextPolygons.forEach((c, n) => {
       const ring = c.polygon[0];
       if (!ring) return;
+      owner = c.elevation < 1 ? 'context-parcels' : `context-building:${n}`;
       const flat = ring.map(p => [p[0] ?? 0, p[1] ?? 0]);
+      // a neighbour's building stands at the lowest ground under it, so it never floats
+      if (laid && c.elevation >= 1) seat.set(owner, Math.min(...flat.map(p => laid.heightAt(p[0] ?? 0, p[1] ?? 0))));
       if (c.elevation < 1) {
         put('grass|flat', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.03), real ? [126, 144, 98, 255] : [170, 184, 142, 255]);
         return;
@@ -486,10 +654,16 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
         put('plain|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), [238, 235, 228, 255]);
         return;
       }
-      // far from the site, and everywhere on a device that draws on its processor, a neighbour
-      // is its footprint at its height under a dark roof
+      if (opts.markSite) {
+        // existing buildings step back: only the scheme is in its materials
+        put('plain|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), [226, 224, 218, 255]);
+        return;
+      }
+      // The immediate neighbours establish scale and street context. Farther
+      // away, a simpler footprint and roof keeps the model responsive.
       const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-      if (opts.light || Math.max(Math.abs(cx), Math.abs(cy)) > detailReach) {
+      const reach = opts.light ? 68 : detailReach;
+      if (Math.max(Math.abs(cx), Math.abs(cy)) > reach) {
         const wall = FAR_WALLS[hashId(`existing-${n}`) % FAR_WALLS.length] ?? [196, 190, 182, 255];
         put(`${wall[0] === 150 ? 'brick' : 'siding'}|solid`, prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], c.elevation), wall);
         put('shingle|solid', prism([flat.map(p => [p[0] ?? 0, p[1] ?? 0, c.elevation])], 0.4), [84, 82, 84, 255]);
@@ -517,21 +691,34 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       for (const w of large.glass) put('glass|sheet', plane(w.polygon), w.color);
     });
   }
-  for (const r of data.roads) {
-    put('concrete|flat', ribbon(r.path, 13.4, 0.05), WALK);
+  for (const [index, r] of data.roads.entries()) {
+    owner = `street:${r.id ?? index}`;
+    put(real ? 'grass|flat' : 'concrete|flat', ribbon(r.path, 13.4, 0.05), real ? LAWN : WALK);
     put('grass|flat', ribbon(r.path, 10.6, 0.09), [130, 148, 100, 255]);
     put('asphalt|flat', ribbon(r.path, 7.3, 0.13), [112, 112, 114, 255]);
-    put('plain|flat', ribbon(r.path, 0.14, 0.15), [214, 176, 72, 255]);
+    if (real) for (const part of streetDetails(r.path, pavedAt)) {
+      owner = `street:${r.id ?? index}:${part.part}`;
+      put(part.part === 'joint' ? 'plain|flat' : 'concrete|solid', part.geometry, part.color);
+    }
   }
 
   // the site
+  owner = 'site';
   for (const l of data.lawn) {
     const ring = l.polygon[0];
     // in review the parcel is lighter than the land round it, so there is no doubt which one it is
     if (ring) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), opts.review ? [214, 224, 170, 255] : LAWN);
+    // the parcel line, on the ground: a pale band over a dark one, so it reads on grass and on pavement
+    if (ring && opts.markSite) {
+      const line = [...ring, ring[0] ?? []].map(p => [p[0] ?? 0, p[1] ?? 0]);
+      const w = Math.max(0.9, Math.min(3, data.extent / 140));
+      put('plain|flat', ribbon(line, w * 1.9, 0.44), [40, 44, 48, 255]);
+      put('plain|flat', ribbon(line, w, 0.47), [252, 248, 236, 255]);
+    }
   }
   // a subdivision's lots: each yard its own shade of lawn, and a board fence round the back of it.
   // Illustration: the plan draws a lot line, not a fence.
+  const fences: Array<[[number, number], [number, number]]> = [];
   if (data.lots.length && !opts.review) {
     const pads = data.polygons.filter(p => p.building).map(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
     const paved: Array<[number, number]> = data.polygons.filter(p => !p.building && SITE[p.kind ?? ''] && SITE[p.kind ?? '']?.surface !== 'grass').flatMap(p => (p.polygon[0] ?? []).map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]));
@@ -539,6 +726,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const FENCE: RGBA = [156, 132, 104, 255];
     const built = new Set<string>();
     data.lots.forEach((lot, i) => {
+      owner = `lot:${i + 1}`;
       const ring = lot.map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]);
       const t = 0.94 + ((i * 37) % 13) / 100;
       put('grass|flat', prism([ring.map(q => [q[0], q[1], 0])], 0.19), [LAWN[0] * t, LAWN[1] * (t + ((i * 11) % 5 - 2) / 100), LAWN[2] * t, 255]);
@@ -563,12 +751,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
           const key = `${Math.round(mx * 2)},${Math.round(my * 2)}`;
           if (built.has(key)) continue;
           built.add(key);
+          fences.push([p0, p1]);
           put('wood|solid', prism([[[p0[0] + nx, p0[1] + ny, 0.17], [p1[0] + nx, p1[1] + ny, 0.17], [p1[0] - nx, p1[1] - ny, 0.17], [p0[0] - nx, p0[1] - ny, 0.17]]], 1.75), FENCE);
         }
       }
     });
   }
-  for (const w of data.walks) {
+  for (const [index, w] of data.walks.entries()) {
+    owner = `walk:${w.id ?? index}`;
     put('concrete|flat', ribbon(w.path, w.widthM, 0.21), WALK);
     if (w.strip) put('grass|flat', ribbon(w.path, w.widthM / 2, 0.25), LAWN);
   }
@@ -576,31 +766,97 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (p.building) continue;
     const m = SITE[p.kind ?? ''];
     if (!m) continue;
+    if (p.hazard && opts.review) {
+      owner = `hazard:${p.id ?? p.hazard}`;
+      put('site-hatch|flat', prism(p.polygon.map(r => r.map(q => [q[0] ?? 0, q[1] ?? 0, 0])), 0.41), HAZARD_COLORS[p.hazard]);
+      continue;
+    }
+    if (p.hazard === 'wetland') {
+      owner = `wetland:${p.id ?? p.hazard}`;
+      put('grass|flat', prism(p.polygon.map(r => r.map(q => [q[0] ?? 0, q[1] ?? 0, 0])), 0.235), [100, 111, 71, 255]);
+      put('plain|sheet', wetlandPlants(p.polygon, groundAt, owner), [122, 129, 71, 255], true);
+      continue;
+    }
+    owner = `${p.kind === 'driveway' ? 'driveway' : 'pavement'}:${p.id ?? p.kind ?? 'other'}`;
     put(`${m.surface}|flat`, prism(p.polygon.map(r => r.map(q => [q[0] ?? 0, q[1] ?? 0, 0])), m.surface === 'grass' ? 0.27 : 0.3), m.color);
   }
   // in review the edges of the streets and drives are drawn in amber: the access is what is being checked
-  for (const c of data.curbs) put(opts.review ? 'plain|flat' : 'concrete|flat', ribbon(c.path, opts.review ? 0.45 : 0.2, 0.36), opts.review ? [234, 138, 30, 255] : [226, 223, 214, 255]);
+  for (const [index, c] of data.curbs.entries()) {
+    owner = `curb:${c.id ?? index}`;
+    if (real) put('concrete|solid', planCurb(c.path, pavedAt), [206, 198, 183, 255]);
+    else if (!opts.review) put('concrete|flat', ribbon(c.path, 0.2, 0.36), [226, 223, 214, 255]);
+    // the access is a labelled overlay of the review view only, never part of the rendering
+    if (opts.review) put('plain|flat', ribbon(c.path, 0.45, 0.43), [234, 138, 30, 255]);
+  }
   // and the parcel line and the buildable envelope are drawn on the ground
   if (opts.review) for (const g of data.groundPaths) put('plain|flat', ribbon(g.path, Math.max(0.5, g.widthM * 1.1), 0.42), g.color);
+  owner = 'stripes';
   for (const s of data.stripes) put('plain|flat', ribbon(s.path, 0.12, 0.33), [244, 244, 240, 255]);
 
   // buildings: walls and roofs in their materials, glass apart
-  for (const s of data.slabs) put(`${s.surface ?? 'plain'}|solid`, prism(s.polygon, s.elevation), s.color);
-  for (const f of data.roofs) put(`${f.surface ?? 'plain'}|sheet`, plane(f.polygon), f.color);
-  for (const w of data.windows) put('glass|sheet', plane(w.polygon), w.color);
-  for (const c of data.cars) put(c.elevation > 0.6 ? 'paint|solid' : 'glass|solid', prism(c.polygon, c.elevation), c.color);
+  const approachCounts = new Map<string, number>();
+  for (const s of data.slabs) {
+    owner = `building:${s.id}`;
+    if (!s.approach) {
+      put(`${s.surface ?? 'plain'}|solid`, prism(s.polygon, s.elevation), s.color);
+      continue;
+    }
+    const count = (approachCounts.get(s.id) ?? 0) + 1;
+    approachCounts.set(s.id, count);
+    owner = `approach:${s.id}:${count}`;
+    const detail = approachGeometry(owner, s.id, s.approach, grade?.pads.get(s.id) ?? 0, groundAt);
+    approaches.push(detail.anchor);
+    put('concrete|solid', detail.concrete, s.color, true);
+    put('plain|flat', detail.joints, [114, 108, 97, 255], true);
+  }
+  for (const f of data.roofs) { owner = `building:${f.id}`; put(`${f.surface ?? 'plain'}|sheet`, plane(f.polygon), f.color); }
+  for (const w of data.windows) {
+    owner = `building:${w.id}`;
+    put(w.clear ? 'glazing|sheet' : 'glass|sheet', plane(w.polygon), w.color);
+  }
+  // a plain foundation: the foot of each building's walls carried a little below its pad
+  if (grade) {
+    for (const sl of data.slabs as RenderSlab[]) {
+      const ring = sl.polygon[0];
+      const pad = grade.pads.get(String(sl.id));
+      if (pad == null || !ring || ring.length < 3 || (ring[0]?.[2] ?? 0) > 0.05 || sl.elevation < 1.5 || sl.part === 'detail') continue;
+      owner = `plinth:${sl.id}`;
+      seat.set(owner, pad - 0.6);
+      put('concrete|solid', prism([ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], 0.6), [150, 148, 142, 255]);
+    }
+  }
+  const detailedCars = real && !opts.light && data.cars.length <= 160;
+  const parked: CarSpot[] = [];
+  const carFallback = new THREE.Group();
+  const carKey = (key: string) => detailedCars ? `${key}|car` : key;
+  const foreground: ForegroundObstacle[] = opts.review ? [] : data.shrubs.map(([x, y, r]) => [x, y, r * 1.7]);
+  // The body footprint sets the car's placement. Use the shaped car on both
+  // viewing tiers, and swap in the detailed model where available.
+  data.cars.forEach((c, i) => {
+    if (c.elevation <= 0.6) return;
+    const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${i}`));
+    if (!spot) return;
+    owner = `car:${i}`;
+    const datum = groundAt(spot.x, spot.y);
+    if (laid) seat.set(owner, datum);
+    for (const part of carParts(spot)) put(carKey(part.key), part.geometry, part.color);
+    foreground.push([spot.x, spot.y, Math.hypot(spot.length, spot.width) / 2]);
+    if (detailedCars) parked.push({ ...spot, z: spot.z + datum });
+  });
 
   lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
   for (const [key, list] of bins) {
-    const [kind, mode] = key.split('|') as [string, string];
+    const [kind, mode, batch] = key.split('|');
     const merged = mergeGeometries(list, false);
     list.forEach(g => g.dispose());
     if (!merged) continue;
-    let material = kind === 'glass' ? surfaces.glass() : kind === 'paint' ? surfaces.paint() : surfaces.get(kind as Surface);
+    let material = kind === 'glass' || kind === 'glazing' ? surfaces.glass(kind === 'glazing') : kind === 'paint' ? surfaces.paint() : surfaces.get(kind as Surface);
     const see = kind === 'railing' || kind === 'glassrail';
     if (mode === 'sheet' && !see) {
       const single = material as THREE.MeshStandardMaterial, both = material.clone() as THREE.MeshStandardMaterial;
       both.side = THREE.DoubleSide;
+      both.onBeforeCompile = single.onBeforeCompile;
+      both.customProgramCacheKey = single.customProgramCacheKey;
       material = both;
       // the two-sided copy takes the photographed surface when the one it was copied from does
       void Promise.all(surfaces.pending).then(() => {
@@ -611,12 +867,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       });
     }
     const mesh = new THREE.Mesh(merged, material);
-    mesh.castShadow = !see && (mode === 'solid' || mode === 'sheet');
-    if (see) mesh.renderOrder = 2;
+    mesh.castShadow = kind !== 'glassrail' && kind !== 'glazing' && (mode === 'solid' || mode === 'sheet');
+    if (kind === 'glazing' || see) mesh.userData.noOcclusion = true;
+    if (kind === 'glassrail') mesh.renderOrder = 2;
     mesh.receiveShadow = true;
     mesh.name = key;
-    root.add(mesh);
+    (batch === 'car' ? carFallback : root).add(mesh);
   }
+  if (carFallback.children.length) root.add(carFallback);
 
   lap('parts merged');
   // planting: a few grown trees (ez-tree), each placed many times, turned and
@@ -624,28 +882,46 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // crown stands in.
   const opacity = opts.canopyOpacity ?? 1;
   const kinds = ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
-  const cardsOnly = !!opts.light && typeof document !== 'undefined';
-  const bushes = cardsOnly ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
+  const plantBudget = opts.light ? 48 : Infinity;
+  const bushes = opts.review ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
   // the leaves and bark are pictures that arrive after the trees are grown
   const waits: Array<Promise<unknown>> = [...kinds, ...bushes].flatMap(t => [arrived((t.leaf as THREE.MeshStandardMaterial).map), arrived((t.bark as THREE.MeshStandardMaterial).map)]);
+  let disposed = false;
+  if (parked.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(parked)).then(group => {
+    if (disposed) {
+      group.children.forEach(child => (child as THREE.InstancedMesh).geometry.dispose());
+      return;
+    }
+    root.remove(carFallback);
+    carFallback.children.forEach(child => (child as THREE.Mesh).geometry.dispose());
+    root.add(group);
+    root.updateMatrixWorld(true);
+  }).catch(err => { console.warn('[render] detailed vehicles could not load.', err); }));
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
-  const place = (forms: TreeForm[], items: Array<{ x: number; y: number; r: number; tint?: readonly number[] }>, z: number, shadows = true) => {
+  const place = (forms: TreeForm[], items: Array<{ x: number; y: number; r: number; tint?: readonly number[] }>, z: number, kind = 'tree') => {
     forms.forEach((form, k) => {
-      const mine = items.filter((_, i) => i % forms.length === k);
+      const mine = items.filter(t => hashId(plantId(t.x, t.y, kind)) % forms.length === k);
       if (!mine.length) return;
       const wood = new THREE.InstancedMesh(form.wood, form.bark, mine.length);
       const leaves = new THREE.InstancedMesh(form.leaves, form.leaf, mine.length);
       mine.forEach((t, i) => {
-        const sc = (t.r / form.radius) * (0.92 + ((i * 37) % 17) / 100);
-        q.setFromAxisAngle(up, (i * 2.399 + k) % (Math.PI * 2));
+        const id = plantId(t.x, t.y, kind), seed = hashId(id);
+        const sc = (t.r / form.radius) * (0.92 + (seed % 17) / 100);
+        q.setFromAxisAngle(up, ((seed % 3600) * Math.PI) / 1800);
         m4.compose(new THREE.Vector3(t.x, t.y, z), q, new THREE.Vector3(sc, sc, sc));
+        if (opts.keepParts) {
+          const matrix = m4.clone();
+          matrix.elements[14] = z + groundAt(t.x, t.y);
+          plants.push({ id, form, matrix });
+        }
         wood.setMatrixAt(i, m4);
         leaves.setMatrixAt(i, m4);
         if (t.tint) leaves.setColorAt(i, linear(t.tint));
       });
-      wood.castShadow = leaves.castShadow = shadows;
-      wood.receiveShadow = leaves.receiveShadow = shadows;
+      wood.castShadow = leaves.castShadow = true;
+      wood.receiveShadow = leaves.receiveShadow = true;
       leaves.customDepthMaterial = form.leafDepth;
+      wood.userData.standsOnGround = leaves.userData.standsOnGround = true;
       root.add(wood, leaves);
     });
   };
@@ -653,8 +929,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // planted this way everywhere, and the site's own trees too on a device that draws on its processor.
   let sat: Array<{ form: TreeForm; picture: THREE.DataTexture }> | null = null;
   const sitters = () => (sat ??= kinds.flatMap(form => { const made = portrait(form); if (made) waits.push(made.painted); return made ? [{ form, picture: made.picture }] : []; }));
-  // cards are lit as flat ground is, which under a low sun is less than a crown catches: the tints make up for it
-  const TINTS: Array<readonly number[]> = [[255, 255, 255], [214, 236, 204], [232, 232, 200], [196, 226, 196], [236, 244, 216], [204, 222, 190], [182, 214, 182]].map(c => c.map(v => v * 1.12));
+  const TINTS: Array<readonly number[]> = [[229, 233, 213], [207, 224, 197], [222, 219, 187], [182, 207, 170], [212, 223, 194], [195, 212, 183], [175, 199, 162]];
+  const distance = ([x, y]: [number, number, number]) => Math.hypot(x, y);
   const plant = (spots: Array<[number, number, number]>, name: string, shadows: boolean) => {
     const all = sitters();
     all.forEach(({ form, picture }, k) => {
@@ -665,7 +941,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
         const sc = ((r * 1.25) / form.radius) * (0.9 + ((i * 37) % 21) / 100);
         q.setFromAxisAngle(up, (i * 2.399 + k) % (Math.PI * 2));
         mesh.setMatrixAt(i, m4.compose(new THREE.Vector3(x, y, 0.02), q, new THREE.Vector3(sc, sc, sc * (0.92 + ((i * 13) % 17) / 100))));
-        mesh.setColorAt(i, bright((i * 31) % 100 < 2 ? [300, 250, 170] : TINTS[(i * 7) % TINTS.length] ?? [280, 280, 280]));
+        mesh.setColorAt(i, linear((i * 31) % 100 < 2 ? [238, 205, 144] : TINTS[(i * 7) % TINTS.length] ?? TINTS[0]!));
       });
       mesh.castShadow = shadows;
       mesh.receiveShadow = false;
@@ -673,18 +949,23 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       // a card is mostly air: the occlusion pass, which would read it as a wall, leaves it out
       mesh.userData.noOcclusion = true;
       mesh.name = name;
+      mesh.userData.standsOnGround = true;
       root.add(mesh);
     });
   };
   if (opts.review) {
     // no planting in review: nothing stands between the reader and the proposal
-  } else if (kinds.length && cardsOnly && sitters().length) {
-    plant(data.trees.map(t => [t.position[0], t.position[1], (t.radiusM ?? 2.8) * 1.12]), 'site-trees', true);
   } else if (kinds.length) {
-    // no two trees on a street are the same green
+    // Keep the proposal's nearest crowns volumetric at either quality.
     const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
-    place(kinds, data.trees.map((t, i) => ({ x: t.position[0], y: t.position[1], r: (t.radiusM ?? 2.8) * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
-    if (bushes.length) place(bushes, data.shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25);
+    const ranked = standing.length > plantBudget && sitters().length ? [...standing].sort((a, b) => distance(a) - distance(b)) : standing;
+    const detail = ranked === standing ? standing : ranked.slice(0, plantBudget);
+    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
+    if (ranked !== standing) plant(ranked.slice(plantBudget).map(([x, y, r]) => [x, y, r * 1.12]), 'site-trees', true);
+    if (bushes.length) {
+      const shrubs = opts.light && data.shrubs.length > 144 ? [...data.shrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : data.shrubs;
+      place(bushes, shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25, 'shrub');
+    }
   } else {
     const crownG = crown();
     const leavesM = surfaces.foliage(opacity) as THREE.MeshStandardMaterial;
@@ -698,6 +979,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       canopy.setColorAt(i, linear([100, 140, 70]));
     });
     canopy.castShadow = true;
+    canopy.userData.standsOnGround = true;
     root.add(canopy);
   }
 
@@ -788,13 +1070,21 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       wood.castShadow = shadows;
       wood.receiveShadow = false;
       wood.name = name;
+      wood.userData.standsOnGround = true;
       root.add(wood);
     };
     // the surrounding trees are portraits of the site's own, on crossed cards; where a portrait
     // cannot be painted (no leaf picture), lumpy crowns stand in
-    const nearby = scatter(0, half * 4, 12, 0.62, opts.light ? 2200 : 4500), beyond = scatter(half * 4, half * 13, 22, 0.7, opts.light ? 5000 : 11000);
+    const nearby = scatter(0, half * 4, 12, 0.62, 2200);
+    standing.push(...nearby);
+    const beyond = scatter(half * 4, half * 13, 22, 0.7, opts.light ? 5000 : 11000);
     if (sitters().length) {
-      plant(nearby, 'surrounding-trees', true);
+      const detailRadius = Math.min(135, Math.max(65, half * 2));
+      const foreground = nearby.filter(p => distance(p) < detailRadius)
+        .sort((a, b) => distance(a) - distance(b)).slice(0, opts.light ? 28 : 56);
+      const nearSet = new Set(foreground);
+      place(kinds, foreground.map(([x, y, r]) => ({ x, y, r, tint: [221, 230, 205] })), 0.02);
+      plant(nearby.filter(p => !nearSet.has(p)), 'surrounding-trees', true);
       plant(beyond, 'far-trees', false);
     } else {
       stand(nearby.filter((_, i) => i % 2 === 0), canopy([[0, 0, 0, 1], [0.58, 0.2, 0.06, 0.68], [-0.46, 0.36, -0.04, 0.64], [0.05, -0.55, 0.1, 0.6]], 1), 'surrounding-trees', true);
@@ -808,6 +1098,41 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const held = outline.length >= 3 ? outline : [[-data.extent / 2, -data.extent / 2], [data.extent / 2, data.extent / 2]] as Array<[number, number]>;
   const fx = (Math.min(...held.map(p => p[0])) + Math.max(...held.map(p => p[0]))) / 2, fy = (Math.min(...held.map(p => p[1])) + Math.max(...held.map(p => p[1]))) / 2;
   const focus = { x: fx, y: fy, radius: Math.max(15, ...held.map(p => Math.hypot(p[0] - fx, p[1] - fy))) };
+  // what a picture of the scheme centres on (scene/builtFocus): the buildings or their densest group on a large parcel
+  const byBuilding = new Map<string, Array<[number, number]>>();
+  const tops = new Map<string, number>();
+  const roofs = new Map<string, number>();
+  for (const sl of data.slabs as RenderSlab[]) {
+    const top = (sl.polygon[0]?.[0]?.[2] ?? 0) + sl.elevation;
+    roofs.set(sl.id, Math.max(roofs.get(sl.id) ?? 0, top));
+    if (sl.part === 'detail') continue;
+    const list = byBuilding.get(sl.id) ?? [];
+    for (const p of sl.polygon[0] ?? []) list.push([p[0] ?? 0, p[1] ?? 0]);
+    byBuilding.set(sl.id, list);
+    tops.set(sl.id, Math.max(tops.get(sl.id) ?? 0, top));
+  }
+  for (const roof of data.roofs) {
+    const top = Math.max(...roof.polygon.map(p => p[2] ?? 0));
+    roofs.set(roof.id, Math.max(roofs.get(roof.id) ?? 0, top));
+  }
+  const detached = new Set(data.polygons.filter(p => p.detached).map(p => p.id));
+  const arrivals = new Map(approaches.filter(a => a.kind === 'walk' && a.facing).map(a => [a.building, a.facing]));
+  const ground = {
+    subjects: [...byBuilding.entries()].map(([id, pts]) => ({
+      id: String(id), points: convexHull(pts), height: tops.get(id) ?? 3,
+      roofHeight: roofs.get(id) ?? 3, base: grade?.pads.get(String(id)) ?? 0,
+      ...(detached.has(id) && arrivals.get(id) ? { facing: arrivals.get(id)! } : {}),
+    })),
+    obstacles: [...neighbours.map(n => n.ring), ...fences],
+    roads: [
+      ...data.roads.map(r => r.path),
+      ...data.polygons.flatMap(p => p.kind && ['street', 'drive', 'circulation', 'parking-aisle'].includes(p.kind) ? p.polygon.slice(0, 1) : []),
+    ],
+    trees: opts.review ? [] : standing,
+    foreground,
+    approaches,
+  };
+  const built = builtFocus(focus, [...byBuilding.values()]);
   // picking: one unseen solid a building
   const pickGroup = new THREE.Group();
   pickGroup.visible = false;
@@ -815,7 +1140,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const s of data.slabs as RenderSlab[]) {
     if (s.part === 'detail') continue;
     const g = prism(s.polygon, s.elevation);
-    if (g) byId.set(s.id, [...(byId.get(s.id) ?? []), g]);
+    if (!g) continue;
+    const list = byId.get(s.id);
+    if (list) list.push(g);
+    else byId.set(s.id, [g]);
   }
   const pick: THREE.Mesh[] = [];
   for (const [id, list] of byId) {
@@ -828,6 +1156,26 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     pick.push(mesh);
   }
   root.add(pickGroup);
+  // everything placed many times (trees, shrubs, the wooded surroundings) stands on the ground where it is;
+  // the unseen solid a building is picked by rises with its pad
+  if (laid) {
+    const mm4 = new THREE.Matrix4();
+    root.traverse(o => {
+      const inst = o as THREE.InstancedMesh;
+      // only what was marked as standing on the ground (trees, shrubs, the woods), and only when it hangs
+      // straight off the root: anything else placed many times is seated by the part that made it
+      if (!inst.isInstancedMesh || !inst.userData.standsOnGround || inst.parent !== root) return;
+      for (let i = 0; i < inst.count; i++) {
+        inst.getMatrixAt(i, mm4);
+        const e = mm4.elements;
+        e[14] = (e[14] ?? 0) + groundAt(e[12] ?? 0, e[13] ?? 0);
+        inst.setMatrixAt(i, mm4);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      inst.computeBoundingSphere();
+    });
+    for (const mesh of pick) mesh.position.z = grade?.pads.get(String(mesh.userData.id)) ?? 0;
+  }
   root.updateMatrixWorld(true);
   lap('done');
 
@@ -836,9 +1184,16 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     pick,
     extent: Math.max(20, data.extent / 2),
     focus,
+    built,
+    ground,
+    plants,
+    grade,
+    groundAt,
+    parts,
     surfaces,
     ready: Promise.all(waits).then(() => Promise.all(surfaces.pending)).then(() => undefined),
     dispose() {
+      disposed = true;
       root.traverse(o => {
         const mesh = o as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const rpcMock = vi.fn();
 vi.mock('../../../lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) => rpcMock(...a) } }));
 
-import { thV3ToElements, thV3Status, fetchThV3Plan, clearThV3Cache, canvasPolygons, type ThV3Response } from './thV3Plan';
+import { thV3ToElements, thV3Status, guestParkingLine, fetchThV3Plan, clearThV3Cache, canvasPolygons, type ThV3Response } from './thV3Plan';
 import { validatePlanElements } from '../../../engine/validatePlan';
 
 // EPSG:4326 boxes near Nashville: 20 x 40-ft homes ~ 0.0000678 deg of lon x 0.00011 deg of lat
@@ -147,5 +147,23 @@ describe('fetchThV3Plan (the drawing of the competition\'s townhome candidate)',
     await new Promise(res => setTimeout(res, 0));
     const again = await fetchThV3Plan(660125);
     expect(again.data?.pattern).toBe('mews');
+  });
+});
+
+describe('guest parking: a target is not a requirement (Mt View, audit 2026-11-22)', () => {
+  const tests = [{ id: 'access.connection', ok: true, kind: 'required' }, { id: 'alley.load', ok: true, kind: 'scored' }];
+
+  it('says the shortfall and that the engine does not test it', () => {
+    const g = guestParkingLine({ guestStalls: 0, guestTarget: 8, tests });
+    expect(g).toEqual({ text: "0 of 8 stalls · 8 short · a target of the engine, not one of its tests", short: true, graded: false });
+  });
+
+  it('says graded only when the engine carries a guest-parking test', () => {
+    const g = guestParkingLine({ guestStalls: 8, guestTarget: 8, tests: [...tests, { id: 'parking.guest_min', ok: true, kind: 'required' }] });
+    expect(g).toEqual({ text: '8 of 8 stalls · graded by the engine', short: false, graded: true });
+  });
+
+  it('says nothing when the engine reports no guest supply', () => {
+    expect(guestParkingLine({ guestStalls: null, guestTarget: 8, tests })).toBeNull();
   });
 });

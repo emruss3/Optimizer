@@ -10,7 +10,11 @@ import type { Element } from '../../../engine/types';
 import { TopoGrid, line2274To3857, point2274To3857, stationLabel } from './parcelTopo';
 
 export interface SheetAnnotation {
-  kind: 'station' | 'spot' | 'label' | 'radius';
+  kind: 'station' | 'spot' | 'label' | 'radius' | 'highlight' | 'gap' | 'entry';
+  /** entry: where a car enters a parking structure, as the engine places it: a marker at (x, y) with `text`.
+   *  gap: a missing connection, drawn dashed between the two ends of `line` with a leader to `text`.
+   *  highlight: the line to draw attention to, canvas frame; `text` labels it at (x, y) */
+  line?: number[][];
   /** canvas frame (EPSG:3857 metres) */
   x: number;
   y: number;

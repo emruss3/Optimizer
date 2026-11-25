@@ -104,6 +104,10 @@ export interface WindowSpec {
   sill?: Mat | null | undefined;
   /** A planter under the sill, in flower. */
   planter?: boolean | undefined;
+  /** Fit glazing and a shaded window interior into the full-detail frame. */
+  glazed?: boolean;
+  /** Depth of the interior, behind an actual opening in the exterior wall. */
+  interiorDepth?: number;
 }
 
 export interface Architecture {
@@ -122,6 +126,10 @@ const PLANTER = mat(52, 50, 48);
 const MULCH = mat(98, 76, 58);
 const LAMP_DARK = mat(36, 36, 40);
 const LAMP_GLOW = mat(255, 232, 176);
+const WINDOW_INTERIORS = [mat(96, 91, 82), mat(81, 86, 87), mat(112, 105, 94)];
+const ROLLER_SHADE = mat(168, 162, 148);
+const GARAGE_VOID = mat(34, 36, 40);
+const GARAGE_CONCRETE = mat(172, 170, 164, 'concrete');
 
 export class Kit {
   slabs: RenderSlab[] = [];
@@ -131,12 +139,29 @@ export class Kit {
   readonly seed: number;
   /** Draw openings plainly: for a model so large that every bar of every window would weigh it down. */
   lite = false;
+  /**
+   * What stands in the way of an opening at s along a wall, at height z: 'blank' where the wall
+   * looks straight at another wall a few feet off, or stands against one, so no window belongs
+   * there; 'garage' where the story behind it is a parking level, which gets an open grille and
+   * not a window. Unset, every opening is drawn.
+   */
+  shut: ((w: Wall, s: number, z: number) => 'blank' | 'garage' | null) | null = null;
   constructor(readonly id: string, readonly label: string) { this.seed = hashId(id); }
 
+  /**
+   * One bay of a parking level, from s0 to s1 along a wall and z0 to z1: a concrete face with a
+   * long open strip above a solid spandrel, the way a parking deck reads from the street.
+   */
+  garageBay(w: Wall, s0: number, s1: number, z0: number, z1: number): void {
+    if (s1 - s0 < 0.6 || z1 - z0 < 1.6) return;
+    this.box(w, s0, s1, 0, 0.26, z0, z1 - z0, GARAGE_CONCRETE);
+    this.panel(w, s0 + 0.12, s1 - 0.12, z0 + 1.1, z1 - 0.45, 0.29, GARAGE_VOID);
+  }
+
   /** A solid on a footprint ring, from z0 up by h. */
-  prism(ring: V2[], z0: number, h: number, m: Mat, part: RenderSlab['part'] = 'detail'): void {
+  prism(ring: V2[], z0: number, h: number, m: Mat, part: RenderSlab['part'] = 'detail', approach?: RenderSlab['approach']): void {
     if (h <= 0.001 || ring.length < 3) return;
-    this.slabs.push({ id: this.id, building: true, polygon: [ring.map(p => [p[0], p[1], z0])], elevation: h, color: m.color, surface: m.surface, part, label: this.label });
+    this.slabs.push({ id: this.id, building: true, polygon: [ring.map(p => [p[0], p[1], z0])], elevation: h, color: m.color, surface: m.surface, part, label: this.label, ...(approach ? { approach } : {}) });
   }
   /** A whole footprint, courts kept, from z0 up by h. */
   mass(rings: number[][][], z0: number, h: number, m: Mat, part: RenderSlab['part']): void {
@@ -149,20 +174,41 @@ export class Kit {
     if (s1 - s0 < 0.01 || hi - lo < 0.004) return;
     this.prism([on(w, s0, lo), on(w, s1, lo), on(w, s1, hi), on(w, s0, hi)], z0, h, m, part);
   }
+
+  /** The renderer seats the two ends independently on the building and pavement. */
+  approach(w: Wall, s: number, d0: number, d1: number, width: number, threshold: number, kind: 'walk' | 'apron', material: Mat, pavement = 0.3): void {
+    if (d1 <= d0) return;
+    this.approachBetween(on(w, s, d0), on(w, s, d1), width, threshold, kind, material, pavement, w.n);
+  }
+
+  approachBetween(start: V2, end: V2, width: number, threshold: number, kind: 'walk' | 'apron', material: Mat, pavement: number, facing?: V2): void {
+    const dx = end[0] - start[0], dy = end[1] - start[1], distance = Math.hypot(dx, dy);
+    if (distance < 0.18 || width < 0.4) return;
+    const px = (-dy * width) / (2 * distance), py = (dx * width) / (2 * distance);
+    const edges: V2[] = [[start[0] + px, start[1] + py], [start[0] - px, start[1] - py], [end[0] - px, end[1] - py], [end[0] + px, end[1] + py]];
+    this.prism(edges, 0, threshold, material, 'detail', { start, end, width, threshold, pavement, kind, ...(facing ? { facing } : {}) });
+  }
   /** A flat upright panel on a wall, d out from it. */
   panel(w: Wall, s0: number, s1: number, z0: number, z1: number, d: number, m: Mat): void {
     if (s1 - s0 < 0.005 || z1 - z0 < 0.005) return;
     const p0 = on(w, s0, d), p1 = on(w, s1, d);
     this.flats.push({ id: this.id, polygon: [[p0[0], p0[1], z0], [p1[0], p1[1], z0], [p1[0], p1[1], z1], [p0[0], p0[1], z1]], color: m.color, surface: m.surface });
   }
+  /** A shallow room behind an opening, with a ceiling, floor and side returns. */
+  recess(w: Wall, a: number, b: number, z0: number, z1: number, front: number, back: number, wall: Mat, floor: Mat): void {
+    const point = (s: number, d: number, z: number) => [...on(w, s, d), z];
+    this.panel(w, a, b, z0, z1, back, wall);
+    for (const s of [a, b]) this.flat([point(s, front, z0), point(s, back, z0), point(s, back, z1), point(s, front, z1)], wall);
+    for (const z of [z0, z1]) this.flat([point(a, front, z), point(b, front, z), point(b, back, z), point(a, back, z)], floor);
+  }
   /** A pane of glass on a wall. */
-  pane(w: Wall, s0: number, s1: number, z0: number, z1: number, d: number): void {
+  pane(w: Wall, s0: number, s1: number, z0: number, z1: number, d: number, clear = false): void {
     if (s1 - s0 < 0.02 || z1 - z0 < 0.02) return;
     const p0 = on(w, s0, d), p1 = on(w, s1, d);
     // most rooms are dark behind the glass; a few have their blinds down
     const h = hashId(`${Math.round(p0[0] * 10)},${Math.round(p0[1] * 10)},${Math.round(z0 * 10)}`) % 100;
     const color: RGBA = h < 10 ? [156, 158, 150, 255] : h < 22 ? [70, 84, 96, 255] : h < 60 ? GLASS : [20, 30, 42, 255];
-    this.glass.push({ id: this.id, polygon: [[p0[0], p0[1], z0], [p1[0], p1[1], z0], [p1[0], p1[1], z1], [p0[0], p0[1], z1]], color });
+    this.glass.push({ id: this.id, polygon: [[p0[0], p0[1], z0], [p1[0], p1[1], z0], [p1[0], p1[1], z1], [p0[0], p0[1], z1]], color, ...(clear ? { clear } : {}) });
   }
   /** Any flat polygon in space. */
   flat(points: number[][], m: Mat): void {
@@ -180,22 +226,41 @@ export class Kit {
   window(w: Wall, s: number, width: number, z0: number, z1: number, o: WindowSpec, d = 0): void {
     const a = s - width / 2, b = s + width / 2;
     if (width < 0.3 || z1 - z0 < 0.3) return;
+    const shut = this.shut?.(w, s, z0) ?? null;
+    if (shut === 'blank') return;
+    // a parking level carries no windows: the generator draws its open bays (garageBay)
+    if (shut === 'garage') return;
     if (this.lite) {
       this.panel(w, a - 0.05, b + 0.05, z0 - 0.05, z1 + 0.05, d + 0.02, o.frame);
       this.pane(w, a, b, z0, z1, d + 0.04);
       return;
     }
-    const f = 0.055, p = 0.075;
+    // The frame stands 4 inches proud of the glass, so the opening has a reveal and casts its own
+    // shadow. Its head is a drip cap a little wider and deeper than the jambs, and its foot is a
+    // sill that sheds water past the wall: the two lines a real window draws on a facade.
+    const f = 0.055, p = 0.11;
     if (o.casing) this.panel(w, a - 0.11, b + 0.11, z0 - 0.1, z1 + 0.13, d + 0.015, o.casing);
-    this.box(w, a, b, d, d + p, z1 - f, f, o.frame);
-    this.box(w, a, b, d, d + p, z0, f, o.frame);
+    this.box(w, a - 0.03, b + 0.03, d, d + p + 0.04, z1 - f, f + 0.025, o.frame);
+    this.box(w, a - 0.05, b + 0.05, d, d + p + 0.055, z0 - 0.02, f + 0.02, o.sill ?? o.frame);
     this.box(w, a, a + f, d, d + p, z0 + f, z1 - z0 - 2 * f, o.frame);
     this.box(w, b - f, b, d, d + p, z0 + f, z1 - z0 - 2 * f, o.frame);
-    this.pane(w, a + f, b - f, z0 + f, z1 - f, d + 0.02);
+    const paneDepth = d + (o.glazed ? 0.085 : 0.02);
+    const barDepth = d + (o.glazed ? 0.102 : 0.045);
+    if (o.glazed) {
+      // The glass, shade and interior sit at three different depths in the jamb.
+      const seed = hashId(`${this.seed}|${w.a}|${s.toFixed(2)}|${z0.toFixed(2)}`);
+      const backing = pick(WINDOW_INTERIORS, seed);
+      if (o.interiorDepth) this.recess(w, a + f, b - f, z0 + f, z1 - f, d + 0.008, d - o.interiorDepth, backing, tone(backing, 0.9));
+      else this.panel(w, a + f, b - f, z0 + f, z1 - f, d + 0.008, backing);
+      if (seed % 4 === 0) {
+        const shadeBottom = z1 - f - (z1 - z0 - 2 * f) * (0.35 + (seed % 7) * 0.075);
+        this.panel(w, a + f, b - f, shadeBottom, z1 - f, d + 0.037, ROLLER_SHADE);
+      }
+    }
+    this.pane(w, a + f, b - f, z0 + f, z1 - f, paneDepth, o.glazed);
     const [cols, rows] = o.grid ?? [1, 1];
-    for (let c = 1; c < cols; c++) { const x = a + (width * c) / cols; this.panel(w, x - 0.017, x + 0.017, z0 + f, z1 - f, d + 0.045, o.frame); }
-    for (let r = 1; r < rows; r++) { const z = z0 + ((z1 - z0) * r) / rows; this.panel(w, a + f, b - f, z - 0.017, z + 0.017, d + 0.045, o.frame); }
-    if (o.sill) this.box(w, a - 0.08, b + 0.08, d, d + 0.12, z0 - 0.06, 0.06, o.sill);
+    for (let c = 1; c < cols; c++) { const x = a + (width * c) / cols; this.panel(w, x - 0.017, x + 0.017, z0 + f, z1 - f, barDepth, o.frame); }
+    for (let r = 1; r < rows; r++) { const z = z0 + ((z1 - z0) * r) / rows; this.panel(w, a + f, b - f, z - 0.017, z + 0.017, barDepth, o.frame); }
     if (o.planter) {
       this.box(w, a + 0.04, b - 0.04, d, d + 0.26, z0 - 0.32, 0.22, PLANTER);
       this.box(w, a + 0.07, b - 0.07, d + 0.03, d + 0.23, z0 - 0.1, 0.13, pick(FLOWERS, this.seed >>> 3));
@@ -205,11 +270,18 @@ export class Kit {
   /** A door: frame, leaf, and where asked a light in the leaf, a sidelight and a transom. */
   door(w: Wall, s: number, width: number, z0: number, h: number, o: { frame: Mat; leaf: Mat; lite?: boolean; sidelight?: number; transom?: boolean }, d = 0): void {
     const side = o.sidelight ?? 0, a = s - width / 2, b = s + width / 2;
+    if (this.shut?.(w, s, z0)) return;
     const top = z0 + h + (o.transom ? 0.42 : 0), f = 0.06, p = 0.08;
     this.box(w, a - f, b + side + f, d, d + p, top, f, o.frame);
     this.box(w, a - f, a, d, d + p, z0, top - z0, o.frame);
     this.box(w, b + side, b + side + f, d, d + p, z0, top - z0, o.frame);
     this.panel(w, a, b, z0, z0 + h, d + 0.03, o.leaf);
+    if (!this.lite && width >= 0.75) {
+      this.box(w, a - 0.025, b + 0.02, d - 0.03, d + 0.14, z0 - 0.019, 0.019, CONCRETE);
+      const latch = b - 0.13;
+      this.box(w, latch - 0.025, latch + 0.025, d + 0.029, d + 0.045, z0 + 0.91, 0.11, o.frame);
+      this.box(w, latch - 0.085, latch + 0.025, d + 0.055, d + 0.085, z0 + 0.968, 0.023, o.frame);
+    }
     if (o.lite) this.pane(w, a + width * 0.2, b - width * 0.2, z0 + h * 0.55, z0 + h - 0.18, d + 0.04);
     if (side > 0) {
       this.box(w, b, b + 0.05, d, d + p, z0, h, o.frame);
@@ -239,14 +311,29 @@ export class Kit {
   /** A balustrade along a wall line: thin bars, or glass, under a top rail. */
   rail(w: Wall, s0: number, s1: number, d: number, z: number, kind: 'bars' | 'glass', m: Mat, h = 1.05): void {
     if (s1 - s0 < 0.1) return;
-    const p0 = on(w, s0, d), p1 = on(w, s1, d);
-    this.flats.push({ id: this.id, polygon: [[p0[0], p0[1], z + 0.06], [p1[0], p1[1], z + 0.06], [p1[0], p1[1], z + h - 0.03], [p0[0], p0[1], z + h - 0.03]], color: m.color, surface: kind === 'bars' ? 'railing' : 'glassrail' });
+    if (kind === 'bars' && !this.lite) {
+      const steel: Mat = { ...m, surface: 'metalwork' };
+      const posts = Math.ceil((s1 - s0) / 1.45);
+      const bars = Math.ceil((s1 - s0) / 0.113);
+      for (let i = 0; i <= posts; i++) {
+        const s = s0 + (s1 - s0) * i / posts;
+        this.box(w, s - 0.023, s + 0.023, d - 0.022, d + 0.022, z, h - 0.03, steel);
+      }
+      for (let i = 1; i < bars; i++) {
+        const s = s0 + (s1 - s0) * i / bars;
+        this.box(w, s - 0.008, s + 0.008, d - 0.009, d + 0.009, z + 0.06, h - 0.09, steel);
+      }
+    } else {
+      const p0 = on(w, s0, d), p1 = on(w, s1, d);
+      this.flats.push({ id: this.id, polygon: [[p0[0], p0[1], z + 0.06], [p1[0], p1[1], z + 0.06], [p1[0], p1[1], z + h - 0.03], [p0[0], p0[1], z + h - 0.03]], color: m.color, surface: kind === 'bars' ? 'railing' : 'glassrail' });
+    }
     this.box(w, s0, s1, d - 0.025, d + 0.025, z + h - 0.04, 0.045, m);
     if (kind === 'bars') this.box(w, s0, s1, d - 0.02, d + 0.02, z + 0.05, 0.03, m);
   }
 
   /** A balcony: a slab out from the wall and a balustrade on its three open sides. */
   balcony(w: Wall, s0: number, s1: number, depth: number, z: number, o: { slab: Mat; rail: 'bars' | 'glass'; railMat: Mat }): void {
+    if (this.shut?.(w, (s0 + s1) / 2, z)) return;
     this.box(w, s0, s1, 0, depth, z - 0.18, 0.18, o.slab);
     this.rail(w, s0 + 0.03, s1 - 0.03, depth - 0.04, z, o.rail, o.railMat);
     const neg = (v: V2): V2 => [-v[0], -v[1]];
@@ -393,6 +480,7 @@ export class Kit {
    */
   dormer(w: Wall, s: number, width: number, z0: number, z1: number, inset: number, o: { wall: Mat; lid: Mat; panes: number; spec: WindowSpec }): void {
     const a = s - width / 2, b = s + width / 2, zb = z0 + 0.12, zt = z1 - 0.3;
+    if (this.shut?.(w, s, z0)) return;
     this.box(w, a, b, -inset - 0.05, 0.04, zb, zt - zb, o.wall);
     this.box(w, a - 0.1, b + 0.1, -inset - 0.05, 0.16, zt, 0.1, o.lid);
     const each = Math.min(0.9, (width - 0.5 - (o.panes - 1) * 0.1) / o.panes);

@@ -5,6 +5,9 @@ import {
   normalizeMaxBuildout,
   bindingLabel,
   __clearMaxBuildoutCache,
+  captureBasis,
+  captureBasisParts,
+  parksInStructure,
 } from './maxBuildout';
 
 const rpcMock = vi.fn();
@@ -156,5 +159,46 @@ describe('fn_max_buildout client (GSF-first headline)', () => {
     expect(isMaxBuildout({ max_gsf: 'nope' })).toBe(false);
     expect(bindingLabel('impervious_coverage')).toBe('impervious coverage');
     expect(bindingLabel(null)).toBe('unknown');
+  });
+});
+
+describe('captureBasis: one claim, one denominator (535 Main St, audit 2026-11-22)', () => {
+  // the live figures: 232,425 GSF built, surface bound 199,950, structured ceiling 423,765
+  const MAIN = { max_gsf: 199950, structured_parking_ceiling: { gsf: 423765, binding: 'far' } };
+
+  it('measures a structure-parked plan against the structured ceiling and names the surface bound beside it', () => {
+    const c = captureBasis(232425, MAIN, 'wrap_garage');
+    expect(c?.label).toBe('structured-parking ceiling');
+    expect(c?.denominatorGsf).toBe(423765);
+    expect(Math.round((c?.pct ?? 0) * 10) / 10).toBe(54.8);
+    expect(c?.comparison).toEqual({ gsf: 199950, label: 'surface-parking bound', pct: (232425 / 199950) * 100 });
+    expect(captureBasisParts(c!)).toEqual([
+      '423,765 GSF structured-parking ceiling',
+      '55% capture',
+      'surface-parking bound 199,950 GSF (116%: this plan parks in a structure)',
+    ]);
+  });
+
+  it('measures a surface-parked plan against the surface bound, with nothing beside it', () => {
+    const c = captureBasis(106776, { max_gsf: 134850, structured_parking_ceiling: { gsf: 300000 } }, 'surface');
+    expect(c).toEqual({ denominatorGsf: 134850, label: 'upper bound', pct: (106776 / 134850) * 100, comparison: null });
+    expect(captureBasisParts(c!)).toEqual(['134,850 GSF upper bound', '79% capture']);
+  });
+
+  it('falls back to the surface bound when no structured ceiling is on file', () => {
+    expect(captureBasis(232425, { max_gsf: 199950 }, 'wrap_garage')?.label).toBe('upper bound');
+  });
+
+  it('says nothing without a plan or a bound', () => {
+    expect(captureBasis(null, MAIN, 'wrap_garage')).toBeNull();
+    expect(captureBasis(232425, null, 'wrap_garage')).toBeNull();
+    expect(captureBasis(232425, { max_gsf: 0 }, 'surface')).toBeNull();
+  });
+
+  it('reads the parking strategy for a structure', () => {
+    expect(parksInStructure('podium')).toBe(true);
+    expect(parksInStructure('tuck_under')).toBe(true);
+    expect(parksInStructure('surface')).toBe(false);
+    expect(parksInStructure(undefined)).toBe(false);
   });
 });

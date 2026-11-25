@@ -3,11 +3,13 @@
 // things meet, and a film-like tone curve.
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import siteAssets from './siteAssets.json';
 
 // The last touch, after the tone curve: a little more contrast and colour,
 // warm lights against cool shadows, and the corners let fall away.
@@ -33,10 +35,12 @@ import type { SiteModel } from './siteScene';
 export interface Stage {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
+  ready: Promise<void>;
   /** Point the sun: a unit vector from the ground toward it, model axes (x east, y north, z up). */
   setSun(toSun: [number, number, number]): void;
+  invalidateShadows(): void;
   setSize(width: number, height: number): void;
-  render(camera: THREE.Camera): void;
+  render(camera: THREE.Camera, moving?: boolean): void;
   dispose(): void;
 }
 
@@ -59,10 +63,12 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   renderer.setPixelRatio(opts.pixelRatio ?? Math.min(2, window.devicePixelRatio || 1));
   renderer.setSize(opts.width, opts.height, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = opts.studio ? THREE.ACESFilmicToneMapping : THREE.NeutralToneMapping;
   renderer.toneMappingExposure = opts.studio ? 0.8 : 0.74;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
 
   const scene = new THREE.Scene();
   scene.add(model.root);
@@ -120,12 +126,13 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   const sun = new THREE.DirectionalLight(0xfff1dd, opts.studio ? 4.2 : 4.6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(opts.light ? 2048 : 4096, opts.light ? 2048 : 4096);
-  const span = E * 1.9;
+  const focus = opts.studio ? { x: 0, y: 0, radius: E } : model.built;
+  const span = opts.studio ? E * 1.9 : Math.max(38, focus.radius * 1.45);
   const cam = sun.shadow.camera;
   cam.left = -span; cam.right = span; cam.top = span; cam.bottom = -span;
   cam.near = 1; cam.far = E * 12;
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.06;
+  sun.shadow.bias = opts.studio ? -0.0005 : -0.00018;
+  sun.shadow.normalBias = opts.studio ? 0.06 : 0.028;
   sun.shadow.radius = 5;
   sun.shadow.blurSamples = 16;
   scene.add(hemi, sun, sun.target);
@@ -133,27 +140,59 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   // the sky lights the model too: its own picture, blurred, as the environment
   const pmrem = new THREE.PMREMGenerator(renderer);
   let env: THREE.WebGLRenderTarget | null = null;
+  let daylight: THREE.DataTexture | null = null;
+  let disposed = false;
   const skyOnly = new THREE.Scene();
+  const direction = new THREE.Vector3(0.4, 0.5, 0.3).normalize();
+  const lightScene = () => {
+    const lift = Math.min(1, direction.y / 0.6);
+    sun.color.setRGB(1, 0.86 + 0.1 * lift, 0.7 + 0.22 * lift);
+    sun.intensity = (opts.studio ? 4.2 : daylight ? 3.25 : 4.6) * (0.6 + 0.4 * lift);
+    hemi.intensity = opts.studio ? 1 : daylight ? 0.32 : 0.85;
+    scene.environmentIntensity = opts.studio ? 0.55 : daylight ? 0.88 : 0.7;
+    renderer.toneMappingExposure = opts.studio ? 0.8 : daylight ? 1.05 : 0.74;
+    if (!daylight) return;
+    // The sky probe has its solar hotspot capped. The one directional light
+    // drives shadows at the study time. A low sun dims the sky.
+    scene.backgroundIntensity = 0.8 + 0.5 * lift;
+    scene.environmentIntensity *= 0.65 + 0.35 * lift;
+  };
   const setSun = (toSun: [number, number, number]) => {
     const started = performance.now();
     // model (x east, y north, z up) to stage (x east, y up, z south)
-    const d = new THREE.Vector3(toSun[0], toSun[2], -toSun[1]).normalize();
+    const d = direction.set(toSun[0], toSun[2], -toSun[1]).normalize();
     if (d.y < 0.03) d.y = 0.03;
     (u.sunPosition as { value: THREE.Vector3 }).value.copy(d);
     skyUniforms.sunDir.value.copy(d);
-    sun.position.copy(d).multiplyScalar(E * 6);
-    sun.target.position.set(0, 0, 0);
-    // a low sun is warmer and weaker
-    const lift = Math.min(1, d.y / 0.6);
-    sun.color.setRGB(1, 0.86 + 0.1 * lift, 0.7 + 0.22 * lift);
-    sun.intensity = (opts.studio ? 4.2 : 4.6) * (0.6 + 0.4 * lift);
-    env?.dispose();
-    skyOnly.add(sky);
-    env = pmrem.fromScene(skyOnly, 0.02);
-    scene.environment = env.texture;
-    scene.environmentIntensity = opts.studio ? 0.55 : 0.7;
+    sun.target.position.set(focus.x, 0, -focus.y);
+    sun.position.copy(sun.target.position).addScaledVector(d, E * 6);
+    renderer.shadowMap.needsUpdate = true;
+    lightScene();
+    if (!daylight) {
+      env?.dispose();
+      skyOnly.add(sky);
+      env = pmrem.fromScene(skyOnly, 0.02);
+      scene.environment = env.texture;
+    }
     if ((window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] sun and sky light set in ${Math.round(performance.now() - started)} ms`);
   };
+  const ready = opts.studio ? Promise.resolve() : new RGBELoader().loadAsync(`/textures/site/${siteAssets.sky.file}`).then(texture => {
+    if (disposed) { texture.dispose(); return; }
+    try {
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      const next = pmrem.fromEquirectangular(texture);
+      env?.dispose();
+      env = next;
+      daylight = texture;
+      scene.background = texture;
+      scene.environment = next.texture;
+      scene.remove(dome);
+      lightScene();
+    } catch (err) {
+      texture.dispose();
+      throw err;
+    }
+  }).catch(err => { console.warn('[render] photographed daylight could not load.', err); });
 
   let composer: EffectComposer | null = null;
   let renderPass: RenderPass | null = null;
@@ -177,8 +216,8 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
       composer.addPass(ao);
       composer.addPass(new OutputPass());
       const grade = new ShaderPass(GRADE);
-      (grade.uniforms.vignette as { value: number }).value = opts.studio ? 0 : 0.2;
-      (grade.uniforms.amount as { value: number }).value = opts.studio ? 0.7 : 1;
+      (grade.uniforms.vignette as { value: number }).value = opts.studio ? 0 : 0.07;
+      (grade.uniforms.amount as { value: number }).value = opts.studio ? 0.7 : 0.48;
       composer.addPass(grade);
     } catch (err) {
       console.warn('[render] ambient occlusion is not available here; rendering without it.', err);
@@ -189,15 +228,17 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   return {
     renderer,
     scene,
+    ready,
     setSun,
+    invalidateShadows() { renderer.shadowMap.needsUpdate = true; },
     setSize(width, height) {
       renderer.setSize(width, height, false);
       const px = sized();
       composer?.setSize(px.x / renderer.getPixelRatio(), px.y / renderer.getPixelRatio());
     },
-    render(camera) {
-      if (!composer && opts.occlusion !== false && !opts.light && !renderPass) build(camera);
-      if (composer && renderPass && ao) {
+    render(camera, moving = false) {
+      if (!moving && !composer && opts.occlusion !== false && !opts.light && !renderPass) build(camera);
+      if (!moving && composer && renderPass && ao) {
         renderPass.camera = camera;
         ao.camera = camera;
         composer.render();
@@ -206,13 +247,16 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
       }
     },
     dispose() {
+      disposed = true;
       env?.dispose();
+      daylight?.dispose();
       pmrem.dispose();
       composer?.dispose();
       dome.geometry.dispose();
       (dome.material as THREE.Material).dispose();
       sky.geometry.dispose();
       sky.material.dispose();
+      sun.shadow.dispose();
       renderer.dispose();
     },
   };

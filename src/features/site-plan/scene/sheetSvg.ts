@@ -12,9 +12,12 @@
 // illustration. Parking stripes are drawn only when they can show exactly the
 // stall count the plan reports for the bay. Every colour sits on an outline,
 // so the sheet still reads in greyscale.
+import { builtFocus } from './builtFocus';
 import type { DrawingScene, ScenePolygons } from './types';
-import type { Pt } from './frame';
+import { interiorPoint, type Pt } from './frame';
+import { computeFloorplate } from '../../../components/site-planner/unitLayout';
 import { LABEL_PRIORITY, placeLabels, type LabelCandidate, type PlacedLabel } from './labels';
+import { formatGapFt } from '../api/mfAccess';
 
 export type SheetSize = 'letter' | 'tabloid' | 'slide';
 
@@ -32,6 +35,12 @@ export interface SheetTitle {
   subtitle?: string | null | undefined;
   date: string;
   notes?: string[] | undefined;
+  /** Where the route to the street breaks, scene feet: endpoints and optional measured gap. */
+  routeBreak?: { from: Pt; to: Pt; gapFt?: number } | null | undefined;
+  /** Where a car enters a parking structure, scene feet, as the engine places it. */
+  garageEntries?: Pt[] | undefined;
+  /** The figures a decision turns on (api/exhibitSchedule): printed under the headline numbers on every sheet size. */
+  decision?: Array<{ label: string; value: string }> | undefined;
   /** The site data table: figures of the scheme, as the workspace states them. */
   data?: Array<{ label: string; value: string }> | undefined;
 }
@@ -41,6 +50,8 @@ export interface SheetUnderlay {
   href: string;
   /** True when an image model painted it: the sheet then says so. */
   ai?: boolean | undefined;
+  /** True when the picture stands on surveyed ground that was graded for it (render3d/terrain): the sheet then says the grading is assumed. */
+  graded?: boolean | undefined;
 }
 
 export interface SheetLayout {
@@ -92,6 +103,10 @@ export interface SheetModel {
   figures: Array<{ label: string; value: string }>;
   /** Parking features drawn with stripes, and the stalls the stripes show. */
   striped: Array<{ id: string; stalls: number }>;
+  /** Rows of homes drawn with their party walls, and the unit count each shows. */
+  divided: Array<{ id: string; units: number }>;
+  /** Apartment buildings drawn with a floor plate: the units and corridors it shows. */
+  plated: Array<{ id: string; units: number; corridors: number }>;
   labels: PlacedLabel[];
   svg: string;
 }
@@ -108,23 +123,25 @@ const C = {
   contextBuildingEdge: '#cdc8bb',
   road: '#ffffff',
   roadEdge: '#d8d3c6',
-  lawn: '#dde8cc',
+  lawn: '#eef2e4',
   open: '#c7dcae',
   openEdge: '#8fae72',
   walk: '#ece8dc',
   walkEdge: '#cfc9b9',
-  driveway: '#dcd9d0',
-  drive: '#c9c8c3',
-  driveEdge: '#a09e97',
-  parking: '#e4e3de',
-  parkingEdge: '#8d8b84',
+  driveway: '#b8bcc2',
+  drive: '#8f959c',
+  driveEdge: '#4f555c',
+  parking: '#bcd0ea',
+  parkingEdge: '#3f6aa0',
+  garage: '#b9b2d6',
+  garageEdge: '#5a4f8f',
   stripe: '#ffffff',
   lot: '#6b6f66',
-  street: '#d2d1cb',
-  roof: '#ffffff',
+  street: '#8f959c',
+  roof: '#f3b29c',
   roofEdge: '#2a2e33',
   amenity: '#f0e2bd',
-  house: '#f7f3ea',
+  house: '#f7d77a',
   tree: '#a5c78a',
   treeEdge: '#6c9856',
   shadow: '#1c2430',
@@ -168,6 +185,29 @@ export function stallStripes(input: Pt[], stalls: number | null): { lines: Array
     return { lines, rows, stalls: quads };
   }
   return null;
+}
+
+/**
+ * Party walls of a row of homes, or null. Only for a four-cornered footprint
+ * with more than one unit: the row is cut across its long side into that many
+ * equal homes, so the lines show exactly the reported count. Where the homes
+ * differ in width the lines are a drawing convention, not a survey.
+ */
+export function unitDividers(input: Pt[], units: number | null): Array<[Pt, Pt]> | null {
+  if (!units || units < 2 || !Number.isInteger(units)) return null;
+  const open = input.slice(0, -1);
+  const corners = open.filter((p, i) => {
+    const a = open[(i + open.length - 1) % open.length], b = open[(i + 1) % open.length];
+    if (!a || !b) return true;
+    const cross = (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]);
+    return Math.abs(cross) > 0.02 * Math.hypot(p[0] - a[0], p[1] - a[1]) * Math.hypot(b[0] - p[0], b[1] - p[1]);
+  });
+  if (corners.length !== 4) return null;
+  const [a, b, c, d] = corners as [Pt, Pt, Pt, Pt];
+  const l1 = Math.hypot(b[0] - a[0], b[1] - a[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+  const [p0, p1, q0, q1] = l1 >= l2 ? [a, b, d, c] : [b, c, a, d];
+  const mix = (u: Pt, v: Pt, t: number): Pt => [u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t];
+  return Array.from({ length: units - 1 }, (_, i) => [mix(p0, p1, (i + 1) / units), mix(q0, q1, (i + 1) / units)] as [Pt, Pt]);
 }
 
 export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize = 'tabloid', underlay?: SheetUnderlay | null): SheetModel {
@@ -215,12 +255,14 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     drive: `fill="${C.drive}" stroke="${C.driveEdge}" stroke-width="0.4"`,
     driveway: `fill="${C.driveway}" stroke="${C.parkingEdge}" stroke-width="0.35"`,
     parking: `fill="${C.parking}" stroke="${C.parkingEdge}" stroke-width="0.5"`,
+    garage: `fill="${C.garage}" stroke="${C.garageEdge}" stroke-width="0.9"`,
+    walk: `fill="${C.walk}" stroke="${C.walkEdge}" stroke-width="0.4"`,
     other: `fill="none" stroke="${C.lot}" stroke-width="0.4"`,
     house: `fill="${C.house}" stroke="${C.roofEdge}" stroke-width="0.7"`,
     amenity: `fill="${C.amenity}" stroke="${C.roofEdge}" stroke-width="0.9"`,
     building: `fill="${C.roof}" stroke="${C.roofEdge}" stroke-width="1.3"`,
   } as const;
-  const FLAT = ['open-space', 'lot', 'street', 'drive', 'driveway', 'parking', 'other'] as const;
+  const FLAT = ['open-space', 'lot', 'walk', 'street', 'drive', 'driveway', 'parking', 'garage', 'other'] as const;
   const striped: SheetModel['striped'] = [];
   // walks: along the plan's own streets (a planted strip, then the walk) and
   // round each tagged building, drawn as strokes under what they follow
@@ -244,6 +286,14 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
       if (!stripes || f.stalls == null) continue;
       striped.push({ id: f.id, stalls: f.stalls });
       out.push(`<path d="${stripes.lines.map(([u, v]) => `M${P(u).join(' ')}L${P(v).join(' ')}`).join('')}" fill="none" stroke="${C.stripe}" stroke-width="${r2(Math.max(0.35, 0.5 * k))}" data-role="stall-stripes" data-for="${esc(f.id)}"/>`);
+      // a car in each lined stall: illustration, so a row of stalls reads as parking
+      const at = (q: [Pt, Pt, Pt, Pt], u: number, v: number): string => {
+        const top: Pt = [q[0][0] + (q[1][0] - q[0][0]) * u, q[0][1] + (q[1][1] - q[0][1]) * u];
+        const bot: Pt = [q[3][0] + (q[2][0] - q[3][0]) * u, q[3][1] + (q[2][1] - q[3][1]) * u];
+        return P([top[0] + (bot[0] - top[0]) * v, top[1] + (bot[1] - top[1]) * v]).join(' ');
+      };
+      const cars = stripes.stalls.map(q => `M${at(q, 0.2, 0.1)}L${at(q, 0.8, 0.1)}L${at(q, 0.8, 0.9)}L${at(q, 0.2, 0.9)}ZM${at(q, 0.24, 0.3)}L${at(q, 0.76, 0.3)}M${at(q, 0.24, 0.72)}L${at(q, 0.76, 0.72)}`).join('');
+      out.push(`<path d="${cars}" fill="#ffffff" fill-opacity="0.9" stroke="${C.driveEdge}" stroke-width="${r2(Math.max(0.3, 0.4 * k))}" stroke-linejoin="round" data-role="cars" data-illustration="true" data-for="${esc(f.id)}"/>`);
     }
   }
 
@@ -279,6 +329,36 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
       if (f.styleRole !== role) continue;
       out.push(`<path d="${path(f.polygons)}" ${STYLE[role]} fill-rule="evenodd" data-role="${role}" data-feature-id="${esc(f.id)}"/>`);
     }
+  }
+  // the floor plate: an apartment building that carries a unit mix is read as
+  // its bars, each with units either side of a corridor and cores at its ends
+  // (the same layout the plan view draws). A typical floor, not a survey.
+  const plated: SheetModel['plated'] = [];
+  const FT = 0.3048;
+  for (const b of scene.buildings) {
+    const ring = b.polygons.length === 1 ? b.polygons[0]?.[0] : undefined;
+    if (b.use !== 'apartments' || !b.unitMix?.length || !ring) continue;
+    const plate = computeFloorplate(ring.map(p => [p[0] * FT, p[1] * FT]), b.unitMix, b.floors.value);
+    if (!plate.units.length) continue;
+    const pt = (m: ArrayLike<number>) => P([(m[0] ?? 0) / FT, (m[1] ?? 0) / FT]).join(' ');
+    const ringPath = (r: number[][]) => `M${r.map(pt).join('L')}Z`;
+    plated.push({ id: b.id, units: plate.units.length, corridors: plate.corridors.length });
+    out.push(`<g data-role="floor-plate" data-illustration="true" data-for="${esc(b.id)}">`
+      + `<path d="${plate.units.map(u => ringPath(u.ring)).join('')}" fill="none" stroke="${C.roofEdge}" stroke-opacity="0.55" stroke-width="0.45"/>`
+      + (plate.cores.length ? `<path d="${plate.cores.map(c => ringPath(c.ring)).join('')}" fill="${C.driveEdge}" fill-opacity="0.55" stroke="none"/>` : '')
+      + `<path d="${plate.corridors.map(([u, v]) => `M${pt(u)}L${pt(v)}`).join('')}" fill="none" stroke="#ffffff" stroke-width="${r2(Math.max(1.2, 5.5 * k))}"/>`
+      + `<path d="${plate.corridors.map(([u, v]) => `M${pt(u)}L${pt(v)}`).join('')}" fill="none" stroke="${C.roofEdge}" stroke-opacity="0.6" stroke-width="0.5" stroke-dasharray="3 2"/>`
+      + '</g>');
+  }
+  // party walls: a row of homes with a unit count is cut into its homes
+  const divided: SheetModel['divided'] = [];
+  for (const b of scene.buildings) {
+    if (b.use !== 'townhome' && b.use !== 'house') continue;
+    const ring = b.polygons.length === 1 ? b.polygons[0]?.[0] : undefined;
+    const walls = ring ? unitDividers(ring, b.units?.value ?? null) : null;
+    if (!walls || !b.units) continue;
+    divided.push({ id: b.id, units: b.units.value });
+    out.push(`<path d="${walls.map(([u, v]) => `M${P(u).join(' ')}L${P(v).join(' ')}`).join('')}" fill="none" stroke="${C.roofEdge}" stroke-width="0.7" data-role="unit-walls" data-for="${esc(b.id)}"/>`);
   }
   if (trees.length) {
     out.push('<g data-role="trees" data-illustration="true">');
@@ -339,9 +419,40 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     const c = centre(f.polygons);
     if (!c) continue;
     const [x, y] = P(c);
-    const s = `${f.stalls} stalls`;
+    const s = f.styleRole === 'garage' ? `Garage · ${f.stalls} stalls` : `${f.stalls} stalls`;
     cands.push({ id: `park:${f.id}`, priority: LABEL_PRIORITY.parkingCount, x, y, w: s.length * 3.4 + 8, h: 11 });
     text.set(`park:${f.id}`, { lines: [s], kind: 'parking', size: 6.5 });
+  }
+  // a garage with no stall count still says what it is
+  for (const f of scene.features) {
+    if (f.styleRole !== 'garage' || (f.stalls != null && f.stalls > 0)) continue;
+    const c = centre(f.polygons);
+    if (!c) continue;
+    const [x, y] = P(c);
+    cands.push({ id: `park:${f.id}`, priority: LABEL_PRIORITY.parkingCount, x, y, w: 6 * 3.4 + 8, h: 11 });
+    text.set(`park:${f.id}`, { lines: ['Garage'], kind: 'parking', size: 6.5 });
+  }
+  // houses and townhome rows say what they are when the sheet has no lots to
+  // read them by; on a plan of lots the lot numbers do that job
+  if (!scene.features.some(f => f.role === 'lot')) {
+    for (const b of scene.buildings) {
+      if (b.tagOnPlan) continue;
+      const [x, y] = P(b.labelPoint);
+      const n = b.units?.value ?? null;
+      const s = n != null && n > 1 ? `${b.display.use} · ${n} units` : b.display.use;
+      cands.push({ id: `home:${b.id}`, priority: LABEL_PRIORITY.homeCaption, x, y, w: s.length * 3.4 + 8, h: 11 });
+      text.set(`home:${b.id}`, { lines: [s], kind: 'home', size: 6.5 });
+    }
+  }
+  // a drive, a walk or an open space that carries its own label says it
+  for (const f of scene.features) {
+    if (!f.label || f.role === 'building' || f.role === 'parking' || f.role === 'lot') continue;
+    // a point inside the shape: the middle of a bent drive can lie outside it
+    const c = interiorPoint(f.polygons[0] ?? []) ?? centre(f.polygons);
+    if (!c) continue;
+    const [x, y] = P(c);
+    cands.push({ id: `feat:${f.id}`, priority: LABEL_PRIORITY.featureLabel, x, y, w: f.label.length * 3.4 + 8, h: 11 });
+    text.set(`feat:${f.id}`, { lines: [f.label], kind: 'feature', size: 6.5 });
   }
   // lot numbers: a plan of lots is read by them
   for (const f of scene.features) {
@@ -404,6 +515,31 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     });
     out.push('</g>');
   }
+  // where section A–A (sheet A-03) cuts this plan: a chain line with the letter at each end
+  const cutLine = sectionCut(scene);
+  if (cutLine) {
+    const end = (t: number): Pt => P([cutLine.at[0] + cutLine.dir[0] * t, cutLine.at[1] + cutLine.dir[1] * t]);
+    const c0 = end(cutLine.lo - 14), c1 = end(cutLine.hi + 14);
+    const tag = (q: Pt) => `<circle cx="${q[0]}" cy="${q[1]}" r="5.2" fill="#ffffff" stroke="${INK}" stroke-width="0.8"/><text x="${q[0]}" y="${r2(q[1] + 2.3)}" font-size="6.4" font-weight="700" text-anchor="middle" fill="${INK}">A</text>`;
+    out.push(`<g data-role="section-cut"><line x1="${c0[0]}" y1="${c0[1]}" x2="${c1[0]}" y2="${c1[1]}" stroke="${INK}" stroke-width="0.7" stroke-dasharray="9 2.5 1.5 2.5"/>${tag(c0)}${tag(c1)}</g>`);
+  }
+  for (const e of title.garageEntries ?? []) {
+    const q = P(e);
+    out.push(`<g data-role="garage-entry"><path d="M${q[0]} ${r2(q[1] - 4.6)}L${r2(q[0] + 4.6)} ${q[1]}L${q[0]} ${r2(q[1] + 4.6)}L${r2(q[0] - 4.6)} ${q[1]}Z" fill="#4c1d95" stroke="#ffffff" stroke-width="0.8"/>`
+      + `<text x="${r2(q[0] + 7)}" y="${r2(q[1] - 5)}" font-size="6.4" font-weight="700" fill="#4c1d95" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Garage entry</text></g>`);
+  }
+  if (title.routeBreak) {
+    // an unresolved connection stays on the download: dashed between the two ends, a ring on each
+    const a = P(title.routeBreak.from), b = P(title.routeBreak.to);
+    const gap = title.routeBreak.gapFt != null && Number.isFinite(title.routeBreak.gapFt)
+      ? ` · ${formatGapFt(title.routeBreak.gapFt)} ft short`
+      : '';
+    out.push(`<g data-role="route-break" stroke="#dc2626" fill="#ffffff">`
+      + `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke-width="1.4" stroke-dasharray="4 3"/>`
+      + `<circle cx="${a[0]}" cy="${a[1]}" r="4.5" stroke-width="1.4"/><circle cx="${b[0]}" cy="${b[1]}" r="4.5" stroke-width="1.4"/>`
+      + `<text x="${r2(a[0] + 8)}" y="${r2(a[1] - 7)}" font-size="6.6" font-weight="700" fill="#991b1b" stroke="#ffffff" stroke-width="2.2" paint-order="stroke">Drive stops here · no drawn connection to the street${gap}</text>`
+      + '</g>');
+  }
   out.push('</g>');
 
   // frame
@@ -451,7 +587,53 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     out.push(`<g data-figure="${esc(f.label)}"><text x="${r2(fx)}" y="${r2(fy)}" font-size="${f.value.length > 6 ? 17 : 22}" font-weight="700" fill="${INK}">${esc(f.value)}</text><text x="${r2(fx)}" y="${r2(fy + 11)}" font-size="6" font-weight="600" letter-spacing="0.9" fill="#7a8087">${esc(f.label)}</text></g>`);
   });
   if (shown.length) y += Math.ceil(shown.length / 2) * 40 - 16;
-  if (!scene.schedule.consistent) { y += 8; line('The drawn features do not add up to the scheme schedule.', 6.2, 500, '#8a4b12'); }
+  if (!scene.schedule.consistent) {
+    // say which count disagrees and by how much: a warning nobody can act on is noise
+    const sc = scene.schedule, parts: string[] = [];
+    if (sc.units != null && sc.buildingUnits != null && sc.units !== sc.buildingUnits) parts.push(`The buildings' own counts total ${num(sc.buildingUnits)} homes; the scheme reports ${num(sc.units)}.`);
+    if (sc.stalls != null && sc.featureStalls != null && sc.stalls !== sc.featureStalls) parts.push(`The parking drawn totals ${num(sc.featureStalls)} stalls; the scheme reports ${num(sc.stalls)}.`);
+    y += 8;
+    for (const text of parts.length ? parts : ['The drawn features do not add up to the scheme schedule.']) line(text, 6.2, 500, '#8a4b12');
+  }
+  // The site data sits right under the headline numbers, where every sheet size has room for it.
+  // The figures a decision turns on lead it (api/exhibitSchedule): drawn against required parking,
+  // what the floor area is a share of, the parking and residential stack, whether a car can reach
+  // the street. The scheme's other figures follow. One line a row.
+  const dataRows = [
+    ...(title.decision ?? []).map(r => ({ ...r, decision: true })),
+    ...(title.data ?? []).map(r => ({ ...r, decision: false })),
+  // the slide's strip is short: the more buildings its table lists, the fewer rows the data keeps,
+  // and the decision figures are the ones kept
+  ].slice(0, size === 'slide' ? Math.max(4, 9 - scene.buildings.filter(b => b.tagOnPlan).length) : 14);
+  if (dataRows.length) {
+    rule(8, 14);
+    eyebrow('SITE DATA');
+    for (const row of dataRows) {
+      // short values sit on the same line, right-aligned; long values (parking warnings,
+      // unresolved street access) wrap to the strip's content width so Letter and slide
+      // keep every word inside the print frame (Live Design handoff 2026-11-23).
+      const valueSz = 5.9;
+      const labelSz = 6.4;
+      const valueIndent = 46;
+      const valueWidth = Math.max(24, tw - valueIndent);
+      const maxChars = Math.max(12, Math.floor(valueWidth / (valueSz * 0.52)));
+      const parts = wrap(row.value, maxChars);
+      const long = parts.length > 1 || row.label.length + row.value.length > 44;
+      // alert survives monochrome in words (short / Unresolved / Not verified), not colour alone
+      const alert = /\bshort\b|^Unresolved|^Not verified/.test(row.value);
+      const fill = alert ? '#b4232a' : INK;
+      if (!long) {
+        out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''} data-alert="${alert ? 'true' : 'false'}"><text x="${tx}" y="${r2(y)}" font-size="${labelSz}" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="${labelSz}" font-weight="600" text-anchor="end" fill="${fill}">${esc(row.value)}</text></g>`);
+        y += 9.4;
+      } else {
+        const vx = r2(tx + valueIndent);
+        const valueLines = parts.map((part, i) => `<text x="${vx}" y="${r2(y + i * (valueSz + 2.2))}" font-size="${valueSz}" font-weight="600" fill="${fill}">${esc(part)}</text>`).join('');
+        out.push(`<g data-site-data="${esc(row.label)}"${row.decision ? ` data-decision="${esc(row.label)}"` : ''} data-alert="${alert ? 'true' : 'false'}" data-wrapped="true"><text x="${tx}" y="${r2(y)}" font-size="${valueSz}" fill="#4b5158">${esc(row.label)}</text>${valueLines}</g>`);
+        y += Math.max(9.4, parts.length * (valueSz + 2.2) + 1);
+      }
+    }
+    y -= 4;
+  }
   rule(8, 16);
 
   const onSheet = scene.buildings.filter(b => b.tagOnPlan);
@@ -485,8 +667,12 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   if (estimated) { y += 2; line('Heights are estimated from story counts and are above grade. The plan carries no measured height.', 5.8, 400, '#7a8087', 2.5); }
   rule(6, 14);
 
-  // legend: only what is on the sheet
-  eyebrow('LEGEND');
+  // legend: only what is on the sheet, and only where the strip has room above the scale
+  const stripFloor = strip.y + strip.h - 118 - 10;
+  const legendFits = y + 16 <= stripFloor;
+  if (legendFits) eyebrow('LEGEND');
+  // a sheet never loses its legend without saying so
+  else out.push(`<text x="${tx}" y="${r2(Math.min(y + 4, strip.y + strip.h - 122))}" font-size="5.6" fill="#7a8087" data-legend-more="all">Legend: see the 11 × 17 sheet.</text>`);
   const present = new Set<string>(scene.features.map(f => f.styleRole));
   const LEGEND: Array<[string, string, string]> = [
     ['parcel', 'Property line', `fill="none" stroke="${INK}" stroke-width="1.3" stroke-dasharray="8 2 2 2 2 2"`],
@@ -494,7 +680,8 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['building', 'Building', STYLE.building],
     ['amenity', 'Amenity', STYLE.amenity],
     ['house', 'House or townhome', STYLE.house],
-    ['parking', 'Parking', STYLE.parking],
+    ['parking', 'Surface parking', STYLE.parking],
+    ['garage', 'Parking garage', STYLE.garage],
     ['drive', 'Drive', STYLE.drive],
     ['driveway', 'Driveway', STYLE.driveway],
     ['walk', 'Walk', `fill="${C.walk}" stroke="${C.walkEdge}" stroke-width="0.5"`],
@@ -503,26 +690,22 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
     ['open-space', 'Open space', STYLE['open-space']],
     ['context', 'Existing building', `fill="${C.contextBuilding}" stroke="${C.contextBuildingEdge}" stroke-width="0.4"`],
   ];
-  const items = LEGEND.filter(([key]) => (key === 'parcel' ? !!scene.parcel : key === 'envelope' ? !!scene.envelope : key === 'context' ? scene.context.buildings.length > 0 : key === 'walk' ? walks > 0 : present.has(key)));
+  const items = LEGEND.filter(([key]) => (key === 'parcel' ? !!scene.parcel : key === 'envelope' ? !!scene.envelope : key === 'context' ? scene.context.buildings.length > 0 : key === 'walk' ? walks > 0 || present.has('walk') : present.has(key)));
+  let legendRows = 0;
+  const legendRoom = Math.max(1, Math.floor((stripFloor - y) / 12) + 1);
+  const legendCols = items.length <= legendRoom * 2 ? 2 : 3;
   items.forEach(([key, label, style], i) => {
-    const lx = tx + (i % 2) * (tw / 2), ly = y + Math.floor(i / 2) * 12;
+    const lx = tx + (i % legendCols) * (tw / legendCols), ly = y + Math.floor(i / legendCols) * 12;
+    if (!legendFits || ly > stripFloor) return;
+    legendRows = Math.floor(i / legendCols) + 1;
     if (key === 'parcel' || key === 'envelope' || key === 'lot') out.push(`<line x1="${r2(lx)}" y1="${r2(ly - 2.5)}" x2="${r2(lx + 16)}" y2="${r2(ly - 2.5)}" ${style}/>`);
     else out.push(`<rect x="${r2(lx)}" y="${r2(ly - 6.5)}" width="16" height="8" ${style}/>`);
     out.push(`<text x="${r2(lx + 21)}" y="${r2(ly)}" font-size="6.5" fill="${INK}" data-legend="${key}">${esc(label)}</text>`);
   });
-  y += Math.ceil(items.length / 2) * 12;
-
-  // the site data table, where the workspace supplied one
-  if (title.data?.length) {
-    rule(4, 14);
-    eyebrow('SITE DATA');
-    for (const row of title.data) {
-      // the table stops short of the scale and the north arrow
-      if (y > strip.y + strip.h - 118 - 10) break;
-      out.push(`<g data-site-data="${esc(row.label)}"><text x="${tx}" y="${r2(y)}" font-size="6.6" fill="#4b5158">${esc(row.label)}</text><text x="${tx + tw}" y="${r2(y)}" font-size="6.6" font-weight="600" text-anchor="end" fill="${INK}">${esc(row.value)}</text></g>`);
-      y += 9.6;
-    }
-  }
+  y += legendRows * 12;
+  // a legend that ran out of room says how much it left off
+  const legendShown = Math.min(items.length, legendRows * legendCols);
+  if (legendFits && legendShown < items.length) out.push(`<text x="${tx + tw}" y="${r2(y - 12)}" font-size="5.6" text-anchor="end" fill="#7a8087" data-legend-more="${items.length - legendShown}">+${items.length - legendShown} more in the 11 × 17 sheet</text>`);
 
   // bottom block: north, scale, sheet number
   const by = strip.y + strip.h;
@@ -531,7 +714,7 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   if ((title.notes?.length || trees.length || shadow.length) && y < blockTop - 30) {
     rule(2, 12);
     const notes = [...(title.notes ?? [])];
-    if (trees.length || shadow.length || walks) notes.push(lined ? 'Rendered from the plan. Facades, walks, planting, cars and shadows are illustration.' : 'Walks, trees and shadows are illustration.');
+    if (trees.length || shadow.length || walks) notes.push(lined ? 'Rendered from the plan. Facades, walks, planting, cars and shadows are illustration.' : 'Walks, trees, cars and shadows are illustration.');
     for (const n of notes) {
       if (y > blockTop - 14) break;
       line(n, 5.8, 400, '#7a8087', 2.5);
@@ -558,7 +741,7 @@ export function renderSitePlanSheet(scene: DrawingScene, title: SheetTitle, size
   out.push(`<text x="${tx + tw}" y="${r2(by - 12)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-01</text>`);
   out.push('</svg>');
 
-  return { size, widthPt: W, heightPt: H, ftPerInch, numericScale, scaleBarFt: barFt, schedule, figures: shown, striped, labels, svg: out.join('\n') };
+  return { size, widthPt: W, heightPt: H, ftPerInch, numericScale, scaleBarFt: barFt, schedule, figures: shown, striped, divided, plated, labels, svg: out.join('\n') };
 }
 
 function centre(polys: ScenePolygons): Pt | null {
@@ -588,6 +771,9 @@ export function viewSheetLayout(size: SheetSize): { widthPt: number; heightPt: n
   const M = 0.3 * 72, band = 1.02 * 72;
   return { widthPt: W, heightPt: H, image: { x: M, y: M, w: W - 2 * M, h: H - 2 * M - band } };
 }
+
+/** What a sheet says when its picture stands on ground graded for the picture. */
+export const GRADED_NOTE = 'The ground is the surveyed ground, with the paved area and each building pad graded to 4% or less: an assumption of the picture, not a grading plan. ';
 
 /**
  * A-02 Aerial View: a rendering of the scheme filling the page, with a band
@@ -621,11 +807,33 @@ export function renderViewSheet(scene: DrawingScene, title: SheetTitle, size: Sh
   });
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-02</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
-  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="view-note">${picture?.ai
+  // what the picture is, in as many lines as it needs: the note must never run off the sheet
+  const note = picture?.ai
     ? "An AI impression painted over a render of the plan. The layout is the plan's. Materials, planting, sky and surroundings are invented, and a detail may differ from the plan. Not a design."
-    : "Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design."}</text>`);
+    : `${viewScope(scene)}The site is outlined in white; existing buildings are grey. ${picture?.graded ? GRADED_NOTE : ''}Rendered from the plan's footprints and story counts. Facades, roofs above the eaves, planting, cars, light and the surroundings are illustration, not a design.`;
+  // short of the sheet number and its line at the right of the band
+  const perLine = Math.floor((W - 2 * M - 200) / 2.55);
+  const lines: string[] = [];
+  for (const word of note.split(' ')) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && (last + ' ' + word).length <= perLine) lines[lines.length - 1] = last + ' ' + word;
+    else lines.push(word);
+  }
+  // each line keeps its trailing space, so the note reads as one sentence to anything that reads its text
+  out.push(`<text x="${tx}" font-size="5.4" fill="#7a8087" data-role="view-note">${lines.map((l, k) => `<tspan x="${tx}" y="${r2(H - M - 5 - (lines.length - 1 - k) * 6.6)}">${esc(l)}${k < lines.length - 1 ? ' ' : ''}</tspan>`).join('')}</text>`);
   out.push('</svg>');
   return { svg: out.join('\n'), widthPt: W, heightPt: H };
+}
+
+/** What the aerial picture frames (scene/builtFocus, the rule the renderer uses), said on the sheet when it is not the whole site. */
+export function viewScope(scene: DrawingScene): string {
+  const lot = scene.parcel?.polygons[0]?.[0];
+  if (!lot || lot.length < 3) return '';
+  const xs = lot.map(p => p[0]), ys = lot.map(p => p[1]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const radius = Math.max(50, ...lot.map(p => Math.hypot(p[0] - cx, p[1] - cy)));
+  const kind = builtFocus({ x: cx, y: cy, radius }, scene.buildings.map(b => (b.polygons[0]?.[0] ?? []).map(p => [p[0], p[1]] as [number, number]))).kind;
+  return kind === 'cluster' ? 'A detail: the view is of the densest group of buildings, not the whole site. ' : kind === 'built' ? 'The view is of the built part of the site. ' : '';
 }
 
 /** Where a line through `at` along `dir` crosses a ring: distances along the line, in the ring's units, sorted. */
@@ -648,11 +856,52 @@ export function crossings(ring: ArrayLike<ArrayLike<number>>, at: Pt, dir: Pt): 
  * A-03 Section A–A: a cut across the first tagged building, at right angles to
  * its longest wall, from property line to property line. Every building the
  * cut passes through is drawn as its stories at the scene's heights. The
- * ground is drawn level: the plan carries no grade. Heights are the scene's
- * (estimated from story counts unless the plan reports one); no horizontal
- * distance is stated, and the sheet carries a graphic scale only.
+ * ground and pad elevations are sampled from the same surfaces as 3D.
+ * Heights come from the drawing scene and the sheet carries a graphic scale.
  */
-export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize): { svg: string; widthPt: number; heightPt: number; drawn: number } {
+export interface HeightControl {
+  /** The height limit in the zoning record, feet. */
+  maxHeightFt: number | null;
+  /** The ordinance's height plane, where the record states one: a height at the setback line, rising inward. */
+  plane?: { heightAtSetbackFt: number; slopeHorizontal: number; slopeVertical: number; law?: string } | null;
+}
+
+export interface SectionGround {
+  /** Elevations are feet above the shared model origin. Null outside the source grid. */
+  at(point: Pt): { existing: number; assumed: number | null } | null;
+  padsFt: ReadonlyMap<string, number>;
+  source: string;
+  grading: { deepest_cut_ft: number; deepest_fill_ft: number } | null;
+}
+
+/**
+ * Where section A–A cuts the plan: through the first tagged building's label point, at right
+ * angles to its longest wall, from one property line to the other. Sheet A-01 marks the same line
+ * that sheet A-03 draws, so a reader can find the cut on the plan.
+ */
+export function sectionCut(scene: DrawingScene): { at: Pt; dir: Pt; lo: number; hi: number } | null {
+  const subject = scene.buildings.find(b => b.tagOnPlan) ?? scene.buildings[0];
+  const ring = subject?.polygons[0]?.[0];
+  if (!subject || !ring || ring.length < 3) return null;
+  let long: Pt = [1, 0], best = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    if (!a || !b) continue;
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len > best) { best = len; long = [(b[0] - a[0]) / len, (b[1] - a[1]) / len]; }
+  }
+  const dir: Pt = [-long[1], long[0]], at = subject.labelPoint;
+  const lot = scene.parcel?.polygons[0]?.[0];
+  const lotCuts = lot ? crossings(lot, at, dir) : [];
+  const before = lotCuts.filter(t => t < 0), after = lotCuts.filter(t => t > 0);
+  const hits = scene.buildings.flatMap(b => { const h = crossings(b.polygons[0]?.[0] ?? [], at, dir); return h.length >= 2 ? h : []; });
+  if (!hits.length) return null;
+  const lo = Math.min(before.length ? (before[before.length - 1] as number) : Infinity, ...hits);
+  const hi = Math.max(after.length ? (after[0] as number) : -Infinity, ...hits);
+  return { at, dir, lo, hi };
+}
+
+export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size: SheetSize, control?: HeightControl | null, profile?: SectionGround | null): { svg: string; widthPt: number; heightPt: number; drawn: number; overLimit: boolean } {
   const { wIn, hIn } = SHEET_SIZES[size];
   const { widthPt: W, heightPt: H, image } = viewSheetLayout(size);
   const M = image.x;
@@ -666,6 +915,7 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
   const subject = scene.buildings.find(b => b.tagOnPlan) ?? scene.buildings[0];
   const ring = subject?.polygons[0]?.[0];
   let drawn = 0;
+  let overLimit = false, limitNote: string | null = null;
   if (subject && ring && ring.length >= 3) {
     // the cut runs at right angles to the building's longest wall, through its label point
     let long: Pt = [1, 0], best = 0;
@@ -682,36 +932,137 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
     const cuts = scene.buildings.map(b => ({ b, hits: crossings(b.polygons[0]?.[0] ?? [], at, dir) })).filter(c => c.hits.length >= 2);
     const lo = Math.min(before.length ? (before[before.length - 1] as number) : Infinity, ...cuts.flatMap(c => c.hits)) - 12;
     const hi = Math.max(after.length ? (after[0] as number) : -Infinity, ...cuts.flatMap(c => c.hits)) + 12;
-    const tallest = Math.max(10, ...cuts.map(c => c.b.height.aboveGradeFt));
+    const limit = control?.maxHeightFt != null && control.maxHeightFt > 0 ? control.maxHeightFt : null;
+    const pad = (id: string) => profile?.padsFt.get(id) ?? 0;
+    const reference = pad(subject.id);
+    const count = Math.max(1, Math.min(240, Math.ceil((hi - lo) / 4)));
+    const samples = profile ? Array.from({ length: count + 1 }, (_, i) => {
+      const t = lo + (i * (hi - lo)) / count;
+      return { t, z: profile.at([at[0] + dir[0] * t, at[1] + dir[1] * t]) };
+    }) : [];
+    const grades = samples.flatMap(({ z }) => z ? [z.existing, z.assumed ?? z.existing] : []);
+    const bottom = Math.min(reference, ...grades, ...cuts.map(c => pad(c.b.id)));
+    const top = Math.max(reference + Math.max(10, limit ?? 0, control?.plane?.heightAtSetbackFt ?? 0), ...grades, ...cuts.map(c => pad(c.b.id) + c.b.height.aboveGradeFt));
+    // the setback lines the cut crosses: the buildable envelope, nearest each property line
+    const envCuts = scene.envelope?.polygons[0]?.[0] ? crossings(scene.envelope.polygons[0][0], at, dir) : [];
+    const setLeft = envCuts.filter(t => t < 0)[0], setRight = envCuts.filter(t => t > 0).pop();
     // one scale both ways: a true section
-    const k = Math.min((image.w - 120) / (hi - lo), (image.h - 110) / (tallest + 16));
+    const k = Math.min((image.w - 120) / (hi - lo), (image.h - 110) / (top - bottom + 16));
     const x = (t: number) => r2(image.x + image.w / 2 + (t - (lo + hi) / 2) * k);
     const ground = image.y + image.h - 56;
-    const y = (ft: number) => r2(ground - ft * k);
+    const y = (ft: number) => r2(ground - (ft - bottom) * k);
+    const heightY = (ft: number) => y(reference + ft);
     out.push(`<g data-role="section" data-building="${esc(subject.id)}">`);
-    out.push(`<rect x="${x(lo)}" y="${r2(ground)}" width="${r2((hi - lo) * k)}" height="14" fill="#e9e6df"/><line x1="${x(lo)}" y1="${r2(ground)}" x2="${x(hi)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="1.2" data-role="ground"/>`);
+    if (!profile) out.push(`<rect x="${x(lo)}" y="${r2(ground)}" width="${r2((hi - lo) * k)}" height="14" fill="#e9e6df"/><line x1="${x(lo)}" y1="${r2(ground)}" x2="${x(hi)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="1.2" data-role="ground"/>`);
     for (const t of [before[before.length - 1], after[0]]) {
       if (t == null) continue;
-      out.push(`<g data-role="property-line"><line x1="${x(t)}" y1="${y(tallest + 8)}" x2="${x(t)}" y2="${r2(ground + 14)}" stroke="${INK}" stroke-width="0.9" stroke-dasharray="7 2.5 1.5 2.5"/><text x="${x(t)}" y="${r2(y(tallest + 8) - 4)}" font-size="6" text-anchor="middle" fill="#4b5158">Property line</text></g>`);
+      out.push(`<g data-role="property-line"><line x1="${x(t)}" y1="${y(top + 8)}" x2="${x(t)}" y2="${r2(ground + 14)}" stroke="${INK}" stroke-width="0.9" stroke-dasharray="7 2.5 1.5 2.5"/><text x="${x(t)}" y="${r2(y(top + 8) - 4)}" font-size="6" text-anchor="middle" fill="#4b5158">Property line</text></g>`);
+    }
+    for (const t of [setLeft, setRight]) {
+      if (t == null) continue;
+      out.push(`<g data-role="setback-line"><line x1="${x(t)}" y1="${y(top + 3)}" x2="${x(t)}" y2="${r2(ground)}" stroke="#7a8087" stroke-width="0.6" stroke-dasharray="3 2"/><text x="${x(t)}" y="${r2(y(top + 3) - 3)}" font-size="5.4" text-anchor="middle" fill="#7a8087">Setback</text></g>`);
+    }
+    // The zoning height control, as the record states it. A plane is drawn where the record has
+    // one; otherwise the single figure, which may be the height at the setback line only.
+    const pl = control?.plane && control.plane.slopeHorizontal > 0 && control.plane.slopeVertical > 0 ? control.plane : null;
+    const from = setLeft ?? before[before.length - 1] ?? lo, to = setRight ?? after[0] ?? hi;
+    const allowedAt = (t: number): number | null => {
+      if (pl) return pl.heightAtSetbackFt + Math.max(0, Math.min(t - from, to - t)) * (pl.slopeVertical / pl.slopeHorizontal);
+      return limit;
+    };
+    if (pl) {
+      const mid = (from + to) / 2, peak = allowedAt(mid) as number, cap = Math.min(peak, top - reference + 6);
+      const run = (cap - pl.heightAtSetbackFt) * (pl.slopeHorizontal / pl.slopeVertical);
+      out.push(`<g data-role="height-plane"><polyline points="${x(from)},${heightY(pl.heightAtSetbackFt)} ${x(from + run)},${heightY(cap)} ${x(to - run)},${heightY(cap)} ${x(to)},${heightY(pl.heightAtSetbackFt)}" fill="none" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
+        + `<text x="${r2(x(from) - 4)}" y="${r2(heightY(pl.heightAtSetbackFt) + 2)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`${Math.round(pl.heightAtSetbackFt)} ft at the setback line, then ${pl.slopeHorizontal}H:${pl.slopeVertical}V`)}</text></g>`);
+    } else if (limit != null) {
+      out.push(`<g data-role="height-limit"><line x1="${x(from)}" y1="${heightY(limit)}" x2="${x(to)}" y2="${heightY(limit)}" stroke="#b4232a" stroke-width="0.9" stroke-dasharray="6 3"/>`
+        + `<text x="${r2(x(to) - 4)}" y="${r2(heightY(limit) - 4)}" font-size="5.8" text-anchor="end" fill="#b4232a">${esc(`Screening height ${Math.round(limit)} ft`)}</text></g>`);
+    }
+    // The garage the cut crosses, drawn before the buildings that stand on and beside it: a
+    // concrete structure as high as its parking levels, its deck, and the court on the deck.
+    const garages = scene.features.filter(f => f.styleRole === 'garage');
+    const garageOnPlan = garages.length > 0;
+    const over = scene.buildings.filter(b => b.parkingLevels > 0);
+    const deckFt = over.length ? Math.max(...over.map(b => b.height.levelsFt[b.parkingLevels - 1] ?? 0)) : 0;
+    const deckLevels = over.length ? Math.max(...over.map(b => b.parkingLevels)) : 0;
+    if (deckFt > 0) {
+      for (const g of garages) {
+        const gh = crossings(g.polygons[0]?.[0] ?? [], at, dir);
+        if (gh.length < 2) continue;
+        const ga = gh[0] as number, gz = gh[gh.length - 1] as number;
+        const seat = pad(over[0]!.id);
+        out.push(`<g data-role="section-garage" data-feature-id="${esc(g.id)}"><rect x="${x(ga)}" y="${y(seat + deckFt)}" width="${r2((gz - ga) * k)}" height="${r2(deckFt * k)}" fill="#e2e2df" stroke="${INK}" stroke-width="0.8"/>`
+          + Array.from({ length: Math.max(0, deckLevels - 1) }, (_, i) => { const lv = over[0]!.height.levelsFt[i] ?? 0; return `<line x1="${x(ga)}" y1="${y(seat + lv)}" x2="${x(gz)}" y2="${y(seat + lv)}" stroke="${INK}" stroke-width="0.5"/>`; }).join('')
+          + `<line x1="${x(ga)}" y1="${y(seat + deckFt)}" x2="${x(gz)}" y2="${y(seat + deckFt)}" stroke="#146b5e" stroke-width="1.6"/></g>`);
+        // the stretch of deck no building stands on is the court: it is named there, with its height
+        const covered = cuts.map(c => [c.hits[0] as number, c.hits[c.hits.length - 1] as number] as const).sort((p, q) => p[0] - q[0]);
+        let open: [number, number] = [ga, gz], widest = 0, cursor = ga;
+        for (const [c0, c1] of [...covered, [gz, gz] as const]) {
+          const end = Math.min(c0, gz);
+          if (end - cursor > widest) { widest = end - cursor; open = [cursor, end]; }
+          cursor = Math.max(cursor, c1);
+        }
+        if (widest * k > 60) {
+          const mid = (open[0] + open[1]) / 2;
+          out.push(`<text x="${x(mid)}" y="${r2(y(seat + deckFt) - 5)}" font-size="6.4" font-weight="600" text-anchor="middle" fill="#146b5e" data-role="section-court">${esc(`Court on the garage deck · est. ${Math.round(deckFt)} ft above grade`)}</text>`
+            + `<text x="${x(mid)}" y="${r2(y(seat + deckFt / 2) + 2.4)}" font-size="6.4" text-anchor="middle" fill="#3f4347" data-role="section-garage-label">${esc(`Garage · ${deckLevels} parking level${deckLevels === 1 ? '' : 's'}${g.stalls ? ` · ${g.stalls} stalls` : ''}`)}</text>`);
+        }
+      }
     }
     for (const { b, hits } of cuts) {
       const a = hits[0] as number, z = hits[hits.length - 1] as number;
+      const allow = [allowedAt(a), allowedAt(z)].filter((v): v is number => v != null);
+      if (allow.length && b.height.aboveGradeFt > Math.min(...allow) + 0.5) {
+        overLimit = true;
+        limitNote = `${b.display.title} is ${b.height.basis === 'estimated' ? 'estimated at' : 'reported at'} ${Math.round(b.height.aboveGradeFt)} ft. ${pl ? 'Height plane' : 'Screening height'} at this cut is ${Math.round(Math.min(...allow))} ft. Verify the applicable height control.`;
+      }
       const levels = b.height.levelsFt;
+      const seat = pad(b.id), seatY = y(seat);
       levels.forEach((top, i) => {
         const base = i === 0 ? 0 : (levels[i - 1] as number);
-        out.push(`<rect x="${x(a)}" y="${y(top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="${i % 2 ? '#f4f1ea' : '#ebe7de'}" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}"/>`);
-        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y((top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">Level ${i + 1}</text>`);
+        // a level says what it is where the plan says so: parking under the homes, homes above
+        const parking = i < b.parkingLevels;
+        const use = !garageOnPlan ? '' : parking ? ` · Parking P${i + 1}` : b.use === 'amenity' ? ' · Amenity' : ' · Residential';
+        if (parking) {
+          out.push(`<rect x="${x(a)}" y="${y(seat + top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="#d3d4d2" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}" data-level-use="parking" data-building="${esc(b.id)}"/>`);
+          if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y(seat + (top + base) / 2) + 2.4)}" font-size="6.2" fill="#3f4347">${esc(`Level ${i + 1}${use} · ${Math.round(top - base)} ft`)}</text>`);
+          return;
+        }
+        out.push(`<rect x="${x(a)}" y="${y(seat + top)}" width="${r2((z - a) * k)}" height="${r2((top - base) * k)}" fill="${i % 2 ? '#f4f1ea' : '#ebe7de'}" stroke="${INK}" stroke-width="0.8" data-level="${i + 1}"/>`);
+        if ((top - base) * k >= 9) out.push(`<text x="${r2(x(a) + 5)}" y="${r2(y(seat + (top + base) / 2) + 2.4)}" font-size="6.2" fill="#4b5158">${esc(`Level ${i + 1}${use} · ${Math.round(top - base)} ft`)}</text>`);
       });
-      const top = b.height.aboveGradeFt, dx = x(z) + 12;
-      out.push(`<g data-role="height" data-building="${esc(b.id)}"><line x1="${dx}" y1="${r2(ground)}" x2="${dx}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${r2(ground)}" x2="${r2(dx + 3)}" y2="${r2(ground)}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${y(top)}" x2="${r2(dx + 3)}" y2="${y(top)}" stroke="${INK}" stroke-width="0.6"/>`
-        + `<text x="${r2(dx + 6)}" y="${r2((ground + y(top)) / 2 + 2.4)}" font-size="6.6" fill="${INK}">${esc(`${b.height.basis === 'estimated' ? 'est. ' : ''}${Math.round(top)} ft`)}</text></g>`);
-      out.push(`<text x="${r2((x(a) + x(z)) / 2)}" y="${r2(y(top) - 6)}" font-size="8" font-weight="700" text-anchor="middle" fill="${INK}">${esc(`${b.display.title} · ${levels.length} ${levels.length === 1 ? 'story' : 'stories'}`)}</text>`);
+      const heightFt = b.height.aboveGradeFt, topY = y(seat + heightFt), dx = x(z) + 12;
+      out.push(`<g data-role="height" data-building="${esc(b.id)}"><line x1="${dx}" y1="${seatY}" x2="${dx}" y2="${topY}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${seatY}" x2="${r2(dx + 3)}" y2="${seatY}" stroke="${INK}" stroke-width="0.6"/><line x1="${r2(dx - 3)}" y1="${topY}" x2="${r2(dx + 3)}" y2="${topY}" stroke="${INK}" stroke-width="0.6"/>`
+        + `<text x="${r2(dx + 6)}" y="${r2((seatY + topY) / 2 + 2.4)}" font-size="6.6" fill="${INK}">${esc(`${b.height.basis === 'estimated' ? 'est. ' : ''}${Math.round(heightFt)} ft`)}</text></g>`);
+      out.push(`<text x="${r2((x(a) + x(z)) / 2)}" y="${r2(topY - 6)}" font-size="8" font-weight="700" text-anchor="middle" fill="${INK}">${esc(`${b.display.title} · ${levels.length} ${levels.length === 1 ? 'story' : 'stories'}`)}</text>`);
       drawn++;
+    }
+    if (profile) {
+      for (const kind of ['existing', 'assumed'] as const) {
+        let penDown = false;
+        const d = samples.map(({ t, z }) => {
+          const elevation = z?.[kind];
+          if (elevation == null) { penDown = false; return ''; }
+          const command = penDown ? 'L' : 'M';
+          penDown = true;
+          return `${command}${x(t)} ${y(elevation)}`;
+        }).join(' ');
+        if (d.trim()) out.push(`<path data-role="${kind}-grade" d="${d}" fill="none" stroke="${kind === 'existing' ? '#68727c' : '#146b5e'}" stroke-width="1.3"${kind === 'existing' ? ' stroke-dasharray="4 2.5"' : ''}/>`);
+      }
+      const gx = image.x + 18, gy = ground + 17;
+      const source = profile.source.split(' (')[0]?.slice(0, 39) ?? '';
+      out.push(`<line x1="${gx}" y1="${gy}" x2="${gx + 16}" y2="${gy}" stroke="#68727c" stroke-dasharray="4 2.5"/><text x="${gx + 21}" y="${gy + 2}" font-size="6.2" fill="#4b5158"><title>${esc(profile.source)}</title>${esc(`Existing grade · ${source}`)}</text>`);
+      if (profile.grading) {
+        const { deepest_cut_ft, deepest_fill_ft } = profile.grading;
+        out.push(`<line x1="${gx + 205}" y1="${gy}" x2="${gx + 221}" y2="${gy}" stroke="#146b5e" stroke-width="1.3"/><text x="${gx + 226}" y="${gy + 2}" font-size="6.2" fill="#146b5e">${esc(`Assumed grade · site cut ${deepest_cut_ft} ft · fill ${deepest_fill_ft} ft`)}</text>`);
+      }
     }
     // a graphic scale: the section states no horizontal distance in figures
     const bar = [100, 50, 20, 10].find(ft => ft * k <= image.w * 0.22) ?? 10;
     const sx = image.x + 18, sy = ground + 36;
     out.push(`<g data-role="scale-bar"><rect x="${r2(sx)}" y="${r2(sy)}" width="${r2((bar / 2) * k)}" height="3" fill="${INK}"/><rect x="${r2(sx + (bar / 2) * k)}" y="${r2(sy)}" width="${r2((bar / 2) * k)}" height="3" fill="#fff" stroke="${INK}" stroke-width="0.6"/><text x="${r2(sx)}" y="${r2(sy - 3)}" font-size="5.6" fill="#4b5158">0</text><text x="${r2(sx + bar * k)}" y="${r2(sy - 3)}" font-size="5.6" text-anchor="middle" fill="#4b5158">${bar} ft</text></g>`);
+    if (limitNote) out.push(`<text x="${r2(image.x + image.w - 18)}" y="${r2(ground + 38)}" font-size="6.4" font-weight="600" text-anchor="end" fill="#b4232a" data-role="height-finding">${esc(limitNote)}</text>`);
     out.push('</g>');
   } else {
     out.push(`<text x="${r2(W / 2)}" y="${r2(image.y + image.h / 2)}" font-size="10" text-anchor="middle" fill="#7a8087">No building on this plan to cut a section through.</text>`);
@@ -722,9 +1073,10 @@ export function renderSectionSheet(scene: DrawingScene, title: SheetTitle, size:
   if (title.subtitle) out.push(`<text x="${tx}" y="${r2(by + 54)}" font-size="7.5" fill="#4b5158">${esc(title.subtitle.length > 110 ? title.subtitle.slice(0, 108) + '…' : title.subtitle)}</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 44)}" font-size="20" font-weight="700" text-anchor="end" fill="${INK}" data-role="sheet-number">A-03</text>`);
   out.push(`<text x="${r2(W - M - 14)}" y="${r2(by + 57)}" font-size="5.6" text-anchor="end" fill="#7a8087">${esc(`Parcel ${scene.identity.parcelId} · rev ${scene.identity.revision} · ${title.date}`)}</text>`);
-  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="section-note">${esc(subject?.height.basis === 'reported'
-    ? 'Schematic. The ground is drawn level: the plan carries no grade. Roofs and parapets are not drawn. Graphic scale only.'
-    : 'Schematic. The ground is drawn level: the plan carries no grade. Heights are estimated from story counts and are not measured or controlling. Roofs and parapets are not drawn. Graphic scale only.')}</text>`);
+  const groundNote = profile?.grading ? 'Existing elevations and illustrative grading share the 3D model datum.'
+    : profile ? 'Existing elevations share the 3D model datum.' : 'Schematic level ground. Terrain is unavailable for this section.';
+  const heightNote = subject?.height.basis === 'reported' ? '' : ' Heights are estimated from story counts.';
+  out.push(`<text x="${tx}" y="${r2(H - M - 5)}" font-size="5.4" fill="#7a8087" data-role="section-note">${esc(`${groundNote}${heightNote} Floor levels shown. Graphic scale only.`)}</text>`);
   out.push('</svg>');
-  return { svg: out.join('\n'), widthPt: W, heightPt: H, drawn };
+  return { svg: out.join('\n'), widthPt: W, heightPt: H, drawn, overLimit };
 }

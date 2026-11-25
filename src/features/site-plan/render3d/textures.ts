@@ -4,10 +4,11 @@
 // pattern: the colour of a wall or a roof comes from the geometry's own vertex
 // colour, so one material serves every house on the street.
 import * as THREE from 'three';
+import siteAssets from './siteAssets.json';
 import type { Surface } from '../ui/renderModel';
 
 export type { Surface };
-type Drawn = 'siding' | 'batten' | 'brick' | 'shingle' | 'metal' | 'wood' | 'plaster' | 'panel' | 'concrete' | 'asphalt' | 'grass';
+type Drawn = 'siding' | 'batten' | 'brick' | 'shingle' | 'metal' | 'membrane' | 'wood' | 'plaster' | 'panel' | 'concrete' | 'asphalt' | 'grass';
 
 interface Tile { map: THREE.Texture; bump: THREE.Texture; bumpScale: number; roughness: number; metalness?: number }
 
@@ -52,6 +53,22 @@ function finish(c: HTMLCanvasElement, w: number, h: number, colour: boolean): TH
 }
 
 const DRAW: Record<Drawn, () => Tile> = {
+  membrane: () => {
+    const S = 256, r = rng(91);
+    const [colour, paint] = canvas(S), [relief, height] = canvas(S);
+    paint.fillStyle = '#e9e8e5';
+    paint.fillRect(0, 0, S, S);
+    height.fillStyle = '#808080';
+    height.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 64) {
+      paint.fillStyle = y % 128 === 0 ? '#c6c6c4' : '#d7d6d3';
+      paint.fillRect(0, y, S, 2);
+      height.fillStyle = '#b0b0b0';
+      height.fillRect(0, y, S, 2);
+    }
+    speckle(paint, S, 4096, 200, 244, r, 0.18);
+    return { map: finish(colour, 8, 4.8, true), bump: finish(relief, 8, 4.8, false), bumpScale: 0.009, roughness: 0.83 };
+  },
   // lap siding: six boards to a 0.9 m tile, a shadow under each lap
   siding: () => {
     const S = 256, r = rng(11);
@@ -229,7 +246,7 @@ const DRAW: Record<Drawn, () => Tile> = {
 };
 
 // Surfaces that have a photograph (public/textures/site, from Poly Haven, CC0), and the metres one tile covers.
-const PHOTOS: Record<string, number> = { brick: 1.7, asphalt: 3.2, grass: 5.5, plaster: 2.6, shingle: 2.2, concrete: 2.8, wood: 2.2 };
+const PHOTOS: Record<string, (typeof siteAssets.textures)[keyof typeof siteAssets.textures]> = siteAssets.textures;
 
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
 export class Surfaces {
@@ -241,25 +258,27 @@ export class Surfaces {
 
   /** Put the photograph of a surface, and its normal map, in place of the drawn pattern once they have loaded. */
   private photograph(kind: string, m: THREE.MeshStandardMaterial): void {
-    const size = PHOTOS[kind];
-    if (!size || typeof document === 'undefined') return;
+    const entry = PHOTOS[kind];
+    if (!entry || typeof document === 'undefined') return;
+    const { tile_m: size, normal_strength: relief } = entry;
     const loader = new THREE.TextureLoader();
     const one = (file: string, colour: boolean) => new Promise<THREE.Texture | null>(resolve => {
       loader.load(`/textures/site/${file}`, t => {
         t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
-        t.repeat.set(1 / size, 1 / size);
+        t.repeat.set(1 / size[0]!, 1 / size[1]!);
         t.anisotropy = 8;
         if (colour) t.colorSpace = THREE.SRGBColorSpace;
         this.photos.push(t);
         resolve(t);
       }, undefined, () => resolve(null));
     });
-    this.pending.push(Promise.all([one(`${kind}.jpg`, true), one(`${kind}_n.jpg`, false)]).then(([map, normal]) => {
+    this.pending.push(Promise.all([one(entry.color, true), one(entry.normal, false)]).then(([map, normal]) => {
       if (!map || !normal) return;       // the drawn pattern stays
       m.map = map;
       m.bumpMap = null;
       m.normalMap = normal;
-      m.normalScale = new THREE.Vector2(0.9, 0.9);
+      m.normalScale.set(relief, relief);
+      m.roughness = entry.roughness;
       m.needsUpdate = true;
     }));
   }
@@ -276,17 +295,51 @@ export class Surfaces {
       x.fillStyle = '#ffffff'; x.fillRect(13, 0, 6, 32);
       const map = finish(c, 0.11, 1, true);
       this.tiles.set(kind, { map, bump: map, bumpScale: 0, roughness: 0.6 });
-      m = new THREE.MeshStandardMaterial({ vertexColors: true, map, transparent: true, depthWrite: false, roughness: 0.55, metalness: 0.3, side: THREE.DoubleSide });
+      m = new THREE.MeshStandardMaterial({ vertexColors: true, map, alphaTest: 0.5, roughness: 0.55, metalness: 0.24, side: THREE.DoubleSide });
     } else if (kind === 'glassrail') {
       m = new THREE.MeshPhysicalMaterial({ color: 0xcfe2e0, transparent: true, opacity: 0.3, depthWrite: false, roughness: 0.04, metalness: 0, envMapIntensity: 1.3, side: THREE.DoubleSide });
     } else if (kind === 'water') {
       m = new THREE.MeshPhysicalMaterial({ color: 0x3f8fa8, roughness: 0.06, metalness: 0.1, envMapIntensity: 1.2, clearcoat: 1, clearcoatRoughness: 0.05 });
+    } else if (kind === 'site-hatch') {
+      const [c, x] = canvas(64);
+      x.fillStyle = '#e0edec';
+      x.fillRect(0, 0, 64, 64);
+      x.strokeStyle = '#5c9797';
+      x.lineWidth = 7;
+      x.beginPath();
+      x.moveTo(-4, 4); x.lineTo(4, -4);
+      x.moveTo(0, 64); x.lineTo(64, 0);
+      x.moveTo(60, 68); x.lineTo(68, 60);
+      x.stroke();
+      const map = finish(c, 2.7, 2.7, true);
+      this.tiles.set(kind, { map, bump: map, bumpScale: 0, roughness: 1 });
+      m = new THREE.MeshBasicMaterial({ vertexColors: true, map, transparent: true, opacity: 0.69, depthWrite: false });
     } else if (kind === 'plain') {
       m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
+    } else if (kind === 'metalwork') {
+      m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.47, metalness: 0.38 });
     } else {
       const t = DRAW[kind]();
       this.tiles.set(kind, t);
       const drawn = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: t.bumpScale, roughness: t.roughness, metalness: t.metalness ?? 0 });
+      if (kind === 'grass') drawn.onBeforeCompile = shader => {
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', `#include <common>
+            float lawnHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+            float lawnNoise(vec2 p) {
+              vec2 i = floor(p), f = smoothstep(0.0, 1.0, fract(p));
+              return mix(mix(lawnHash(i), lawnHash(i + vec2(1,0)), f.x),
+                         mix(lawnHash(i + vec2(0,1)), lawnHash(i + 1.0), f.x), f.y);
+            }`)
+          .replace('#include <map_fragment>', `#include <map_fragment>
+            #ifdef USE_MAP
+              vec2 p = vMapUv;
+              float growth = lawnNoise(p * 0.2) * 0.7 + lawnNoise(p * 1.1) * 0.3;
+              vec2 rotated = mat2(0.72, -0.69, 0.69, 0.72) * p * 0.74 + vec2(0.47, 0.21);
+              diffuseColor.rgb *= mix(texture2D(map, p).rgb, texture2D(map, rotated).rgb, smoothstep(0.23, 0.77, growth));
+              diffuseColor.rgb *= mix(vec3(0.70, 0.77, 0.64), vec3(1.17, 1.09, 0.95), growth);
+            #endif`);
+      };
       this.photograph(kind, drawn);
       m = drawn;
     }
@@ -294,12 +347,22 @@ export class Surfaces {
     return m;
   }
 
-  /** Window glass: dark, smooth, reflecting the sky. A pane's own tint shows through: a room with its blinds down is paler. */
-  glass(): THREE.Material {
-    const hit = this.made.get('glass');
+  /** Thin glazing reflects more at grazing angles while letting the room read head-on. */
+  glass(clear = false): THREE.Material {
+    const slot = clear ? 'glazing' : 'glass';
+    const hit = this.made.get(slot);
     if (hit) return hit;
-    const m = new THREE.MeshPhysicalMaterial({ vertexColors: true, color: 0xffffff, roughness: 0.07, metalness: 0.82, envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.05 });
-    this.made.set('glass', m);
+    const m = new THREE.MeshPhysicalMaterial(clear
+      ? { color: 0x6e7a79, roughness: 0.12, metalness: 0, ior: 1.5, transparent: true, opacity: 0.28, depthWrite: false, envMapIntensity: 1.6 }
+      : { vertexColors: true, color: 0xffffff, roughness: 0.07, metalness: 0.82, envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.05 });
+    if (clear) m.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+        float edgeReflection = pow(1.0 - saturate(dot(normal, geometryViewDir)), 4.0);
+        diffuseColor.a = mix(0.26, 0.8, edgeReflection);
+        #include <opaque_fragment>
+      `);
+    };
+    this.made.set(slot, m);
     return m;
   }
 

@@ -20,10 +20,14 @@ interface Row {
   p: HousePalette;
   /** A drive comes to the far end. */
   drive: boolean;
+  /** How far the pavement is from the garage end, metres; null where none comes to it. */
+  driveGap: number | null;
   /** A neighbour stands against the left side, the right side. */
   party: [boolean, boolean];
   /** How far straight out from a point on the door end the pavement is, or null. */
   reach: (s: number) => number | null;
+  /** How far the pavement is off the home's open side, at the line the row's path runs on: -1 the left side, 1 the right. Null where none is near. */
+  sideReach: (side: number) => number | null;
 }
 
 /** The door end's ground story: a door to one side with a window beside it, a stoop and a walk. Returns where the door stands. */
@@ -36,7 +40,20 @@ function entry(r: Row, o: { leaf: Mat; frame: Mat; win: WindowSpec; sidelight?: 
   if (W >= 5) k.windows(f.w, (doorS + 1.0 + W - 0.55) / 2, W >= 5.6 ? 2 : 1, 0.85, SLAB + 0.8, SLAB + 2.15, o.win, d);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 0, 1.0, 0, SLAB, PORCH);
   k.box(f.w, doorS - 0.8, doorS + 0.8, 1.0, 1.32, 0, SLAB * 0.5, PORCH);
-  if (toPavement != null && toPavement > 2.6) k.box(f.w, doorS - 0.55, doorS + 0.55, 1.32, Math.min(toPavement + 0.3, 12), 0, 0.2, WALK);
+  if (toPavement != null && toPavement > 1.55 && toPavement <= 12) {
+    k.approach(f.w, doorS, 1.32, toPavement, 1.14, SLAB * 0.5, 'walk', WALK, 0.31);
+  }
+  else if (toPavement == null || toPavement > 12) {
+    // No pavement lies ahead of the door: the home fronts a green or a mews. A walk runs out from the
+    // stoop to a path along the front of the row. Each home lays its own stretch of that path, so a
+    // row's stretches join, and an end home carries it on past its open side toward the lane there.
+    const out = 3.3, wide = 1.3;
+    k.approach(f.w, doorS, 1.32, out + 0.05, 1.14, SLAB * 0.5, 'walk', WALK, 0.22);
+    // past an open side the path runs on only as far as the lane there, and not at all where none is near:
+    // a path that stops in a lawn is worse than one that stops at the last door
+    const side = (s0: number): number => { const d = r.sideReach(s0); return d != null && d <= 7 ? d + 0.3 : 0; };
+    k.box(f.w, r.party[0] ? -0.05 : -side(-1), r.party[1] ? W + 0.05 : W + side(1), out, out + wide, 0, 0.2, WALK);
+  }
   if (W >= 5) k.bed(f.w, doorS + 1.0, W - 0.2, 0.12, 0.95);
   return doorS;
 }
@@ -47,6 +64,8 @@ function rear(r: Row, back: Wall, o: { frame: Mat; trim: Mat; leaf: Mat; lites: 
   if (drive) {
     const gw = W >= 6 ? 4.9 : Math.min(2.75, W - 1.1);
     k.garage(back, W / 2 - gw / 2, W / 2 + gw / 2, 0.04, 2.15, { frame: o.trim, leaf: o.leaf, lites: o.lites });
+    // the apron: a car has to get from the lane to the door
+    if (r.driveGap != null && r.driveGap > 0.25) k.approach(back, W / 2, 0, r.driveGap, gw + 0.4, 0.04, 'apron', WALK, 0.305);
   } else {
     k.window(back, W / 2, Math.min(1.8, W - 1.4), SLAB + 0.05, SLAB + 2.15, { frame: o.frame, grid: [2, 1] });
     k.box(back, 0.3, W - 0.3, 0.02, 2.4, 0, 0.2, PORCH);
@@ -103,14 +122,14 @@ function mansard(r: Row): void {
 }
 
 /** The farmhouse row home: board and batten under a gable that faces the street, metal awnings over the doors. */
-function gabled(r: Row): void {
+function gabled(r: Row, roofPitch = 0.83): void {
   const { k, f, W, D, lv, p, party } = r;
   const n = lv.length, zT = lv[n - 1] ?? 9, z1 = lv[0] ?? 3;
   const ring = f.ring(0, W, 0, D), faces = f.faces(0, W, 0, D);
   const [pl, pr] = party;
   k.prism(ring, 0, SLAB, p.found, 'base');
   k.prism(ring, SLAB, zT - SLAB, p.body, 'body');
-  const pitch = Math.min(0.83, 2.9 / (W / 2));
+  const pitch = Math.min(roofPitch, 2.9 / (W / 2));
   const rise = k.gable(f, 0, W, 0, D, zT, pitch, 'd', { over: [pl && pr ? 0 : 0.3, 0.3], roof: p.roof, wall: p.body, fascia: p.fascia });
   const win = spec(p), ends: Wall[] = [f.w, faces.back];
   entry(r, { leaf: p.door, frame: p.frame, win, sidelight: W >= 6 ? 0.3 : 0 });
@@ -243,12 +262,26 @@ export function rowHome(k: Kit, rings: number[][][], height: SceneHeight, paveme
   const row: Row = {
     k, f, W, D, lv: levelsM(height), p: housePalette(style, k.seed),
     drive: near.dist != null && near.dist < 16,
+    driveGap: near.dist != null && near.dist < 16 ? near.dist : null,
     party: [attached(faces.left), attached(faces.right)],
     reach: s => reachOf(front, pavement, s),
+    sideReach: side => {
+      // along the front wall's own direction, out past the home's corner, at the path's distance from the wall
+      let best = Infinity;
+      for (const q of pavement) {
+        const vx = q[0] - front.a[0], vy = q[1] - front.a[1];
+        const along = vx * front.t[0] + vy * front.t[1], off = vx * front.n[0] + vy * front.n[1];
+        if (Math.abs(off - 3.95) > 2.2) continue;
+        const d = side < 0 ? -along : along - front.len;
+        if (d > 0 && d < best) best = d;
+      }
+      return best < 40 ? best : null;
+    },
   };
   if (style === 'modern') modern(row);
+  else if (style === 'infill') gabled(row, 0.5);
   else if (style === 'farmhouse') gabled(row);
-  else if (style === 'heritage') brick(row);
+  else if (style === 'heritage' || style === 'urban-brick') brick(row);
   else mansard(row);
   return true;
 }

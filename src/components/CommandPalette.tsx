@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, Transition, Combobox } from '@headlessui/react';
 import { 
-  Search, MapPin, Building2, Users, Calculator, 
-  TrendingUp, FileText, Settings, ArrowRight,
+  Search, MapPin, Building2, Users,
+  TrendingUp, Settings, ArrowRight,
   Clock, Star, Zap
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { searchParcels } from '../lib/parcelSearch';
 
 interface CommandItem {
   id: string;
@@ -25,14 +26,11 @@ interface CommandPaletteProps {
 
 export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [items, setItems] = useState<CommandItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [recentItems, setRecentItems] = useState<CommandItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  // The scope's P0.3 (2026-11-09): a search has three terminal states, not
-  // one. Loading, no match and a failed request each read differently; a
-  // result that arrives after the query changed is dropped (the sequence).
-  const searchSeqRef = useRef(0);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -52,20 +50,26 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   // Search with debouncing
   useEffect(() => {
     setOpenError(null);
-    if (query.length < 2) {
-      searchSeqRef.current += 1; // a result for an older query must not land
+    if (!isOpen || query.trim().length < 2) {
       setSearchError(null);
       setLoading(false);
       setItems(getDefaultItems());
       return;
     }
 
+    const controller = new AbortController();
+    setItems([]);
+    setSearchError(null);
+    setLoading(true);
     const timeoutId = setTimeout(() => {
-      searchItems(query);
+      void searchItems(query, controller.signal);
     }, 300);
 
-    return () => clearTimeout(timeoutId);
-  }, [query]);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [query, isOpen, attempt]);
 
   const loadDefaultItems = () => {
     const defaultItems = getDefaultItems();
@@ -91,56 +95,10 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   };
 
-  const getDefaultItems = (): CommandItem[] => [
-    // Navigation
-    {
-      id: 'nav-map',
-      title: 'Go to Map View',
-      category: 'navigation',
-      icon: <MapPin className="w-4 h-4" />,
-      action: () => { /* Navigate to map */ onClose(); },
-      keyboard: '⌘1'
-    },
-    {
-      id: 'nav-projects',
-      title: 'Go to Projects',
-      category: 'navigation', 
-      icon: <Building2 className="w-4 h-4" />,
-      action: () => { /* Navigate to projects */ onClose(); },
-      keyboard: '⌘2'
-    },
-    {
-      id: 'nav-analysis',
-      title: 'Go to Analysis',
-      category: 'navigation',
-      icon: <Calculator className="w-4 h-4" />,
-      action: () => { /* Navigate to analysis */ onClose(); },
-      keyboard: '⌘3'
-    },
-    
-    // Actions
-    {
-      id: 'action-create-project',
-      title: 'Create New Project',
-      category: 'action',
-      icon: <Building2 className="w-4 h-4" />,
-      action: () => { /* Create project */ onClose(); }
-    },
-    {
-      id: 'action-export-pdf',
-      title: 'Export Current Project as PDF',
-      category: 'action',
-      icon: <FileText className="w-4 h-4" />,
-      action: () => { /* Export PDF */ onClose(); }
-    },
-    {
-      id: 'action-optimize-massing',
-      title: 'Optimize Building Massing',
-      category: 'action',
-      icon: <Zap className="w-4 h-4" />,
-      action: () => { /* Optimize massing */ onClose(); }
-    }
-  ];
+  // Commands are listed only when they do something. Navigation, export and
+  // optimize entries used to close the palette and nothing else; they return
+  // when each has a destination.
+  const getDefaultItems = (): CommandItem[] => [];
 
   /**
    * Open a search hit the way a map click does: the full parcel row from
@@ -200,32 +158,14 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   };
 
-  const searchItems = async (searchQuery: string) => {
-    const seq = ++searchSeqRef.current;
-    const stale = () => seq !== searchSeqRef.current;
-    setLoading(true);
-    setSearchError(null);
+  const searchItems = async (searchQuery: string, signal: AbortSignal) => {
 
     try {
       const results: CommandItem[] = [];
       
-      // Search parcels using pg_trgm similarity
       if (supabase) {
-        // PostgREST's filter grammar reads commas and parentheses as syntax
-        const term = searchQuery.replace(/[,()]/g, ' ').trim();
-        // An APN typed with its spaces or dashes ("116 02 0 020.00") never
-        // matched the stored number; the unformatted column takes the digits
-        // (the cohort retest: exact APN search empty for 4727 Post Rd).
-        const digits = term.replace(/[^0-9a-z]/gi, '');
-        const filters = [`address.ilike.%${term}%`, `parcelnumb.ilike.%${term}%`];
-        if (digits.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${digits}%`);
-        const { data: parcels, error } = await supabase
-          .from('parcels')
-          .select('ogc_fid, parcelnumb, address, zoning, landval')
-          .or(filters.join(','))
-          .limit(10);
-        if (stale()) return;
-        if (error) throw new Error(error.message ?? String(error));
+        const parcels = (await searchParcels(searchQuery, 10, signal)).map(h => ({ ogc_fid: h.ogcFid, parcelnumb: h.parcelNumber, address: h.address, zoning: h.zoning }));
+        if (signal.aborted) return;
 
         if (parcels) {
           parcels.forEach(parcel => {
@@ -240,41 +180,18 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
             });
           });
         }
-
-        // Mock project search results
-        if (searchQuery.toLowerCase().includes('demo')) {
-          results.push({
-            id: 'project-demo',
-            title: 'Demo Project',
-            subtitle: '5 parcels • Nashville',
-            category: 'project',
-            icon: <Building2 className="w-4 h-4" />,
-            action: () => {
-              // Switch to demo project
-              onClose();
-            }
-          });
-        }
       }
 
-      // Add action items that match search
-      const actionItems = getDefaultItems().filter(item => 
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.category === 'action'
-      );
-      
-      results.push(...actionItems);
-
-      if (stale()) return;
+      if (signal.aborted) return;
       setItems(results);
     } catch (error) {
-      if (stale()) return;
+      if (signal.aborted) return;
       console.error('Search error:', error);
       // a failed request is not "no results": say so, and keep the commands
       setSearchError(error instanceof Error ? error.message : String(error));
       setItems(getDefaultItems().filter(item => item.category === 'action'));
     } finally {
-      if (!stale()) setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   };
 
@@ -352,7 +269,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                       <Combobox.Input
                         ref={inputRef}
                         className="flex-1 bg-transparent outline-none text-lg placeholder-gray-500"
-                        placeholder="Search parcels, projects, or run commands..."
+                        placeholder="Search by address or parcel ID"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                       />
@@ -399,7 +316,8 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                     )}
                     {searchError && !loading && (
                       <div data-testid="palette-search-error" className="mx-4 mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                        Parcel search failed: {searchError}. The commands below still work; try the search again.
+                        Parcel search failed: {searchError}. Your query is kept.{' '}
+                        <button type="button" data-testid="palette-retry" onClick={() => setAttempt(a => a + 1)} className="underline font-medium">Try again</button>
                       </div>
                     )}
                     {openError && (

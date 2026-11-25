@@ -390,7 +390,7 @@ describe('engine g18: the fail list is the engine\'s, and the holding answer is 
     expect(summary.fails).toEqual([]);
     expect(summary.tests.find(t => t.id === 'access.lane_on_held_land')).toMatchObject({ pass: false, figure: true });
     expect(summary.tests.find(t => t.id === 'lot.min_area')!.figure).toBeUndefined();
-    expect(summary.basisLine).toContain('1 tests pass');
+    expect(summary.basisLine).toContain('1 checks pass');
   });
 
   it('a listed fail is kept; a row the list leaves out is a figure', () => {
@@ -841,5 +841,29 @@ describe('the best plan\'s grammar without best_requested (engine release of 202
     };
     expect(bestRequestedOf(hart)).toBe('terrace');
     expect(chooseAutoBest(hart, { status: 'done', lots: 76, pattern: 'loop', fails: ['street.grade_max'] })).toBeNull();
+  });
+});
+
+// ── a failed run is not a yield (0 Osage St, production audit 2026-11-23) ─────
+import { deepSearchLine as searchLine, sfV1SummaryLine as summaryLine, sfV1ToElements as toElements } from './sfV1Plan';
+
+describe('a generator failure is worded as a failure', () => {
+  const failed = toElements({ status: 'error', error: 'engine error: DELETE requires a WHERE clause', ogc_fid: 675671 } as never).summary;
+
+  it('the basis line states no yield', () => {
+    expect(failed.status).toBe('error');
+    const line = summaryLine(failed);
+    expect(line).toMatch(/^No by-right result — the generator failed/);
+    expect(line).toContain('DELETE requires a WHERE clause');
+    expect(line).not.toMatch(/\b0 lots\b/);
+    expect(line).not.toMatch(/lots by right/);
+  });
+
+  it('a search over a failed sheet does not call the sheet the best', () => {
+    const done = { done: true, stopped: false, triesDone: 15, triesTotal: 15, bestLots: 2, baselineLots: 0, onSheet: false, precedentFrom: null };
+    expect(searchLine(done as never, true)).toBe('Checked 15 layouts. The best placed 2 lots, but no plan is on the sheet: the generator failed when it was asked to draw one.');
+    expect(searchLine({ ...done, bestLots: null } as never, true)).toBe('Checked 15 layouts. No plan is on the sheet: the generator failed.');
+    // a drawn sheet keeps its sentence
+    expect(searchLine(done as never, false)).toBe('Checked 15 layouts. The plan on the sheet was the best.');
   });
 });

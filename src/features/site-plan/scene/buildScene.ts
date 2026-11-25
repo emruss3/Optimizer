@@ -1,3 +1,5 @@
+import { findHome } from '../housing/originalDesigns';
+import { floorBase, roofHeight } from '../housing/drawings';
 import type { Polygon, MultiPolygon } from 'geojson';
 import type { Element } from '../../../engine/types';
 import { feature4326To3857 } from '../../../utils/reproject';
@@ -30,9 +32,44 @@ export interface SceneInput {
    *  plan's streets and the property line (scene/landscape). */
   frontEdges?: Segment[] | null;
   generator?: string | null;
+  /** Session-chosen housing design id for this scheme (not yet a saved-candidate field). */
+  housingDesignId?: string | null;
 }
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+
+function housingFromProps(p: Record<string, unknown>, frame: GroundFrame): NonNullable<SceneBuilding['housing']> | null {
+  const designId = typeof p.housingDesignId === 'string' ? p.housingDesignId
+    : typeof p.housePlan === 'string' ? `legacy:${p.housePlan}` : null;
+  if (!designId) return null;
+  const recovered = typeof p.housingDesignId === 'string' && typeof p.housingAssetVersion === 'string';
+  const status = p.housingPlacementStatus === 'placed' || p.housingPlacementStatus === 'unplaced' || p.housingPlacementStatus === 'schematic'
+    ? p.housingPlacementStatus
+    : recovered ? 'placed' : 'schematic';
+  const anchor = (v: unknown): [number, number] | null =>
+    Array.isArray(v) && v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number' ? [v[0], v[1]] : null;
+  const entry = anchor(p.homeEntry3857), vehicle = anchor(p.homeVehicle3857);
+  return {
+    designId,
+    assetVersion: typeof p.housingAssetVersion === 'string' ? p.housingAssetVersion : 'unrecovered',
+    elevation: typeof p.housingElevation === 'string' ? p.housingElevation : 'front',
+    mirror: typeof p.housingMirror === 'string' ? p.housingMirror : 'none',
+    rotationDeg: typeof p.housingRotationDeg === 'number' ? p.housingRotationDeg : 0,
+    parking: typeof p.housingParking === 'string' ? p.housingParking : 'unknown',
+    status,
+    fitReason: typeof p.housingFitReason === 'string' ? p.housingFitReason : (recovered ? null : 'legacy catalogue plan — design unrecovered; schematic massing'),
+    entryAnchorFt: entry ? frame.toFeet(entry) : anchor(p.housingEntryAnchorFt),
+    vehicleAnchorFt: vehicle ? frame.toFeet(vehicle) : anchor(p.housingVehicleAnchorFt),
+  };
+}
+
+function housingDesignFromElements(elements: Element[]): string | null {
+  for (const el of elements) {
+    const id = (el.properties as Record<string, unknown> | undefined)?.housingDesignId;
+    if (typeof id === 'string' && id.length) return id;
+  }
+  return null;
+}
 
 const ROLE: Record<string, [FeatureRole, StyleRole]> = {
   building: ['building', 'building'],
@@ -47,6 +84,7 @@ const ROLE: Record<string, [FeatureRole, StyleRole]> = {
 /** A plan's own street, a house's driveway, or any other drive. */
 export function pavementKind(el: Pick<Element, 'type' | 'name'>): 'street' | 'driveway' | 'drive' | null {
   if (el.type === 'road') return 'street';
+  if (el.type === 'circulation' && el.name === 'Walk') return null;
   if (el.type !== 'circulation' && el.type !== 'parking-aisle') return null;
   if (el.name === 'Driveway') return 'driveway';
   if (/^(Street|Private drive|Shared private drive)$/.test(el.name ?? '')) return 'street';
@@ -57,6 +95,10 @@ function roleOf(el: Element): [FeatureRole, StyleRole] {
   const pave = pavementKind(el);
   if (pave === 'street') return ['street', 'street'];
   if (pave === 'driveway') return ['drive', 'driveway'];
+  // a parking structure reads differently from a surface lot
+  if (el.type === 'parking' && (el.properties as Record<string, unknown> | undefined)?.structured === true) return ['parking', 'garage'];
+  // a walk is pavement for people: its own style, not a drive
+  if (el.type === 'circulation' && el.name === 'Walk') return ['other', 'walk'];
   const r = ROLE[el.type];
   if (r) return r;
   if (/^Lot \d+$/.test(el.name ?? '')) return ['lot', 'lot'];
@@ -101,6 +143,7 @@ export function sceneRevision(elements: Element[]): string {
   };
   for (const el of elements) {
     eat(`${el.id}|${el.type}|${(el.properties as Record<string, unknown> | undefined)?.floors ?? ''}|`);
+    if (el.properties?.homeOrigin && el.properties?.homeAxis) eat(JSON.stringify([el.properties.housingDesignId,el.properties.homeOrigin,el.properties.homeAxis]));
     for (const ring of el.geometry?.coordinates ?? []) {
       for (const p of ring) eat(`${Math.round((p[0] ?? 0) * 100)},${Math.round((p[1] ?? 0) * 100)};`);
       eat('/');
@@ -136,13 +179,15 @@ function toPolygons(geom: Polygon | MultiPolygon | null | undefined, frame: Grou
 }
 
 function describe(b: Omit<SceneBuilding, 'display'>): BuildingDisplay {
+  // an amenity says what it is when the plan names it (a pool, a clubhouse)
+  const named = (b.use === 'amenity' || b.provenance.generator === 'Original home design') && b.label ? b.label : null;
   const floors = `${b.floors.value} ${b.floors.value === 1 ? 'story' : 'stories'}`;
   const footprint = b.footprintSqFt ? `${fmt(b.footprintSqFt.value)} sf` : 'not reported';
   const gross = b.grossSqFt ? `${fmt(b.grossSqFt.value)} sf` : 'not reported';
   const units = b.units ? fmt(b.units.value) : 'not reported';
   const height = `${fmt(b.height.aboveGradeFt)} ft`;
   const heightShort = b.height.basis === 'estimated' ? `est. ${height}` : height;
-  const use = USE_LABEL[b.use];
+  const use = named ?? USE_LABEL[b.use];
   return {
     title: `Building ${b.tag}`,
     use,
@@ -188,6 +233,7 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
       role,
       styleRole,
       name: el.name ?? el.id,
+      label: typeof p.label === 'string' && p.label.trim() ? p.label.trim() : null,
       polygons,
       stalls: role === 'parking' ? num(p.parkingSpaces) ?? num(p.stalls) : null,
       reportedAreaSqFt: num(p.areaSqFt),
@@ -198,24 +244,34 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
       continue;
     }
     const use = buildingUse(el);
+    const authored = findHome(p.housingDesignId);
+    if (authored) base.provenance = { ...base.provenance, generator: 'Original home design' };
     const small = use === 'house' || use === 'townhome';
     const tag = use === 'house' ? `H${++houses}` : use === 'townhome' ? `T${++towns}` : letterTag(letters++);
     const floorsN = cleanFloors(num(p.floors) ?? num(p.stories) ?? 1);
-    const floors: Sourced<number> = { value: floorsN, authority: p.storiesAssumed ? 'estimated' : 'engine' };
+    const floors: Sourced<number> = { value: floorsN, authority: authored || p.storiesAssumed ? 'estimated' : 'engine' };
     const fp = num(p.areaSqFt);
-    const footprintSqFt: Sourced<number> | null = fp != null && fp > 0 ? { value: fp, authority: 'engine' } : null;
-    const grossSqFt: Sourced<number> | null = footprintSqFt ? { value: footprintSqFt.value * floorsN, authority: 'derived' } : null;
+    const footprintSqFt: Sourced<number> | null = fp != null && fp > 0 ? { value: fp, authority: authored ? 'estimated' : 'engine' } : null;
+    const grossSqFt: Sourced<number> | null = footprintSqFt ? { value: (authored ? num(p.homeGrossSf) : null) ?? footprintSqFt.value * floorsN, authority: 'derived' } : null;
     const mix = Array.isArray(p.unitMix) ? (p.unitMix as Array<{ count?: number }>) : null;
     const mixUnits = mix ? mix.reduce((s, m) => s + (num(m.count) ?? 0), 0) : null;
     // the count the plan's own caption states, then the element's, then its mix
     const unitsN = num(p.planUnits) ?? num(p.units) ?? (mixUnits != null && mixUnits > 0 ? mixUnits : null);
     const units: Sourced<number> | null = use === 'amenity' || unitsN == null ? null : { value: unitsN, authority: 'engine' };
-    const height = buildingHeight(use, floorsN, p.heightFt);
+    const height = authored ? { ...buildingHeight(use, floorsN, roofHeight(authored)),
+      levelsFt: authored.heights.map((_,i)=>floorBase(authored,i+1)), note: 'Original schematic design, from grade to the highest ridge or parapet.' }
+      : buildingHeight(use, floorsN, p.heightFt);
+    // a building that stands over a garage: its lower stories are parking, by the engine's own count of residential levels
+    const resLevels = num(p.residentialLevels);
+    const parkingLevels = p.overGarage === true && resLevels != null && resLevels > 0 && resLevels < floorsN ? floorsN - Math.round(resLevels) : 0;
     const outline = polygons[0] ?? [];
     const labelPoint: Pt = interiorPoint(outline) ?? outline[0]?.[0] ?? [0, 0];
+    const housing = housingFromProps(p, frame);
     const b: Omit<SceneBuilding, 'display'> = {
       ...base, role: 'building', styleRole: use === 'amenity' ? 'amenity' : small ? 'house' : 'building',
-      tag, tagOnPlan: !small, use, floors, footprintSqFt, grossSqFt, units, height, labelPoint,
+      tag, tagOnPlan: !small, use, floors, footprintSqFt, grossSqFt, units, height, parkingLevels, labelPoint,
+      unitMix: mix ? mix.filter((m): m is { type: string; count: number; avgSqft: number } => typeof (m as { type?: unknown }).type === 'string' && num(m.count) != null && num((m as { avgSqft?: unknown }).avgSqft) != null) : null,
+      housing,
     };
     const full: SceneBuilding = { ...b, display: describe(b) };
     features.push(full);
@@ -273,6 +329,7 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     schemeId: input.schemeId,
     revision: sceneRevision(elements),
     key: `${parcelId}|${input.schemeId}`,
+    housingDesignId: input.housingDesignId ?? housingDesignFromElements(elements),
   };
 
   return {

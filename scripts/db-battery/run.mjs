@@ -156,8 +156,10 @@ async function seedDefaultCheck(fid, floor) {
   if (broken) {
     return `structure ${broken.structure_id ?? '?'} not a native single polygon (type=${broken?.geom_2274?.type}, is_single_polygon=${broken?.is_single_polygon})`;
   }
-  const gsf = solve.metrics?.gsf;
-  if (typeof gsf !== 'number' || gsf <= 0) return `metrics.gsf=${JSON.stringify(gsf)} (${typeof gsf})`;
+  // the floor area under either name: the seed family says gsf, the max-buildout family gfa_sqft.
+  // A plan that reports its area under the other name is not a plan without one (553450, 2026-11-23).
+  const gsf = solve.metrics?.gsf ?? solve.metrics?.gfa_sqft;
+  if (typeof gsf !== 'number' || gsf <= 0) return `metrics.gsf=${JSON.stringify(solve.metrics?.gsf)} and metrics.gfa_sqft=${JSON.stringify(solve.metrics?.gfa_sqft)}`;
   const cap = solve.metrics?.capture_pct;
   console.log(`OK   ${fid} seed-default — ${structures.length} structure(s), gsf ${gsf}${typeof cap === 'number' ? `, capture ${cap}% (advisory)` : ''}`);
   return null;

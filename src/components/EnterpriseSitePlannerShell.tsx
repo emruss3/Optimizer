@@ -1113,16 +1113,16 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
       )}
       
       {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-white border-b">
+      <div className="flex items-center justify-between px-4 py-2 bg-white border-b">
         <div className="flex items-center space-x-4">
-          <h2 className="text-xl font-semibold">Site Planner</h2>
+          <h2 className="text-base font-semibold">Site Planner</h2>
         </div>
         
         <div className="flex items-center space-x-2">
           {onAddBuilding && (
             <button
               onClick={onAddBuilding}
-              className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
             >
               <Building className="w-4 h-4" />
               <span>Add Building</span>

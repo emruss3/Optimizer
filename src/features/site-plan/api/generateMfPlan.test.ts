@@ -7,6 +7,7 @@ import {
   generateMfSitePlanV2,
   generateThSitePlan,
   type MfPlanResponse,
+  explainStallCounts, parkingStatusOf,
 } from './generateMfPlan';
 
 const rpcMock = vi.fn();
@@ -329,13 +330,13 @@ describe('KpiStrip with server-generated metrics (crash regression)', () => {
       metrics: { ...RESP.metrics, stalls: 120, stalls_required: 113 },
     });
     const { getByText } = render(React.createElement(KpiStrip, { metrics, investment: null }));
-    expect(getByText('Code compliant')).toBeTruthy();
+    expect(getByText('Checks passed')).toBeTruthy();
   });
 
   it('tolerates metrics missing optional fields entirely', () => {
     const bare = { totalBuiltSF: 1000, achievedFAR: 0.5 } as never;
     const { getByText } = render(React.createElement(KpiStrip, { metrics: bare, investment: null }));
-    expect(getByText('Code compliant')).toBeTruthy();
+    expect(getByText('Checks passed')).toBeTruthy();
   });
 });
 
@@ -353,8 +354,8 @@ describe('KpiStrip clamp-flag badge (work order item 2)', () => {
         planFlags: ['floors_clamped_by_far', 'density_clamped_units'],
       })
     );
-    expect(queryByText('Code compliant')).toBeNull();
-    expect(getByText(/Code compliant · constrained: FAR-clamped \+1/)).toBeTruthy();
+    expect(queryByText('Checks passed')).toBeNull();
+    expect(getByText(/Checks passed · constrained: FAR-clamped \+1/)).toBeTruthy();
   });
 
   it('utilization stat renders when provided', () => {
@@ -880,5 +881,104 @@ describe('parking status: what the sheet can stand on (the cohort retest, 2026-1
   it('the legacy mapper carries the same status', () => {
     expect(mfPlanToElements(RESP).metrics?.parkingStatus).toBe('verified');
     expect(mfPlanToElements({ ...RESP, metrics: { ...RESP.metrics, stalls: 60 } }).metrics?.parkingStatus).toBe('needs_verification');
+  });
+});
+
+describe('explainStallCounts: 2600 W Heiman St, audit 2026-11-22 (127 drawn, 20 reported, 122 required)', () => {
+  // the eight bays of the live answer on 2026-11-23: only two carry an area
+  const BAYS = [15, 10, 10, 10, 10].map(stalls => ({ stalls }))
+    .concat([{ stalls: 10, area_sqft: 1830 }, { stalls: 10, area_sqft: 1880 }] as never, [{ stalls: 52 }]);
+
+  it('accounts for all 107 stalls from the engine\'s own payload', () => {
+    const why = explainStallCounts(BAYS, 20, 70, 1.84);
+    expect(why).toContain('adds up only the 2 of 8 bays that carry an area');
+    expect(why).toContain('hold 107 more');
+    expect(why).toContain('gives 129, in line with the 127 drawn');
+    // explained is not verified: the status holds until the bays are reached from the street
+    const st = parkingStatusOf(127, 20, why);
+    expect(st.parkingStatus).toBe('needs_verification');
+    expect(st.parkingCountNote).toBe(why);
+    expect(st.parkingStatusReason).toContain('does not verify the supply');
+  });
+
+  it('leaves a difference it cannot account for as needing verification', () => {
+    // the summary is not the area-bearing bays
+    expect(explainStallCounts(BAYS, 85, 70, 1.84)).toBeNull();
+    // the ratio does not land on the drawn total
+    expect(explainStallCounts(BAYS, 20, 70, 1.2)).toBeNull();
+    // no ratio to check against
+    expect(explainStallCounts(BAYS, 20, 70, null)).toBeNull();
+    // every bay carries an area: the summary skipped nothing
+    expect(explainStallCounts(BAYS.map(b => ({ ...b, area_sqft: 1800 })), 20, 70, 1.84)).toBeNull();
+    expect(parkingStatusOf(127, 85, null).parkingStatus).toBe('needs_verification');
+  });
+});
+
+// ── story counts under either name (2600 W Heiman, 2026-11-23) ───────────────
+// The production answer for this scheme carried `floors: 5` on each of four residential
+// buildings and `metrics.floors: 5`, with the floor area under `gfa_sqft`. The sheet drew them
+// three stories high, because only `stories` was read.
+import { storyCount } from './generateMfPlan';
+import { buildingHeight } from '../scene/heights';
+
+describe('story counts are read under either field name', () => {
+  const heiman = {
+    parcel_ogc_fid: 553450,
+    typology: 'multifamily',
+    generator_version: 'mf_max_gsf_v1',
+    buildings: [1, 2, 3, 4].map(i => ({ structure_id: i, geom_2274: rect2274(1727000 + i * 90, 670000, 70, 78), footprint_sqft: 5425, floors: 5 })),
+    amenity: [{ name: 'Clubhouse', geom_2274: rect2274(1727000, 670120, 60, 30), area_sqft: 1800 }],
+    metrics: { floors: 5, gfa_sqft: 106776, units_est: 70 },
+  } as unknown as SeedFamilyResponse;
+
+  it('draws W Heiman five stories high, and leaves the amenity at one', () => {
+    const { elements, flags } = seedFamilyPlanToElements(heiman);
+    const homes = elements.filter(e => e.type === 'building' && e.properties?.use === 'residential');
+    expect(homes).toHaveLength(4);
+    for (const b of homes) {
+      expect(b.properties?.stories).toBe(5);
+      expect(b.properties?.floors).toBe(5);
+      expect(b.properties?.storiesBasis).toBe('building');
+      expect(b.name).toMatch(/5 stories/);
+      // 14 ft ground story and four at 10 ft: the estimate every view reads
+      expect(buildingHeight('apartments', b.properties?.floors).aboveGradeFt).toBe(54);
+    }
+    const amenity = elements.find(e => e.properties?.use === 'amenity');
+    expect(amenity?.properties?.stories).toBe(1);
+    expect(flags).not.toContain('stories_assumed_no_count_in_plan');
+  });
+
+  it('keeps the homes and the floor area the engine reported: a drawing correction changes neither', () => {
+    const { metrics } = seedFamilyPlanToElements(heiman);
+    expect(metrics?.totalBuiltSF).toBe(106776);
+    expect(metrics?.totalUnits).toBe(70);
+  });
+
+  it('reads the building before the scheme, and either name on each', () => {
+    expect(storyCount({ stories: 4 }, { stories: 6 })).toEqual({ stories: 4, basis: 'building', conflict: false });
+    expect(storyCount({ floors: 4 }, { floors: 6 })).toEqual({ stories: 4, basis: 'building', conflict: false });
+    expect(storyCount({}, { floors: 6 })).toEqual({ stories: 6, basis: 'scheme', conflict: false });
+    expect(storyCount({}, { stories: 2 })).toEqual({ stories: 2, basis: 'scheme', conflict: false });
+  });
+
+  it('a mixed-height plan keeps each building its own count', () => {
+    const mixed = { ...heiman, buildings: (heiman.buildings ?? []).map((b, i) => ({ ...b, floors: i === 0 ? 3 : 5 })) } as unknown as SeedFamilyResponse;
+    const got = seedFamilyPlanToElements(mixed).elements.filter(e => e.properties?.use === 'residential').map(e => e.properties?.stories);
+    expect(got).toEqual([3, 5, 5, 5]);
+  });
+
+  it('says so when the two names disagree, and draws the taller', () => {
+    expect(storyCount({ stories: 3, floors: 5 }, {})).toEqual({ stories: 5, basis: 'building', conflict: true });
+    const both = { ...heiman, buildings: (heiman.buildings ?? []).map(b => ({ ...b, stories: 3 })) } as unknown as SeedFamilyResponse;
+    expect(seedFamilyPlanToElements(both).flags).toContain('stories_conflict_in_plan');
+  });
+
+  it('falls back to what the floor area implies, and only then to an assumption that is flagged', () => {
+    expect(storyCount({}, {}, 5000, 20000)).toEqual({ stories: 4, basis: 'floor_area', conflict: false });
+    expect(storyCount({}, {})).toEqual({ stories: 3, basis: 'assumed', conflict: false });
+    const bare = { ...heiman, metrics: { gfa_sqft: 106776 }, buildings: (heiman.buildings ?? []).map(b => ({ structure_id: b.structure_id, geom_2274: b.geom_2274 })) } as unknown as SeedFamilyResponse;
+    const { elements, flags } = seedFamilyPlanToElements(bare);
+    expect(elements.find(e => e.properties?.use === 'residential')?.properties?.storiesBasis).toBe('assumed');
+    expect(flags).toContain('stories_assumed_no_count_in_plan');
   });
 });

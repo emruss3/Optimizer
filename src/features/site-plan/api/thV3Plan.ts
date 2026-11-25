@@ -371,6 +371,25 @@ export function thV3ToElements(resp: ThV3Response): { elements: Element[]; summa
   return { elements, summary };
 }
 
+/**
+ * Guest parking, with what kind of number the target is. The engine reports
+ * a supply and a target and grades neither: none of its tests is about guest
+ * parking unless one names it. Mt View showed "0 of 8" beside a green pass
+ * (audit 2026-11-22), which read as a requirement met. `graded` is true only
+ * when the engine's own test list carries a guest-parking test.
+ */
+export function guestParkingLine(s: Pick<ThV3Summary, 'guestStalls' | 'guestTarget' | 'tests'>): { text: string; short: boolean; graded: boolean } | null {
+  if (s.guestStalls == null) return null;
+  const graded = s.tests.some(t => /guest/i.test(t.id));
+  const basis = graded ? 'graded by the engine' : 'a target of the engine, not one of its tests';
+  if (s.guestTarget == null) return { text: `${s.guestStalls} stalls`, short: false, graded };
+  const gap = s.guestTarget - s.guestStalls;
+  const text = gap > 0
+    ? `${s.guestStalls} of ${s.guestTarget} stalls · ${gap} short · ${basis}`
+    : `${s.guestStalls} of ${s.guestTarget} stalls · ${basis}`;
+  return { text, short: gap > 0, graded };
+}
+
 /** One line for the basis row. */
 export function thV3SummaryLine(s: ThV3Summary): string {
   if (s.status === 'searching') return 'Townhome engine (th_v3): the search has not finished — try again';
@@ -380,6 +399,8 @@ export function thV3SummaryLine(s: ThV3Summary): string {
     s.unitWFt != null && s.unitDFt != null ? `${s.unitWFt} × ${s.unitDFt} ft homes, three stories assumed for the massing` : null,
     s.homesPerAcre != null ? `${s.homesPerAcre} homes / ac` : null,
     s.requiredFails.length > 0 ? `fails ${s.requiredFails.join(', ')}` : 'every required test passes',
+    // a pass says nothing about guest parking: the shortfall is said beside it
+    guestParkingLine(s)?.short ? `guest parking ${s.guestStalls} of ${s.guestTarget}, not tested` : null,
     `generator: ${s.generatorVersion}`,
   ];
   return parts.filter(Boolean).join(' · ');

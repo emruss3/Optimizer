@@ -25,7 +25,7 @@ export async function renderPlanImage(req: PlanImageRequest): Promise<string> {
   const model = buildSiteModel(data, { canopyOpacity: 0.9, clayContext: true, light });
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, studio: true, light });
   try {
-    await model.ready;
+    await Promise.all([model.ready, stage.ready]);
     const cx = (bounds.minX + bounds.maxX) / 2, cy = (bounds.minY + bounds.maxY) / 2;
     const camera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 1, 2000);
     // above the middle, looking down, north to the top of the picture
@@ -49,24 +49,29 @@ export async function renderPlanImage(req: PlanImageRequest): Promise<string> {
  * A picture of the site from the air, for the rendering sheet: the view the
  * 3D panel opens on, a little lower and closer, on an equinox afternoon.
  */
-export async function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number }): Promise<string> {
+export async function renderAerialImage(req: { data: MassingData; widthPx: number; heightPx: number; onGraded?: (graded: boolean) => void }): Promise<string> {
   const { data } = req;
   const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
   const light = renderQuality() === 'light';
-  const model = buildSiteModel(data, { light });
+  const model = buildSiteModel(data, { light, markSite: true });
+  // whether this picture stands on ground that was graded for it: the sheet says so only then
+  req.onGraded?.(!!model.grade?.grading);
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, light });
   try {
-    await model.ready;
+    await Promise.all([model.ready, stage.ready]);
     const E = model.extent;
     const camera = new THREE.PerspectiveCamera(30, widthPx / heightPx, 1.5, E * 40);
     // centred on the parcel, far enough back to hold all of it, with a band of sky above
-    const { x, y, radius } = model.focus;
+    // on a large parcel the picture is of what is built, or of the densest group of buildings
+    const { x, y, radius } = model.built;
     const el = (20 * Math.PI) / 180, az = (data.aerialAzimuth * Math.PI) / 180;
     const dist = (radius * 1.25) / Math.sin((30 * Math.PI) / 360 * Math.min(1, widthPx / heightPx));
-    camera.position.set(x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), -y + dist * Math.cos(el) * Math.cos(az));
-    camera.lookAt(x, radius * 0.3, -y);
+    // where the model stands on surveyed ground, the picture centres on the level the buildings stand at
+    const base = [...model.ground.subjects].sort((p, q) => q.points.length - p.points.length)[0]?.base || model.groundAt(x, y);
+    camera.position.set(x + dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el) + base, -y + dist * Math.cos(el) * Math.cos(az));
+    camera.lookAt(x, radius * 0.3 + base, -y);
     camera.updateProjectionMatrix();
-    const [dx, dy, dz] = sunPosition(80, 16.5, data.origin.latDeg).direction;
+    const [dx, dy, dz] = sunPosition(172, 9, data.origin.latDeg).direction;
     stage.setSun([-dx, -dy, -dz]);
     stage.render(camera);
     return stage.renderer.domElement.toDataURL('image/jpeg', 0.92);

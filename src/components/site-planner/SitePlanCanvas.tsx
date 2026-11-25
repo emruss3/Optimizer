@@ -1058,11 +1058,17 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     // Hatch, clipped to the piece: 45°, ~8 px apart on screen
     ctx.save();
     ctx.beginPath();
-    ctx.moveTo(coords[0][0], coords[0][1]);
-    for (let i = 1; i < coords.length; i++) ctx.lineTo(coords[i][0], coords[i][1]);
-    ctx.closePath();
-    ctx.clip();
-    ctx.strokeStyle = 'rgba(13, 148, 136, 0.5)';
+    for (const ring of element.geometry.coordinates) {
+      if (!ring[0]) continue;
+      ctx.moveTo(ring[0][0], ring[0][1]);
+      for (const pt of ring.slice(1)) ctx.lineTo(pt[0], pt[1]);
+      ctx.closePath();
+    }
+    ctx.clip('evenodd');
+    ctx.strokeStyle = p.hazardKind === 'slope' ? 'rgba(180, 83, 9, 0.5)'
+      : p.hazardKind === 'wetland' ? 'rgba(13, 148, 136, 0.55)'
+      // natural land with no named source: its own hatch, not the wetland's or the floodplain's
+      : p.hazardKind === 'natural' ? 'rgba(77, 124, 15, 0.45)' : 'rgba(29, 78, 216, 0.45)';
     ctx.lineWidth = 0.8 / zoom;
     const h = maxY - minY;
     const step = Math.max(8 / zoom, 2);
@@ -1080,10 +1086,12 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     const label = typeof named === 'string' && named
       ? named
       : p.hazardKind === 'wetland'
-        ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''} · ${p.bufferFt ?? 25}-ft buffer`
+        ? `Wetland${p.subtype ? ` (${String(p.subtype).toLowerCase()})` : ''}${p.bufferFt ? ` · ${p.bufferFt}-ft buffer` : ''}`
         : p.hazardKind === 'floodway'
           ? `Floodway${p.zone ? ` (${p.zone})` : ''}`
-          : `${p.zone ? `${p.zone} ` : ''}floodplain`;
+          : p.hazardKind === 'natural'
+            ? 'Natural land'
+            : `${p.zone ? `${p.zone} ` : ''}floodplain`;
     const fontSize = 11 / zoom;
     ctx.save();
     ctx.translate(cx, cy);
@@ -1521,7 +1529,8 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     if (elements.some(e => e.id.startsWith('sfv1-hold-'))) heldRows.push(['Flood hazard area · held out', '#DBEAFE']);
     if (elements.some(e => e.id.startsWith('sfv1-hillside-'))) heldRows.push(['Hillside · held out (over 25% slope)', '#FDE68A']);
     else if (elements.some(e => /hillside/i.test(String(propsOf(e).openKind ?? '')))) heldRows.push(['Hillside · held out (over 25% slope)', '#99F6E4']);
-    if (elements.some(e => e.id.startsWith('sfv1-nobuild-') || (propsOf(e).hazardKind === 'wetland' && !/hillside/i.test(String(propsOf(e).openKind ?? ''))))) heldRows.push(['Wetland / natural land · held out', '#99F6E4']);
+    if (elements.some(e => e.id.startsWith('sfv1-nobuild-') || (propsOf(e).hazardKind === 'wetland' && !/hillside/i.test(String(propsOf(e).openKind ?? ''))))) heldRows.push(['Wetland · held out', '#99F6E4']);
+    if (elements.some(e => propsOf(e).constraintSource === 'natural_unspecified')) heldRows.push(['Natural land · held out', '#D9F99D']);
     if (elements.some(e => e.id.startsWith('sfv1-deep-fill-hold-'))) heldRows.push(['Deep-fill hold (fill over the cap)', '#FECACA']);
     const entries: Array<[string, string]> = isSubdivision
       ? [
@@ -1690,6 +1699,64 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     for (const a of annotations) {
       if (a.minZoom != null && zoom < a.minZoom) continue;
       const angle = a.angle ?? 0;
+      if (a.kind === 'highlight') {
+        // an edge a finding is about (the street frontage): a wide band under a solid line
+        const line = a.line ?? [];
+        if (line.length >= 2) {
+          const trace = () => {
+            ctx.beginPath();
+            line.forEach((p, i) => (i ? ctx.lineTo(p[0] ?? 0, p[1] ?? 0) : ctx.moveTo(p[0] ?? 0, p[1] ?? 0)));
+            ctx.stroke();
+          };
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = 'rgba(234, 88, 12, 0.28)';
+          ctx.lineWidth = 12 / zoom;
+          trace();
+          ctx.strokeStyle = '#EA580C';
+          ctx.lineWidth = 3 / zoom;
+          trace();
+        }
+        if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10.5, weight: 700, fill: '#9A3412', pill: 'rgba(255,247,237,0.96)' });
+        continue;
+      }
+      if (a.kind === 'entry') {
+        // a way into a parking structure: a filled diamond on the spot and its name beside it
+        const r = 6 / zoom;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y + r); ctx.lineTo(a.x + r, a.y); ctx.lineTo(a.x, a.y - r); ctx.lineTo(a.x - r, a.y);
+        ctx.closePath();
+        ctx.fillStyle = '#4C1D95';
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1.5 / zoom;
+        ctx.stroke();
+        if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10, weight: 700, fill: '#4C1D95', pill: 'rgba(245,243,255,0.97)', dy: -12 / zoom, baseline: 'bottom' });
+        continue;
+      }
+      if (a.kind === 'gap') {
+        // a connection the plan does not draw: dashed between the two ends, a ring on each, the reason beside it
+        const [from, to] = a.line ?? [];
+        if (from && to) {
+          ctx.strokeStyle = '#DC2626';
+          ctx.lineWidth = 2.5 / zoom;
+          ctx.setLineDash([7 / zoom, 5 / zoom]);
+          ctx.beginPath();
+          ctx.moveTo(from[0] ?? 0, from[1] ?? 0);
+          ctx.lineTo(to[0] ?? 0, to[1] ?? 0);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (const p of [from, to]) {
+            ctx.beginPath();
+            ctx.arc(p[0] ?? 0, p[1] ?? 0, 5 / zoom, 0, Math.PI * 2);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+        if (a.text) drawSheetText(ctx, zoom, a.x, a.y, 0, a.text, { fontPx: 10.5, weight: 700, fill: '#991B1B', pill: 'rgba(254,242,242,0.97)', dy: -14 / zoom, baseline: 'bottom' });
+        continue;
+      }
       if (a.kind === 'station') {
         const nx = -Math.sin(angle);
         const ny = Math.cos(angle);

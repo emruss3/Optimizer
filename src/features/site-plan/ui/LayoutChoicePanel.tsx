@@ -10,15 +10,17 @@
  * why. Under it, every neighborhood plan of the competition, each one
  * drawable, and the townhome plan's own figures when it is on the sheet.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LayoutChoice, LayoutKind } from '../api/layoutChoice';
 import { homesPhrase } from '../api/layoutChoice';
-import type { ThV3Summary } from '../api/thV3Plan';
+import { guestParkingLine, type ThV3Summary } from '../api/thV3Plan';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
+import { compareLayouts, parseLandPrice, retainLayoutFacts, type LayoutFactsByKind, type LayoutOption } from '../api/layoutCompare';
 
 const fmt = (v: number | null | undefined, d = 0) => (v == null ? '—' : (Math.round(v * 10 ** d) / 10 ** d).toLocaleString());
 
 function ThV3Facts({ s }: { s: ThV3Summary }) {
+  const guest = guestParkingLine(s);
   return (
     <div data-testid="layout-thv3" data-homes={s.homes} className="mt-2 rounded-md border border-sky-200 bg-sky-50/60 p-2 text-[11px] leading-snug text-slate-700">
       <div className="font-semibold text-slate-800">
@@ -29,7 +31,7 @@ function ThV3Facts({ s }: { s: ThV3Summary }) {
         <dt className="text-slate-500">Access</dt>
         <dd>{s.streetFt != null && s.streetFt > 0 ? `${fmt(s.streetFt)} ft of new street` : 'no new street'}{s.alleys != null ? ` · ${s.alleys} alle${s.alleys === 1 ? 'y' : 'ys'}` : ''}</dd>
         {(s.usableOpenPct != null || s.greens > 0) && (<><dt className="text-slate-500">Open</dt><dd>{s.usableOpenPct != null ? `${fmt(s.usableOpenPct)}% usable` : ''}{s.greens > 0 ? `${s.usableOpenPct != null ? ' · ' : ''}${s.greens} green${s.greens === 1 ? '' : 's'}` : ''}</dd></>)}
-        {s.guestStalls != null && (<><dt className="text-slate-500">Guest parking</dt><dd className={s.guestTarget != null && s.guestStalls < s.guestTarget ? 'text-amber-800' : ''}>{s.guestStalls}{s.guestTarget != null ? ` of ${s.guestTarget}` : ''} stalls</dd></>)}
+        {guest && (<><dt className="text-slate-500">Guest parking</dt><dd data-testid="layout-thv3-guest" className={guest.short ? 'text-amber-800' : ''}>{guest.text}</dd></>)}
         {s.stormwaterSf != null && (<><dt className="text-slate-500">Stormwater</dt><dd>{fmt(s.stormwaterSf)} SF{s.stormwaterNeededSf != null ? ` (${fmt(s.stormwaterNeededSf)} needed)` : ''}</dd></>)}
       </dl>
       {s.requiredFails.length > 0 ? (
@@ -58,7 +60,7 @@ function ThV3Facts({ s }: { s: ThV3Summary }) {
 }
 
 export function LayoutChoicePanel({
-  choice, competition, shown, shownRequested, auto, busy, onChoose, onViewCandidate, onRetry, thV3, thV3Error,
+  choice, competition, shown, shownRequested, auto, busy, onChoose, onViewCandidate, onRetry, thV3, thV3Error, shownFacts, factsRevision,
 }: {
   choice: LayoutChoice | null;
   competition: SfV1CompetitionState | null;
@@ -74,8 +76,26 @@ export function LayoutChoicePanel({
   onRetry?: () => void;
   thV3?: ThV3Summary | null;
   thV3Error?: string | null;
+  /** parking and floor area of the layout on the sheet now, as the workspace states them */
+  shownFacts?: {
+    parking?: string | null;
+    floorArea?: string | null;
+    guestSupply?: number | null;
+    guestTarget?: number | null;
+    guestBasis?: 'engine-target' | 'engine-graded' | null;
+  } | null;
+  /** scheme revision the shown facts belong to */
+  factsRevision?: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  // the land price is the reviewer's own assumption: it lives here and is never saved with a plan
+  const [landPrice, setLandPrice] = useState('');
+  // each rendered option's facts, kept by kind so switching does not erase the first set
+  const [retained, setRetained] = useState<LayoutFactsByKind>({});
+  useEffect(() => {
+    setRetained(prior => retainLayoutFacts(prior, shown, shownFacts, factsRevision ?? null));
+  }, [shown, shownFacts, factsRevision]);
   const loading = competition?.state === 'loading';
   const nb = choice?.neighborhood ?? null;
   const mf = choice?.multifamilyHomes ?? null;
@@ -130,6 +150,70 @@ export function LayoutChoicePanel({
         </button>
       </div>
 
+      {mf != null && nb && (
+        <div className="mt-1.5">
+          <button
+            type="button" data-testid="layout-compare" aria-expanded={comparing} onClick={() => setComparing(v => !v)}
+            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-50"
+          >
+            {comparing ? 'Hide the comparison' : `Compare ${mf} against ${nb.homes} homes`}
+          </button>
+          {comparing && (() => {
+            const price = parseLandPrice(landPrice);
+            // shown side: live workspace facts (retained trails by one effect). Other side: last render.
+            const facts = (kind: LayoutKind) => {
+              if (shown === kind) return shownFacts ?? {};
+              const kept = retained[kind];
+              return kept
+                ? {
+                    parking: kept.parking,
+                    floorArea: kept.floorArea,
+                    guestSupply: kept.guestSupply,
+                    guestTarget: kept.guestTarget,
+                    guestBasis: kept.guestBasis,
+                  }
+                : {};
+            };
+            const a: LayoutOption = { key: 'multifamily', label: `${mf} ${product === 'townhomes' ? 'townhomes' : 'apartments'}`, homes: mf, shown: shown === 'multifamily', ...facts('multifamily') };
+            const b: LayoutOption = { key: 'neighborhood', label: `${nb.homes} ${nb.label}`, homes: nb.homes, shown: shown === 'neighborhood', ...facts('neighborhood') };
+            const c = compareLayouts(a, b, price.value);
+            return (
+              <div data-testid="layout-compare-table" className="mt-1.5 rounded-md border border-slate-200 bg-slate-50 p-2">
+                <label className="flex items-center justify-between gap-2 text-[10.5px] text-slate-600">
+                  Land price, your assumption
+                  <input
+                    data-testid="layout-compare-land" inputMode="numeric" value={landPrice} onChange={e => setLandPrice(e.target.value)} placeholder="$"
+                    className="w-24 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-right text-[11px] text-slate-900"
+                  />
+                </label>
+                {price.hint && <p data-testid="layout-compare-land-hint" className="mt-0.5 text-right text-[10px] text-amber-800">{price.hint}</p>}
+                <table className="mt-1.5 w-full text-[10.5px]">
+                  <thead>
+                    <tr className="text-slate-500">
+                      <th className="text-left font-normal" />
+                      <th className="text-right font-semibold text-slate-700">Multifamily{shown === 'multifamily' ? ' · on the sheet' : ''}</th>
+                      <th className="text-right font-semibold text-slate-700">Neighborhood{shown === 'neighborhood' ? ' · on the sheet' : ''}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {c.rows.map(r => (
+                      <tr key={r.label} data-compare-row={r.label} className="border-t border-slate-200 align-top">
+                        <td className="py-0.5 pr-1 text-slate-500">{r.label}{r.note && <span className="block text-[9.5px] text-slate-400">{r.note}</span>}</td>
+                        <td className={`py-0.5 text-right ${r.a === 'Unknown' ? 'italic text-slate-400' : 'text-slate-900'}`}>{r.a}</td>
+                        <td className={`py-0.5 text-right ${r.b === 'Unknown' ? 'italic text-slate-400' : 'text-slate-900'}`}>{r.b}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {c.tradeOff && <p data-testid="layout-compare-tradeoff" className="mt-1.5 leading-snug text-slate-800">{c.tradeOff}</p>}
+                {c.missing.length > 0 && (
+                  <p data-testid="layout-compare-missing" className="mt-1 text-[10px] leading-snug text-slate-500">Not known: {c.missing.join('; ')}.</p>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
       {loading ? (
         <p data-testid="layout-loading" className="mt-1.5 text-[11px] italic text-slate-500">
           Drawing the neighborhood plans (the grid, the neighborhood, the loop grammar and the townhome engine) to compare with the multifamily plan…

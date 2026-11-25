@@ -31,7 +31,7 @@ describe('FlagsPanel — regime comparison receipts', () => {
   it('stays silent when there was no comparison', () => {
     render(<FlagsPanel violations={[]} lineageFlags={[]} />);
     expect(screen.queryByText(/Parking-regime comparison/)).toBeNull();
-    expect(screen.getByText(/No active flags/)).toBeTruthy();
+    expect(screen.getByText(/Nothing to check/)).toBeTruthy();
   });
 });
 
@@ -58,5 +58,17 @@ describe('FlagsPanel — attention first, derivation notes behind a count (the s
     render(<FlagsPanel violations={[]} lineageFlags={['precedent_set_from_district']} />);
     expect(screen.queryAllByTestId('flag-attention')).toHaveLength(0);
     expect(screen.getByTestId('flag-notes').querySelector('summary')?.textContent).toBe('1 generator note (derivation receipts, no action needed)');
+  });
+});
+
+describe('what the Checks badge counts', () => {
+  it('counts flags that ask something of the user and leaves generator notes out (1710 Meharry)', async () => {
+    const { isActionableFlag } = await import('./FlagsPanel');
+    // a derivation receipt: how the precedent set was picked. Nothing for the user to do.
+    expect(isActionableFlag('regrid_sample_capped_100')).toBe(false);
+    expect(isActionableFlag('bar_depth_from_typology_program_spec')).toBe(false);
+    // these ask for something
+    expect(isActionableFlag('parking_summary_disagrees')).toBe(true);
+    expect(isActionableFlag('far_exceeded_pinned')).toBe(true);
   });
 });

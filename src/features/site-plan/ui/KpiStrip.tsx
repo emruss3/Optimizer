@@ -54,6 +54,8 @@ const KpiStrip: React.FC<{
     label?: string; densityLabel?: string;
     /** the ids of the checks the verdict covers, so "all pass" names its scope (4727 Post Rd, 2026-11-09) */
     tests?: string[];
+    /** how many of `tests` are measurements with no pass or fail verdict: listed, not counted as passing */
+    measuredOnly?: number | null;
     /** a plan from a legacy generator: provisional, its inputs unverified */
     legacy?: boolean;
     /** lots drawn partly on land inside the outline that is not this parcel (other owners' lots in its holes):
@@ -78,7 +80,9 @@ const KpiStrip: React.FC<{
    * (1710 Meharry Blvd: "Code compliant" beside "context not verified").
    */
   unverified?: string | null;
-}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty, unverified = null }) => {
+  /** Opens the checks behind the status: the status is a door, not a verdict to take on trust. */
+  onOpenChecks?: () => void;
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty, unverified = null, onOpenChecks }) => {
   if (!metrics) {
     const state = empty?.state ?? 'generating';
     const text = state === 'generating'
@@ -96,6 +100,8 @@ const KpiStrip: React.FC<{
   if (subdivision) {
     const n = subdivision.fails.length;
     const checks = subdivision.tests ?? [];
+    // a measurement with no verdict is not a passing check (0 Delk Ave: 16 listed, 15 graded)
+    const graded = Math.max(0, checks.length - Math.max(0, subdivision.measuredOnly ?? 0));
     const offParcel = subdivision.offParcelLots ?? 0;
     const unplanned = subdivision.unplannedAcres != null && subdivision.unplannedAcres >= 1 ? Math.round(subdivision.unplannedAcres * 10) / 10 : null;
     const chip =
@@ -104,11 +110,11 @@ const KpiStrip: React.FC<{
       : subdivision.status === 'skipped' ? { tone: 'bg-amber-50 text-amber-700', text: 'Skipped by the generator', ok: false }
       : subdivision.lots === 0 ? { tone: 'bg-slate-100 text-slate-700', text: 'No new lots by right', ok: false }
       : offParcel > 0 ? { tone: 'bg-red-50 text-red-700', text: `Cannot be built as drawn · ${offParcel} lot${offParcel === 1 ? '' : 's'} off the parcel`, ok: false }
-      : n > 0 ? { tone: 'bg-red-50 text-red-700', text: checks.length > 0 ? `${n} of ${checks.length} check${checks.length === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
+      : n > 0 ? { tone: 'bg-red-50 text-red-700', text: graded > 0 ? `${n} of ${graded} check${graded === 1 ? '' : 's'} fail` : `${n} test${n === 1 ? '' : 's'} fail`, ok: false }
       // "All tests pass" named no scope (4727 Post Rd): the count and the list travel with it
       // every check passes and most of the land is not planned: say both (0 Brittany Park Dr, 13 lots on 29 ac)
-      : unplanned != null ? { tone: 'bg-amber-50 text-amber-700', text: `${checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass'} · ${unplanned} ac not planned`, ok: false }
-      : { tone: 'bg-green-50 text-green-700', text: checks.length > 0 ? `All ${checks.length} checks pass` : 'All tests pass', ok: true };
+      : unplanned != null ? { tone: 'bg-amber-50 text-amber-700', text: `${graded > 0 ? `All ${graded} checks pass` : 'All tests pass'} · ${unplanned} ac not planned`, ok: false }
+      : { tone: 'bg-green-50 text-green-700', text: graded > 0 ? `All ${graded} checks pass` : 'All tests pass', ok: true };
     // the amber "passes, and part of the land is not planned" chip carries a warning, not a cross
     const passesUnplanned = unplanned != null && !chip.ok && chip.text.endsWith('not planned');
     const title = offParcel > 0
@@ -163,7 +169,7 @@ const KpiStrip: React.FC<{
   const pctMax = metrics.parkingPctOfMaxNeed;
 
   return (
-    <div className="flex items-center gap-5 overflow-x-auto">
+    <div className="flex flex-wrap xl:flex-nowrap items-center gap-x-5 gap-y-1 overflow-x-auto min-w-0 max-w-full">
       <Stat label="Units" value={`${metrics.totalUnits ?? 0}`} />
       {/* FAR/Coverage/Open at exactly 0 mean "not reported by this engine"
           (the seed payload carries none and the client never re-measures) —
@@ -223,7 +229,7 @@ const KpiStrip: React.FC<{
       {money?.available && typeof money.margin_on_cost === 'number' && (
         <span title={money.basis ?? 'Local-sales valuation'} className="flex items-center">
           <Stat
-            label={`Margin · mkt${money.n_sales != null ? ` (${money.n_sales} sales)` : ''}`}
+            label={`Sale margin${money.n_sales != null ? ` · ${money.n_sales} local sales` : ''}`}
             value={`${(money.margin_on_cost * 100).toFixed(1)}%`}
             alert={money.margin_on_cost < 0}
           />
@@ -239,6 +245,15 @@ const KpiStrip: React.FC<{
       {/* Compliance and optimization are SEPARATE verdicts: a code-compliant
           plan at 78% of the theoretical envelope is not "done" — the capture
           chip says so instead of letting the green chip imply optimality. */}
+      <div
+        data-testid="kpi-status"
+        {...(onOpenChecks ? {
+          role: 'button', tabIndex: 0, title: 'Open the checks behind this status',
+          onClick: onOpenChecks,
+          onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChecks(); } },
+          className: 'cursor-pointer rounded-full focus-ring',
+        } : {})}
+      >
       {parkingUnverified && !metrics.conditional ? (
         // Two parking counts the evidence cannot choose between: neither a pass
         // nor a shortfall (0 Whites Creek Pike: 292 drawn, 85 reported, 92
@@ -292,12 +307,13 @@ const KpiStrip: React.FC<{
           : parkingShort
             ? `Parking shortfall · ${stallsProvided} of ${stallsRequired} stalls${clampReasons.filter(r => r !== 'parking short').length > 0 ? ` · ${clampReasons.filter(r => r !== 'parking short')[0]}` : ''}`
             : constrained
-              ? `Code compliant · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
+              ? `Checks passed · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
               : parkingNotEvaluated
-                ? 'Compliant on evaluated checks · parking not evaluated'
-                : 'Code compliant'}
+                ? 'Checks passed · parking not evaluated'
+                : 'Checks passed'}
       </div>
       )}
+      </div>
       {utilizationPct != null && utilizationPct < 85 && (
         <div
           title="The constructive solver has not reproduced the theoretical envelope — additional optimization search is warranted."

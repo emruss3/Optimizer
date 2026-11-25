@@ -595,6 +595,48 @@ export function openStyle(kind: string): { name: string; kind: string; color: st
 }
 
 /**
+ * What a held or natural piece of land IS, apart from how it is drawn.
+ * The drawing style had one bucket for all natural land ("wetland"), so a
+ * hillside got wetland hatching and sedges in the 3D view, and a deep-fill
+ * hold read as floodplain (audit 2026-11-22). The source travels on the
+ * element as `constraintSource`; `hazardKind` stays the display style.
+ */
+export type ConstraintSource =
+  | 'wetland' | 'wetland_buffer' | 'floodplain' | 'floodway' | 'slope' | 'deep_fill_hold' | 'pond' | 'natural_unspecified';
+
+const CONSTRAINT_SOURCES: ReadonlySet<string> = new Set<ConstraintSource>([
+  'wetland', 'wetland_buffer', 'floodplain', 'floodway', 'slope', 'deep_fill_hold', 'pond', 'natural_unspecified',
+]);
+/** A value read off an element is a source only when it is one of the known ones. */
+export const isConstraintSource = (v: unknown): v is ConstraintSource => typeof v === 'string' && CONSTRAINT_SOURCES.has(v);
+
+/** The source of an open piece the engine calls natural, from the engine's own name for it. */
+export function constraintSourceOf(kind: string): ConstraintSource {
+  const k = kind.toLowerCase();
+  if (/hillside|slope|steep/.test(k)) return 'slope';
+  // land beside a wetland is not the wetland
+  if (/beside|adjacent|next to/.test(k)) return 'natural_unspecified';
+  if (/floodway/.test(k)) return 'floodway';
+  if (/flood/.test(k)) return 'floodplain';
+  if (/buffer/.test(k)) return 'wetland_buffer';
+  if (/wetland|stream|creek|water/.test(k)) return 'wetland';
+  if (/pond/.test(k)) return 'pond';
+  return 'natural_unspecified';
+}
+
+/** The hatch a source is drawn with. Unspecified natural land gets its own, never the wetland's. */
+export function hazardKindOf(source: ConstraintSource): 'wetland' | 'floodplain' | 'floodway' | 'slope' | 'natural' | undefined {
+  switch (source) {
+    case 'wetland': case 'wetland_buffer': return 'wetland';
+    case 'floodplain': case 'deep_fill_hold': return 'floodplain';
+    case 'floodway': return 'floodway';
+    case 'slope': return 'slope';
+    case 'natural_unspecified': return 'natural';
+    default: return undefined;
+  }
+}
+
+/**
  * Map the generator payload to canvas elements.
  *   lots                    → 'other'        (parcel-line style, below everything; "Lot N" carries the lot tag with the server's area)
  *   pads                    → 'building'     (one house footprint each; coloured by fill depth in the earthwork view)
@@ -622,7 +664,8 @@ export function sfV1ToElements(
   // lays anything out. Drawn first, under everything — without it a by-right
   // plan that keeps out of the floodplain leaves an unexplained blank
   // (930 Morton Mill Rd: 2.71 of 4.47 ac held, 0 lots on the rest).
-  const holdLabel = str(resp.flood_hold) === 'floodway' ? 'Regulatory floodway · held out' : 'Flood hazard area · held out';
+  const holdIsFloodway = str(resp.flood_hold) === 'floodway';
+  const holdLabel = holdIsFloodway ? 'Regulatory floodway · held out' : 'Flood hazard area · held out';
   polys3857(opts.holdWkt).forEach((poly, i) => {
     elements.push({
       id: `${SFV1_ID_PREFIX}hold-${i + 1}`,
@@ -630,7 +673,7 @@ export function sfV1ToElements(
       name: holdLabel,
       geometry: poly,
       properties: props({
-        kind: 'greenway', hazardKind: 'floodplain', label: holdLabel,
+        kind: 'greenway', hazardKind: holdIsFloodway ? 'floodway' : 'floodplain', constraintSource: holdIsFloodway ? 'floodway' : 'floodplain', label: holdLabel,
         styleOverride: true, color: '#DBEAFE', opacity: 0.45, strokeColor: '#3B82F6',
       }),
       metadata: meta,
@@ -650,7 +693,7 @@ export function sfV1ToElements(
         name: hillsideLabel,
         geometry: poly,
         properties: props({
-          kind: 'greenway', hazardKind: 'slope', label: hillsideLabel,
+          kind: 'greenway', hazardKind: 'slope', constraintSource: 'slope', label: hillsideLabel,
           styleOverride: true, color: '#FDE68A', opacity: 0.45, strokeColor: '#B45309',
         }),
         metadata: meta,
@@ -766,6 +809,7 @@ export function sfV1ToElements(
       geometry: poly,
       properties: props({
         lotKind: kind ?? undefined,
+        homeSetbacksFt: resp.setbacks ?? undefined,
         // the engine's house plan for this lot, read on the sheet as "4 bed · 3,184 sf" (2026-11-09)
         houseLabel: houseLabel(house) ?? undefined,
         houseBeds: house?.beds ?? undefined,
@@ -867,7 +911,9 @@ export function sfV1ToElements(
       properties: props({
         kind: style.kind,
         openKind: kind,
-        hazardKind: style.greenway ? 'wetland' : undefined,
+        // the source, from the engine's own name for the piece; the hatch follows it
+        constraintSource: style.greenway ? constraintSourceOf(kind) : style.kind === 'pond' ? 'pond' : undefined,
+        hazardKind: style.greenway ? hazardKindOf(constraintSourceOf(kind)) : undefined,
         label: style.label,
         areaSqFt: acres != null ? Math.round(acres * 43560) : undefined,
         styleOverride: true, color: style.color, opacity: style.opacity, strokeColor: style.strokeColor,
@@ -908,7 +954,7 @@ export function sfV1ToElements(
   polys3857(resp.deep_fill_hold_wkt).forEach((poly, i) => {
     elements.push({
       id: `${SFV1_ID_PREFIX}deep-fill-hold-${i + 1}`, type: 'greenspace', name: 'Deep-fill hold', geometry: poly,
-      properties: props({ kind: 'greenway', hazardKind: 'floodplain', label: 'Deep-fill hold (fill over the cap)', styleOverride: true, color: '#FECACA', opacity: 0.5, strokeColor: '#B91C1C' }), metadata: meta,
+      properties: props({ kind: 'greenway', hazardKind: 'floodplain', constraintSource: 'deep_fill_hold', label: 'Deep-fill hold (fill over the cap)', styleOverride: true, color: '#FECACA', opacity: 0.5, strokeColor: '#B91C1C' }), metadata: meta,
     });
   });
 
@@ -921,7 +967,7 @@ export function sfV1ToElements(
         type: 'greenspace',
         name: 'Wetland',
         geometry: poly,
-        properties: props({ kind: 'greenway', hazardKind: 'wetland', styleOverride: true, color: '#99F6E4', opacity: 0.5, strokeColor: '#0D9488' }),
+        properties: props({ kind: 'greenway', hazardKind: 'wetland', constraintSource: 'wetland', styleOverride: true, color: '#99F6E4', opacity: 0.5, strokeColor: '#0D9488' }),
         metadata: meta,
       });
     });
@@ -1034,17 +1080,32 @@ export function sfV1ToElements(
   return { elements, summary };
 }
 
+/**
+ * How a plan's checks are counted, everywhere they are counted. A check with
+ * a verdict is graded (pass or fail). A check with no verdict is a measurement
+ * the engine reports beside the others (yield against the arithmetic, on
+ * 0 Delk Ave): it is listed, and it is not a pass. The badge said "All 16
+ * checks pass" while the basis line said "15 tests pass" for the same plan.
+ */
+export function checkCounts(tests: ReadonlyArray<{ pass: boolean | null }>): { graded: number; passed: number; measured: number } {
+  const graded = tests.filter(t => t.pass === true || t.pass === false).length;
+  return { graded, passed: tests.filter(t => t.pass === true).length, measured: tests.length - graded };
+}
+
 /** One line for the basis row and the lot-fit strip. */
 export function sfV1SummaryLine(s: SfV1Summary): string {
   if (s.status === 'skipped') return `By-right subdivision skipped — ${s.reason ?? 'no reason given'}`;
+  // A failed run is not a yield. "0 lots by right — engine error" read as a finding about the land
+  // (0 Osage St, 2026-11-23); the run failed, and nothing can be said of the parcel from it.
+  if (s.status === 'error') return `No by-right result — the generator failed${s.reason ? `: ${s.reason}` : ''} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
   const basis = s.basis === 'override' ? 'as an OVERRIDE' : 'by right';
   if (s.lots === 0) return `0 lots ${basis}${s.reason ? ` — ${s.reason}` : ''} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
   const module = s.lotWFt != null && s.lotDFt != null ? ` @ ${s.lotWFt} × ${s.lotDFt} ft` : '';
   const dens = s.densityDuAc != null ? ` · ${s.densityDuAc} du/ac gross` : '';
   const land = s.rowPct != null && s.lotPct != null ? ` · ${s.rowPct}% ${isDrivePattern(s.pattern) ? 'easement' : 'ROW'} / ${s.lotPct}% lots${s.openPct != null ? ` / ${s.openPct}% open` : ''}` : '';
   const flood = s.floodHold ? ` · flood hold: ${s.floodHold}` : '';
-  const passed = s.tests.filter(t => t.pass === true).length;
-  const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : passed > 0 ? ` · ${passed} tests pass` : '';
+  const { passed } = checkCounts(s.tests);
+  const grade = s.fails.length > 0 ? ` · fails ${s.fails.join(', ')}` : passed > 0 ? ` · ${passed} checks pass` : '';
   return `${s.lots} lot${s.lots === 1 ? '' : 's'}${module} ${basis}${patternPhrase(s.pattern)}${dens}${land}${flood}${grade} · generator: ${s.generatorVersion ?? 'sf_v1'}`;
 }
 
@@ -1770,4 +1831,112 @@ export function edgeClassSentence(edges: SfV1EdgeClass[]): string | null {
   const parts = edges.map(e => `${e.ft.toLocaleString()} ft ${e.label}`);
   if (!edges.some(e => e.kind === 'street')) parts.push('no mapped street contact');
   return parts.join(' · ');
+}
+
+/* ── Deep search (engine g41, 2026-11-12) ────────────────────────────────────
+ * `fn_sf_v1_deep_search(ogc_fid, opt, search_id)` keeps looking after the
+ * quick plan is on the sheet: the engine's own patterns, street layouts
+ * adapted from built subdivisions (fitted to the code first), and
+ * varied-settings plans. Each call does a few seconds of engine work and
+ * reports progress; a call that carries `plan` found a better plan (or the
+ * search finished). Lot count with no code failure decides. Nothing here is
+ * called AI: a plan is AI-generated only when the winning try's pattern is
+ * `model`, and no model is live. Contract: claude/engine-reply-2026-11-11-deep-search.md.
+ */
+export interface SfV1DeepTry {
+  try?: number | null;
+  pattern?: string | null;
+  lots?: number | null;
+  code_clean?: boolean | null;
+  better?: boolean | null;
+  skipped?: string | null;
+  precedent_from?: string | null;
+  [k: string]: unknown;
+}
+
+export interface SfV1DeepResponse {
+  search_id?: string | null;
+  done?: boolean | null;
+  tries_done?: number | null;
+  tries_total?: number | null;
+  baseline_lots?: number | null;
+  best_lots?: number | null;
+  gain_lots?: number | null;
+  best_try?: number | null;
+  tries?: SfV1DeepTry[] | null;
+  plan?: SfV1Response | null;
+  error?: string | null;
+  [k: string]: unknown;
+}
+
+/** What the panel shows while the search runs and when it ends. */
+export interface SfV1DeepProgress {
+  done: boolean;
+  triesDone: number;
+  triesTotal: number;
+  baselineLots: number | null;
+  bestLots: number | null;
+  /** the plan on the sheet came from the search */
+  onSheet: boolean;
+  /** the built subdivision the winning street layout was adapted from, when it was one */
+  precedentFrom: string | null;
+  /** the search stopped early (service unreachable or repeated time-outs) */
+  stopped: boolean;
+}
+
+/** One deep-search call. `timedOut` tells the caller to send `skip_try` next. */
+export async function fetchSfV1DeepSearch(
+  ogcFid: number, opt: SfV1Options | Record<string, unknown>, searchId: string | null,
+): Promise<{ data: SfV1DeepResponse | null; timedOut: boolean }> {
+  try {
+    if (!supabase) return { data: null, timedOut: false };
+    const { data, error } = await supabase.rpc('fn_sf_v1_deep_search', {
+      p_ogc_fid: ogcFid, p_opt: opt, p_search_id: searchId,
+    });
+    if (error) {
+      const code = String((error as { code?: unknown }).code ?? '');
+      const msg = String(error.message ?? '');
+      // a cancelled statement (57014) or a gateway time-out: the try in hand ran too long
+      const timedOut = code.startsWith('57') || /time.?out|timed out|504/i.test(msg);
+      console.warn('[sfV1Plan] deep search call failed:', msg || error);
+      return { data: null, timedOut };
+    }
+    return { data: (data as SfV1DeepResponse) ?? null, timedOut: false };
+  } catch (err) {
+    console.warn('[sfV1Plan] deep search call threw:', err);
+    return { data: null, timedOut: true };
+  }
+}
+
+/** The first deep-search call carries the same options the plan call does. */
+export function deepSearchOpt(opt: SfV1Options | null | undefined): Record<string, unknown> {
+  return cleanOpt(opt);
+}
+
+/** The built subdivision behind the winning try, if the winner was a precedent. */
+export function deepWinnerPrecedent(r: SfV1DeepResponse): string | null {
+  const best = r.best_try ?? 0;
+  if (!best) return null;
+  const t = (r.tries ?? []).find(x => x.try === best);
+  return t && t.pattern === 'precedent' && t.precedent_from ? String(t.precedent_from) : null;
+}
+
+/** One plain line for the panel. */
+export function deepSearchLine(p: SfV1DeepProgress, sheetFailed = false): string {
+  // with no plan on the sheet there is nothing for a search to have beaten: it names what it found, or says so
+  if (sheetFailed && (p.done || p.stopped)) {
+    const n = p.triesDone > 0 ? `Checked ${p.triesDone} layout${p.triesDone === 1 ? '' : 's'}.` : 'The search could not run.';
+    return p.bestLots != null && p.bestLots > 0
+      ? `${n} The best placed ${p.bestLots} lot${p.bestLots === 1 ? '' : 's'}, but no plan is on the sheet: the generator failed when it was asked to draw one.`
+      : `${n} No plan is on the sheet: the generator failed.`;
+  }
+  if (!p.done && !p.stopped) {
+    return p.triesTotal > 0 ? `Trying layout ${Math.min(p.triesDone + 1, p.triesTotal)} of ${p.triesTotal}…` : 'Looking for a better layout…';
+  }
+  const checked = p.triesDone > 0 ? `Checked ${p.triesDone} layout${p.triesDone === 1 ? '' : 's'}.` : 'The search could not run.';
+  if (p.onSheet && p.bestLots != null && p.baselineLots != null && p.bestLots > p.baselineLots) {
+    const from = p.precedentFrom ? ` Street layout adapted from ${p.precedentFrom}, a built subdivision.` : '';
+    return `${checked} Found ${p.bestLots} lots, up from ${p.baselineLots}.${from}`;
+  }
+  return p.stopped ? `${checked} The search stopped early; the plan on the sheet stands.` : `${checked} The plan on the sheet was the best.`;
 }

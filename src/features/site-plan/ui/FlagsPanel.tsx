@@ -69,7 +69,7 @@ const FlagsPanel: React.FC<{
   if (empty) {
     return (
       <div className="p-4 text-sm text-gray-500">
-        No active flags — the plan satisfies every compiled constraint it was checked against.
+        Nothing to check: the plan passes every constraint it was checked against. What was not checked is named in the status and on the sheets.
       </div>
     );
   }

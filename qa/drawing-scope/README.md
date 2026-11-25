@@ -411,6 +411,89 @@ Checks: 70 files, 771 tests pass; app type check 2,086, unchanged;
 
 Checks: 71 files, 777 tests pass; app type check 2,086, unchanged.
 
+## Slice 7: entry, export and next steps
+
+- Landing page: what the product does, a real sample parcel and its exported
+  sheet. Customer counts, the accuracy rate, the SOC 2 line, testimonials and
+  the competitor table are removed. `slice-7/landing.png`.
+- Returning users open on a start page: search by address or parcel ID,
+  Resume last plan, recent projects kept in the browser. `slice-7/start-page.png`.
+- Map unavailable: the same search and recent work where the map would be.
+  `slice-7/map-unavailable.png`.
+- One Export menu: Site plan PDF, 3D image, Full exhibit set, Scheme report.
+  It names the parcel, scheme and revision first. `slice-7/export-menu.png`.
+- Street access as a next step: the reason, the frontage on the plan, and
+  what clears it. `slice-7/access-needs-verification.png` (the flag was added
+  to the fixture answer for the capture; no fixture parcel carries it with a
+  frontage line).
+
+Checks: 76 files, 794 tests pass; app type check 2,073 (was 2,086);
+`check-slice.cjs` passes.
+
+## Slice 8: predictable regeneration
+
+- A bar on the plan keeps three actions apart. Recalculate this design runs
+  the same option and locked buildings again and saves nothing new. Create
+  another option asks for a different layout and saves it as a new option.
+  Save version keeps the sheet under a name and reports whether it saved.
+- "N locked · M free" opens what the planner keeps and what it may move, with
+  Unlock all.
+- After each action a note states what changed, in the engine's figures.
+- Undo and redo are one history for both engines. A server plan is undone by
+  replaying its seed, locked buildings, product and context. Nothing is saved
+  by an undo.
+- `slice-8/plan-actions.png`, `slice-8/plan-actions-3d.png`. The fixture
+  store returns one plan per parcel, so the note in the capture reads
+  unchanged, and the mock has no save endpoint.
+
+Checks: 801 tests pass; app type check 2,073; `check-slice.cjs` passes.
+
+## Slice 9: the aerial sheet
+
+- Streets between parcels are strips laid across each gap where two parcels
+  face each other within a street's width. The single plate over all the
+  neighbouring parcels is gone: on a 70-acre site it read as a slate lake.
+- The aerial sheet frames what is built where that is much smaller than the
+  parcel. The 3D view on screen still centres on the parcel.
+- `slice-9/aerial-*-before.png` and `-after.png`.
+
+Checks: 817 tests pass; app type check 2,073; `check-slice.cjs` passes.
+
+## Slice 10: the section's height control, subdivision aerials
+
+- Section A-03 draws the setback lines and the zoning height control. Where
+  the record states a height plane it is drawn as a plane; otherwise the one
+  figure is drawn as a line. A building above it is called out as needing
+  verification, in the sheet's own words. On 1710 Meharry: estimated 44 ft
+  against a 30 ft record. `slice-10/a03-section-height-control.png`.
+- The aerial sheet frames the densest group of buildings where homes are
+  spread across a parcel, and says so on the sheet. Subdivisions show lots and
+  density. `slice-10/aerial-35-lots.png`, `slice-10/aerial-17-lots.png`.
+- Each street gap is paved once.
+- The parcel in slice-9's "70 ac" captures has no proposal: the engine drew
+  no lot there, and the buildings in it are existing ones.
+
+Checks: 819 tests pass; app type check 2,073; `check-slice.cjs` passes.
+
+## Slice 11: camera baseline (design audit of November 15, build order 1)
+
+- Street is a street arrival: a person's eye, 5.5 ft up, beside the street,
+  with a clear line of sight to the main building and the whole of it in the
+  frame. Places with a neighbour or a tree in the way are passed over. The
+  camera is level with a lens shift, so walls stay upright.
+  `slice-11/street-arrival-1710-meharry.png`.
+- Where a parcel's record has no street lines and trees stand all round, the
+  view says how many trees are in the line of sight.
+  `slice-11/street-arrival-535-main.png` (6 trees).
+- The Aerial preset of a rendering centres on the built area, 28 degrees down.
+  Review still centres on the parcel. `slice-11/drone-1710-meharry.png`.
+- Each preset writes a shot record on the view: position and target in feet
+  (local east, north, up), angle of view, revision, style and sun. The two
+  `.shot.json` files are the records the captures were taken with.
+- Cars in the 3D view are shaped cars (`slice-10/cars-shaped.png`).
+
+Checks: 843 tests pass; app type check 2,071; `check-slice.cjs` passes.
+
 ## Not done yet
 
 - The edge the app labels as the front is wrong on some parcels (1710 Meharry

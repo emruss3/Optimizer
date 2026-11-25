@@ -11,7 +11,7 @@ import type { Polygon } from 'geojson';
 
 const box = (x0: number, y0: number, x1: number, y1: number): Pt[] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
 const feature = (id: string, role: SceneFeature['role'], styleRole: SceneFeature['styleRole'], ring: Pt[]): SceneFeature => ({
-  id, role, styleRole, name: id, polygons: [[ring]], stalls: null, reportedAreaSqFt: null, provenance: { elementType: 'x', generator: null },
+  id, role, styleRole, name: id, polygons: [[ring]], label: null, stalls: null, reportedAreaSqFt: null, provenance: { elementType: 'x', generator: null },
 });
 
 describe('planting', () => {
@@ -85,6 +85,69 @@ describe('the sheet', () => {
   })!;
   const title = { project: 'P', date: 'd', data: [{ label: 'Zoning', value: 'RM20' }, { label: 'Density', value: '11.2 per acre' }] };
 
+  it('keeps an unresolved route on the download, and draws none when the route is whole', () => {
+    const whole = new DOMParser().parseFromString(renderSitePlanSheet(scene, title, 'tabloid').svg, 'image/svg+xml');
+    expect(whole.querySelector('[data-role="route-break"]')).toBeNull();
+    const broken = new DOMParser().parseFromString(
+      renderSitePlanSheet(scene, { ...title, routeBreak: { from: [0, 18], to: [0, -30] } }, 'tabloid').svg, 'image/svg+xml');
+    expect(broken.querySelector('parsererror')).toBeNull();
+    const mark = broken.querySelector('[data-role="route-break"]');
+    expect(mark?.querySelectorAll('circle').length).toBe(2);
+    expect(mark?.textContent).toMatch(/no drawn connection to the street/);
+    const measured = new DOMParser().parseFromString(
+      renderSitePlanSheet(scene, { ...title, routeBreak: { from: [0, 18], to: [0, -30], gapFt: 20.85 } }, 'tabloid').svg, 'image/svg+xml');
+    expect(measured.querySelector('[data-role="route-break"]')?.textContent).toMatch(/21 ft short/);
+  });
+
+  it('prints the decision figures ahead of the other site data, and says so when a legend is cut short', () => {
+    const decided = { ...title, decision: [{ label: 'Parking', value: '238 supplied · 226 required' }, { label: 'Street access', value: 'Unresolved: no drive reaches the street' }] };
+    const doc = new DOMParser().parseFromString(renderSitePlanSheet(scene, decided, 'slide').svg, 'image/svg+xml');
+    const rows = [...doc.querySelectorAll('[data-site-data]')].map(g => g.getAttribute('data-site-data'));
+    expect(rows.slice(0, 3)).toEqual(['Parking', 'Street access', 'Zoning']);
+    expect(doc.querySelector('[data-decision="Parking"]')?.textContent).toBe('Parking238 supplied · 226 required');
+    // every legend item is either drawn or counted in the "more" note
+    const drawn = doc.querySelectorAll('[data-legend]').length;
+    const more = doc.querySelector('[data-legend-more]')?.getAttribute('data-legend-more');
+    expect(drawn > 0 || more === 'all').toBe(true);
+  });
+
+  // Live Design handoff 2026-11-23: W Heiman parking / street-access text overran Letter (~0.60 in) and slide (~3 pts)
+  it('wraps long decision values inside the strip on Letter and slide', () => {
+    const decided = {
+      ...title,
+      decision: [
+        { label: 'Parking', value: '127 drawn · 20 reported · 122 required · reported count 102 short of required' },
+        { label: 'Street access', value: 'Unresolved: no drive reaches the street' },
+      ],
+    };
+    for (const size of ['letter', 'slide'] as const) {
+      const sheet = renderSitePlanSheet(scene, decided, size);
+      const layout = sheetLayout(scene, size);
+      const tx = layout.strip.x + 14, tw = layout.strip.w - 28;
+      const doc = new DOMParser().parseFromString(sheet.svg, 'image/svg+xml');
+      expect(doc.querySelector('parsererror')).toBeNull();
+      const parking = doc.querySelector('[data-decision="Parking"]');
+      expect(parking?.getAttribute('data-wrapped')).toBe('true');
+      expect(parking?.getAttribute('data-alert')).toBe('true');
+      expect(parking?.textContent).toMatch(/short of required/);
+      // every value fragment starts at the indent and ends before the strip's right content edge
+      for (const t of parking?.querySelectorAll('text') ?? []) {
+        const x = Number(t.getAttribute('x'));
+        const text = t.textContent ?? '';
+        if (text === 'Parking') {
+          expect(x).toBeCloseTo(tx, 1);
+          continue;
+        }
+        expect(x).toBeGreaterThanOrEqual(tx + 46 - 0.5);
+        const approxW = text.length * 5.9 * 0.52;
+        expect(x + approxW).toBeLessThanOrEqual(tx + tw + 1);
+      }
+      const access = doc.querySelector('[data-decision="Street access"]');
+      expect(access?.getAttribute('data-alert')).toBe('true');
+      expect(access?.textContent).toMatch(/Unresolved/);
+    }
+  });
+
   it('prints the key figures, the site data and the stripes it could draw', () => {
     const sheet = renderSitePlanSheet(scene, title, 'tabloid');
     expect(sheet.figures.map(f => [f.label, f.value])).toEqual([['HOMES', '24'], ['BUILDING', '1'], ['STORIES', '3'], ['PARKING STALLS', '10']]);
@@ -147,6 +210,17 @@ describe('the sheet', () => {
     expect(doc.querySelector('[data-figure="Density"]')?.textContent).toBe('11.2 per acreDENSITY');
     expect(doc.querySelector('[data-role="view-note"]')?.textContent).toMatch(/are illustration, not a design/);
     expect(sheet.svg).toMatch(/width="13.333in" height="7.5in"/);
+    // a picture on ground graded for it says the grading is assumed; one on flat or ungraded ground does not
+    expect(doc.querySelector('[data-role="view-note"]')?.textContent).not.toMatch(/not a grading plan/);
+    const graded = renderViewSheet(scene, title, 'slide', { href: 'data:image/jpeg;base64,AAAA', graded: true });
+    // the note wraps to more than one line, and still reads as whole sentences
+    const gdoc = new DOMParser().parseFromString(graded.svg, 'image/svg+xml');
+    const note = gdoc.querySelector('[data-role="view-note"]');
+    expect(note?.querySelectorAll('tspan').length).toBeGreaterThanOrEqual(2);
+    expect(note?.textContent).toMatch(/graded to 4% or less: an assumption of the picture, not a grading plan/);
+    expect(note?.textContent).toMatch(/are illustration, not a design/);
+    const painted = renderViewSheet(scene, title, 'slide', { href: 'data:image/jpeg;base64,AAAA', ai: true, graded: true });
+    expect(painted.svg).not.toContain('not a grading plan');
   });
 });
 

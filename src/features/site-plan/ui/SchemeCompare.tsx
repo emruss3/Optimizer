@@ -58,7 +58,7 @@ const SchemeDrawing: React.FC<{ ring: number[][]; elements: Drawing; frame: { x:
         <text x={frame.w / 2} y={frame.h / 2} textAnchor="middle" fontSize={hair * 11} fill="#6b7280">Drawing…</text>
       )}
       {elements === null && (
-        <text x={frame.w / 2} y={frame.h / 2} textAnchor="middle" fontSize={hair * 11} fill="#6b7280">Drawing not available</text>
+        <text x={frame.w / 2} y={frame.h / 2} textAnchor="middle" fontSize={hair * 11} fill="#6b7280">Metrics only · drawing not saved</text>
       )}
     </svg>
   );
@@ -114,7 +114,7 @@ const SchemeCompare: React.FC<{
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Compare schemes</h2>
-            <p className="text-xs text-gray-500">Same parcel, same scale. Differences are against {schemes[0]?.name}.</p>
+            <p className="text-xs text-gray-500">Same parcel, same scale. Differences are against {schemes[0]?.name}. Figures are the ones saved with each scheme; each drawing is replayed from its saved settings.</p>
           </div>
           <button onClick={onClose} aria-label="Close comparison" className="p-1 rounded hover:bg-gray-100"><X className="w-4 h-4" /></button>
         </div>
@@ -140,7 +140,8 @@ const SchemeCompare: React.FC<{
                         <td className="py-1 text-right tabular-nums font-medium text-gray-900" data-testid={`compare-${r.key}-${i}`}>
                           {v != null ? r.show(v) : 'not reported'}
                         </td>
-                        <td className={`py-1 pl-2 w-20 text-right tabular-nums ${d == null || d === 0 ? 'text-gray-400' : d > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                        {/* more is not better for every figure: only the margin is coloured by direction */}
+                        <td className={`py-1 pl-2 w-20 text-right tabular-nums ${d == null || d === 0 ? 'text-gray-400' : r.key !== 'margin' ? 'text-gray-700' : d > 0 ? 'text-green-700' : 'text-red-600'}`}>
                           {i === 0 ? '' : d == null ? '' : d === 0 ? 'same' : r.diff(d)}
                         </td>
                       </tr>
