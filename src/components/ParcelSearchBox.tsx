@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, MapPin, ArrowRight } from 'lucide-react';
 import { searchParcels, type ParcelHit } from '../lib/parcelSearch';
 
@@ -22,21 +22,24 @@ const ParcelSearchBox: React.FC<{
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const seq = useRef(0);
 
   useEffect(() => {
     const term = query.trim();
-    if (term.length < 2) { seq.current++; setHits(null); setError(null); setSearching(false); return; }
-    // a newer query makes an older answer nobody's
-    const run = ++seq.current;
+    if (term.length < 2) { setHits(null); setError(null); setSearching(false); return; }
+    const controller = new AbortController();
+    setHits(null);
+    setError(null);
     setSearching(true);
     const timer = window.setTimeout(() => {
-      searchParcels(term)
-        .then(found => { if (run === seq.current) { setHits(found); setError(null); } })
-        .catch(e => { if (run === seq.current) { setHits(null); setError(e instanceof Error ? e.message : String(e)); } })
-        .finally(() => { if (run === seq.current) setSearching(false); });
+      searchParcels(term, 10, controller.signal)
+        .then(found => { if (!controller.signal.aborted) { setHits(found); setError(null); } })
+        .catch(e => { if (!controller.signal.aborted) { setHits(null); setError(e instanceof Error ? e.message : String(e)); } })
+        .finally(() => { if (!controller.signal.aborted) setSearching(false); });
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [query, attempt]);
 
   const clear = () => { setQuery(''); setHits(null); setError(null); };

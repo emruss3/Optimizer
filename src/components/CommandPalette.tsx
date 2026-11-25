@@ -26,14 +26,11 @@ interface CommandPaletteProps {
 
 export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState('');
+  const [attempt, setAttempt] = useState(0);
   const [items, setItems] = useState<CommandItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [recentItems, setRecentItems] = useState<CommandItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  // The scope's P0.3 (2026-11-09): a search has three terminal states, not
-  // one. Loading, no match and a failed request each read differently; a
-  // result that arrives after the query changed is dropped (the sequence).
-  const searchSeqRef = useRef(0);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -53,20 +50,26 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
   // Search with debouncing
   useEffect(() => {
     setOpenError(null);
-    if (query.length < 2) {
-      searchSeqRef.current += 1; // a result for an older query must not land
+    if (!isOpen || query.trim().length < 2) {
       setSearchError(null);
       setLoading(false);
       setItems(getDefaultItems());
       return;
     }
 
+    const controller = new AbortController();
+    setItems([]);
+    setSearchError(null);
+    setLoading(true);
     const timeoutId = setTimeout(() => {
-      searchItems(query);
+      void searchItems(query, controller.signal);
     }, 300);
 
-    return () => clearTimeout(timeoutId);
-  }, [query]);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [query, isOpen, attempt]);
 
   const loadDefaultItems = () => {
     const defaultItems = getDefaultItems();
@@ -155,19 +158,14 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     }
   };
 
-  const searchItems = async (searchQuery: string) => {
-    const seq = ++searchSeqRef.current;
-    const stale = () => seq !== searchSeqRef.current;
-    setLoading(true);
-    setSearchError(null);
+  const searchItems = async (searchQuery: string, signal: AbortSignal) => {
 
     try {
       const results: CommandItem[] = [];
       
-      // Search parcels using pg_trgm similarity
       if (supabase) {
-        const parcels = (await searchParcels(searchQuery)).map(h => ({ ogc_fid: h.ogcFid, parcelnumb: h.parcelNumber, address: h.address, zoning: h.zoning }));
-        if (stale()) return;
+        const parcels = (await searchParcels(searchQuery, 10, signal)).map(h => ({ ogc_fid: h.ogcFid, parcelnumb: h.parcelNumber, address: h.address, zoning: h.zoning }));
+        if (signal.aborted) return;
 
         if (parcels) {
           parcels.forEach(parcel => {
@@ -184,16 +182,16 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
         }
       }
 
-      if (stale()) return;
+      if (signal.aborted) return;
       setItems(results);
     } catch (error) {
-      if (stale()) return;
+      if (signal.aborted) return;
       console.error('Search error:', error);
       // a failed request is not "no results": say so, and keep the commands
       setSearchError(error instanceof Error ? error.message : String(error));
       setItems(getDefaultItems().filter(item => item.category === 'action'));
     } finally {
-      if (!stale()) setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   };
 
@@ -319,7 +317,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                     {searchError && !loading && (
                       <div data-testid="palette-search-error" className="mx-4 mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
                         Parcel search failed: {searchError}. Your query is kept.{' '}
-                        <button type="button" data-testid="palette-retry" onClick={() => { void searchItems(query); }} className="underline font-medium">Try again</button>
+                        <button type="button" data-testid="palette-retry" onClick={() => setAttempt(a => a + 1)} className="underline font-medium">Try again</button>
                       </div>
                     )}
                     {openError && (

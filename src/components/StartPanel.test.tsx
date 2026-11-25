@@ -27,7 +27,7 @@ describe('StartPanel', () => {
     render(<StartPanel />);
     fireEvent.change(screen.getByTestId('start-search'), { target: { value: '1710 Meh' } });
     fireEvent.click(await screen.findByText('1710 Meharry Blvd'));
-    expect(searchParcels).toHaveBeenCalledWith('1710 Meh');
+    expect(searchParcels).toHaveBeenCalledWith('1710 Meh', 10, expect.any(AbortSignal));
     expect(o.seen[0]).toMatchObject({ ogc_fid: '488278', openPlanner: false });
     o.off();
   });

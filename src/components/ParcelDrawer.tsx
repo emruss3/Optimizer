@@ -54,6 +54,19 @@ const ParcelDrawer = React.memo(function ParcelDrawer({ parcel, isOpen, onClose,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSitePlanner, parcelId]);
 
+  // Start the planner's server calls while the user reads the drawer: a parcel
+  // nobody has opened recently reads from disk on the first planner calls
+  // (src/features/site-plan/api/prefetch.ts). A short wait skips drive-by clicks.
+  const zoning = parcel?.zoning ?? null;
+  useEffect(() => {
+    if (!isOpen || !parcelId) return;
+    const id = Number(parcelId);
+    const timer = setTimeout(() => {
+      void import('../features/site-plan/api/prefetch').then(m => m.prefetchPlanner(id, zoning as string | null)).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [isOpen, parcelId, zoning]);
+
   if (!isOpen || !parcel) return null;
 
   // two different acreages: the assessor's deeded figure, and the parcel as mapped

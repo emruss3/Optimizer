@@ -7,41 +7,61 @@ export interface ParcelHit {
   zoning: string | null;
 }
 
-/**
- * Find parcels by street address or parcel ID. An APN typed with its spaces
- * or dashes ("116 02 0 020.00") never matched the stored number, so the
- * unformatted column takes the digits as well. Throws when the request fails:
- * a failed search is not "no results".
- */
-/** How long a search may run before it is reported as failed. */
 export const SEARCH_TIMEOUT_MS = 12_000;
 
-export async function searchParcels(query: string, limit = 10): Promise<ParcelHit[]> {
-  if (!supabase) throw new Error('the database client is not configured');
-  // PostgREST's filter grammar reads commas, parentheses and quotes as syntax,
-  // and ilike reads *, % and _ as wildcards: none of them is part of an address
-  // An apostrophe stays a one-character match, so O'Brien still finds O'BRIEN.
-  const term = query.replace(/[,()"\\*%_]/g, ' ').replace(/'/g, '_').replace(/\s+/g, ' ').trim();
+interface ParcelSearchRow {
+  ogc_fid: number;
+  address: string | null;
+  parcelnumb: string | null;
+  zoning: string | null;
+}
+
+export async function searchParcels(query: string, limit = 10, signal?: AbortSignal): Promise<ParcelHit[]> {
+  const term = query.replace(/[,()"\\*%_]/g, ' ').replace(/\s+/g, ' ').trim();
   if (term.length < 2) return [];
-  const digits = term.replace(/[^0-9a-z]/gi, '');
-  const filters = [`address.ilike.%${term}%`, `parcelnumb.ilike.%${term}%`];
-  if (digits.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${digits}%`);
-  const request = supabase
-    .from('parcels')
-    .select('ogc_fid, parcelnumb, address, zoning, landval')
-    .or(filters.join(','))
-    .limit(limit);
-  // a request that never answers must not leave "Searching" on screen for good
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const slow = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer after ${SEARCH_TIMEOUT_MS / 1000} seconds`)), SEARCH_TIMEOUT_MS); });
-  const { data, error } = await Promise.race([request, slow]).finally(() => clearTimeout(timer));
-  if (error) throw new Error(error.message ?? String(error));
-  return ((data ?? []) as Array<Record<string, unknown>>).map((p: any) => ({
-    ogcFid: Number(p.ogc_fid),
-    address: p.address || 'Unknown Address',
-    parcelNumber: p.parcelnumb ?? null,
-    zoning: p.zoning ?? null,
-  }));
+  if (!supabase) throw new Error('the database client is not configured');
+  signal?.throwIfAborted();
+
+  const controller = new AbortController();
+  const cancel = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', cancel, { once: true });
+  const deadline = setTimeout(() => {
+    controller.abort(new Error(`no answer after ${SEARCH_TIMEOUT_MS / 1000} seconds`));
+  }, SEARCH_TIMEOUT_MS);
+  try {
+    const client = supabase;
+    const request = async () => {
+      // The exact-first lookup is designed for the address and APN expression
+      // indexes. The old raw-column ILIKE OR cannot use those indexes.
+      const result = await client.rpc('find_planner_parcels', { p_query: term, p_limit: limit })
+        .abortSignal(controller.signal);
+      if (result.error?.code !== 'PGRST202') return result;
+
+      // Older development databases may not expose the RPC. Do not issue a
+      // second, expensive query for real production errors or cancellations.
+      controller.signal.throwIfAborted();
+      const legacyTerm = term.replace(/'/g, '_');
+      const apn = legacyTerm.replace(/[^0-9a-z]/gi, '');
+      const filters = [`address.ilike.%${legacyTerm}%`, `parcelnumb.ilike.%${legacyTerm}%`];
+      if (apn.length >= 3) filters.push(`parcelnumb_no_formatting.ilike.%${apn}%`);
+      return client.from('parcels').select('ogc_fid, parcelnumb, address, zoning')
+        .or(filters.join(',')).limit(limit).abortSignal(controller.signal);
+    };
+    const cancelled = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
+    });
+    const { data, error } = await Promise.race([request(), cancelled]);
+    if (error) throw new Error(error.message ?? String(error));
+    return ((data ?? []) as ParcelSearchRow[]).map(p => ({
+      ogcFid: p.ogc_fid,
+      address: p.address || 'Unknown Address',
+      parcelNumber: p.parcelnumb,
+      zoning: p.zoning,
+    }));
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener('abort', cancel);
+  }
 }
 
 /** Open a parcel the way a map click does. `planner` goes straight to its plan. */
