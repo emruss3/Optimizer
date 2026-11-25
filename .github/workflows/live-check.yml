@@ -11,6 +11,16 @@ on:
         description: the deployed app to check
         required: true
         default: https://optimizer-omega-three.vercel.app
+      check:
+        description: map (both tile sources) or search (the five audit parcels, address and parcel number, into the planner)
+        required: true
+        default: map
+        type: choice
+        options: [map, search]
+      app_ref:
+        description: optional - build this git ref on the runner and check it against the live database instead of app_url (for a branch whose preview is login-protected)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -18,7 +28,7 @@ permissions:
 jobs:
   map:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,11 +37,31 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
-      - name: Check the live map
+      - name: Serve a branch against the live database
+        if: inputs.app_ref != ''
         env:
-          APP_URL: ${{ inputs.app_url }}
+          APP_REF: ${{ inputs.app_ref }}
+          VITE_SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.BATTERY_SUPABASE_ANON_KEY }}
+        run: |
+          git fetch --depth=1 origin "$APP_REF"
+          git worktree add ../app FETCH_HEAD
+          cd ../app && npm ci --no-audit --no-fund
+          nohup npx vite --port 5199 --strictPort > ../vite.log 2>&1 &
+          npx wait-on -t 90000 http://localhost:5199
+          echo "APP_URL_OVERRIDE=http://localhost:5199" >> "$GITHUB_ENV"
+      - name: Check the live map
+        if: inputs.check == 'map'
+        env:
+          APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
           OUT: live-check
         run: node scripts/live-check/map.mjs
+      - name: Check parcel search into the planner
+        if: inputs.check == 'search'
+        env:
+          APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
+          OUT: live-check
+        run: node scripts/live-check/search.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:
