@@ -289,6 +289,60 @@ export const ABHP_526_00051 = abhpPadRanch({
   ],
 });
 
+/** Compact 30×28 ranch — second option beside the 24×30 on mid-narrow lots. */
+export const ABHP_5633_00340 = abhpPadRanch({
+  planNumber: '5633-00340',
+  name: 'ABHP 5633-00340 · compact three-bedroom ranch',
+  listingPath: '/floorplans/563300340/ranch-plan-900-square-feet-3-bedrooms-1-bathroom',
+  heatedSf: 900,
+  beds: 3,
+  baths: 1,
+  widthFt: 30,
+  depthFt: 28,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '30′ × 28′ pairs with the 24×30 starter so mid-narrow lots clear at least two stock swaps.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
+/** Shallow 40×20 ranch — wide-frontage lots with short depth after setbacks. */
+export const ABHP_110_00220 = abhpPadRanch({
+  planNumber: '110-00220',
+  name: 'ABHP 110-00220 · shallow three-bedroom ranch',
+  listingPath: '/floorplans/11000220/ranch-plan-800-square-feet-3-bedrooms-1-bathroom',
+  heatedSf: 800,
+  beds: 3,
+  baths: 1,
+  widthFt: 40,
+  depthFt: 20,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '40′ × 20′ clears shallow envelopes (~40×20 buildable) that reject 25–30 ft deep ranches.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
+/** Second shallow 36×20 ranch — pairs with 40×20 so shallow lots keep ≥2 swaps. */
+export const ABHP_5633_00022 = abhpPadRanch({
+  planNumber: '5633-00022',
+  name: 'ABHP 5633-00022 · shallow three-bedroom ranch',
+  listingPath: '/floorplans/563300022/ranch-plan-720-square-feet-3-bedrooms-1-bathroom',
+  heatedSf: 720,
+  beds: 3,
+  baths: 1,
+  widthFt: 36,
+  depthFt: 20,
+  notes: [
+    'Public listing facts only — purchase the ABHP construction package before building.',
+    'Listing Width×Depth is overall and may include porch; heated envelope is not separately published.',
+    '36′ × 20′ is the second shallow option beside 40×20 for short-depth envelopes.',
+    'No attached garage on the listing; use an independent parking pad or street stall.',
+  ],
+});
+
 /**
  * The Lanes Unit A — narrow urban product (second demo). Stub only: no
  * footprints, openings, or CubiCasa reuse until the Delk handoff is solid.
@@ -336,6 +390,9 @@ export const HOUSING_CATALOGUE: HousingDesignRecord[] = [
   ABHP_526_00035,
   ABHP_526_00030,
   ABHP_526_00051,
+  ABHP_5633_00340,
+  ABHP_110_00220,
+  ABHP_5633_00022,
 ];
 
 export function buildableStockPlans(): HousingDesignRecord[] {

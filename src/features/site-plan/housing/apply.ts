@@ -3,6 +3,7 @@
  * Mutates a shallow copy of elements — does not rewrite engine geometry.
  */
 import type { Element } from '../../../engine/types';
+import { createGroundFrame } from '../scene/frame';
 import { DELK_COTTAGE_1754_00010, DELK_PARCEL_ID, housingDesignById } from './catalogue';
 import { fitDelkCottage, fitDesignToLot } from './fit';
 import { placementToElementProps, rememberHousingChoice } from './handoff';
@@ -16,31 +17,66 @@ export interface ApplyHousingResult {
   unplaced: Array<{ lotIndex: number; reason: string }>;
 }
 
+const DEFAULT_SETBACKS = { front: 20, side: 5, rear: 20 };
+
+/** Sheet lots arrive in EPSG:3857; stock fit needs ground feet. */
+export function ring3857ToFeet(
+  coords: ArrayLike<ArrayLike<number>>,
+): Array<[number, number]> | null {
+  if (!coords || coords.length < 3) return null;
+  const first = coords[0];
+  if (!first || !Number.isFinite(Number(first[0])) || !Number.isFinite(Number(first[1]))) return null;
+  const frame = createGroundFrame(Number(first[0]), Number(first[1]));
+  return Array.from(coords, (c) => frame.toFeet([Number(c[0]), Number(c[1])]) as [number, number]);
+}
+
 function ringFromElement(el: Element): Array<[number, number]> | null {
   const coords = el.geometry?.coordinates?.[0];
   if (!Array.isArray(coords) || coords.length < 3) return null;
-  return coords.map(c => [Number(c[0]), Number(c[1])] as [number, number]);
+  return ring3857ToFeet(coords);
 }
 
-/** Build lot fit inputs from SF lot elements (order = lot index). */
-export function lotsFromElements(
-  elements: Element[],
-  setbacks: { front: number; side: number; rear: number } = { front: 20, side: 5, rear: 20 },
-): LotFitInput[] {
-  const lots = elements
-    .filter(el => /^sfv1:lot-/.test(el.id) || /^Lot\s+\d+/i.test(el.name ?? ''))
+function setbacksFromLot(
+  el: Element,
+  fallback: { front: number; side: number; rear: number },
+): { front: number; side: number; rear: number } {
+  const raw = el.properties?.homeSetbacksFt;
+  if (!raw || typeof raw !== 'object') return fallback;
+  const s = raw as Record<string, unknown>;
+  const front = Number(s.front);
+  const side = Number(s.side);
+  const rear = Number(s.rear);
+  if (![front, side, rear].every((n) => Number.isFinite(n) && n >= 0)) return fallback;
+  return { front, side, rear };
+}
+
+/** SF lot elements on the sheet (engine / sf_v1 ids and “Lot N” names). */
+export function sfLotElements(elements: Element[]): Element[] {
+  return elements
+    .filter(
+      (el) =>
+        /^sfv1[-:]lot-/i.test(el.id) ||
+        /^Lot\s+\d+/i.test(el.name ?? ''),
+    )
     .sort((a, b) => {
       const na = Number(/(\d+)/.exec(a.id)?.[1] ?? /Lot\s+(\d+)/i.exec(a.name ?? '')?.[1] ?? 0);
       const nb = Number(/(\d+)/.exec(b.id)?.[1] ?? /Lot\s+(\d+)/i.exec(b.name ?? '')?.[1] ?? 0);
       return na - nb;
     });
-  return lots.map((el, i) => {
+}
+
+/** Build lot fit inputs from SF lot elements (order = lot index). Rings are ground feet. */
+export function lotsFromElements(
+  elements: Element[],
+  setbacks: { front: number; side: number; rear: number } = DEFAULT_SETBACKS,
+): LotFitInput[] {
+  return sfLotElements(elements).map((el, i) => {
     const ring = ringFromElement(el) ?? [];
     const kind = typeof el.properties?.lotKind === 'string' ? el.properties.lotKind : null;
     return {
       ringFt: ring,
       frontage: null, // unresolved unless a typed frontage edge is supplied later
-      setbacks,
+      setbacks: setbacksFromLot(el, setbacks),
       lotKind: kind,
       lotIndex: i,
     };

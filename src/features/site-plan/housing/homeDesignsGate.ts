@@ -1,5 +1,5 @@
 import type { Element } from '../../../engine/types';
-import { lotsFromElements } from './apply';
+import { lotsFromElements, ring3857ToFeet } from './apply';
 import { fitDesignToLot } from './fit';
 import type { HomeDesign } from './originalDesigns';
 import { placeHome, residentialHomes } from './placement';
@@ -110,7 +110,8 @@ export function lotFitInputForHouse(
 
   const coords = house.geometry?.coordinates?.[0];
   if (!Array.isArray(coords) || coords.length < 3) return null;
-  const ringFt = coords.map((c) => [Number(c[0]), Number(c[1])] as [number, number]);
+  const ringFt = ring3857ToFeet(coords);
+  if (!ringFt) return null;
   return {
     ringFt,
     frontage: null,

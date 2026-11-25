@@ -67,12 +67,24 @@ for (const h of HOME_DESIGNS)
 it('places a full-size cottage on the real Delk five-lot layout and keeps the accepted plan intact', () => {
   const elements = sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
   const homes = residentialHomes(elements);
-  const fits = homes.map((e) => placeHome(HOME_DESIGNS[0]!, e, elements));
+  const court = HOME_DESIGNS.find((h) => h.id === 'tn-court-cottage-v1')!;
+  const pocket = HOME_DESIGNS.find((h) => h.id === 'tn-pocket-cottage-v1')!;
+  const lantern = HOME_DESIGNS.find((h) => h.id === 'tn-lantern-narrow-v1')!;
+  const fits = homes.map((e) => placeHome(court, e, elements));
   expect(fits.map((f) => Boolean(f.placement))).toEqual([true, true, true, false, false]);
   const cottage = fits[0]!.placement!;
   expect(cottage.elements.some((e) => e.name === 'Parking pad · 9 × 18 ft')).toBe(true);
   expect(cottage.elements.find((e) => e.id === cottage.house)?.properties.houseGarage).toBe(false);
-  expect(homes.map((el) => placeHome(HOME_DESIGNS[1]!, el, elements).placement)).toEqual(Array(5).fill(undefined));
+  // Second compact pad cottage also clears lots 1–3 so SF layouts keep ≥2 concept swaps.
+  expect(homes.map((el) => Boolean(placeHome(pocket, el, elements).placement))).toEqual([
+    true,
+    true,
+    true,
+    false,
+    false,
+  ]);
+  // Narrow 3-story lantern still does not clear the Delk lane lots.
+  expect(homes.map((el) => placeHome(lantern, el, elements).placement)).toEqual(Array(5).fill(undefined));
   expect(elements.some((e) => e.properties.housingDesignId)).toBe(false);
 }, 30000);
 

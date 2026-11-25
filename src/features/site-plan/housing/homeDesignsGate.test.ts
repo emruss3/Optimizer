@@ -4,9 +4,12 @@ import { residentialHomes } from './placement';
 import { sfV1ToElements, type SfV1Response } from '../api/sfV1Plan';
 import fixture from '../api/__fixtures__/delk-675423.json';
 import {
+  ABHP_110_00220,
   ABHP_4848_00368,
   ABHP_526_00051,
   ABHP_5633_00014,
+  ABHP_5633_00022,
+  ABHP_5633_00340,
   ABHP_5633_00358,
   DELK_COTTAGE_1754_00010,
   buildableStockPlans,
@@ -244,6 +247,23 @@ describe('stockDesignsFittingLot — per-lot filter', () => {
     expect(onA.length).toBeGreaterThan(onB.length);
   });
 
+  it('mid-narrow and shallow envelopes each keep ≥2 stock swaps', () => {
+    // Buildable ~32×30 — 24×30 + 30×28 both clear; 46×32 does not.
+    const midNarrow = rectLot(42, 70, 0);
+    const onMid = stockDesignsFittingLot(stock, midNarrow).map((d) => d.id);
+    expect(onMid.length).toBeGreaterThanOrEqual(2);
+    expect(onMid).toEqual(expect.arrayContaining([ABHP_5633_00014.id, ABHP_5633_00340.id]));
+    expect(onMid).not.toContain(ABHP_5633_00358.id);
+
+    // Buildable ~40×20 — 40×20 + 36×20 clear; deeper ranches do not.
+    const shallow = rectLot(50, 60, 1);
+    const onShallow = stockDesignsFittingLot(stock, shallow).map((d) => d.id);
+    expect(onShallow.length).toBeGreaterThanOrEqual(2);
+    expect(onShallow).toEqual(
+      expect.arrayContaining([ABHP_110_00220.id, ABHP_5633_00022.id]),
+    );
+  });
+
   it('returns an empty eligible list when the lot is too small for every plan', () => {
     // Buildable ~10×20 after setbacks — nothing in the catalogue clears it.
     const tiny = rectLot(20, 40, 0);
@@ -297,6 +317,39 @@ describe('designsFittingHouse — concept per-lot filter', () => {
     const forOpen = designsFittingHouse(schemeEligible, open, elements);
     expect(forOpen.some((d) => d.name === 'Court Cottage')).toBe(true);
     expect(forOpen.length).toBeGreaterThan(0);
+  }, 60000);
+
+  it('gives every standard Delk SF lot ≥2 concept and ≥2 stock swaps', () => {
+    const elements = sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
+    const houses = residentialHomes(elements);
+    expect(houses.length).toBe(5);
+    // Lots 1–3 are rectangular / standard — must support swapping among ≥2 homes.
+    for (const house of houses.slice(0, 3)) {
+      const concepts = designsFittingHouse(HOME_DESIGNS, house, elements);
+      const stock = eligibleStockDesigns(buildableStockPlans(), elements, {
+        selectedHouseId: house.id,
+      });
+      expect(concepts.length).toBeGreaterThanOrEqual(2);
+      expect(concepts.map((d) => d.name)).toEqual(
+        expect.arrayContaining(['Court Cottage', 'Pocket Cottage']),
+      );
+      expect(stock.length).toBeGreaterThanOrEqual(2);
+      expect(stock.map((d) => d.id)).toEqual(
+        expect.arrayContaining([DELK_COTTAGE_1754_00010.id, ABHP_5633_00014.id]),
+      );
+      // Sheet coords are 3857 — converted lot envelopes are tens of feet, not ~30.
+      const lot = lotFitInputForHouse(house, elements)!;
+      const xs = lot.ringFt.map((p) => p[0]);
+      const ys = lot.ringFt.map((p) => p[1]);
+      expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(50);
+      expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(50);
+    }
+    // Lots 4–5 stay honest gaps (irregular / pie) — stock may be empty; concepts may be empty.
+    const pie = houses[4]!;
+    const pieStock = eligibleStockDesigns(buildableStockPlans(), elements, {
+      selectedHouseId: pie.id,
+    });
+    expect(pieStock).toEqual([]);
   }, 60000);
 
   it('steps the catalogue index circularly for keyboard browse', () => {
