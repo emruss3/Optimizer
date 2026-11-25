@@ -1,0 +1,140 @@
+name: parcel-tiles
+
+# Static parcel vector tiles (docs/PARCEL_TILES.md). Run by hand only.
+#
+#   bench    time the fixture tiles from the live edge tiles, and from a release if
+#            a manifest URL is given. Needs no secret: the live tiles are public.
+#   build    export the snapshot, build and validate a release. Uploads it as a
+#            workflow artifact only; nothing is published.
+#   publish  build, then upload the release to storage and make it live.
+#   rollback make an earlier release live again.
+#
+# build, publish and rollback hold no Supabase key. They prove who they are with
+# a GitHub OIDC token (id-token: write), and the parcel-tiles-ci Edge Function
+# accepts only a hand-started run of this workflow on main
+# (supabase/functions/parcel-tiles-ci/policy.ts). Run them from main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: bench, build, publish or rollback
+        required: true
+        default: bench
+        type: choice
+        options: [bench, build, publish, rollback]
+      samples:
+        description: bench samples per tile and source
+        required: false
+        default: '50'
+      manifest_url:
+        description: bench a published release too (its manifest URL)
+        required: false
+        default: ''
+      release:
+        description: rollback to this release id
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parcel-tiles-${{ inputs.job }}
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    if: inputs.job == 'bench'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Bench the fixture tiles
+        env:
+          SAMPLES: ${{ inputs.samples }}
+          MANIFEST_URL: ${{ inputs.manifest_url }}
+        run: |
+          case "$SAMPLES" in ''|*[!0-9]*) echo "::error::samples must be a number"; exit 1;; esac
+          if [ -n "$MANIFEST_URL" ]; then
+            node scripts/parcel-tiles/bench.mjs --samples "$SAMPLES" --out bench.json --manifest "$MANIFEST_URL"
+          else
+            node scripts/parcel-tiles/bench.mjs --samples "$SAMPLES" --out bench.json
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parcel-tiles-bench-${{ github.run_id }}
+          path: bench.json
+
+  build:
+    if: inputs.job == 'build' || inputs.job == 'publish'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
+    steps:
+      - name: Check this run can be accepted
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run the parcel-tiles workflow from main; the broker refuses other branches."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_URL" ]; then echo "::error::BATTERY_SUPABASE_URL is not set."; exit 1; fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Install tippecanoe
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tippecanoe && tippecanoe --version
+      - name: Export the snapshot
+        run: node scripts/parcel-tiles/export.mjs --out parcels.geojsonl
+      - name: Build and validate the release
+        run: |
+          data=$(node -e "const s=require('./parcels.geojsonl.snapshot.json'); console.log('regrid-' + String(s.data_updated_at).slice(0,10))")
+          release="$(date -u +%Y-%m-%d)_${data}_${GITHUB_SHA::7}"
+          echo "RELEASE=$release" >> "$GITHUB_ENV"
+          node scripts/parcel-tiles/build.mjs --input parcels.geojsonl --out build \
+            --release "$release" --snapshot parcels.geojsonl.snapshot.json \
+            --tiles-base "$SUPABASE_URL/storage/v1/object/public/parcel-tiles"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parcel-tiles-${{ env.RELEASE }}
+          path: |
+            build/manifest.json
+            build/report.json
+            parcels.geojsonl.snapshot.json
+      - name: Publish and make live
+        if: inputs.job == 'publish'
+        # public tiles: decided 2026-11-24 (docs/PARCEL_TILES.md section 5, decision 1)
+        run: node scripts/parcel-tiles/publish.mjs --build build --confirm-public
+
+  rollback:
+    if: inputs.job == 'rollback'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SUPABASE_URL: ${{ secrets.BATTERY_SUPABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Make an earlier release live
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: |
+          if [ -z "$RELEASE" ]; then echo "::error::Name the release to roll back to."; exit 1; fi
+          node scripts/parcel-tiles/publish.mjs --rollback "$RELEASE"

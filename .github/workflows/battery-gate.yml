@@ -64,7 +64,8 @@ jobs:
           retention-days: 14
 
   live-battery:
-    if: github.event_name == 'schedule'
+    # nightly, and on demand: a hand-started run checks the real backend too
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +88,7 @@ jobs:
           fi
           VITE_SUPABASE_URL="$BATTERY_SUPABASE_URL" VITE_SUPABASE_ANON_KEY="$BATTERY_SUPABASE_ANON_KEY" npx vite --port 5199 --strictPort &
           npx wait-on -t 60000 http://localhost:5199
-          ASSERT=1 LIVE_RANDOM=1 SHOTS_DIR=battery-out node scripts/visual-battery/battery.mjs
+          ASSERT=1 LIVE_RANDOM=1 EXPLAIN_FAILS=1 SHOTS_DIR=battery-out node scripts/visual-battery/battery.mjs
       - name: Upload screenshots + results
         if: always()
         uses: actions/upload-artifact@v4

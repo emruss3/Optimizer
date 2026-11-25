@@ -26,12 +26,12 @@ import CommandPalette from './components/CommandPalette';
 import AppGrid from './layout/AppGrid';
 import DrawerOverlay from './components/DrawerOverlay';
 import RealtimeComments from './components/RealtimeComments';
+import MapPanel from './components/MapPanel';
 
 // Shell-first performance (order-5 item 1): the landing page and header
 // paint from the light shell; mapbox+deck (~650 KB gz) and every workflow
 // island load on demand. The map chunk preloads on idle so entering the
 // app stays instant.
-const MapPanel = React.lazy(() => import('./components/MapPanel'));
 const ParcelDrawer = React.lazy(() => import('./components/ParcelDrawer'));
 const UnifiedWorkspace = React.lazy(() => import('./components/UnifiedWorkspace').then(m => ({ default: m.UnifiedWorkspace })));
 const ProjectWorkflow = React.lazy(() => import('./components/ProjectWorkflow').then(m => ({ default: m.ProjectWorkflow })));
@@ -55,9 +55,10 @@ function SkipToContent() {
 }
 
 function preloadMapOnIdle() {
-  const kick = () => { void import('./components/MapPanel'); };
-  if ('requestIdleCallback' in window) (window as Window & { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(kick);
-  else setTimeout(kick, 1200);
+  // Lazy map loading handles failures within MapPanel when opened.
+  const preloadMap = () => { void import('./components/Map').catch(() => {}); };
+  if ('requestIdleCallback' in window) (window as Window & { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(preloadMap);
+  else setTimeout(preloadMap, 1200);
 }
 
 function App() {
@@ -351,10 +352,7 @@ function App() {
               aria-label="Interactive parcel map"
             >
               <ActiveFilters />
-              <MapPanel 
-                onParcelClick={handleParcelClick} 
-                activeProjectName={useActiveProject.getState().name}
-              />
+              <MapPanel onParcelClick={handleParcelClick} />
             </main>
 
             {/* RightDrawer stays as-is */}

@@ -446,6 +446,16 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     else if (m.type() === 'error') errs.push(t.slice(0, 220));
   });
   page.on('pageerror', e => errs.push(String(e).slice(0, 220)));
+  // every server call the planner makes: which ones failed, and how long each took
+  const calls = [];
+  const callStart = new Map();
+  page.on('request', r => { if (r.url().includes('/rest/v1/') || r.url().includes('/functions/v1/')) callStart.set(r, Date.now()); });
+  page.on('requestfinished', async r => {
+    if (!callStart.has(r)) return;
+    const res = await r.response().catch(() => null);
+    calls.push({ fn: r.url().split('/v1/')[1]?.split('?')[0], status: res?.status() ?? 0, ms: Date.now() - callStart.get(r) });
+  });
+  page.on('requestfailed', r => { if (callStart.has(r)) calls.push({ fn: r.url().split('/v1/')[1]?.split('?')[0], status: 0, failure: r.failure()?.errorText, ms: Date.now() - callStart.get(r) }); });
   try {
     await page.goto('http://localhost:5199/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2500);
@@ -480,6 +490,8 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     // DEM-coloured pads) can thrash the 2D canvas and stall page.screenshot
     // past any budget. Missing 2d / 3d (and every other shot) still fails the
     // parcel — soft-failing every PNG weakened the gate.
+    // Follow-up (app, not gate): floodway fill view thrashing the 2D canvas
+    // needs a product fix so the override PNG is required again.
     const shotsSkipped = [];
     const shot = async (name, { optional = false } = {}) => {
       const dest = `${OUT}/${p.ogc_fid}_${name}.png`;
@@ -597,24 +609,25 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
     // 2026-11-03 by-right subdivision: the override the parcel asks for (the
     // floodway-only fill scenario) is pressed and judged on its own evidence.
     // Wait for the fill-scenario answer (lots + fillView) before reading
-    // evidence. Only mark _overrideWaitTimedOut when the collected evidence is
-    // still unfinished — on #198 tip 20f8a35 the wait timed out at 90s while
-    // the subsequent evaluate already had 147 lots / fillView (false fail).
-    // The override PNG alone is optional on 680719 (canvas thrash).
+    // evidence. Do not .catch(() => null) and treat unfinished state as the
+    // answer: flag _overrideWaitTimedOut only when settle criteria remain
+    // unmet after the wait (#198 tip 20f8a35 timed out at 90s while evaluate
+    // already had 147 lots / fillView). Override PNG alone is optional on
+    // 680719 until the canvas thrash is fixed in-app.
     if (evidence && p.sfV1Override === 'floodway') {
       const btn = page.getByTestId('sfv1-override-floodway');
       if (await btn.isVisible().catch(() => false)) {
         await btn.click();
-        const overrideReady = (ev) => {
-          const sf = ev?.sfV1;
-          return !!sf && sf.basis === 'override' && sf.fillView === true && (sf.lots ?? 0) >= 100;
-        };
+        const overrideSettled = (sf) =>
+          !!sf && sf.basis === 'override' && sf.fillView === true && (sf.lots ?? 0) >= 100;
         let overrideWaitTimedOut = false;
         try {
+          // Floodway fill (~147 DEM pads) can block the main thread long enough
+          // that a 90s probe misses settle; give the solve room to finish.
           await page.waitForFunction(() => {
             const sf = window.__planEvidence && window.__planEvidence.sfV1;
             return !!(sf && sf.basis === 'override' && sf.fillView === true && (sf.lots || 0) >= 100);
-          }, null, { timeout: 120000, polling: 500 });
+          }, null, { timeout: 150000, polling: 500 });
         } catch (err) {
           overrideWaitTimedOut = true;
           console.log(`  override wait timed out for ${p.ogc_fid}: ${String(err).slice(0, 160)}`);
@@ -626,11 +639,11 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
             ? { ...ev, _domSfV1Panel: !!document.querySelector('[data-testid="sfv1-panel"]'), _domPlannerError: /Site Planner Error/.test(document.body.innerText ?? '') }
             : null;
         });
-        if (overrideWaitTimedOut && !overrideReady(overrideEv)) {
+        if (overrideWaitTimedOut && !overrideSettled(overrideEv?.sfV1)) {
           evidence._override = { ...(overrideEv ?? {}), _overrideWaitTimedOut: true };
         } else {
           if (overrideWaitTimedOut) {
-            console.log(`  override wait timed out for ${p.ogc_fid} but evidence is ready — judging answer`);
+            console.log(`  override wait timed out for ${p.ogc_fid} but evidence settled by read — judging answer`);
           }
           evidence._override = overrideEv;
         }
@@ -693,10 +706,12 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
       `${verdictErrs.length === 0 ? 'OK' : 'GATE-FAIL'} ${p.ogc_fid} (${p.address})` +
       (verdictErrs.length ? ` — ${verdictErrs.join(' | ')}` : '')
     );
+    if (verdictErrs.length && process.env.EXPLAIN_FAILS === '1') explain(p.ogc_fid, calls, errs);
   } catch (e) {
     await page.screenshot({ path: `${OUT}/${p.ogc_fid}_FAIL.png` }).catch(() => {});
     results[p.ogc_fid] = { ok: false, advisory: p.advisory ?? false, evidence: null, shotsSkipped: [], violations: [`battery flow failed: ${String(e).slice(0, 200)}`] };
     console.log(`FAIL ${p.ogc_fid}: ${String(e).slice(0, 200)}`);
+    if (process.env.EXPLAIN_FAILS === '1') explain(p.ogc_fid, calls, errs);
   }
   consoleErrors[p.ogc_fid] = errs;
   await page.close();
@@ -717,3 +732,16 @@ if (ASSERT && gateFailures.length) {
   process.exit(1);
 }
 console.log('done');
+
+// For a failing parcel: the server calls it made (failed ones, slow ones) and
+// its console errors, so a live failure can be read from the job log.
+function explain(id, calls, errs) {
+  const bad = calls.filter(c => c.status === 0 || c.status >= 400);
+  const slow = calls.filter(c => c.status > 0 && c.status < 400 && c.ms > 5000);
+  const byFn = {};
+  for (const c of calls) (byFn[c.fn] ??= []).push(`${c.status}${c.failure ? ' ' + c.failure : ''} ${c.ms}ms`);
+  console.log(`  ${id} calls: ${calls.length}, failed ${bad.length}, slow ${slow.length}`);
+  for (const [fn, list] of Object.entries(byFn)) console.log(`    ${fn}: ${list.slice(0, 4).join(', ')}${list.length > 4 ? ` (+${list.length - 4})` : ''}`);
+  for (const e of errs.slice(0, 6)) console.log(`    console: ${e}`);
+}
+

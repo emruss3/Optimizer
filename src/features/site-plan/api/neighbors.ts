@@ -6,6 +6,7 @@
  */
 import type { Polygon, LineString } from 'geojson';
 import { supabase } from '../../../lib/supabase';
+import { withRpcRetry } from '../../../lib/rpcRetry';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { normalizeToPolygon } from '../../../engine/geometry';
 
@@ -56,10 +57,11 @@ export function fetchPlannerNeighbors(ogcFid: number): Promise<PlannerNeighbors 
   const p = (async (): Promise<PlannerNeighbors | null> => {
     try {
       if (!supabase) return null;
-      const { data, error } = await supabase.rpc('fn_planner_neighbors', {
+      const client = supabase;
+      const { data, error } = await withRpcRetry(() => client.rpc('fn_planner_neighbors', {
         p_ogc_fid: ogcFid,
         p_radius_ft: 500,
-      });
+      }), { label: 'neighbors' });
       if (error || !data || typeof data !== 'object' || 'error' in (data as object)) {
         if (error) console.warn('[neighbors] RPC failed:', error.message ?? error);
         return null;

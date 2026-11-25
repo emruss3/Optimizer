@@ -1,0 +1,240 @@
+// Where the map's parcel outlines come from (docs/PARCEL_TILES.md).
+//
+// `legacy` is what production has served: tiles made on request by the
+// mvt-parcels edge function from the database, zoom 14 and up only. Its
+// settings are kept exactly as they were so the control does not move while
+// the candidate is measured against it.
+//
+// `candidate` is a published release of static tiles: the map reads one small
+// manifest, then reads tiles straight from storage, and never asks the
+// database to make a tile. If the manifest cannot be read or does not look
+// right, the map falls back to legacy and says why.
+//
+// The choice, in order: ?parcelTiles=candidate|legacy in the address, then the
+// same value saved on this device, then VITE_PARCEL_TILES, then legacy.
+
+export type ParcelTilesMode = 'legacy' | 'candidate';
+
+export interface ParcelSourceConfig {
+  mode: ParcelTilesMode;
+  tiles: string[];
+  minzoom: number;
+  maxzoom: number;
+  promoteId: string;
+  bounds?: [number, number, number, number];
+  release: string | null;
+  attribution?: string;
+  /** Set when the candidate was asked for but legacy is being used, with the reason. */
+  fallback: string | null;
+}
+
+export interface ParcelTilesManifest {
+  schemaVersion: number;
+  release: string;
+  layer: string;
+  tiles: string[];
+  minzoom: number;
+  maxzoom: number;
+  bounds: [number, number, number, number];
+  fields: string[];
+  idField: string;
+  attribution?: string;
+}
+
+export const LEGACY_PARCEL_SOURCE: ParcelSourceConfig = {
+  mode: 'legacy',
+  tiles: ['https://okxrvetbzpoazrybhcqj.supabase.co/functions/v1/mvt-parcels?z={z}&x={x}&y={y}'],
+  // lot-level tiles only exist at z >= 14 on this path: keep in sync with parcels_mvt_b64 and the edge gate
+  minzoom: 14,
+  maxzoom: 17,
+  // Unchanged from production. The legacy tiles carry ogc_fid in the feature
+  // header only, so this promoteId finds no property and features have no id
+  // (clicks fall back to the point lookup, feature-state highlights never match).
+  // Recorded in docs/PARCEL_TILES.md; the candidate fixes it by carrying both.
+  promoteId: 'ogc_fid',
+  release: null,
+  fallback: null,
+};
+
+export const PARCEL_TILES_STORAGE_KEY = 'pp.parcelTiles';
+
+export function defaultManifestUrl(supabaseUrl: string | undefined): string | null {
+  return supabaseUrl ? `${supabaseUrl.replace(/\/+$/, '')}/storage/v1/object/public/parcel-tiles/manifest.json` : null;
+}
+
+const asMode = (v: unknown): ParcelTilesMode | null => (v === 'candidate' || v === 'legacy' ? v : null);
+
+/**
+ * The published release is the default since 2026-11-24: the live edge tiles
+ * are built in the database per request and time out under load (30 statement
+ * timeouts between 15:00 and 15:40 UTC that day, tiles answering 503, no
+ * parcels on the map). The release is static files and never touches the
+ * parcels table. If its manifest cannot be read, loadParcelSource falls back
+ * to the live tiles on its own. ?parcelTiles=legacy, the saved choice, or
+ * VITE_PARCEL_TILES=legacy still selects the live tiles.
+ */
+export const DEFAULT_PARCEL_TILES_MODE: ParcelTilesMode = 'candidate';
+
+export function resolveParcelTilesMode(input: { search?: string; stored?: string | null; env?: string | undefined }): ParcelTilesMode {
+  let fromQuery: ParcelTilesMode | null = null;
+  try { fromQuery = asMode(new URLSearchParams(input.search ?? '').get('parcelTiles')); } catch { /* a malformed address is no choice */ }
+  return fromQuery ?? asMode(input.stored) ?? asMode(input.env) ?? DEFAULT_PARCEL_TILES_MODE;
+}
+
+/** The reasons a manifest cannot be used; empty when it can. */
+export function manifestProblems(m: unknown): string[] {
+  const p: string[] = [];
+  const o = m as Partial<ParcelTilesManifest> | null;
+  if (!o || typeof o !== 'object') return ['the manifest is not an object'];
+  if (o.schemaVersion !== 1) p.push(`schema version ${String(o.schemaVersion)} is not 1`);
+  if (o.layer !== 'parcels') p.push(`layer ${String(o.layer)} is not "parcels"`);
+  if (typeof o.release !== 'string' || !o.release) p.push('no release id');
+  if (!Array.isArray(o.tiles) || !o.tiles.length || !o.tiles.every(t => typeof t === 'string' && /^https:\/\//.test(t) && t.includes('{z}') && t.includes('{x}') && t.includes('{y}'))) p.push('tiles must be https URL templates with {z}, {x} and {y}');
+  if (!Number.isInteger(o.minzoom) || !Number.isInteger(o.maxzoom) || (o.minzoom as number) > (o.maxzoom as number)) p.push('minzoom and maxzoom must be integers, minzoom first');
+  if (!Array.isArray(o.bounds) || o.bounds.length !== 4 || !o.bounds.every(Number.isFinite)) p.push('bounds must be [west, south, east, north]');
+  if (o.idField !== 'ogc_fid') p.push(`id field ${String(o.idField)} is not ogc_fid`);
+  if (!Array.isArray(o.fields) || !['ogc_fid', 'zoning', 'sqft'].every(f => o.fields!.includes(f))) p.push('fields must include ogc_fid, zoning and sqft');
+  return p;
+}
+
+export function candidateSource(m: ParcelTilesManifest): ParcelSourceConfig {
+  return {
+    mode: 'candidate',
+    tiles: m.tiles,
+    minzoom: m.minzoom,
+    maxzoom: m.maxzoom,
+    // the candidate tiles carry ogc_fid as a property as well as the feature id
+    promoteId: m.idField,
+    bounds: m.bounds,
+    release: m.release,
+    ...(m.attribution ? { attribution: m.attribution } : {}),
+    fallback: null,
+  };
+}
+
+/**
+ * The release this build ships with. Supabase Storage answers a public file
+ * by looking it up in the database; under load the live manifest took longer
+ * than the map's 4 s limit and the map fell back to the live tiles (production,
+ * 2026-11-24 16:11 UTC). With the release known up front the map starts on it
+ * at once; the live manifest is read in the background only to notice a newer
+ * release, which is used from the next page load (parcelTiles manifest saved
+ * on the device). Publishing a release still works without a deploy.
+ */
+export const BUNDLED_PARCEL_MANIFEST: ParcelTilesManifest = {
+  schemaVersion: 1,
+  release: '2026-11-24_regrid-2025-05-29_743214e',
+  layer: 'parcels',
+  tiles: ['https://okxrvetbzpoazrybhcqj.supabase.co/storage/v1/object/public/parcel-tiles/releases/2026-11-24_regrid-2025-05-29_743214e/{z}/{x}/{y}.pbf'],
+  minzoom: 10,
+  maxzoom: 17,
+  bounds: [-87.05566, 34.53598, -86.50909, 36.40581],
+  fields: ['ogc_fid', 'zoning', 'sqft'],
+  idField: 'ogc_fid',
+  attribution: 'Parcel data © Regrid',
+};
+
+export const PARCEL_MANIFEST_STORAGE_KEY = 'pp.parcelTilesManifest';
+
+/**
+ * The source the map should add. Never throws. With a known release (one saved
+ * on this device from an earlier background read, else the bundled one) it
+ * answers at once without the network. Without one it reads the live manifest,
+ * and any failure to read or trust it gives the legacy source with the reason.
+ */
+export async function loadParcelSource(opts: {
+  mode: ParcelTilesMode;
+  manifestUrl: string | null;
+  known?: unknown;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}): Promise<ParcelSourceConfig> {
+  if (opts.mode !== 'candidate') return LEGACY_PARCEL_SOURCE;
+  if (opts.known != null && manifestProblems(opts.known).length === 0) return candidateSource(opts.known as ParcelTilesManifest);
+  if (!opts.manifestUrl) return { ...LEGACY_PARCEL_SOURCE, fallback: 'no manifest address is configured' };
+  const read = await readManifest(opts.manifestUrl, opts.fetchImpl, opts.timeoutMs ?? 4000);
+  return 'manifest' in read ? candidateSource(read.manifest) : { ...LEGACY_PARCEL_SOURCE, fallback: read.problem };
+}
+
+/** The live manifest when it names a usable release other than `current`, else null. Never throws. */
+export async function newerParcelManifest(opts: {
+  manifestUrl: string | null;
+  current: string | null;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+}): Promise<ParcelTilesManifest | null> {
+  if (!opts.manifestUrl) return null;
+  const read = await readManifest(opts.manifestUrl, opts.fetchImpl, opts.timeoutMs ?? 30000);
+  return 'manifest' in read && read.manifest.release !== opts.current ? read.manifest : null;
+}
+
+async function readManifest(url: string, fetchImpl: typeof fetch | undefined, timeoutMs: number): Promise<{ manifest: ParcelTilesManifest } | { problem: string }> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const r = await (fetchImpl ?? fetch)(url, { signal: ctl.signal, cache: 'no-cache' });
+    if (!r.ok) return { problem: `the manifest answered ${r.status}` };
+    const m = await r.json();
+    const problems = manifestProblems(m);
+    if (problems.length) return { problem: `the manifest is not usable: ${problems.join('; ')}` };
+    return { manifest: m as ParcelTilesManifest };
+  } catch (e) {
+    const name = (e as { name?: string })?.name;
+    return { problem: name === 'AbortError' ? 'the manifest did not answer in time' : `the manifest could not be read (${String((e as Error)?.message ?? e)})` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The release saved on this device by an earlier background read, else the bundled one. */
+export function knownParcelManifest(): unknown {
+  try {
+    const saved = window.localStorage.getItem(PARCEL_MANIFEST_STORAGE_KEY);
+    if (saved) {
+      const m = JSON.parse(saved);
+      if (manifestProblems(m).length === 0) return m;
+    }
+  } catch { /* storage or JSON unavailable */ }
+  return BUNDLED_PARCEL_MANIFEST;
+}
+
+/** Remember a newer release for the next page load. */
+export function saveParcelManifest(m: ParcelTilesManifest): void {
+  try { window.localStorage.setItem(PARCEL_MANIFEST_STORAGE_KEY, JSON.stringify(m)); } catch { /* storage unavailable */ }
+}
+
+/** The mode for this page load, read from the address, this device and the build. */
+export function currentParcelTilesMode(): ParcelTilesMode {
+  let stored: string | null = null;
+  try {
+    const q = new URLSearchParams(window.location.search).get('parcelTiles');
+    // an explicit choice in the address is remembered on this device, so a reviewer can keep it across reloads
+    if (q === 'candidate' || q === 'legacy') window.localStorage.setItem(PARCEL_TILES_STORAGE_KEY, q);
+    stored = window.localStorage.getItem(PARCEL_TILES_STORAGE_KEY);
+  } catch { /* storage can be unavailable */ }
+  return resolveParcelTilesMode({ search: window.location.search, stored, env: import.meta.env.VITE_PARCEL_TILES });
+}
+
+/**
+ * A release has no file for a tile with no parcels in it (open water, parks),
+ * and Supabase Storage answers a missing public object with HTTP 400, where
+ * Mapbox only treats 404 as an empty tile. Such an error is an empty tile, not
+ * a map failure: the map handlers skip it. Anything else stays an error.
+ */
+export function isMissingParcelTile(e: { sourceId?: string; error?: { status?: number; url?: string } } | null | undefined): boolean {
+  if (!e || e.sourceId !== 'parcels') return false;
+  const status = e.error?.status;
+  if (status !== 400 && status !== 404) return false;
+  return typeof e.error?.url === 'string' && e.error.url.includes('/storage/v1/object/public/');
+}
+
+/**
+ * A parcel tile that failed with a server error (a timeout on the live tiles,
+ * a 5xx from storage on a cold release tile) is worth asking for again:
+ * Mapbox does not retry a failed tile until the view changes.
+ */
+export function isRetryableParcelTileError(e: { sourceId?: string; error?: { status?: number } } | null | undefined): boolean {
+  if (!e || e.sourceId !== 'parcels') return false;
+  const status = e.error?.status ?? 0;
+  return status >= 500 || status === 429;
+}

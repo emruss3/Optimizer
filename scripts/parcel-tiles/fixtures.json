@@ -1,0 +1,362 @@
+{
+  "source": "Saved authoritative parcel records in scripts/visual-battery/fixtures/mock_store.json (get_parcel_by_id), plus the tile coordinates named in the scope of 2026-11-23. Regrid data updated 2025-05-29.",
+  "tiles": [
+    {
+      "z": 12,
+      "x": 1060,
+      "y": 1606,
+      "label": "z12 central Nashville (legacy: empty by design)"
+    },
+    {
+      "z": 14,
+      "x": 4242,
+      "y": 6425,
+      "label": "Wedgewood-Houston z14 (55.03 s in the 2026-11-23 probe)"
+    },
+    {
+      "z": 16,
+      "x": 16965,
+      "y": 25706,
+      "label": "12 South z16 (15.03 s in the 2026-11-23 probe)"
+    },
+    {
+      "z": 17,
+      "x": 33930,
+      "y": 51412,
+      "label": "12 South z17 (decoded: 67 parcels, ids in the header only)"
+    },
+    {
+      "z": 14,
+      "x": 4351,
+      "y": 6558,
+      "label": "outside coverage (Atlanta): expect no tile"
+    },
+    {
+      "z": 14,
+      "x": 4242,
+      "y": 6426,
+      "label": "2405 12TH AVE S z14"
+    },
+    {
+      "z": 16,
+      "x": 16968,
+      "y": 25706,
+      "label": "2405 12TH AVE S z16"
+    },
+    {
+      "z": 12,
+      "x": 1060,
+      "y": 1605,
+      "label": "535 MAIN ST z12"
+    },
+    {
+      "z": 14,
+      "x": 4243,
+      "y": 6423,
+      "label": "535 MAIN ST z14"
+    },
+    {
+      "z": 16,
+      "x": 16973,
+      "y": 25695,
+      "label": "535 MAIN ST z16"
+    },
+    {
+      "z": 14,
+      "x": 4240,
+      "y": 6424,
+      "label": "2600 W HEIMAN ST z14"
+    },
+    {
+      "z": 16,
+      "x": 16963,
+      "y": 25696,
+      "label": "2600 W HEIMAN ST z16"
+    },
+    {
+      "z": 14,
+      "x": 4240,
+      "y": 6423,
+      "label": "0 DELK AVE z14"
+    },
+    {
+      "z": 16,
+      "x": 16962,
+      "y": 25695,
+      "label": "0 DELK AVE z16"
+    },
+    {
+      "z": 12,
+      "x": 1062,
+      "y": 1606,
+      "label": "0 HICKORY BEND DR z12"
+    },
+    {
+      "z": 14,
+      "x": 4248,
+      "y": 6424,
+      "label": "0 HICKORY BEND DR z14"
+    },
+    {
+      "z": 16,
+      "x": 16995,
+      "y": 25699,
+      "label": "0 HICKORY BEND DR z16"
+    },
+    {
+      "z": 12,
+      "x": 1062,
+      "y": 1607,
+      "label": "5525 MT VIEW RD z12"
+    },
+    {
+      "z": 14,
+      "x": 4249,
+      "y": 6431,
+      "label": "5525 MT VIEW RD z14"
+    },
+    {
+      "z": 16,
+      "x": 16996,
+      "y": 25725,
+      "label": "5525 MT VIEW RD z16"
+    },
+    {
+      "z": 16,
+      "x": 16963,
+      "y": 25695,
+      "label": "2400 W HEIMAN ST z16"
+    }
+  ],
+  "parcels": [
+    {
+      "ogc_fid": 408571,
+      "label": "2405 12th Ave S (commercial, CS)",
+      "address": "2405 12TH AVE S",
+      "zoning": "CS",
+      "lngLat": [
+        -86.789728,
+        36.125917
+      ],
+      "parts": 1,
+      "tiles": {
+        "12": [
+          12,
+          1060,
+          1606
+        ],
+        "14": [
+          14,
+          4242,
+          6426
+        ],
+        "16": [
+          16,
+          16968,
+          25706
+        ]
+      },
+      "pointSource": "vertex mean of the saved geometry; not yet verified as an interior point (verify with ST_PointOnSurface before a click test)"
+    },
+    {
+      "ogc_fid": 469303,
+      "label": "535 Main St (dense urban block)",
+      "address": "535 MAIN ST",
+      "zoning": "MUG-A",
+      "lngLat": [
+        -86.763379,
+        36.174024
+      ],
+      "parts": 1,
+      "tiles": {
+        "12": [
+          12,
+          1060,
+          1605
+        ],
+        "14": [
+          14,
+          4243,
+          6423
+        ],
+        "16": [
+          16,
+          16973,
+          25695
+        ]
+      },
+      "pointSource": "vertex mean of the saved geometry; not yet verified as an interior point (verify with ST_PointOnSurface before a click test)"
+    },
+    {
+      "ogc_fid": 553450,
+      "label": "2600 W Heiman St",
+      "address": "2600 W HEIMAN ST",
+      "zoning": "RM40",
+      "lngLat": [
+        -86.817602,
+        36.171046
+      ],
+      "parts": 1,
+      "tiles": {
+        "12": [
+          12,
+          1060,
+          1606
+        ],
+        "14": [
+          14,
+          4240,
+          6424
+        ],
+        "16": [
+          16,
+          16963,
+          25696
+        ]
+      },
+      "pointSource": "vertex mean of the saved geometry; not yet verified as an interior point (verify with ST_PointOnSurface before a click test)"
+    },
+    {
+      "ogc_fid": 675423,
+      "label": "0 Delk Ave (private lane, 5 lots)",
+      "address": "0 DELK AVE",
+      "zoning": "RS5",
+      "lngLat": [
+        -86.819734,
+        36.177746
+      ],
+      "parts": 1,
+      "tiles": {
+        "12": [
+          12,
+          1060,
+          1605
+        ],
+        "14": [
+          14,
+          4240,
+          6423
+        ],
+        "16": [
+          16,
+          16962,
+          25695
+        ]
+      },
+      "pointSource": "vertex mean of the saved geometry; not yet verified as an interior point (verify with ST_PointOnSurface before a click test)"
+    },
+    {
+      "ogc_fid": 672526,
+      "label": "0 Hickory Bend Dr (rural tract, flood hold)",
+      "address": "0 HICKORY BEND DR",
+      "zoning": "RS10",
+      "lngLat": [
+        -86.640426,
+        36.156818
+      ],
+      "parts": 1,
+      "tiles": {
+        "12": [
+          12,
+          1062,
+          1606
+        ],
+        "14": [
+          14,
+          4248,
+          6424
+        ],
+        "16": [
+          16,
+          16995,
+          25699
+        ]
+      },
+      "pointSource": "vertex mean of the saved geometry; not yet verified as an interior point (verify with ST_PointOnSurface before a click test)"
+    },
+    {
+      "ogc_fid": 660125,
+      "label": "5525 Mt View Rd",
+      "address": "5525 MT VIEW RD",
+      "zoning": "RM15",
+      "lngLat": [
+        -86.637632,
+        36.042666
+      ],
+      "parts": 1,
+      "tiles": {
+        "12": [
+          12,
+          1062,
+          1607
+        ],
+        "14": [
+          14,
+          4249,
+          6431
+        ],
+        "16": [
+          16,
+          16996,
+          25725
+        ]
+      },
+      "pointSource": "vertex mean of the saved geometry; not yet verified as an interior point (verify with ST_PointOnSurface before a click test)"
+    },
+    {
+      "ogc_fid": 550510,
+      "label": "2400 W Heiman St (13 ac, multipart check)",
+      "address": "2400 W HEIMAN ST",
+      "zoning": "R6",
+      "lngLat": [
+        -86.819369,
+        36.175084
+      ],
+      "parts": 1,
+      "tiles": {
+        "12": [
+          12,
+          1060,
+          1605
+        ],
+        "14": [
+          14,
+          4240,
+          6423
+        ],
+        "16": [
+          16,
+          16963,
+          25695
+        ]
+      },
+      "pointSource": "vertex mean of the saved geometry; not yet verified as an interior point (verify with ST_PointOnSurface before a click test)"
+    }
+  ],
+  "pending": [
+    {
+      "label": "DELUX WeHo",
+      "why": "ogc_fid not yet identified in the authoritative table"
+    },
+    {
+      "label": "The Lanes (2500 W Heiman St)",
+      "why": "ogc_fid not yet identified in the authoritative table"
+    },
+    {
+      "label": "multipart parcel",
+      "why": "none of the saved fixtures is multipart; pick one with ST_NumGeometries > 1"
+    },
+    {
+      "label": "boundary shared by two parcels",
+      "why": "pick an adjacent pair and a point on the shared edge"
+    },
+    {
+      "label": "county line crossing",
+      "why": "public.parcels holds one county (Davidson); no neighbour is imported"
+    },
+    {
+      "label": "second county",
+      "why": "no Williamson or other neighbour in the table; needs an authorised import in staging"
+    }
+  ]
+}

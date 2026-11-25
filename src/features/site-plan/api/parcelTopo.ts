@@ -10,6 +10,7 @@
  */
 import type { LineString, MultiLineString, Position } from 'geojson';
 import { supabase } from '../../../lib/supabase';
+import { withRpcRetry } from '../../../lib/rpcRetry';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { geom2274To4326 } from '../../../utils/tnStatePlane';
 
@@ -80,7 +81,8 @@ export function fetchParcelTopo(ogcFid: number): Promise<ParcelTopo | null> {
   const p = (async (): Promise<ParcelTopo | null> => {
     try {
       if (!supabase) return null;
-      const { data, error } = await supabase.rpc('fn_parcel_topo', { p_ogc_fid: ogcFid });
+      const client = supabase;
+      const { data, error } = await withRpcRetry(() => client.rpc('fn_parcel_topo', { p_ogc_fid: ogcFid }), { label: 'parcelTopo' });
       if (error) {
         console.warn('[parcelTopo] RPC failed:', error.message ?? error);
         return null;
