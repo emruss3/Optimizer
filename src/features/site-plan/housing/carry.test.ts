@@ -41,9 +41,12 @@ describe('house choices through a re-solve (masterplan audit 2026-11-26)', () =>
     const { assignments } = choose();
     const res = carryAssignments(assignments, plan('default'), SB);
     expect(res.kept.length + res.lost.length).toBe(3);
-    for (const l of res.lost) expect(l.reason).toMatch(/not on the new plan|does not fit/);
-    // nothing kept lands on a lot whose centre the choice did not stand in
-    expect(res.next.length).toBe(res.kept.length);
+    for (const l of res.lost) expect(l.reason).toMatch(/not on this plan|does not fit/);
+    // every choice stays remembered: back on the first plan, all three return
+    expect(res.next).toHaveLength(3);
+    const back = carryAssignments(res.next, plan('deep'), SB);
+    expect(back.kept).toHaveLength(3);
+    expect(back.lost).toEqual([]);
   });
 
   it('a choice that no longer fits its lot is reported with the reason and the lot keeps its own house', () => {

@@ -4298,7 +4298,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <button type="button" className="underline" onClick={() => { const before = homeChange.before; homeAssignmentsRef.current = { parcel: parcelIdStr, list: homeChange.assignmentsBefore }; setHomeChange(null); setPlanOutput(before, metrics); }}>Undo home change</button></div>}
       {homeCarry && !homeChange && !activeHome && (homeCarry.kept > 0 || homeCarry.lost.length > 0) && <div role="status" data-testid="home-carry-status" className={`border-y px-4 py-1 text-xs ${homeCarry.lost.length ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-sky-200 bg-sky-50 text-sky-950'}`}>
         {homeCarry.kept > 0 && <span>Kept {homeCarry.kept} home choice{homeCarry.kept === 1 ? '' : 's'} on the new plan. </span>}
-        {homeCarry.lost.map(l => <span key={l.lotLabel + l.designId} className="block">Could not keep {l.designId.replace(/^abhp:/, '')} on {l.lotLabel}: {l.reason}.</span>)}
+        {homeCarry.lost.map(l => <span key={l.lotLabel + l.designId} className="block">Not kept on this plan: {l.designId.replace(/^abhp:/, '')} on {l.lotLabel} — {l.reason}. It comes back on a plan where it fits.</span>)}
       </div>}
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
         <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>

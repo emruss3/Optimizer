@@ -9,7 +9,8 @@
  * onto the lot that contains that centre and is within 15% of that area,
  * re-checked through the same fit as a manual change. A choice whose lot is
  * gone, or whose plan no longer fits, is reported by lot and design — never
- * moved to another lot and never kept without the check.
+ * moved to another lot and never kept without the check — and stays
+ * remembered, so going back to a plan where it fits puts it back.
  */
 import type { Element } from '../../../engine/types';
 import { applyStockDesignToHouse } from './apply';
@@ -29,7 +30,8 @@ export interface CarryResult {
   elements: Element[];
   kept: Array<{ lotLabel: string; designId: string }>;
   lost: Array<{ lotLabel: string; designId: string; reason: string }>;
-  /** the assignments as they stand on the new plan (lost ones dropped) */
+  /** the assignments to remember from here: kept ones re-read off the new plan, and the ones
+   *  not kept left as they were, so a return to a plan where they fit restores them */
   next: HomeAssignment[];
 }
 
@@ -68,12 +70,14 @@ export function carryAssignments(assignments: HomeAssignment[], elements: Elemen
       return a.lotAreaSf > 0 && Math.abs(area - a.lotAreaSf) / a.lotAreaSf <= 0.15;
     });
     if (!house) {
-      lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: `the lot that carried ${name} is not on the new plan` });
+      lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: `the lot that carried ${name} is not on this plan` });
+      next.push(a);
       continue;
     }
     const res = applyStockDesignToHouse({ designId: a.designId, houseId: house.id, elements: els, setbacks });
     if (!res.ok) {
       lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: res.reason });
+      next.push(a);
       continue;
     }
     els = res.elements;

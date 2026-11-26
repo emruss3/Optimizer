@@ -108,9 +108,34 @@ for (const p of PARCELS) {
       await page.getByText('Undo home change').first().click();
       const undone = (await waitFor(page, e => JSON.stringify(e.homes?.pads) === JSON.stringify(before), 15000))?.homes?.pads;
       row.undoRestored = JSON.stringify(undone) === JSON.stringify(before);
+      // re-solve: change the home again, draw another competition plan, then the first one again;
+      // the choice must come back on its lot (housing/carry.ts)
+      const onSheet = await page.locator('[data-testid^="sfv1-cand-onsheet-"]').first().getAttribute('data-testid').catch(() => null);
+      const other = page.locator('[data-testid^="sfv1-cand-view-"]:not([disabled])').first();
+      if (row.undoRestored && onSheet && await other.count()) {
+        await homesBtn.click();
+        await lotSel.waitFor({ state: 'visible', timeout: 30000 });
+        await lotSel.selectOption(target.house);
+        await page.locator('nav[aria-label="Buildable stock plans"] button').nth(1).click();
+        await page.locator('[data-testid="home-stock-apply"]').click();
+        const chosen = (await waitFor(page, e => e.homes?.pads?.find(x => x.id === target.house)?.design, 15000))?.homes?.pads?.find(x => x.id === target.house)?.design ?? null;
+        const firstRequested = onSheet.replace('sfv1-cand-onsheet-', '');
+        row.resolve = { from: firstRequested, to: (await other.getAttribute('data-testid'))?.replace('sfv1-cand-view-', '') ?? null, chosen };
+        await other.click();
+        await waitFor(page, e => e.sfV1?.shown && e.sfV1.shown !== firstRequested, 60000);
+        row.resolve.otherStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200) || null;
+        await page.locator(`[data-testid="sfv1-cand-view-${firstRequested}"]`).click();
+        const back = await waitFor(page, e => e.sfV1?.shown === firstRequested && e.homes?.pads?.find(x => x.id === target.house)?.design === chosen, 60000);
+        row.resolve.backStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200) || null;
+        row.resolve.restored = back?.homes?.pads?.find(x => x.id === target.house)?.design === chosen && chosen != null;
+        await page.screenshot({ path: path.join(out, `${p.id}-resolved.png`) });
+      } else {
+        row.resolve = { skipped: !onSheet ? 'no competition plan on the sheet' : 'no other plan to draw' };
+      }
       if (!row.listMatchesEvidence) throw new Error('studio list differs from the eligibility result');
       if (!row.onlyTargetChanged) throw new Error(`changed ${changed.join(',') || 'nothing'}, expected only ${target.house}`);
       if (!row.undoRestored) throw new Error('Undo did not restore the plan');
+      if (row.resolve && row.resolve.restored === false) throw new Error(`after a re-solve and back, ${target.house} did not carry ${row.resolve.chosen} again`);
     }
   } catch (e) {
     row.problem = String(e.message ?? e).slice(0, 240);
@@ -126,6 +151,7 @@ fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new 
 for (const r of results) {
   console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | lots: ${(r.summary ?? []).join(' · ')}` +
     (r.changedPads ? ` | changed ${r.changedPads.join(',')} → ${r.changedDesign} | only target: ${r.onlyTargetChanged} | undo: ${r.undoRestored} | "${r.applyLabel}"` : '') +
+    (r.resolve ? ` | re-solve ${JSON.stringify(r.resolve)}` : '') +
     (r.problem ? ` | ${r.problem}` : ''));
 }
 const failed = results.filter(r => r.problem);
