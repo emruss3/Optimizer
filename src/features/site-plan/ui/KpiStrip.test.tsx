@@ -166,9 +166,9 @@ describe('KpiStrip — parking the evidence cannot settle (the cohort retest, 20
         investment={null}
       />
     );
-    expect(screen.getByTestId('kpi-parking-verify').textContent).toBe('Parking needs verification · 292 drawn / 85 reported · 92 required');
+    expect(screen.getByTestId('kpi-parking-verify').textContent).toBe('Parking needs verification · 292 drawn · 85 in the engine summary · 92 required');
     expect(screen.queryByText(/Checks passed/)).toBeNull();
-    expect(screen.getByText('292 drawn · 85 reported / 92')).toBeTruthy();
+    expect(screen.getByText('292 drawn · 85 in the engine summary · 92 required')).toBeTruthy();
   });
 
   it('a requirement that was not evaluated reads as unknown, and the badge scopes its claim (1289 Currey Rd)', () => {
@@ -251,5 +251,16 @@ describe('KpiStrip: a plan whose basis is not established (1710 Meharry Blvd, 20
     render(<KpiStrip metrics={{ ...base, achievedFAR: 0, siteCoveragePct: 0 } as SiteMetrics} investment={null} />);
     expect(screen.queryByText('FAR')).toBeNull();
     expect(screen.queryByText('Coverage')).toBeNull();
+  });
+});
+
+describe('KpiStrip — a pass on the plan checks does not cover what they do not test (audit 2026-11-26)', () => {
+  it('441 Ocala Dr: a GSF over the upper bound is an open item beside the pass, not "Checks passed"', () => {
+    const m = { totalUnits: 37, totalBuiltSF: 65481, stallsProvided: 64, stallsRequired: 64, zoningCompliant: true, violations: [], warnings: [], achievedFAR: 0, siteCoveragePct: 0, openSpacePct: 0, parkingRatio: 0 } as unknown as SiteMetrics;
+    render(<KpiStrip metrics={m} openItems={['381 GSF over the 65,100 GSF upper bound']} />);
+    const v = screen.getByTestId('kpi-verdict');
+    expect(v.textContent).toBe('Plan checks pass · open: 381 GSF over the 65,100 GSF upper bound');
+    expect(v.className).toMatch(/amber/);
+    expect(screen.queryByText('Checks passed')).toBeNull();
   });
 });

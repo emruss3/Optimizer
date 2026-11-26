@@ -4,6 +4,7 @@ import { fitDesignToLot } from './fit';
 import type { HomeDesign } from './originalDesigns';
 import { placeHome, residentialHomes } from './placement';
 import type { HousingDesignRecord, LotFitInput } from './types';
+import { DEFAULT_HOME_SETBACKS, designsWithLots, detachedHouses, houseEligibility, stockEligibility } from './eligibility';
 
 /** Apartment bars on the sheet — Home Studio has nothing to place against. */
 export function isApartmentMassingPlan(opts: {
@@ -122,7 +123,11 @@ export function lotFitInputForHouse(
   };
 }
 
-/** Stock designs that fit the selected house lot (or any lot when none selected). */
+/**
+ * Stock designs that fit the selected house's lot (or any lot when none is
+ * selected), through the shared eligibility result (eligibility.ts): true lot
+ * polygon in ground feet, front from the lot's driveway, directional setbacks.
+ */
 export function eligibleStockDesigns(
   designs: readonly HousingDesignRecord[],
   elements: Element[],
@@ -132,23 +137,13 @@ export function eligibleStockDesigns(
   },
 ): HousingDesignRecord[] {
   if (!designs.length) return [];
-  const houses = residentialHomes(elements);
+  const setbacks = opts?.setbacks ?? DEFAULT_HOME_SETBACKS;
+  const houses = detachedHouses(elements);
   if (!houses.length) return [];
-  const setbacks = opts?.setbacks ?? { front: 20, side: 5, rear: 20 };
-  const selected = opts?.selectedHouseId
-    ? houses.find((h) => h.id === opts.selectedHouseId)
-    : undefined;
-  if (selected) {
-    const lot = lotFitInputForHouse(selected, elements, setbacks);
-    return lot ? stockDesignsFittingLot(designs, lot) : [];
-  }
-  // Scheme-level: keep designs that clear at least one house lot.
-  return designs.filter((design) =>
-    houses.some((house) => {
-      const lot = lotFitInputForHouse(house, elements, setbacks);
-      return lot != null && fitDesignToLot(design, lot).status === 'placed';
-    }),
-  );
+  const selected = opts?.selectedHouseId ? houses.find((h) => h.id === opts.selectedHouseId) : undefined;
+  if (opts?.selectedHouseId && !selected) return [];
+  if (selected) return houseEligibility(selected, designs, elements, setbacks).eligible.map((e) => e.design);
+  return designsWithLots(stockEligibility(designs, elements, setbacks)).map((d) => d.design);
 }
 
 /** Wrap catalogue index for ← / → browsing without dropping the selected lot. */
@@ -173,6 +168,7 @@ export function showHomeDesignsControl(opts: {
   siteBoundary?: Element['geometry'] | null;
   /** Optional SF stock; when present, enables the control if any stock fits a lot. */
   stockDesigns?: readonly HousingDesignRecord[];
+  setbacks?: { front: number; side: number; rear: number };
 }): { show: boolean; enabled: boolean; houses: Element[]; eligible: HomeDesign[] } {
   const houses = residentialHomes(opts.elements);
   if (
@@ -187,11 +183,13 @@ export function showHomeDesignsControl(opts: {
   const eligible = eligibleHomeDesigns(opts.designs, opts.elements, opts.siteBoundary);
   const stockOk =
     opts.stockDesigns && opts.stockDesigns.length > 0
-      ? eligibleStockDesigns(opts.stockDesigns, opts.elements).length > 0
+      ? eligibleStockDesigns(opts.stockDesigns, opts.elements, { setbacks: opts.setbacks }).length > 0
       : false;
   return {
     show: true,
-    enabled: eligible.length > 0 || stockOk || (opts.stockDesigns != null && opts.stockDesigns.length > 0),
+    // offered only when a design actually places somewhere (audit 11-26: the
+    // sidebar asked for a choice before checking a usable one existed)
+    enabled: eligible.length > 0 || stockOk,
     houses,
     eligible,
   };

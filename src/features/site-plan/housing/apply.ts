@@ -8,6 +8,7 @@ import { DELK_COTTAGE_1754_00010, DELK_PARCEL_ID, housingDesignById } from './ca
 import { fitDelkCottage, fitDesignToLot } from './fit';
 import { placementToElementProps, rememberHousingChoice } from './handoff';
 import type { DesignFitResult, HousingDesignRecord, LotFitInput } from './types';
+import { DEFAULT_HOME_SETBACKS, houseEligibility, ringAreaSf } from './eligibility';
 
 export interface ApplyHousingResult {
   elements: Element[];
@@ -163,4 +164,77 @@ export function applyHousingDesign(opts: {
     design,
     unplaced,
   };
+}
+
+export type ApplyHouseResult =
+  | { ok: true; elements: Element[]; design: HousingDesignRecord; houseId: string; lotLabel: string; reason: string }
+  | { ok: false; reason: string };
+
+/**
+ * Change the home on one lot (audit 2026-11-26): re-check the chosen design
+ * against that house's lot through the shared eligibility result, then
+ * replace that pad's outline with the placed footprint and stamp the design
+ * on that pad and its lot only. Every other house keeps its identity and
+ * geometry. A design that no longer fits (the scheme was redrawn) is refused
+ * with the reason; nothing changes.
+ */
+export function applyStockDesignToHouse(opts: {
+  designId: string;
+  houseId: string;
+  elements: Element[];
+  setbacks?: { front: number; side: number; rear: number };
+  schemeKey?: string;
+}): ApplyHouseResult {
+  const design = housingDesignById(opts.designId);
+  if (!design) return { ok: false, reason: 'that plan is not in the catalogue' };
+  const house = opts.elements.find(e => e.id === opts.houseId);
+  if (!house) return { ok: false, reason: 'that house is no longer on the plan — the scheme was redrawn' };
+  const row = houseEligibility(house, [design], opts.elements, opts.setbacks ?? DEFAULT_HOME_SETBACKS);
+  const hit = row.eligible[0];
+  if (!hit || !hit.fit.placement || !hit.fit.footprint3857) {
+    return { ok: false, reason: `${design.name} does not fit ${row.lotLabel}: ${row.rejected[0]?.reason ?? row.lotProblem ?? 'not placed'}` };
+  }
+  const footprintSf = Math.round(ringAreaSf(hit.fit.footprint3857));
+  const n = /(\d+)$/.exec(row.lotId ?? house.id)?.[1] ?? '';
+  const elements = opts.elements.map(el => {
+    if (el.id === house.id) {
+      return {
+        ...el,
+        name: `House ${n} · ${design.beds} bed · ${design.heatedSf.toLocaleString()} sf`,
+        geometry: { type: 'Polygon', coordinates: [hit.fit.footprint3857!.map(p => [p[0], p[1]])] } as Element['geometry'],
+        properties: {
+          ...(el.properties ?? {}),
+          ...placementToElementProps(design, hit.fit.placement),
+          lotId: row.lotId ?? undefined,
+          floors: design.stories,
+          stories: design.stories,
+          houseBeds: design.beds,
+          houseBaths: design.baths ?? undefined,
+          houseFootprintSf: footprintSf,
+          areaSqFt: footprintSf,
+          housePlan: design.planNumber,
+          houseSource: design.source.publisher,
+          housingFitReason: hit.fit.reason,
+        },
+      };
+    }
+    if (row.lotId && el.id === row.lotId) {
+      return {
+        ...el,
+        properties: {
+          ...(el.properties ?? {}),
+          housingDesignId: design.id,
+          housingPlacementStatus: 'placed',
+          housingFitReason: hit.fit.reason,
+          houseLabel: `${design.beds} bed · ${design.heatedSf.toLocaleString()} sf`,
+          houseBeds: design.beds,
+          houseBaths: design.baths ?? undefined,
+          houseFootprintSf: footprintSf,
+        },
+      };
+    }
+    return el;
+  });
+  if (opts.schemeKey) rememberHousingChoice(`${opts.schemeKey}|${house.id}`, design.id);
+  return { ok: true, elements, design, houseId: house.id, lotLabel: row.lotLabel, reason: hit.fit.reason };
 }

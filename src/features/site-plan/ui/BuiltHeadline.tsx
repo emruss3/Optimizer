@@ -10,6 +10,8 @@
  */
 import React from 'react';
 import type { Element, SiteMetrics } from '../../../engine/types';
+import { reconcileUnitMix, residualWords } from './unitMixReconcile';
+import { parkingCounts, parkingCountsDisagree, parkingSupplyForAdequacy, parkingSupplyParts } from './parkingCounts';
 
 export interface BuiltSummary {
   units: number;
@@ -19,6 +21,9 @@ export interface BuiltSummary {
   gsf: number | null;
   stalls: number | null;
   stallsPerUnit: number | null;
+  /** Homes the unit mix lists, and the plan's count minus that (0 when they agree). */
+  mixUnits: number;
+  unitResidual: number;
   mix: Array<{ type: string; label: string; count: number }>;
   /** e.g. "one connected S-form bar" */
   composition: string;
@@ -88,25 +93,11 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   const storySet = new Set(buildings.map(storiesOf));
   const stories = storySet.size === 1 ? [...storySet][0] : null;
 
-  // Unit mix: the server's rows travel on each building; sum them by type.
-  const byType = new Map<string, number>();
-  for (const b of buildings) {
-    const mix = b.properties?.unitMix as Array<{ type?: string; count?: number }> | undefined;
-    for (const row of mix ?? []) {
-      if (!row?.type || !(row.count! > 0)) continue;
-      byType.set(row.type, (byType.get(row.type) ?? 0) + Math.round(row.count!));
-    }
-  }
-  // The buildings' mixes are rounded one building at a time and can fall a home short of the
-  // plan's own count. The schedule below the plan puts the difference in the largest type; the
-  // sentence does the same, so the two cannot disagree (1710 Meharry Blvd: "30 apartments" over
-  // 3 + 12 + 10 + 4, and 13 one-beds in the schedule).
-  const planned = Math.round(metrics?.totalUnits ?? 0);
-  const summed = [...byType.values()].reduce((a, v) => a + v, 0);
-  if (planned > 0 && summed > 0 && planned !== summed) {
-    const largest = [...byType.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (largest) byType.set(largest[0], Math.max(0, largest[1] + planned - summed));
-  }
+  // Unit mix as the buildings carry it, and the plan's count beside it: a
+  // difference is named, never folded into the largest type (audit 11-26,
+  // 535 Main St: 131 over a mix of 129).
+  const recon = reconcileUnitMix(buildings, metrics?.totalUnits);
+  const byType = new Map(recon.rows.map(r => [r.type, r.units] as const));
   const mix = [...byType.entries()]
     .filter(([, count]) => count > 0)
     .sort((a, b) => MIX_ORDER.indexOf(a[0]) - MIX_ORDER.indexOf(b[0]))
@@ -120,8 +111,12 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   const noun = townhomes ? (units === 1 ? 'townhome' : 'townhomes') : (units === 1 ? 'apartment' : 'apartments');
 
   const gsf = metrics?.totalBuiltSF && metrics.totalBuiltSF > 0 ? Math.round(metrics.totalBuiltSF) : null;
-  const stalls = typeof metrics?.stallsProvided === 'number' ? Math.round(metrics.stallsProvided) : null;
-  const stallsPerUnit = stalls != null && units > 0 ? Math.round((stalls / units) * 10) / 10 : null;
+  // parking: every count with its name when they differ (audit 11-26, 6420 Holt Rd: "0 stalls" was
+  // the street-reachable count over 150 drawn); one figure and a per-unit ratio when they agree
+  const counts = parkingCounts(metrics);
+  const split = parkingCountsDisagree(counts);
+  const stalls = split ? parkingSupplyForAdequacy(counts) : (counts.drawn ?? counts.reported);
+  const stallsPerUnit = !split && stalls != null && units > 0 ? Math.round((stalls / units) * 10) / 10 : null;
 
   const composition = compositionWords(buildings[0].properties?.compositionNote as string | undefined, buildings.length);
   const parking = parkingWords(metrics, stalls);
@@ -130,16 +125,20 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   const headline = [
     `${units} ${noun} in ${where}`,
     gsf != null ? `${gsf.toLocaleString()} GSF` : null,
-    stalls != null ? `${stalls} stall${stalls === 1 ? '' : 's'}${stallsPerUnit != null ? ` (${stallsPerUnit} per unit)` : ''}` : null,
+    split
+      ? `stalls: ${parkingSupplyParts(counts).join(', ')}`
+      : stalls != null ? `${stalls} stall${stalls === 1 ? '' : 's'}${stallsPerUnit != null ? ` (${stallsPerUnit} per unit)` : ''}` : null,
   ].filter(Boolean).join(' · ');
 
   const first = composition.charAt(0).toUpperCase() + composition.slice(1);
+  const residual = residualWords(recon);
   const detail = [
     parking ? `${first} with ${parking}` : first,
     mix.length > 0 ? mix.map(m => m.label).join(', ') : null,
+    residual,
   ].filter(Boolean).join(' · ');
 
-  return { units, buildings: buildings.length, stories, gsf, stalls, stallsPerUnit, mix, composition, parking, headline, detail };
+  return { units, buildings: buildings.length, stories, gsf, stalls, stallsPerUnit, mix, mixUnits: recon.mixUnits, unitResidual: recon.residual, composition, parking, headline, detail };
 }
 
 export const BuiltHeadline: React.FC<{ metrics: SiteMetrics | null; elements: Element[] }> = ({ metrics, elements }) => {
