@@ -326,9 +326,12 @@ export function compilePlannerContext(
   if (hit) return hit;
 
   const promise = (async (): Promise<PlannerContextResponse | null> => {
-    // One retry rides warmed database buffers after a cold timeout.
+    // One retry rides warmed database buffers after a cold timeout. A
+    // decline (the use is not as-of-right, say) is the server's answer, not
+    // a cold read: asking again gets the same answer.
     for (let attempt = 0; attempt < 2; attempt++) {
       const result = await compileOnce(ogcFid, selectedUse, userIntent);
+      if (result === DECLINED) return null;
       if (result !== null || attempt === 1) return result;
     }
     return null;
@@ -341,11 +344,13 @@ export function compilePlannerContext(
   return promise;
 }
 
+const DECLINED = Symbol('declined');
+
 async function compileOnce(
   ogcFid: number,
   selectedUse: string,
   userIntent: Record<string, unknown>
-): Promise<PlannerContextResponse | null> {
+): Promise<PlannerContextResponse | null | typeof DECLINED> {
   try {
     if (!supabase) return null;
     const client = supabase;
@@ -360,7 +365,7 @@ async function compileOnce(
     }
     if (data && typeof data === 'object' && 'error' in (data as object)) {
       console.warn('[plannerContext] compile declined:', (data as { error: string }).error);
-      return null;
+      return DECLINED;
     }
     if (!isPlannerContextResponse(data)) {
       console.warn('[plannerContext] compile returned an unexpected shape');
