@@ -253,3 +253,14 @@ describe('KpiStrip: a plan whose basis is not established (1710 Meharry Blvd, 20
     expect(screen.queryByText('Coverage')).toBeNull();
   });
 });
+
+describe('KpiStrip — a pass on the plan checks does not cover what they do not test (audit 2026-11-26)', () => {
+  it('441 Ocala Dr: a GSF over the upper bound is an open item beside the pass, not "Checks passed"', () => {
+    const m = { totalUnits: 37, totalBuiltSF: 65481, stallsProvided: 64, stallsRequired: 64, zoningCompliant: true, violations: [], warnings: [], achievedFAR: 0, siteCoveragePct: 0, openSpacePct: 0, parkingRatio: 0 } as unknown as SiteMetrics;
+    render(<KpiStrip metrics={m} openItems={['381 GSF over the 65,100 GSF upper bound']} />);
+    const v = screen.getByTestId('kpi-verdict');
+    expect(v.textContent).toBe('Plan checks pass · open: 381 GSF over the 65,100 GSF upper bound');
+    expect(v.className).toMatch(/amber/);
+    expect(screen.queryByText('Checks passed')).toBeNull();
+  });
+});

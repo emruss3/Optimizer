@@ -3602,6 +3602,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     // adequacy stands on the reachable supply; the count keeps its own name
     return { ...metrics, stallsProvided: stallsUsable, stallsReachable: stallsUsable };
   }, [metrics, stallsUsable]);
+  // What the plan's own checks do not cover, stated beside their pass (audit 11-26: Ocala read
+  // "checks passed" at 65,481 GSF over a 65,100 upper bound, Holt with a drive short of the street).
+  const planOpenItems = useMemo(() => {
+    const out: string[] = [];
+    const gsf = metrics?.totalBuiltSF ?? 0;
+    const cap = maxBuildout && !draftMode ? maxBuildout.max_gsf : 0;
+    if (cap > 0 && gsf > cap + 0.5) out.push(`${Math.round(gsf - cap).toLocaleString()} GSF over the ${Math.round(cap).toLocaleString()} GSF upper bound`);
+    if (routeBreak) out.push('the drive does not reach the street');
+    return out;
+  }, [metrics?.totalBuiltSF, maxBuildout, draftMode, routeBreak]);
   const routeBreakLabel = routeBreak
     ? routeBreak.gapFt != null
       ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
@@ -4046,6 +4056,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       <div className="flex flex-wrap xl:flex-nowrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2 bg-white border-b border-gray-200 flex-shrink-0">
         <KpiStrip
           metrics={accessAwareMetrics}
+          openItems={planOpenItems}
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
