@@ -152,14 +152,18 @@ for (const p of PARCELS) {
         await lotSel.waitFor({ state: 'visible', timeout: 30000 });
         const first = row.rows.find(r => r.eligible.length >= 2);
         await lotSel.selectOption(first.house);
-        await page.locator('nav[aria-label="Buildable stock plans"] button').first().click();
+        // a plan neither lot carries yet, so both visibly change
+        const names = await page.locator('nav[aria-label="Buildable stock plans"] button strong').allInnerTexts();
+        const carried = new Set(before.map(b => (b.design ?? '').replace(/^abhp:/, '')));
+        const k = Math.max(0, names.findIndex(n => !carried.has(n)));
+        await page.locator('nav[aria-label="Buildable stock plans"] button').nth(k).click();
         const also = page.locator('[data-testid="home-stock-also"] input[type="checkbox"]');
         if (await also.count()) {
           await also.first().check();
           await page.locator('[data-testid="home-stock-apply-many"]').click();
           const after = (await waitFor(page, e => JSON.stringify(e.homes?.pads) !== JSON.stringify(before), 15000))?.homes?.pads ?? [];
           const changed = after.filter(a => { const b = before.find(x => x.id === a.id); return !b || b.design !== a.design || b.outline !== a.outline; });
-          row.many = { changed: changed.map(c => c.id), sameDesign: new Set(changed.map(c => c.design)).size === 1 };
+          row.many = { plan: names[k], changed: changed.map(c => c.id), sameDesign: new Set(changed.map(c => c.design)).size === 1 };
           await page.locator('[data-testid="plan-undo"]').first().click();
           row.many.undone = JSON.stringify((await waitFor(page, e => JSON.stringify(e.homes?.pads) === JSON.stringify(before), 15000))?.homes?.pads) === JSON.stringify(before);
         } else {

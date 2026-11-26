@@ -54,7 +54,9 @@ for (const p of PARCELS) {
     row.viewport3d = vp ? `${Math.round(vp.width)}×${Math.round(vp.height)}` : null;
     await page.locator('[data-testid="look-rendering"]').first().click().catch(() => {});
     await page.waitForTimeout(1500);
-    await page.locator('[data-testid="camera-street"]').first().click();
+    // the 3D toolbar can re-render while the scene settles: retry the click, then force it
+    await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
+      .catch(() => page.locator('[data-testid="camera-street"]').first().click({ force: true }));
     await page.waitForTimeout(2500);
     row.camera = await page.locator('[data-testid="camera-label"]').innerText().catch(() => null);
     row.cameraFallback = await page.locator('[data-testid="camera-label"]').getAttribute('data-fallback').catch(() => null);
