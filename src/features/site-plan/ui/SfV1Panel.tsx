@@ -13,7 +13,7 @@ import { FILL_BANDS, checkCounts, deepSearchLine, autoBestSentence, edgeClassSen
 export const CIVIL_DILIGENCE = 'survey and legal access, utility service and capacity, stormwater detention sizing, geotechnical, street and driveway permits';
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
 import { HousingDesignPicker } from './HousingDesignPicker';
-import type { DesignFitResult, HousingDesignRecord } from '../housing/types';
+import type { HouseLotEligibility } from '../housing/eligibility';
 
 function testLabel(id: string): string {
   return id.replace(/\./g, ' · ').replace(/_/g, ' ');
@@ -158,13 +158,11 @@ export function SfV1Panel({
   holeOverlap?: HoleOverlap | null;
   /** the frontage layer finds no street on the parcel */
   frontageLandlocked?: boolean;
-  /** Delk cottage picker (Housing design brief slice) — absent on other parcels */
+  /** Stock plans that fit each lot (shared eligibility result); changing a home opens the studio */
   housing?: {
     parcelId: string;
-    designs: HousingDesignRecord[];
-    selectedId: string | null;
-    fits: DesignFitResult[] | null;
-    onSelect: (designId: string) => void;
+    rows: HouseLotEligibility[];
+    onOpen: (() => void) | null;
   } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
@@ -390,14 +388,12 @@ export function SfV1Panel({
                 </dd>
               </>
             )}
-            {housing && housing.designs.length > 0 && (
+            {housing && housing.rows.length > 0 && (
               <div className="col-span-2">
                 <HousingDesignPicker
                   parcelId={housing.parcelId}
-                  designs={housing.designs}
-                  selectedId={housing.selectedId}
-                  fits={housing.fits}
-                  onSelect={housing.onSelect}
+                  rows={housing.rows}
+                  onOpen={housing.onOpen}
                 />
               </div>
             )}
