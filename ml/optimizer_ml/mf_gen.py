@@ -360,7 +360,7 @@ def sample(m, e, N=8, temp=0.9, tries=60, place=None):
                     stats['b'][0] += ok; stats['b'][1] += 1
                     if ok and tgt and s['un'] + u > 1.1 * tgt and s['b']: s['cur'] = []; close(s, SEC)
                     elif ok:
-                        s['b'].append(dict(t=v[0], w=dw(v[3]), d=dw(v[4]), u=du(v[6]), g=g)); s['un'] += u
+                        s['b'].append(dict(t=v[0], w=dw(v[3]), d=dw(v[4]), a=(v[5] + 0.5) * 180 / NA, u=du(v[6]), g=g)); s['un'] += u
                         s['seq'] += cur; s['ll'] += s['cl']; s['nt'] += 7; s['cur'] = []; s['cl'] = 0.; s['fails'] = 0
                     else: fail(s, SEC)
             else:
@@ -394,5 +394,45 @@ def propose(model, req, n=8, temp=0.9, tries=60):
             loglik=round(pl['ll'], 4), units_proposed=pl['units'],
             buildings=[dict(type=TYPES[b['t']], units=b['u'], wkt=Ti(b['g']).wkt) for b in pl['b']],
             drives=[Ti(l).wkt for l in pl['drv']],
-            parking=[Ti(g).wkt for g in pl['prk']]))
+            parking=[Ti(g).wkt for g in pl['prk']],
+            massing=to_massing(pl, e, depth_max=req.get('bar_depth_max_ft'))))
     return dict(proposals=out, valid_rate={k: (v[0] / v[1] if v[1] else None) for k, v in stats.items()})
+
+
+# ---------------------------------------------------------------- massing program for the rule engine
+PARTI_PERP = 'perpendicular_bars_court_to_street'
+PARTI_STREET = 'street_bar_parking_behind'
+PARTI_L = 'L_scheme_bar_on_frontage_wing_deep'
+
+
+def to_massing(pl, e, depth_min=28.0, depth_max=None):
+    """Summarises a sampled plan as a massing program the apartment engine reads (solver_seed: parti, bar count,
+    bar length, bar depth). The engine still sets the floor area, stories, setbacks, parking and access."""
+    bl = sorted(pl['b'], key=lambda b: -b['g'].area)
+    if not bl: return None
+    tot = sum(b['g'].area for b in bl); main = []; acc = 0.0
+    for b in bl:                                              # the buildings that make up 80% of the footprint
+        main.append(b); acc += b['g'].area
+        if acc >= 0.8 * tot: break
+    longs = [max(b['w'], b['d']) for b in main]; shorts = [min(b['w'], b['d']) for b in main]
+    L = float(np.median(longs)); D = float(np.median(shorts))
+    if depth_max: D = min(D, depth_max)
+    D = max(D, depth_min)
+
+    def rel(b):                                               # angle of the long side to the street (frame x axis), 0..90
+        a = b['a'] if b['w'] >= b['d'] else (b['a'] + 90) % 180
+        a = a % 180; return min(a, 180 - a)
+    ys = e['site'].bounds; depth = ys[3] - ys[1]
+    perp = [b for b in main if rel(b) >= 60]; para = [b for b in main if rel(b) <= 30]
+    front = [b for b in para if (b['g'].centroid.y - ys[1]) <= 0.35 * depth]
+    if len(perp) >= 2 and len(perp) >= 0.6 * len(main): parti = PARTI_PERP
+    elif front and perp and len(main) <= 3: parti = PARTI_L
+    elif front and len(main) <= 2: parti = PARTI_STREET
+    else: parti = None
+    seed = dict(bar_count=int(max(1, min(len(main), 12))), bar_length_ft=round(max(40.0, L), 1), bar_depth_ft=round(D, 1),
+                source='mf_gen_model_proposal')
+    if parti: seed['parti'] = parti
+    return dict(solver_seed=seed, parti=parti, solver_bar_count=seed['bar_count'], building_count=seed['bar_count'],
+                per_building=dict(bar_length_ft=seed['bar_length_ft'], bar_depth_ft=seed['bar_depth_ft']),
+                rationale=f"generative model proposal: {len(main)} main buildings of {len(bl)}, median {L:.0f} x {D:.0f} ft, parti {parti or 'free'}",
+                role='model_massing_proposal')
