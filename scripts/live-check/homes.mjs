@@ -113,42 +113,62 @@ for (const p of PARCELS) {
       row.redo = (await waitFor(page, e => e.homes?.pads?.find(x => x.id === target.house)?.design === row.changedDesign, 15000))?.homes?.pads?.find(x => x.id === target.house)?.design === row.changedDesign;
 
       // a mixed masterplan: three different plans on three lots of the same scheme
-      const applyOn = async (house, nth) => {
+      // pick, on each lot, a plan no other lot of the mix carries (by plan number, not list position)
+      const used = new Set();
+      const applyOn = async (house) => {
         await homesBtn.click();
         await lotSel.waitFor({ state: 'visible', timeout: 30000 });
         await lotSel.selectOption(house);
-        await page.locator('nav[aria-label="Buildable stock plans"] button').nth(nth).click();
+        const names = await page.locator('nav[aria-label="Buildable stock plans"] button strong').allInnerTexts();
+        const k = names.findIndex(n => !used.has(n));
+        if (k < 0) { await page.keyboard.press('Escape'); return null; }
+        used.add(names[k]);
+        await page.locator('nav[aria-label="Buildable stock plans"] button').nth(k).click();
+        const before = JSON.stringify((await evidence(page))?.homes?.pads?.find(x => x.id === house) ?? null);
         await page.locator('[data-testid="home-stock-apply"]').click();
-        return (await waitFor(page, e => { const d = e.homes?.pads?.find(x => x.id === house)?.design; return d && d !== 'pending'; }, 15000))?.homes?.pads?.find(x => x.id === house)?.design ?? null;
+        return (await waitFor(page, e => JSON.stringify(e.homes?.pads?.find(x => x.id === house) ?? null) !== before, 15000))?.homes?.pads?.find(x => x.id === house)?.design ?? null;
       };
       const lots3 = row.rows.filter(r => r.eligible.length >= 3).slice(0, 3);
       const mix = {};
       if (lots3.length === 3) {
-        mix[lots3[0].house] = row.changedDesign; // already carries the redone change if it is the target
-        if (lots3[0].house !== target.house) mix[lots3[0].house] = await applyOn(lots3[0].house, 0);
-        mix[lots3[1].house] = await applyOn(lots3[1].house, 1);
-        mix[lots3[2].house] = await applyOn(lots3[2].house, 2);
+        for (const r of lots3) {
+          const current = (await evidence(page))?.homes?.pads?.find(x => x.id === r.house)?.design;
+          const plan = current ? current.replace(/^abhp:/, '') : null;
+          if (plan && !used.has(plan) && r.house === target.house) { used.add(plan); mix[r.house] = current; continue; }
+          mix[r.house] = await applyOn(r.house);
+        }
         const pads = (await evidence(page))?.homes?.pads ?? [];
         row.mix = Object.fromEntries(Object.keys(mix).map(h => [h, pads.find(x => x.id === h)?.design ?? null]));
         row.mixDistinct = new Set(Object.values(row.mix).filter(Boolean)).size === 3;
         await page.screenshot({ path: path.join(out, `${p.id}-mix.png`) });
       }
 
-      // re-solve: draw another competition plan, then the first one again; every choice must come back on its lot
-      const firstRequested = (await evidence(page))?.sfV1?.shown ?? null;
-      const other = page.locator('[data-testid^="sfv1-cand-view-"]:not([disabled])').first();
-      if (row.mix && firstRequested && await other.count()) {
-        row.resolve = { from: firstRequested, to: (await other.getAttribute('data-testid'))?.replace('sfv1-cand-view-', '') ?? null };
-        await other.click();
-        await waitFor(page, e => e.sfV1?.shown && e.sfV1.shown !== firstRequested, 60000);
-        row.resolve.otherStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) || null;
-        await page.locator(`[data-testid="sfv1-cand-view-${firstRequested}"]`).click();
-        const back = await waitFor(page, e => e.sfV1?.shown === firstRequested && Object.entries(row.mix).every(([h, d]) => e.homes?.pads?.find(x => x.id === h)?.design === d), 60000);
+      // re-solve: draw the plan again under a lot-width override, then by right again; every choice
+      // must be reported or kept on the override plan, and all of them back on the by-right plan
+      const shownBefore = (await evidence(page))?.sfV1?.shown ?? null;
+      const lotsBefore = (await evidence(page))?.sfV1?.lots ?? null;
+      const lotW = page.locator('[data-testid="sfv1-override-lot-w"]').first();
+      if (row.mix && await lotW.count()) {
+        const w = Number(await lotW.getAttribute('placeholder')) || 50;
+        await lotW.fill(String(Math.round(w + 6)));
+        await page.locator('[data-testid="sfv1-override-apply"]').first().click();
+        const over = await waitFor(page, e => e.sfV1?.basis === 'override', 90000);
+        row.resolve = { overrideLots: over?.sfV1?.lots ?? null };
+        await page.waitForTimeout(1500);
+        row.resolve.overrideStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) || null;
+        await page.locator('[data-testid="sfv1-override-reset"]').first().click();
+        let back = await waitFor(page, e => e.sfV1?.basis !== 'override' && e.sfV1?.lots === lotsBefore, 90000);
+        // the competition's best may need drawing again to return to the plan the mix was made on
+        if (back?.sfV1?.shown !== shownBefore && shownBefore) {
+          const view = page.locator(`[data-testid="sfv1-cand-view-${shownBefore}"]`);
+          if (await view.count()) { await view.click(); back = await waitFor(page, e => e.sfV1?.shown === shownBefore, 60000); }
+        }
+        back = await waitFor(page, e => Object.entries(row.mix).every(([h, d]) => e.homes?.pads?.find(x => x.id === h)?.design === d), 20000);
         row.resolve.backStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) || null;
         row.resolve.restored = Object.entries(row.mix).every(([h, d]) => back?.homes?.pads?.find(x => x.id === h)?.design === d);
         await page.screenshot({ path: path.join(out, `${p.id}-resolved.png`) });
       } else {
-        row.resolve = { skipped: !row.mix ? 'fewer than three lots with three fitting plans' : !firstRequested ? 'no by-right plan shown' : 'no other competition plan to draw' };
+        row.resolve = { skipped: !row.mix ? 'fewer than three lots with three fitting plans' : 'no lot-width override on this plan' };
       }
       if (!row.listMatchesEvidence) throw new Error('studio list differs from the eligibility result');
       if (!row.onlyTargetChanged) throw new Error(`changed ${changed.join(',') || 'nothing'}, expected only ${target.house}`);
