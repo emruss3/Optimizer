@@ -207,3 +207,34 @@ export function applyStockDesignToHouse(opts: {
   if (opts.schemeKey) rememberHousingChoice(`${opts.schemeKey}|${house.id}`, design.id);
   return { ok: true, elements, design, houseId: house.id, lotLabel: row.lotLabel, reason: hit.fit.reason };
 }
+
+export interface ApplyHousesResult {
+  elements: Element[];
+  applied: Array<{ houseId: string; lotLabel: string }>;
+  refused: Array<{ houseId: string; reason: string }>;
+  design: HousingDesignRecord | null;
+}
+
+/**
+ * Apply one stock plan to several chosen lots as one change (PR 221 audit: "Apply to selected
+ * lots"). Each lot is re-checked on the plan as it stands after the lots before it, so a lot the
+ * plan no longer fits is refused with its reason and the others still change.
+ */
+export function applyStockDesignToHouses(opts: {
+  designId: string;
+  houseIds: string[];
+  elements: Element[];
+  setbacks?: { front: number; side: number; rear: number };
+  schemeKey?: string;
+}): ApplyHousesResult {
+  let elements = opts.elements;
+  const applied: ApplyHousesResult['applied'] = [];
+  const refused: ApplyHousesResult['refused'] = [];
+  let design: HousingDesignRecord | null = null;
+  for (const houseId of opts.houseIds) {
+    const r = applyStockDesignToHouse({ designId: opts.designId, houseId, elements, setbacks: opts.setbacks, schemeKey: opts.schemeKey });
+    if (r.ok) { elements = r.elements; applied.push({ houseId, lotLabel: r.lotLabel }); design = r.design; }
+    else refused.push({ houseId, reason: r.reason });
+  }
+  return { elements, applied, refused, design };
+}

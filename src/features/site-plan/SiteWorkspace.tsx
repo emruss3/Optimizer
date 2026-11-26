@@ -59,6 +59,7 @@ import { homesSchedule, homesScheduleRows } from './housing/schedule';
 import { mark, markOnce } from '../../lib/timeline';
 import {
   applyStockDesignToHouse,
+  applyStockDesignToHouses,
   designsForParcel,
   stockEligibility,
 } from './housing';
@@ -196,6 +197,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // On a laptop-height screen the 3D view gets the room: an open schedule dock folds while 3D is
   // shown and comes back in 2D (PR 221 audit: Main's 3D was a shallow strip under the tables).
   const dockFoldedFor3dRef = useRef(false);
+  // the same short screen in 3D folds the plan's headline and basis row too: they describe the
+  // 2D plan and return with it (Main's 3D was 471 px tall at 1536 × 791 with the dock folded)
+  const [shortScreen, setShortScreen] = useState(() => typeof window !== 'undefined' && window.innerHeight < 900);
+  useEffect(() => {
+    const on = () => setShortScreen(window.innerHeight < 900);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  const compact3d = viewMode === '3d' && shortScreen;
   useEffect(() => {
     const short = typeof window !== 'undefined' && window.innerHeight < 900;
     if (viewMode === '3d' && short && dockOpen) { dockFoldedFor3dRef.current = true; setDockOpenState(false); }
@@ -2133,13 +2143,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   homeSetbacksRef.current = homeSetbacks;
 
   /** One home change as a history step: the plan and the remembered choices before it, then the new plan. */
-  const commitHomeStep = useCallback((next: Element[], houseId: string, designId: string, kind: 'stock' | 'concept', message: string) => {
+  const commitHomeStep = useCallback((next: Element[], houseIds: string | string[], designId: string, kind: 'stock' | 'concept', message: string) => {
     const assignmentsBefore = homeAssignmentsRef.current.parcel === parcelIdStr ? homeAssignmentsRef.current.list : [];
-    const a = assignmentFor(houseId, next, designId, kind);
-    if (a) {
-      const others = assignmentsBefore.filter(x => !(Math.hypot(x.lotCentre[0] - a.lotCentre[0], x.lotCentre[1] - a.lotCentre[1]) < 0.5));
-      homeAssignmentsRef.current = { parcel: parcelIdStr, list: [...others, a] };
+    let list = assignmentsBefore;
+    for (const houseId of Array.isArray(houseIds) ? houseIds : [houseIds]) {
+      const a = assignmentFor(houseId, next, designId, kind);
+      if (!a) continue;
+      list = [...list.filter(x => !(Math.hypot(x.lotCentre[0] - a.lotCentre[0], x.lotCentre[1] - a.lotCentre[1]) < 0.5)), a];
     }
+    homeAssignmentsRef.current = { parcel: parcelIdStr, list };
     setHomeCarry(null);
     setHomeHistory(h => ({
       past: [...(h && h.current === elements ? h.past : []), { elements, assignments: assignmentsBefore, message }],
@@ -2178,6 +2190,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setViolations(v => v.filter(x => x.code !== 'home-change'));
     setHousingDesignId(applied.design.id);
     commitHomeStep(applied.elements, applied.houseId, applied.design.id, 'stock', `${applied.lotLabel} now carries ${applied.design.name}. The other houses are unchanged.`);
+  }, [parcelIdStr, sfV1Shown, elements, homeSetbacks, commitHomeStep]);
+
+  /** One stock plan on several lots, as one change; lots it no longer fits are named, not dropped silently. */
+  const handleHousingDesignMany = useCallback((designId: string, houseIds: string[]) => {
+    const schemeKey = `${parcelIdStr}|${sfV1Shown}`;
+    const res = applyStockDesignToHouses({ designId, houseIds, elements, setbacks: homeSetbacks, schemeKey });
+    if (!res.applied.length || !res.design) {
+      setViolations(v => [...v.filter(x => x.code !== 'home-change'), { code: 'home-change', message: `Homes not changed: ${res.refused[0]?.reason ?? 'no lot took the plan'}. The plan is unchanged.`, severity: 'warning' }]);
+      return;
+    }
+    const lots = res.applied.map(a => a.lotLabel).join(', ');
+    const refused = res.refused.length ? ` Not applied: ${res.refused.map(r => r.reason).join('; ')}.` : '';
+    setViolations(v => v.filter(x => x.code !== 'home-change'));
+    setHousingDesignId(res.design.id);
+    commitHomeStep(res.elements, res.applied.map(a => a.houseId), res.design.id, 'stock', `${lots} now carry ${res.design.name}. The other houses are unchanged.${refused}`);
   }, [parcelIdStr, sfV1Shown, elements, homeSetbacks, commitHomeStep]);
 
   /** Commit a concept study on one lot: it becomes the plan (not a preview). */
@@ -4369,6 +4396,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           stockSetbacks={homeSetbacks}
           stockEligibilityRows={stockRows}
           onApplyConcept={(designId, houseId) => { handleConceptApply(designId, houseId); handleSceneSelection([houseId]); }}
+          onApplyStockMany={sfStockDesigns.length > 0 ? (designId, houseIds) => { handleHousingDesignMany(designId, houseIds); handleSceneSelection(houseIds); } : undefined}
           onApplyStock={sfStockDesigns.length > 0 ? (designId, houseId) => { handleHousingDesignSelect(designId, houseId); handleSceneSelection([houseId]); } : undefined}
           onClose={closeHomes}
           onPreview={study => {
@@ -4403,13 +4431,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
         <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>
         <button type="button" className="underline" onClick={() => { setHouseStudy(null); setHomePreviewFocus(0); }}>Return to base scheme</button></div>}
-      {!seedViewOn && <BuiltHeadline metrics={accessAwareMetrics} elements={elements} />}
+      {!seedViewOn && !compact3d && <BuiltHeadline metrics={accessAwareMetrics} elements={elements} />}
       {/* 2026-09-04 (Eric, 2622 W Heiman: "difficult to see the site planner,
           there is a ton of data"): the basis line, the context lineage, the
           highest-and-best comparator and the buildout ladder fold into ONE
           row that opens on demand — the canvas is the page. A blocked or
           stale state opens the row itself. */}
-      {(displayBasis || plannerCtx || plannerLoading || planStale || generationBlocked || (maxBuildout && !draftMode)) && (
+      {(!compact3d || planStale || generationBlocked) && (displayBasis || plannerCtx || plannerLoading || planStale || generationBlocked || (maxBuildout && !draftMode)) && (
         <PlanBasisDisclosure
           summary={basisSummary}
           tone={basisTone}
