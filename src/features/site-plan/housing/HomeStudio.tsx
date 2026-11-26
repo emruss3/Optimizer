@@ -28,6 +28,8 @@ interface Props {
   stockSetbacks?: { front: number; side: number; rear: number };
   /** Change the home on one house's lot to this stock plan. */
   onApplyStock?: (designId: string, houseId: string) => void;
+  /** Apply one stock plan to several lots as one change. */
+  onApplyStockMany?: (designId: string, houseIds: string[]) => void;
   /** Commit a concept study on one house's lot (not a preview: it becomes the plan). */
   onApplyConcept?: (designId: string, houseId: string) => void;
   onClose: () => void;
@@ -81,6 +83,7 @@ export default function HomeStudio({
   stockSetbacks = DEFAULT_HOME_SETBACKS,
   stockEligibilityRows,
   onApplyStock,
+  onApplyStockMany,
   onApplyConcept,
 }: Props) {
   // Explicit empty list means “no SF stock for this session” (MF/CS) — do not
@@ -149,6 +152,8 @@ export default function HomeStudio({
     [stockHouses, stockRows, houseId, stockAll, elements, stockSetbacks],
   );
   const stock = useMemo(() => stockRow?.eligible.map((e) => e.design) ?? [], [stockRow]);
+  // other lots the plan on show also fits, to apply it to several at once
+  const [alsoLots, setAlsoLots] = useState<string[]>([]);
 
   useEffect(() => {
     if (stockIndex >= stock.length) setStockIndex(0);
@@ -407,6 +412,39 @@ export default function HomeStudio({
                               Change home on {stockRow.lotLabel}
                             </button>
                           </div>
+                          {onApplyStockMany && (() => {
+                            const others = stockRows.filter((r) => r.houseId !== stockRow.houseId && r.eligible.some((e) => e.design.id === plan.id));
+                            if (!others.length) return null;
+                            const chosen = alsoLots.filter((h) => others.some((o) => o.houseId === h));
+                            return (
+                              <fieldset className="home-also" data-testid="home-stock-also">
+                                <legend>Also fits — apply to these lots too</legend>
+                                {others.map((o) => (
+                                  <label key={o.houseId}>
+                                    <input
+                                      type="checkbox"
+                                      checked={chosen.includes(o.houseId)}
+                                      onChange={(e) => setAlsoLots((cur) => (e.target.checked ? [...cur, o.houseId] : cur.filter((h) => h !== o.houseId)))}
+                                    />{' '}
+                                    {o.lotLabel}
+                                  </label>
+                                ))}
+                                {chosen.length > 0 && (
+                                  <button
+                                    type="button"
+                                    data-testid="home-stock-apply-many"
+                                    onClick={() => {
+                                      onApplyStockMany(plan.id, [stockRow.houseId, ...chosen]);
+                                      setAlsoLots([]);
+                                      onClose();
+                                    }}
+                                  >
+                                    Apply to {chosen.length + 1} lots
+                                  </button>
+                                )}
+                              </fieldset>
+                            );
+                          })()}
                           <p data-testid="home-stock-fit">
                             {stockRow.eligible.find((e) => e.design.id === plan.id)?.fit.reason ?? ''}. Only this
                             lot changes: its pad takes this plan’s listing-overall footprint in the placed

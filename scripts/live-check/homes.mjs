@@ -39,7 +39,8 @@ const results = [];
 for (const p of PARCELS) {
   const row = { parcel: p.name, id: p.id };
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
-  await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); } catch { /* private mode */ } });
+  // the inspector open, so the by-right panel (and its override, the re-solve route) is on the page
+  await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); localStorage.setItem('pp.inspector', 'open'); } catch { /* private mode */ } });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)));
@@ -144,6 +145,29 @@ for (const p of PARCELS) {
         await page.screenshot({ path: path.join(out, `${p.id}-mix.png`) });
       }
 
+      // one plan on two lots at once: both change, the rest do not, one Undo takes both back
+      if (row.mix) {
+        const before = (await evidence(page))?.homes?.pads ?? [];
+        await homesBtn.click();
+        await lotSel.waitFor({ state: 'visible', timeout: 30000 });
+        const first = row.rows.find(r => r.eligible.length >= 2);
+        await lotSel.selectOption(first.house);
+        await page.locator('nav[aria-label="Buildable stock plans"] button').first().click();
+        const also = page.locator('[data-testid="home-stock-also"] input[type="checkbox"]');
+        if (await also.count()) {
+          await also.first().check();
+          await page.locator('[data-testid="home-stock-apply-many"]').click();
+          const after = (await waitFor(page, e => JSON.stringify(e.homes?.pads) !== JSON.stringify(before), 15000))?.homes?.pads ?? [];
+          const changed = after.filter(a => { const b = before.find(x => x.id === a.id); return !b || b.design !== a.design || b.outline !== a.outline; });
+          row.many = { changed: changed.map(c => c.id), sameDesign: new Set(changed.map(c => c.design)).size === 1 };
+          await page.locator('[data-testid="plan-undo"]').first().click();
+          row.many.undone = JSON.stringify((await waitFor(page, e => JSON.stringify(e.homes?.pads) === JSON.stringify(before), 15000))?.homes?.pads) === JSON.stringify(before);
+        } else {
+          await page.keyboard.press('Escape');
+          row.many = { skipped: 'the first plan fits no other lot' };
+        }
+      }
+
       // re-solve: draw the plan again under a lot-width override, then by right again; every choice
       // must be reported or kept on the override plan, and all of them back on the by-right plan
       const shownBefore = (await evidence(page))?.sfV1?.shown ?? null;
@@ -175,6 +199,7 @@ for (const p of PARCELS) {
       if (!row.onlyTargetChanged) throw new Error(`changed ${changed.join(',') || 'nothing'}, expected only ${target.house}`);
       if (!row.undoRestored) throw new Error('Undo did not restore the plan');
       if (row.redo === false) throw new Error('Redo did not put the change back');
+      if (row.many && !row.many.skipped && !(row.many.changed.length === 2 && row.many.sameDesign && row.many.undone)) throw new Error(`apply to two lots: ${JSON.stringify(row.many)}`);
       if (row.mix && !row.mixDistinct) throw new Error(`three lots did not carry three different plans: ${JSON.stringify(row.mix)}`);
       if (row.resolve && row.resolve.restored === false) throw new Error(`after a re-solve and back, the three choices did not all return: ${JSON.stringify(row.mix)}`);
     }
@@ -194,6 +219,7 @@ for (const r of results) {
     (r.changedPads ? ` | changed ${r.changedPads.join(',')} → ${r.changedDesign} | only target: ${r.onlyTargetChanged} | undo: ${r.undoRestored} | "${r.applyLabel}"` : '') +
     (r.redo != null ? ` | redo: ${r.redo}` : '') +
     (r.mix ? ` | mix ${JSON.stringify(r.mix)} distinct: ${r.mixDistinct}` : '') +
+    (r.many ? ` | two lots ${JSON.stringify(r.many)}` : '') +
     (r.resolve ? ` | re-solve ${JSON.stringify(r.resolve)}` : '') +
     (r.problem ? ` | ${r.problem}` : ''));
 }
