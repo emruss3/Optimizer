@@ -116,6 +116,26 @@ def train_mf(run_id: str, dataset: str, minutes: float, cfg: dict):
     return state["status"]
 
 
+_MF_GPU = {}
+
+
+@app.function(image=image, gpu=TRAIN_GPU, volumes={VOL: vol}, timeout=600, scaledown_window=600)
+def propose_gpu(run_id: str, site: dict, n: int, temp: float, tries: int):
+    """Samples site-plan proposals on a GPU (sampling on the web container's CPU took ~35 s for two plans)."""
+    import torch
+
+    from . import mf_gen
+    if run_id not in _MF_GPU:
+        path = f"{VOL}/runs/{run_id}/mf_gen_v1.pt"
+        if not os.path.exists(path):
+            vol.reload()
+        m = mf_gen.load_model(path)[0]
+        if torch.cuda.is_available():
+            m = m.cuda()
+        _MF_GPU.clear(); _MF_GPU[run_id] = m
+    return mf_gen.propose(_MF_GPU[run_id], site, n=n, temp=temp, tries=tries)
+
+
 @app.function(image=image, volumes={VOL: vol}, timeout=900)
 @modal.asgi_app()
 @modal.concurrent(max_inputs=8)
@@ -275,7 +295,12 @@ def api():
         if not run_id:
             return {"error": "no site-plan model version is live"}
         try:
-            res = mf_gen.propose(mf_model_for(run_id), body.get("site") or {}, n=int(body.get("n") or 8), temp=float(body.get("temp") or 0.9))
+            if not os.path.exists(f"{VOL}/runs/{run_id}/mf_gen_v1.pt"):
+                refresh(force=True)
+            if not os.path.exists(f"{VOL}/runs/{run_id}/mf_gen_v1.pt"):
+                raise HTTPException(status_code=404, detail="no such site-plan model version")
+            args = (run_id, body.get("site") or {}, int(body.get("n") or 8), float(body.get("temp") or 0.9), int(body.get("tries") or 40))
+            res = propose_gpu.remote(*args) if body.get("device", "gpu") == "gpu" else mf_gen.propose(mf_model_for(run_id), *args[1:])
         except HTTPException:
             raise
         except Exception as e:

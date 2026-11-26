@@ -310,7 +310,8 @@ def sample(m, e, N=8, temp=0.9, tries=60, place=None):
     """Samples N plans. `place` (site frame) is where buildings may stand: the buildable envelope when the
     planner context supplies one, otherwise the site."""
     m.eval(); S = e['S']; site = e['site']; sb = site.buffer(2); tgt = e['units']; place = place if place is not None else site
-    c = torch.tensor(cond(e, tgt))[None].repeat(N, 1); bp = torch.tensor(bpts(e))[None].repeat(N, 1, 1)
+    dev = next(m.parameters()).device
+    c = torch.tensor(cond(e, tgt))[None].repeat(N, 1).to(dev); bp = torch.tensor(bpts(e))[None].repeat(N, 1, 1).to(dev)
     st = [dict(seq=[BOS], cur=[], sec=0, drv=[], b=[], prk=[], ll=0., cl=0., done=False, fails=0, un=0, pave=None, nt=0, tf=0) for _ in range(N)]
     stats = dict(d=[0, 0], b=[0, 0], p=[0, 0])
 
@@ -327,14 +328,15 @@ def sample(m, e, N=8, temp=0.9, tries=60, place=None):
     while not all(s['done'] for s in st):
         act = [s for s in st if not s['done']]
         xs = [s['seq'] + s['cur'] for s in act]; T = max(map(len, xs))
-        rr = torch.tensor([prog(x, tgt) + [(0., 0.)] * (T - len(x)) for x in xs], dtype=torch.float32)
-        lg = m(c[:len(act)], bp[:len(act)], torch.tensor([x + [PAD] * (T - len(x)) for x in xs]), rr)
+        rr = torch.tensor([prog(x, tgt) + [(0., 0.)] * (T - len(x)) for x in xs], dtype=torch.float32).to(dev)
+        lg = m(c[:len(act)], bp[:len(act)], torch.tensor([x + [PAD] * (T - len(x)) for x in xs]).to(dev), rr)
+        lg = lg[torch.arange(len(act), device=dev), torch.tensor([len(x) - 1 for x in xs], device=dev)].float().cpu()   # last step only, one transfer
         for j, s in enumerate(act):
             if len(xs[j]) >= MAXL - 10: close(s, EOS); continue
             al = allowed(s['sec'], s['cur'])
             if s['sec'] == 1 and not s['cur'] and tgt and s['un'] < 0.85 * tgt and s['fails'] < tries - 1 and s['tf'] < 3 * tries - 1:
                 al = [a for a in al if a != SEC]
-            z = lg[j, len(xs[j]) - 1][al] / temp; pr = torch.log_softmax(z, -1); i = torch.multinomial(pr.exp(), 1).item(); t = al[i]; lp = pr[i].item()
+            z = lg[j][al] / temp; pr = torch.log_softmax(z, -1); i = torch.multinomial(pr.exp(), 1).item(); t = al[i]; lp = pr[i].item()
             sec = s['sec']; cur = s['cur']
             if sec == 0:
                 if t in (DRV, SEC) and len(cur) >= 5:
@@ -373,7 +375,7 @@ def sample(m, e, N=8, temp=0.9, tries=60, place=None):
     return [dict(b=s['b'], drv=s['drv'], prk=s['prk'], ll=s['ll'] / max(s['nt'], 1), units=s['un']) for s in st], stats
 
 
-def propose(model, req, n=8, temp=0.9):
+def propose(model, req, n=8, temp=0.9, tries=60):
     """req: site_wkt (EPSG:2274), edges [{type, wkt}], envelope_wkt (optional), units, typ.
     Returns proposals with buildings, drives and parking fields as EPSG:2274 WKT."""
     p = dict(pid='request', typ=req.get('typ') or 'multifamily', split='request', site=req['site_wkt'],
@@ -385,7 +387,7 @@ def propose(model, req, n=8, temp=0.9):
     if req.get('envelope_wkt'):
         env = e['T'](wkt.loads(req['envelope_wkt']))
         place = env if not env.is_empty else None
-    plans, stats = sample(model, e, N=max(1, min(int(n), 24)), temp=float(temp), place=place)
+    plans, stats = sample(model, e, N=max(1, min(int(n), 24)), temp=float(temp), tries=int(tries), place=place)
     Ti = e['Ti']; out = []
     for pl in sorted(plans, key=lambda q: -q['ll']):
         out.append(dict(
