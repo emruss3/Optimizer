@@ -125,8 +125,29 @@ function distanceToEdge(drive: number[][], edge: number[][]): number {
   return pair ? pair.d : Infinity;
 }
 
-function driveTouchesEdge(drive: number[][], edge: number[][], tolM: number): boolean {
-  return distanceToEdge(drive, edge) <= tolM;
+/** One street line, or every street line of the parcel (a lot with streets on two or more sides). */
+export type StreetEdges = number[][] | number[][][];
+
+function isMulti(e: StreetEdges): e is number[][][] {
+  return Array.isArray(e[0]) && Array.isArray((e[0] as unknown[])[0]);
+}
+
+function edgeList(e: StreetEdges | null): number[][][] {
+  if (!e || e.length === 0) return [];
+  return (isMulti(e) ? e : [e]).filter(l => l.length >= 2);
+}
+
+function driveTouchesEdge(drive: number[][], edges: number[][][], tolM: number): boolean {
+  return edges.some(edge => distanceToEdge(drive, edge) <= tolM);
+}
+
+function nearestPairToEdges(a: number[][], edges: number[][][]): { from: number[]; to: number[]; d: number } | null {
+  let best: { from: number[]; to: number[]; d: number } | null = null;
+  for (const edge of edges) {
+    const pair = nearestPair(a, edge);
+    if (pair && (!best || pair.d < best.d)) best = pair;
+  }
+  return best;
 }
 
 type BBox = { minX: number; minY: number; maxX: number; maxY: number };
@@ -210,9 +231,10 @@ function stallTotals(bays: Bay[], servedMask: boolean[]): { stallsServed: number
  * Callers that only have a placeholder frontage must pass null so the parcel
  * ring stands in.
  */
-function curbEdge(parcelRing: number[][] | null, streetEdge: number[][] | null): number[][] | null {
-  if (streetEdge && streetEdge.length >= 2) return streetEdge;
-  if (parcelRing && parcelRing.length >= 4) return parcelRing;
+function curbEdge(parcelRing: number[][] | null, streetEdge: StreetEdges | null): number[][][] | null {
+  const streets = edgeList(streetEdge);
+  if (streets.length > 0) return streets;
+  if (parcelRing && parcelRing.length >= 4) return [parcelRing];
   return null;
 }
 
@@ -220,8 +242,8 @@ export function mfAccessSummary(
   elements: Element[],
   parcelRing: number[][] | null,
   tolM = 3,
-  /** Preferred street / approved-approach edge; falls back to the parcel line. */
-  streetEdge: number[][] | null = null,
+  /** Street edge(s) of the parcel — every street a lot fronts counts; falls back to the parcel line. */
+  streetEdge: StreetEdges | null = null,
 ): MfAccessSummary {
   const drives = collectDrives(elements);
   const bays = collectBays(elements);
@@ -285,8 +307,8 @@ export function formatGapFt(gapFt: number): string {
 export function accessBreak(
   elements: Element[],
   parcelRing: number[][] | null,
-  /** the street edge of the parcel, when the frontage layer has one; else the parcel line stands in */
-  frontageLine: number[][] | null = null,
+  /** the street edge(s) of the parcel, when the frontage layer has them; else the parcel line stands in */
+  frontageLine: StreetEdges | null = null,
   tolM = 3,
   distanceFt?: (a: ArrayLike<number>, b: ArrayLike<number>) => number,
 ): AccessBreak | null {
@@ -312,7 +334,7 @@ export function accessBreak(
   if (curbRoots.size === 0) {
     let best: { from: number[]; to: number[]; d: number } | null = null;
     for (const d of drives) {
-      const pair = nearestPair(d, edge);
+      const pair = nearestPairToEdges(d, edge);
       if (pair && (!best || pair.d < best.d)) best = pair;
     }
     return best ? toBreak(best) : null;
@@ -337,7 +359,7 @@ export function accessBreak(
       }
       // Prefer joining to the curb network; if somehow empty, aim at the street.
       if (curbDrives.length === 0) {
-        const pair = nearestPair(stranded, edge);
+        const pair = nearestPairToEdges(stranded, edge);
         if (pair && (!best || pair.d < best.d)) best = pair;
       }
     }

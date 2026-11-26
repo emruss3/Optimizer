@@ -73,6 +73,23 @@ describe('mfAccessSummary — does the parking have a road?', () => {
     expect(s.served).toBe(0);
   });
 
+  // Through lot (909 Buchanan St): streets on two opposite sides. A drive to either street reaches the curb,
+  // and the break is measured to the nearer street.
+  it('counts a drive to any of the lot\'s streets when several street edges are supplied', () => {
+    const backDrive = el('back', 'circulation', rect(40, 0, 56, 30)); // reaches the south street
+    const bay = el('bay', 'parking', rect(58, 2, 76, 28));
+    const north = [[0, 100], [100, 100]];
+    const south = [[0, 0], [100, 0]];
+    expect(mfAccessSummary([backDrive, bay], parcel, 3, north).curb).toBe(false);
+    const s = mfAccessSummary([backDrive, bay], parcel, 3, [north, south]);
+    expect(s.curb).toBe(true);
+    expect(s.served).toBe(1);
+    expect(accessBreak([backDrive, bay], parcel, [north, south])).toBeNull();
+    const stub = el('stub', 'circulation', rect(40, 10, 56, 30)); // 10 short of the south street, 70 of the north
+    const brk = accessBreak([stub], parcel, [north, south]);
+    expect(brk?.gap3857).toBeCloseTo(10, 6);
+  });
+
   // Placeholder frontage (667574 / 408571 / Herman / W Heiman): do not pass a
   // guessed street edge — fall back to the parcel ring so a drive on any lot
   // line still clears curb and does not false-red to NO_DRIVE_TO_STREET.

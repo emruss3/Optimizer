@@ -3545,7 +3545,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }),
     [frontage, engineAccess, accessFlags],
   );
-  const streetEdgeForAccess = frontageIsPlaceholder ? null : (accessProbe?.frontageLine ?? null);
+  // every street the lot fronts counts as curb (a through lot is entered from either street)
+  const streetEdgeForAccess = frontageIsPlaceholder ? null : (accessProbe?.streetLines ?? accessProbe?.frontageLine ?? null);
   const mfAccess = useMemo(
     () => mfAccessSummary(displayElements, parcelRing3857, 3, streetEdgeForAccess),
     [displayElements, parcelRing3857, streetEdgeForAccess],
@@ -3570,7 +3571,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       ? accessBreak(
         displayElements,
         parcelRing3857,
-        frontageIsPlaceholder ? null : access.frontageLine,
+        frontageIsPlaceholder ? null : (access.streetLines ?? access.frontageLine),
         3,
         scene?.frame.distanceFt,
       )

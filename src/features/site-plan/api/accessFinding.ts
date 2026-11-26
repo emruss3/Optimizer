@@ -16,6 +16,8 @@ export interface AccessFinding {
   clears: string[];
   /** The street edge of the parcel in the plan's frame, when the frontage layer has one. */
   frontageLine: number[][] | null;
+  /** Every street edge of the parcel in the plan's frame (through and corner lots have two or more). */
+  streetLines: number[][][] | null;
   frontageLabel: string | null;
 }
 
@@ -27,8 +29,7 @@ const EASEMENT = 'A recorded access easement across the neighbouring parcel, wit
 const CURB = 'A driveway permit or approved curb cut for the street the plan enters from.';
 const JOIN = 'A continuous drive that joins the parking network to the street entry. The break is marked in red on the plan and in the 3D review.';
 
-function frontageInPlanFrame(frontage: ParcelFrontage | null | undefined): number[][] | null {
-  const g = frontage?.primary?.geom_2274 as LineString | undefined;
+function lineInPlanFrame(g: LineString | undefined): number[][] | null {
   if (!g || g.type !== 'LineString' || !Array.isArray(g.coordinates) || g.coordinates.length < 2) return null;
   try {
     const out = feature4326To3857(geom2274To4326(g) as never) as LineString;
@@ -36,6 +37,20 @@ function frontageInPlanFrame(frontage: ParcelFrontage | null | undefined): numbe
   } catch {
     return null;
   }
+}
+
+function frontageInPlanFrame(frontage: ParcelFrontage | null | undefined): number[][] | null {
+  return lineInPlanFrame(frontage?.primary?.geom_2274 as LineString | undefined);
+}
+
+/** Every street edge (frontage v2 segments); null when the frontage carries only a primary line. */
+function streetLinesInPlanFrame(frontage: ParcelFrontage | null | undefined): number[][][] | null {
+  const segs = frontage?.segments;
+  if (!segs || segs.length === 0) return null;
+  const lines = segs
+    .map(s => lineInPlanFrame((s.line_2274 ?? s.geom_2274) as LineString | undefined))
+    .filter((l): l is number[][] => l != null);
+  return lines.length > 0 ? lines : null;
 }
 
 export function accessFinding(input: {
@@ -51,11 +66,11 @@ export function accessFinding(input: {
   const line = frontageInPlanFrame(frontage);
   const ft = frontage && !frontage.landlocked && frontage.total_frontage_ft > 0 ? Math.round(frontage.total_frontage_ft) : null;
   const label = ft != null ? `Street frontage · ${ft} ft` : null;
-  const base = { frontageLine: line, frontageLabel: label };
+  const base = { frontageLine: line, streetLines: streetLinesInPlanFrame(frontage), frontageLabel: label };
 
   if (engineAccess?.type === 'none' || (!engineAccess && frontage?.landlocked === true)) {
     return {
-      ...base, frontageLine: null, frontageLabel: null,
+      ...base, frontageLine: null, streetLines: null, frontageLabel: null,
       state: 'needs_verification',
       headline: 'No street access on record',
       why: engineAccess?.message ?? 'The parcel map shows no boundary on a street, right-of-way or mapped lane. The plan assumes access by easement.',

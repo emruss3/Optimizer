@@ -22,6 +22,17 @@ export interface ParcelFrontage {
   } | null;
   method?: string;
   note?: string;
+  /** street_edges_v2: every street the lot fronts (a through or corner lot has two or more). */
+  through_lot?: boolean;
+  street_corner?: boolean;
+  segments?: Array<{
+    street_name: string;
+    street_class?: string;
+    length_ft: number;
+    addressed?: boolean;
+    line_2274?: unknown;
+    geom_2274?: unknown;
+  }>;
 }
 
 const cache = new Map<number, Promise<ParcelFrontage | null>>();
