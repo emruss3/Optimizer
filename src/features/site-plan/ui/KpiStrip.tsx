@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import type { SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
 import type { MfMoney } from '../api/generateMfPlan';
+import { parkingCounts, parkingCountsDisagree, parkingCountsLine } from './parkingCounts';
 
 /** Financial UI parked by directive — computation dormant, not deleted. */
 const SHOW_YIELD_CHIP = false;
@@ -80,9 +81,13 @@ const KpiStrip: React.FC<{
    * (1710 Meharry Blvd: "Code compliant" beside "context not verified").
    */
   unverified?: string | null;
+  /** What the plan's own checks do not cover and the plan does not meet (audit 11-26): a GSF
+   *  over the program's upper bound, a drive that does not reach the street. A pass on the
+   *  checks never stands in for these. */
+  openItems?: string[];
   /** Opens the checks behind the status: the status is a door, not a verdict to take on trust. */
   onOpenChecks?: () => void;
-}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty, unverified = null, onOpenChecks }) => {
+}> = ({ metrics, investment, money, planFlags = [], utilizationPct = null, subdivision = null, empty, unverified = null, openItems = [], onOpenChecks }) => {
   if (!metrics) {
     const state = empty?.state ?? 'generating';
     const text = state === 'generating'
@@ -193,8 +198,8 @@ const KpiStrip: React.FC<{
         <Stat
           label="Stalls"
           value={
-            parkingUnverified
-              ? `${metrics.stallsDrawn ?? stallsProvided} drawn · ${metrics.stallsReported ?? '?'} reported / ${stallsRequired}`
+            parkingCountsDisagree(parkingCounts(metrics))
+              ? parkingCountsLine(parkingCounts(metrics)) ?? `${stallsProvided} / ${stallsRequired}`
               : parkingNotEvaluated
                 ? `${stallsProvided} / not evaluated`
                 : `${stallsProvided} / ${stallsRequired}`
@@ -264,7 +269,7 @@ const KpiStrip: React.FC<{
           className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
         >
           <XCircle className="w-3.5 h-3.5" />
-          Parking needs verification · {metrics.stallsDrawn ?? stallsProvided} drawn / {metrics.stallsReported ?? '?'} reported · {stallsRequired} required
+          Parking needs verification · {parkingCountsLine(parkingCounts(metrics)) ?? `${stallsProvided} provided · ${stallsRequired} required`}
         </div>
       ) : metrics.conditional ? (
         // A sketch that depends on an assumed easement or a flood scenario is
@@ -289,16 +294,19 @@ const KpiStrip: React.FC<{
         </div>
       ) : (
       <div
-        title={constrained ? `Constrained: ${clampReasons.join(', ')}` : undefined}
+        data-testid="kpi-verdict"
+        title={openItems.length > 0
+          ? `The plan's own checks pass. They do not cover: ${openItems.join('; ')}.`
+          : constrained ? `Constrained: ${clampReasons.join(', ')}` : undefined}
         className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
           !compliant
             ? 'bg-red-50 text-red-700'
-            : constrained
+            : constrained || openItems.length > 0
               ? 'bg-amber-50 text-amber-700'
               : 'bg-green-50 text-green-700'
         }`}
       >
-        {compliant && !constrained ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+        {compliant && !constrained && openItems.length === 0 ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
         {/* A parking shortfall leads the badge: "Code compliant · constrained:
             coverage-capped +1" hid 85 of 92 stalls behind the "+1" on 0 Whites
             Creek Pike (2026-11-09). */}
@@ -306,6 +314,8 @@ const KpiStrip: React.FC<{
           ? `${violations.length} issue${violations.length === 1 ? '' : 's'}`
           : parkingShort
             ? `Parking shortfall · ${stallsProvided} of ${stallsRequired} stalls${clampReasons.filter(r => r !== 'parking short').length > 0 ? ` · ${clampReasons.filter(r => r !== 'parking short')[0]}` : ''}`
+            : openItems.length > 0
+              ? `Plan checks pass · open: ${openItems[0]}${openItems.length > 1 ? ` +${openItems.length - 1}` : ''}`
             : constrained
               ? `Checks passed · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
               : parkingNotEvaluated

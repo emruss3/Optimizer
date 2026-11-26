@@ -6,6 +6,7 @@ import {
   type UnitMixEntry,
 } from '../../../engine/model';
 import type { PlannerContextResponse } from '../api/plannerContext';
+import { parkingCounts, parkingCountsDisagree, parkingCountsLine } from './parkingCounts';
 
 const TYPE_LABELS: Record<UnitMixEntry['type'], string> = {
   studio: 'Studio',
@@ -21,6 +22,8 @@ interface Row {
   pct: number;
   avgSqft: number;
   pkgReq: number;
+  /** homes the plan counts that the unit mix gives no type */
+  untyped?: boolean;
 }
 
 /** Short side of an element's bbox in metres — plate depth for efficiency. */
@@ -54,7 +57,8 @@ const TabulationPanel: React.FC<{
     [elements]
   );
 
-  const rows = useMemo<Row[]>(() => {
+  const { rows, mixOverNote } = useMemo<{ rows: Row[]; mixOverNote: string | null }>(() => {
+    let mixOverNote: string | null = null;
     const byType = new Map<UnitMixEntry['type'], { units: number; sf: number }>();
     for (const b of buildings) {
       const mix = (b.properties?.unitMix as UnitMixEntry[] | undefined) ?? [];
@@ -66,23 +70,14 @@ const TabulationPanel: React.FC<{
       }
     }
     let total = [...byType.values()].reduce((s, v) => s + v.units, 0);
-    if (total === 0) return [];
+    if (total === 0) return { rows: [], mixOverNote: null };
 
-    // Reconcile to the KPI unit count: per-building mixes round independently
-    // and can drift by a unit or two from metrics.totalUnits. The table and
-    // the header must agree — absorb the delta in the largest type.
+    // The plan's count against the mix (audit 11-26, 535 Main St: 131 over
+    // 129): the difference is its own row, not two invented homes in the
+    // largest type, so the total still matches the headline.
     const kpiTotal = metrics?.totalUnits;
-    if (kpiTotal != null && kpiTotal > 0 && kpiTotal !== total) {
-      const largest = [...byType.entries()].sort((a, b) => b[1].units - a[1].units)[0];
-      if (largest) {
-        const delta = kpiTotal - total;
-        const perUnitSf = largest[1].units > 0 ? largest[1].sf / largest[1].units : 0;
-        largest[1].units = Math.max(0, largest[1].units + delta);
-        largest[1].sf = largest[1].units * perUnitSf;
-        total = kpiTotal;
-      }
-    }
-
+    const residual = kpiTotal != null && kpiTotal > 0 ? Math.round(kpiTotal) - total : 0;
+    if (residual > 0) total += residual;
     // A detached house rides the 'townhome' mix slot (the mix has no house
     // type); on a sheet of houses only, the row says what it is — the single
     // house on 0 Riverfront Dr was tabulated as a "Townhome" (2026-11-04).
@@ -98,8 +93,13 @@ const TabulationPanel: React.FC<{
           pct: (v.units / total) * 100,
           avgSqft: v.units ? v.sf / v.units : 0,
           pkgReq: Math.ceil(v.units * ratio),
-        };
+        } as Row;
       });
+    if (residual > 0) {
+      rows.push({ label: 'No type in the unit mix', units: residual, pct: (residual / total) * 100, avgSqft: 0, pkgReq: 0, untyped: true });
+    } else if (residual < 0) {
+      mixOverNote = `The unit mix lists ${total} homes, ${-residual} more than the ${Math.round(kpiTotal!)} the plan counts.`;
+    }
     // The requirement the plan is held to is the engine's (its ratio, with
     // guest and accessible stalls where it counts them). The per-type column
     // splits THAT figure by units (largest remainder), so the table's total
@@ -114,14 +114,16 @@ const TabulationPanel: React.FC<{
       for (let k = 0; left > 0 && k < order.length; k++, left--) floors[order[k]![1]] += 1;
       rows.forEach((r, i) => { r.pkgReq = floors[i] ?? 0; });
     }
-    return rows;
+    return { rows, mixOverNote };
   }, [buildings, metrics?.totalUnits, metrics?.stallsRequired]);
 
   const totals = useMemo(() => {
     const units = rows.reduce((s, r) => s + r.units, 0);
-    const sf = rows.reduce((s, r) => s + r.avgSqft * r.units, 0);
+    const typed = rows.filter(r => !r.untyped);
+    const typedUnits = typed.reduce((s, r) => s + r.units, 0);
+    const sf = typed.reduce((s, r) => s + r.avgSqft * r.units, 0);
     const pkg = rows.reduce((s, r) => s + r.pkgReq, 0);
-    return { units, avgSqft: units ? sf / units : 0, pkg };
+    return { units, avgSqft: typedUnits ? sf / typedUnits : 0, pkg };
   }, [rows]);
 
   // Computed efficiency from the deepest plate on the sheet — the same
@@ -184,11 +186,12 @@ const TabulationPanel: React.FC<{
         </thead>
         <tbody>
           {rows.map(r => (
-            <tr key={r.label} className="text-gray-800">
+            <tr key={r.label} className={r.untyped ? 'text-amber-800' : 'text-gray-800'} data-testid={r.untyped ? 'tab-untyped' : undefined}
+              title={r.untyped ? 'The plan counts these homes, but the unit mix its buildings carry does not give them a type.' : undefined}>
               <td className="py-0.5">{r.label}</td>
               <td className="text-right">{num(r.units)}</td>
               <td className="text-right">{num(r.pct)}%</td>
-              <td className="text-right">{num(r.avgSqft)}</td>
+              <td className="text-right">{r.untyped ? '—' : num(r.avgSqft)}</td>
               <td className="text-right">{notEvaluated ? '—' : num(r.pkgReq)}</td>
             </tr>
           ))}
@@ -201,6 +204,7 @@ const TabulationPanel: React.FC<{
           </tr>
         </tbody>
       </table>
+      {mixOverNote && <p data-testid="tab-mix-over" className="mt-1 text-[11px] text-amber-800">{mixOverNote}</p>}
       <div className="mt-1.5 grid grid-cols-3 gap-x-3 gap-y-0.5 text-[11px] text-gray-700 tabular-nums">
         {efficiency != null && (
           <span title="Net leasable / gross, from corridor geometry (computed)">
@@ -224,9 +228,13 @@ const TabulationPanel: React.FC<{
               : undefined
           }
         >
-          Stalls <b>{metrics?.stallsProvided ?? 0} / {notEvaluated ? 'not evaluated' : (metrics?.stallsRequired ?? 0)}</b>
-          {typeof metrics?.stallsDrawn === 'number' && typeof metrics?.stallsReported === 'number' && metrics.stallsDrawn !== metrics.stallsReported && (
-            <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">(engine summary {metrics.stallsReported}{metrics.parkingCountNote ? ' · difference accounted for' : ''}{unverified ? ' · needs verification' : ''})</span>
+          {parkingCountsDisagree(parkingCounts(metrics)) ? (
+            <>
+              Stalls <b data-testid="tab-stalls-line">{parkingCountsLine(parkingCounts(metrics))}</b>
+              <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">({metrics?.parkingCountNote ? 'difference accounted for · ' : ''}{unverified ? 'needs verification' : 'counts differ'})</span>
+            </>
+          ) : (
+            <>Stalls <b>{metrics?.stallsProvided ?? 0} / {notEvaluated ? 'not evaluated' : (metrics?.stallsRequired ?? 0)}</b></>
           )}
         </span>
         {metrics?.totalUnits ? (

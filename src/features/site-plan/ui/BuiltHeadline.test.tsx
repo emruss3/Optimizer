@@ -98,15 +98,31 @@ describe('builtSummary — the legacy lot generator\'s pads are lots, not apartm
   });
 });
 
-describe('the sentence and the schedule count the same homes (1710 Meharry Blvd, 2026-11-12)', () => {
-  it('puts a home the buildings\' rounding dropped into the largest type, as the schedule does', () => {
+describe('the sentence and the schedule count the same homes (1710 Meharry Blvd 11-12; 535 Main St 11-26)', () => {
+  it('names homes the mix gives no type instead of adding them to the largest type', () => {
     const short: Element = { ...building, id: 'mfgen-bldg-9', properties: { ...building.properties, unitMix: [
       { type: 'studio', count: 3, avgSqft: 550 }, { type: '1br', count: 12, avgSqft: 700 },
       { type: '2br', count: 10, avgSqft: 1100 }, { type: '3br', count: 4, avgSqft: 1600 },
     ] } } as Element;
     const s = builtSummary({ totalUnits: 30, totalBuiltSF: 54244 } as SiteMetrics, [short]);
-    expect(s?.detail).toContain('3 studios, 13 one-beds, 10 two-beds, 4 three-beds');
-    // with the counts in agreement nothing moves
-    expect(builtSummary({ totalUnits: 29, totalBuiltSF: 54244 } as SiteMetrics, [short])?.detail).toContain('12 one-beds');
+    expect(s?.headline).toMatch(/^30 apartments/);
+    expect(s?.detail).toContain('3 studios, 12 one-beds, 10 two-beds, 4 three-beds');
+    expect(s?.detail).toContain('1 home without a type in the unit mix (the mix lists 29 of 30)');
+    expect(s?.unitResidual).toBe(1);
+    // with the counts in agreement nothing is added
+    const agree = builtSummary({ totalUnits: 29, totalBuiltSF: 54244 } as SiteMetrics, [short]);
+    expect(agree?.detail).not.toMatch(/without a type/);
+    expect(agree?.unitResidual).toBe(0);
+  });
+
+  it('535 Main St: 131 in the headline over a mix of 129 shows the 2 untyped homes', () => {
+    const main: Element = { ...building, id: 'mfgen-bldg-1', properties: { ...building.properties, unitMix: [
+      { type: 'studio', count: 13, avgSqft: 550 }, { type: '1br', count: 52, avgSqft: 700 },
+      { type: '2br', count: 45, avgSqft: 1100 }, { type: '3br', count: 19, avgSqft: 1600 },
+    ] } } as Element;
+    const s = builtSummary({ totalUnits: 131, totalBuiltSF: 150000 } as SiteMetrics, [main]);
+    expect(s?.headline).toMatch(/^131 apartments/);
+    expect(s?.mix.map(m => m.count)).toEqual([13, 52, 45, 19]);
+    expect(s?.detail).toContain('2 homes without a type in the unit mix (the mix lists 129 of 131)');
   });
 });
