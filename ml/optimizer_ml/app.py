@@ -81,6 +81,41 @@ def train(run_id: str, dataset: str, minutes: float, cfg: dict):
     return state["status"]
 
 
+@app.function(image=image, gpu=TRAIN_GPU, cpu=TRAIN_CPUS, memory=16384, timeout=6 * 3600, volumes={VOL: vol})
+def train_mf(run_id: str, dataset: str, minutes: float, cfg: dict):
+    """Trains one version of the generative site-plan model (mf_gen) on approved SP plans the database pushed."""
+    import torch
+
+    from . import mf_gen
+
+    out = f"{VOL}/runs/{run_id}"
+    os.makedirs(out, exist_ok=True)
+    state = {"run_id": run_id, "kind": "mf_gen", "dataset": dataset, "status": "running", "started": time.time(), "minutes": minutes,
+             "device": "gpu" if torch.cuda.is_available() else f"cpu x{TRAIN_CPUS}", "log": []}
+
+    def log(msg):
+        state["log"] = (state["log"] + [str(msg)[:2000]])[-30:]
+        state["updated"] = time.time()
+        _write_json(f"{out}/status.json", state)
+        vol.commit()
+
+    try:
+        lines = []
+        vol.reload()
+        for name in sorted(os.listdir(f"{VOL}/data/{dataset}")):
+            with open(f"{VOL}/data/{dataset}/{name}") as f:
+                lines += f.read().split("\n")
+        log(f"data lines: {len(lines)}")
+        res = mf_gen.train(minutes, lines, out, cfg=cfg, log=log)
+        state.update(status="done", results=res)
+    except Exception as e:
+        state.update(status="failed", error=repr(e), trace=traceback.format_exc()[-3000:])
+    state["finished"] = time.time()
+    _write_json(f"{out}/status.json", state)
+    vol.commit()
+    return state["status"]
+
+
 @app.function(image=image, volumes={VOL: vol}, timeout=900)
 @modal.asgi_app()
 @modal.concurrent(max_inputs=8)
@@ -186,6 +221,67 @@ def api():
         _write_json(f"{VOL}/model/current.json", {"run_id": run_id, "promoted_at": time.time()})
         vol.commit()
         return {"model_version": run_id}
+
+    mf_models = {}
+
+    def mf_model_for(run_id):
+        if run_id not in mf_models:
+            path = f"{VOL}/runs/{run_id}/mf_gen_v1.pt"
+            if not os.path.exists(path):
+                refresh(force=True)
+            if not os.path.exists(path):
+                raise HTTPException(status_code=404, detail="no such site-plan model version")
+            if len(mf_models) >= 2:
+                mf_models.pop(next(iter(mf_models)))
+            from . import mf_gen
+            mf_models[run_id] = mf_gen.load_model(path)[0]
+        return mf_models[run_id]
+
+    @web.post("/train_mf")
+    def train_mf_start(body: dict = Body(...), x_ml_nonce: str = Header(None)):
+        gate(x_ml_nonce, "train")
+        run_id, dataset = _clean(body.get("run_id")), _clean(body.get("dataset"))
+        refresh(force=True)
+        if not run_id or not dataset or not os.path.isdir(f"{VOL}/data/{dataset}"):
+            raise HTTPException(status_code=400, detail="run_id and a dataset that has been sent are required")
+        if os.path.exists(f"{VOL}/runs/{run_id}/status.json"):
+            raise HTTPException(status_code=409, detail="this run_id has already been used")
+        minutes = max(1.0, min(float(body.get("minutes") or 30), MAX_TRAIN_MINUTES))
+        call = train_mf.spawn(run_id, dataset, minutes, body.get("cfg") or {})
+        return {"run_id": run_id, "dataset": dataset, "minutes": minutes, "call_id": call.object_id}
+
+    @web.post("/promote_mf")
+    def promote_mf(body: dict = Body(...), x_ml_nonce: str = Header(None)):
+        gate(x_ml_nonce, "promote")
+        run_id = _clean(body.get("run_id"))
+        refresh(force=True)
+        if not os.path.exists(f"{VOL}/runs/{run_id}/mf_gen_v1.pt"):
+            raise HTTPException(status_code=404, detail="no such site-plan model version")
+        _write_json(f"{VOL}/model/mf_current.json", {"run_id": run_id, "promoted_at": time.time()})
+        vol.commit()
+        return {"model_version": run_id}
+
+    @web.post("/propose")
+    def propose(body: dict = Body(...), x_ml_nonce: str = Header(None)):
+        """Site-plan proposals from the generative model. The database pins them into the rule engine."""
+        gate(x_ml_nonce, "generate")
+        from . import mf_gen
+        t0 = time.time()
+        run_id = _clean(body.get("run_id"))
+        if not run_id:
+            refresh()
+            cur = _read_json(f"{VOL}/model/mf_current.json")
+            run_id = cur.get("run_id") if cur else None
+        if not run_id:
+            return {"error": "no site-plan model version is live"}
+        try:
+            res = mf_gen.propose(mf_model_for(run_id), body.get("site") or {}, n=int(body.get("n") or 8), temp=float(body.get("temp") or 0.9))
+        except HTTPException:
+            raise
+        except Exception as e:
+            return {"error": "proposal failed: " + repr(e)[:300], "model_version": run_id}
+        res.update(model_version=run_id, seconds=round(time.time() - t0, 2))
+        return res
 
     @web.post("/generate")
     def generate(body: dict = Body(...), x_ml_nonce: str = Header(None)):
