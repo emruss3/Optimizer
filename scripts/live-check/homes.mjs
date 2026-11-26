@@ -52,7 +52,24 @@ for (const p of PARCELS) {
     await page.locator('[data-testid="start-results"] li button').first().click();
     await page.getByText('Site Planner', { exact: true }).first().waitFor({ state: 'visible', timeout: 20000 });
     await page.getByText('Site Planner', { exact: true }).first().click();
-    const ev = await waitFor(page, e => e.homes?.rows?.length > 0, 150000);
+    let ev = await waitFor(page, e => e.homes?.rows?.length > 0, 150000);
+    // let the plan settle: the pattern competition can put its best plan on the sheet after the
+    // first answer (Delk: a 3-lot default, then a 4-lot best). Wait for the competition and for
+    // the houses to hold still for 6 s.
+    {
+      const t0 = Date.now();
+      let last = JSON.stringify(ev?.homes?.pads ?? null), still = Date.now();
+      while (Date.now() - t0 < 120000) {
+        await page.waitForTimeout(1500);
+        const now = await evidence(page).catch(() => null);
+        const key = JSON.stringify(now?.homes?.pads ?? null);
+        if (key !== last) { last = key; still = Date.now(); }
+        if (now) ev = now;
+        const comp = now?.sfV1?.competition?.state;
+        if ((comp == null || comp === 'done' || comp === 'failed') && Date.now() - still > 6000) break;
+      }
+      row.settledMs = Date.now() - t0;
+    }
     row.rows = ev?.homes?.rows ?? null;
     row.lotsShown = ev?.sfV1?.lots ?? null;
     await page.screenshot({ path: path.join(out, `${p.id}-plan.png`) });
@@ -62,7 +79,6 @@ for (const p of PARCELS) {
     if (p.change) {
       const target = row.rows.find(r => r.eligible.length >= 2);
       if (!target) throw new Error('no lot with two or more fitting plans to change');
-      const before = ev.homes.pads;
       const homesBtn = page.locator('[data-testid="home-designs"]').first();
       row.homesButton = { visible: await homesBtn.isVisible().catch(() => false), disabled: await homesBtn.isDisabled().catch(() => null), title: await homesBtn.getAttribute('title').catch(() => null) };
       await homesBtn.click();
@@ -79,6 +95,8 @@ for (const p of PARCELS) {
       await page.locator('nav[aria-label="Buildable stock plans"] button').nth(1).click();
       await page.screenshot({ path: path.join(out, `${p.id}-studio.png`) });
       row.applyLabel = await page.locator('[data-testid="home-stock-apply"]').innerText();
+      // the plan as it stands at the click is the one the change is measured against
+      const before = (await evidence(page))?.homes?.pads ?? [];
       await page.locator('[data-testid="home-stock-apply"]').click();
       const after = (await waitFor(page, e => JSON.stringify(e.homes?.pads) !== JSON.stringify(before), 20000))?.homes?.pads ?? [];
       const changed = after.filter(a => { const b = before.find(x => x.id === a.id); return !b || b.design !== a.design || b.outline !== a.outline; }).map(a => a.id);
