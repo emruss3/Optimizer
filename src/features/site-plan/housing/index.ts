@@ -74,8 +74,8 @@ export {
   rememberHousingChoice,
 } from './handoff';
 
-export { applyHousingDesign, applyStockDesignToHouse, lotsFromElements } from './apply';
-export type { ApplyHousingResult, ApplyHouseResult } from './apply';
+export { applyHousingDesign, applyStockDesignToHouse, applyStockDesignToHouses, lotsFromElements } from './apply';
+export type { ApplyHousingResult, ApplyHouseResult, ApplyHousesResult } from './apply';
 export {
   DEFAULT_HOME_SETBACKS,
   designsWithLots,
