@@ -52,6 +52,8 @@ import {
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
+import { assignmentFor, carryAssignments, type HomeAssignment } from './housing/carry';
+import { homeDesignsDiagnosis } from './housing/diagnosis';
 import {
   applyStockDesignToHouse,
   designsForParcel,
@@ -330,7 +332,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [housingDesignId, setHousingDesignId] = useState<string | null>(null);
   // Home changes on single lots (audit 2026-11-26): the plan before the last
   // change, kept only while the plan on the sheet is the one that change drew.
-  const [homeChange, setHomeChange] = useState<{ before: Element[]; after: Element[]; message: string } | null>(null);
+  const [homeChange, setHomeChange] = useState<{ before: Element[]; after: Element[]; message: string; assignmentsBefore: HomeAssignment[] } | null>(null);
+  // House choices made on this parcel, remembered by the ground they stand on so a re-solve can
+  // put them back where they still fit (housing/carry.ts), and what the last re-solve did with them.
+  const homeAssignmentsRef = useRef<{ parcel: string; list: HomeAssignment[] }>({ parcel: '', list: [] });
+  const homeSetbacksRef = useRef<{ front: number; side: number; rear: number }>({ front: 20, side: 5, rear: 20 });
+  const [homeCarry, setHomeCarry] = useState<{ kept: number; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   // The competition's best on the sheet in place of the default answer, and why
   // (the default drew no lots, the same lots on a worse plan, or fewer lots).
   const [sfV1AutoBest, setSfV1AutoBest] = useState<SfV1AutoBest | null>(null);
@@ -1781,7 +1788,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       optimizationStatus: answer.generatorVersion ?? 'sf_v1',
     } as NonNullable<typeof metrics>;
     setHousingDesignId(null);
-    setPlanOutput([...base, ...drawn], answerMetrics);
+    // house choices made on the last plan go back where they still fit; the rest are reported by lot
+    let planElements = [...base, ...drawn];
+    const remembered = homeAssignmentsRef.current;
+    if (remembered.parcel === parcelIdStr && remembered.list.length > 0) {
+      const carried = carryAssignments(remembered.list, planElements, homeSetbacksRef.current);
+      planElements = carried.elements;
+      homeAssignmentsRef.current = { parcel: parcelIdStr, list: carried.next };
+      setHomeCarry({ kept: carried.kept.length, lost: carried.lost });
+    } else {
+      setHomeCarry(null);
+    }
+    setPlanOutput(planElements, answerMetrics);
     setSubdivisionSummary(null);
     setSfV1Summary(answer);
     setViolations([]);
@@ -1800,7 +1818,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setServerPlanError(null);
     setPlanBasis(answer.basisLine);
     setLotFitSummary(answer.basisLine);
-  }, [contextOgcFid, elements, setPlanOutput, gateNonGesturePlan, parcel?.geometry]);
+  }, [contextOgcFid, elements, setPlanOutput, gateNonGesturePlan, parcel?.geometry, parcelIdStr]);
   renderSfV1Ref.current = renderSfV1Answer;
   elementsRef.current = elements;
   metricsRef.current = metrics;
@@ -2087,6 +2105,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       rear: rpcMetrics?.setbacks?.rear ?? hc?.rear_setback_ft ?? 20,
     };
   }, [rpcMetrics, plannerCtx]);
+  homeSetbacksRef.current = homeSetbacks;
 
   /** Change the home on one lot: only that house changes; the design is
    *  re-checked against that lot first, and a stale choice is refused. */
@@ -2099,7 +2118,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     setViolations(v => v.filter(x => x.code !== 'home-change'));
     setHousingDesignId(applied.design.id);
-    setHomeChange({ before: elements, after: applied.elements, message: `${applied.lotLabel} now carries ${applied.design.name}. The other houses are unchanged.` });
+    const assignmentsBefore = homeAssignmentsRef.current.parcel === parcelIdStr ? homeAssignmentsRef.current.list : [];
+    const a = assignmentFor(applied.houseId, applied.elements, applied.design.id);
+    if (a) {
+      const others = assignmentsBefore.filter(x => !(Math.hypot(x.lotCentre[0] - a.lotCentre[0], x.lotCentre[1] - a.lotCentre[1]) < 0.5));
+      homeAssignmentsRef.current = { parcel: parcelIdStr, list: [...others, a] };
+    }
+    setHomeCarry(null);
+    setHomeChange({ before: elements, after: applied.elements, assignmentsBefore, message: `${applied.lotLabel} now carries ${applied.design.name}. The other houses are unchanged.` });
     setPlanOutput(applied.elements, metrics);
   }, [parcelIdStr, sfV1Shown, elements, metrics, setPlanOutput, homeSetbacks]);
 
@@ -2308,6 +2334,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       .catch(() => undefined)
       .finally(() => setIsGenerating(false));
   }, [drawNeighborhood, runServerMfPlan]);
+
+  /** The product the rail shows is the one on the sheet (audit 11-26, 1530 9th Ave N: the
+   *  townhome alternative was drawn and the rail still read "Apartments"). Choosing apartments
+   *  while the townhome layout is on the sheet goes back to the apartment layout. */
+  const handleProductRail = useCallback((next: 'apartments' | 'townhomes') => {
+    const townhomeLayoutOnSheet = elementsRef.current.some(e => e.id.startsWith('thv3-home-'));
+    if (townhomeLayoutOnSheet) {
+      if (next === 'apartments') {
+        if (productRef.current !== 'apartments') handleProductChange('apartments');
+        else handleLayoutChoose('multifamily');
+      }
+      return;
+    }
+    handleProductChange(next);
+  }, [handleProductChange, handleLayoutChoose]);
 
   /** A row of the neighborhood plans: the user's pick of layout and plan. */
   const handleViewNeighborhood = useCallback((requested: string) => {
@@ -2573,6 +2614,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       lastParcelIdRef.current = currentId;
       planRequests.invalidate();
       setHousingDesignId(null);
+      homeAssignmentsRef.current = { parcel: '', list: [] };
+      setHomeCarry(null);
         hasAutoGeneratedRef.current = false;
       setSolverReady(false);
       planModeRef.current = null;
@@ -3226,6 +3269,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     : displayElements.some(e => e.id.startsWith('thv3-home-') || e.id.startsWith('sfv1-lot-')) ? 'neighborhood'
     : null;
   const layoutShownRequested = layoutShown === 'neighborhood' ? (thV3OnSheet ? 'townhome' : sfV1Shown) : null;
+  // the product as the sheet shows it: the townhome layout on the sheet reads as townhomes
+  const productShown: 'apartments' | 'townhomes' = layoutShown === 'neighborhood' && thV3OnSheet ? 'townhomes' : product;
   const layoutChoice = useMemo(
     () => (isRmLayout
       ? chooseLayout({
@@ -3379,6 +3424,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const stockOk = stockRows.some(r => r.eligible.length > 0);
     return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
   }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows]);
+  // The reasons nothing fits, read only when asked (a 79-lot plan is checked on a sample of 40 lots).
+  const [homesWhyOpen, setHomesWhyOpen] = useState(false);
+  const homesWhy = useMemo(
+    () => (homesWhyOpen && homeDesignsUi.show && !homeDesignsUi.enabled
+      ? homeDesignsDiagnosis({ elements: baseElements, concepts: HOME_DESIGNS, siteBoundary: homeStudioBoundary, stockRows, stockAllowed: sfStockDesigns.length > 0 })
+      : null),
+    [homesWhyOpen, homeDesignsUi.show, homeDesignsUi.enabled, baseElements, homeStudioBoundary, stockRows, sfStockDesigns],
+  );
+  useEffect(() => { if (homeDesignsUi.enabled || !homeDesignsUi.show) setHomesWhyOpen(false); }, [homeDesignsUi.enabled, homeDesignsUi.show]);
   // A home-change undo belongs to the plan it drew: once the sheet moves on, it goes.
   useEffect(() => {
     if (homeChange && elements !== homeChange.after) setHomeChange(null);
@@ -4125,18 +4179,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             <button
               type="button"
               data-testid="home-designs"
-              onClick={() => homeDesignsUi.enabled && setHomesOpen(true)}
-              disabled={!homeDesignsUi.enabled}
+              // nothing fits: the button opens the reasons instead of sitting disabled (audit 11-26, 330 Athens Way)
+              onClick={() => (homeDesignsUi.enabled ? setHomesOpen(true) : setHomesWhyOpen(o => !o))}
+              aria-expanded={homeDesignsUi.enabled ? undefined : homesWhyOpen}
               title={
                 homeDesignsUi.enabled
-                  ? // Parcel-level stock can enable the control even when the selected lot has none —
-                    // studio empty state covers that; do not promise fits here.
-                    'Browse buildable stock plans and concept studies for house lots on this plan'
-                  : HOME_DESIGNS_NONE_FIT_TITLE
+                  ? 'Browse buildable stock plans and concept studies for house lots on this plan'
+                  : `${HOME_DESIGNS_NONE_FIT_TITLE} — select to see why`
               }
-              className="px-3 py-1.5 border-l border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={`px-3 py-1.5 border-l border-gray-200 bg-white hover:bg-gray-50 ${homeDesignsUi.enabled ? 'text-gray-700' : 'text-gray-400'}`}
             >
-              Buildable plans
+              Buildable plans{homeDesignsUi.enabled ? '' : ' · none fit'}
             </button>
           )}
           {!classicDrawing && scene && scene.buildings.length > 0 && (
@@ -4231,9 +4284,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }}
         />
       </React.Suspense>}
+      {homesWhyOpen && homesWhy && <div role="region" aria-label="Why no home design fits" data-testid="home-designs-why" className="border-y border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-800">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-medium">{HOME_DESIGNS_NONE_FIT_TITLE}: {homesWhy.summary}.</p>
+            <ul className="mt-1 list-disc pl-4">{homesWhy.lines.map(l => <li key={l}>{l}</li>)}</ul>
+          </div>
+          <button type="button" className="underline" onClick={() => setHomesWhyOpen(false)}>Close</button>
+        </div>
+      </div>}
       {homeChange && !activeHome && <div role="status" data-testid="home-change-status" className="flex flex-wrap items-center justify-between gap-2 border-y border-sky-200 bg-sky-50 px-4 py-1 text-xs text-sky-950">
         <span>{homeChange.message}</span>
-        <button type="button" className="underline" onClick={() => { const before = homeChange.before; setHomeChange(null); setPlanOutput(before, metrics); }}>Undo home change</button></div>}
+        <button type="button" className="underline" onClick={() => { const before = homeChange.before; homeAssignmentsRef.current = { parcel: parcelIdStr, list: homeChange.assignmentsBefore }; setHomeChange(null); setPlanOutput(before, metrics); }}>Undo home change</button></div>}
+      {homeCarry && !homeChange && !activeHome && (homeCarry.kept > 0 || homeCarry.lost.length > 0) && <div role="status" data-testid="home-carry-status" className={`border-y px-4 py-1 text-xs ${homeCarry.lost.length ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-sky-200 bg-sky-50 text-sky-950'}`}>
+        {homeCarry.kept > 0 && <span>Kept {homeCarry.kept} home choice{homeCarry.kept === 1 ? '' : 's'} on the new plan. </span>}
+        {homeCarry.lost.map(l => <span key={l.lotLabel + l.designId} className="block">Could not keep {l.designId.replace(/^abhp:/, '')} on {l.lotLabel}: {l.reason}.</span>)}
+      </div>}
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
         <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>
         <button type="button" className="underline" onClick={() => { setHouseStudy(null); setHomePreviewFocus(0); }}>Return to base scheme</button></div>}
@@ -4407,8 +4473,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             lotFitSummary={lotFitSummary}
             staticPlan={planModeRef.current === 'sf' || planModeRef.current === 'mf-server'}
             resolvedTypology={plannerCtx?.context.typology ?? null}
-            product={product}
-            onProductChange={plannerCtx?.context.typology === 'multifamily' ? handleProductChange : undefined}
+            product={productShown}
+            onProductChange={plannerCtx?.context.typology === 'multifamily' ? handleProductRail : undefined}
             alternatives={alternatives}
             alternativeScores={solveScores}
             rejectedSolves={solveRejected}
