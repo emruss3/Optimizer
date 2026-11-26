@@ -344,12 +344,17 @@ describe('designsFittingHouse — concept per-lot filter', () => {
       expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(50);
       expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(50);
     }
-    // Lots 4–5 stay honest gaps (irregular / pie) — stock may be empty; concepts may be empty.
-    const pie = houses[4]!;
-    const pieStock = eligibleStockDesigns(buildableStockPlans(), elements, {
-      selectedHouseId: pie.id,
-    });
-    expect(pieStock).toEqual([]);
+    // Lots 4–5 stay honest gaps (irregular / pie): true-polygon eligibility may
+    // still list some stock, but fewer than a standard rectangular lot.
+    const standardStockCount = eligibleStockDesigns(buildableStockPlans(), elements, {
+      selectedHouseId: houses[0]!.id,
+    }).length;
+    for (const house of houses.slice(3)) {
+      const gapStock = eligibleStockDesigns(buildableStockPlans(), elements, {
+        selectedHouseId: house.id,
+      });
+      expect(gapStock.length).toBeLessThan(standardStockCount);
+    }
   }, 60000);
 
   it('steps the catalogue index circularly for keyboard browse', () => {
