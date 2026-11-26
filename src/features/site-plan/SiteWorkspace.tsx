@@ -3909,8 +3909,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         : null,
       utilizationPct:
         !draftMode && capturePct != null ? Math.round(capturePct * 10) / 10 : null,
+      // audit 11-26 home switch: what each lot can take, and what each house carries
+      homes: stockRows.length
+        ? {
+            rows: stockRows.map(r => ({ lot: r.lotLabel, lotId: r.lotId, house: r.houseId, eligible: r.eligible.map(e => e.design.planNumber), problem: r.lotProblem })),
+            pads: displayElements
+              .filter(e => e.type === 'building' && e.properties?.house)
+              .map(e => ({ id: e.id, design: (e.properties?.housingDesignId as string | undefined) ?? null, outline: JSON.stringify(e.geometry).length + ':' + JSON.stringify(e.geometry).slice(-40) })),
+          }
+        : null,
     };
-  }, [routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, detachedSfOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
+  }, [stockRows, routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, detachedSfOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel

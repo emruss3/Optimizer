@@ -12,11 +12,11 @@ on:
         required: true
         default: https://optimizer-omega-three.vercel.app
       check:
-        description: map (both tile sources) or search (the five audit parcels, address and parcel number, into the planner)
+        description: map (both tile sources), search (the five audit parcels into the planner) or homes (stock plans per lot and a one-lot home change; needs app_ref)
         required: true
         default: map
         type: choice
-        options: [map, search]
+        options: [map, search, homes]
       app_ref:
         description: optional - build this git ref on the runner and check it against the live database instead of app_url (for a branch whose preview is login-protected)
         required: false
@@ -62,6 +62,12 @@ jobs:
           APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
           OUT: live-check
         run: node scripts/live-check/search.mjs
+      - name: Check stock plans per lot and a one-lot home change
+        if: inputs.check == 'homes'
+        env:
+          APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
+          OUT: live-check
+        run: node scripts/live-check/homes.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:
