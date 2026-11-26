@@ -108,34 +108,54 @@ for (const p of PARCELS) {
       await page.getByText('Undo home change').first().click();
       const undone = (await waitFor(page, e => JSON.stringify(e.homes?.pads) === JSON.stringify(before), 15000))?.homes?.pads;
       row.undoRestored = JSON.stringify(undone) === JSON.stringify(before);
-      // re-solve: change the home again, draw another competition plan, then the first one again;
-      // the choice must come back on its lot (housing/carry.ts)
-      const onSheet = await page.locator('[data-testid^="sfv1-cand-onsheet-"]').first().getAttribute('data-testid').catch(() => null);
-      const other = page.locator('[data-testid^="sfv1-cand-view-"]:not([disabled])').first();
-      if (row.undoRestored && onSheet && await other.count()) {
+      // Redo puts the change back
+      await page.getByText('Redo').first().click().catch(() => {});
+      row.redo = (await waitFor(page, e => e.homes?.pads?.find(x => x.id === target.house)?.design === row.changedDesign, 15000))?.homes?.pads?.find(x => x.id === target.house)?.design === row.changedDesign;
+
+      // a mixed masterplan: three different plans on three lots of the same scheme
+      const applyOn = async (house, nth) => {
         await homesBtn.click();
         await lotSel.waitFor({ state: 'visible', timeout: 30000 });
-        await lotSel.selectOption(target.house);
-        await page.locator('nav[aria-label="Buildable stock plans"] button').nth(1).click();
+        await lotSel.selectOption(house);
+        await page.locator('nav[aria-label="Buildable stock plans"] button').nth(nth).click();
         await page.locator('[data-testid="home-stock-apply"]').click();
-        const chosen = (await waitFor(page, e => e.homes?.pads?.find(x => x.id === target.house)?.design, 15000))?.homes?.pads?.find(x => x.id === target.house)?.design ?? null;
-        const firstRequested = onSheet.replace('sfv1-cand-onsheet-', '');
-        row.resolve = { from: firstRequested, to: (await other.getAttribute('data-testid'))?.replace('sfv1-cand-view-', '') ?? null, chosen };
+        return (await waitFor(page, e => { const d = e.homes?.pads?.find(x => x.id === house)?.design; return d && d !== 'pending'; }, 15000))?.homes?.pads?.find(x => x.id === house)?.design ?? null;
+      };
+      const lots3 = row.rows.filter(r => r.eligible.length >= 3).slice(0, 3);
+      const mix = {};
+      if (lots3.length === 3) {
+        mix[lots3[0].house] = row.changedDesign; // already carries the redone change if it is the target
+        if (lots3[0].house !== target.house) mix[lots3[0].house] = await applyOn(lots3[0].house, 0);
+        mix[lots3[1].house] = await applyOn(lots3[1].house, 1);
+        mix[lots3[2].house] = await applyOn(lots3[2].house, 2);
+        const pads = (await evidence(page))?.homes?.pads ?? [];
+        row.mix = Object.fromEntries(Object.keys(mix).map(h => [h, pads.find(x => x.id === h)?.design ?? null]));
+        row.mixDistinct = new Set(Object.values(row.mix).filter(Boolean)).size === 3;
+        await page.screenshot({ path: path.join(out, `${p.id}-mix.png`) });
+      }
+
+      // re-solve: draw another competition plan, then the first one again; every choice must come back on its lot
+      const firstRequested = (await evidence(page))?.sfV1?.shown ?? null;
+      const other = page.locator('[data-testid^="sfv1-cand-view-"]:not([disabled])').first();
+      if (row.mix && firstRequested && await other.count()) {
+        row.resolve = { from: firstRequested, to: (await other.getAttribute('data-testid'))?.replace('sfv1-cand-view-', '') ?? null };
         await other.click();
         await waitFor(page, e => e.sfV1?.shown && e.sfV1.shown !== firstRequested, 60000);
-        row.resolve.otherStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200) || null;
+        row.resolve.otherStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) || null;
         await page.locator(`[data-testid="sfv1-cand-view-${firstRequested}"]`).click();
-        const back = await waitFor(page, e => e.sfV1?.shown === firstRequested && e.homes?.pads?.find(x => x.id === target.house)?.design === chosen, 60000);
-        row.resolve.backStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200) || null;
-        row.resolve.restored = back?.homes?.pads?.find(x => x.id === target.house)?.design === chosen && chosen != null;
+        const back = await waitFor(page, e => e.sfV1?.shown === firstRequested && Object.entries(row.mix).every(([h, d]) => e.homes?.pads?.find(x => x.id === h)?.design === d), 60000);
+        row.resolve.backStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) || null;
+        row.resolve.restored = Object.entries(row.mix).every(([h, d]) => back?.homes?.pads?.find(x => x.id === h)?.design === d);
         await page.screenshot({ path: path.join(out, `${p.id}-resolved.png`) });
       } else {
-        row.resolve = { skipped: !onSheet ? 'no competition plan on the sheet' : 'no other plan to draw' };
+        row.resolve = { skipped: !row.mix ? 'fewer than three lots with three fitting plans' : !firstRequested ? 'no by-right plan shown' : 'no other competition plan to draw' };
       }
       if (!row.listMatchesEvidence) throw new Error('studio list differs from the eligibility result');
       if (!row.onlyTargetChanged) throw new Error(`changed ${changed.join(',') || 'nothing'}, expected only ${target.house}`);
       if (!row.undoRestored) throw new Error('Undo did not restore the plan');
-      if (row.resolve && row.resolve.restored === false) throw new Error(`after a re-solve and back, ${target.house} did not carry ${row.resolve.chosen} again`);
+      if (row.redo === false) throw new Error('Redo did not put the change back');
+      if (row.mix && !row.mixDistinct) throw new Error(`three lots did not carry three different plans: ${JSON.stringify(row.mix)}`);
+      if (row.resolve && row.resolve.restored === false) throw new Error(`after a re-solve and back, the three choices did not all return: ${JSON.stringify(row.mix)}`);
     }
   } catch (e) {
     row.problem = String(e.message ?? e).slice(0, 240);
@@ -151,6 +171,8 @@ fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new 
 for (const r of results) {
   console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | lots: ${(r.summary ?? []).join(' · ')}` +
     (r.changedPads ? ` | changed ${r.changedPads.join(',')} → ${r.changedDesign} | only target: ${r.onlyTargetChanged} | undo: ${r.undoRestored} | "${r.applyLabel}"` : '') +
+    (r.redo != null ? ` | redo: ${r.redo}` : '') +
+    (r.mix ? ` | mix ${JSON.stringify(r.mix)} distinct: ${r.mixDistinct}` : '') +
     (r.resolve ? ` | re-solve ${JSON.stringify(r.resolve)}` : '') +
     (r.problem ? ` | ${r.problem}` : ''));
 }

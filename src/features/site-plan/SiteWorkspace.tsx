@@ -52,8 +52,10 @@ import {
   type SfV1Options, type SfV1Summary, type SfV1Response, type SfV1Site, type SfV1CandidatesResponse, bestRequestedOf } from './api/sfV1Plan';
 import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
-import { assignmentFor, carryAssignments, type HomeAssignment } from './housing/carry';
+import { assignmentFor, assignmentsFromElements, carryAssignments, commitConcept, type HomeAssignment } from './housing/carry';
+import { parentLotOf } from './housing/eligibility';
 import { homeDesignsDiagnosis } from './housing/diagnosis';
+import { homesSchedule } from './housing/schedule';
 import {
   applyStockDesignToHouse,
   designsForParcel,
@@ -332,11 +334,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [housingDesignId, setHousingDesignId] = useState<string | null>(null);
   // Home changes on single lots (audit 2026-11-26): the plan before the last
   // change, kept only while the plan on the sheet is the one that change drew.
-  const [homeChange, setHomeChange] = useState<{ before: Element[]; after: Element[]; message: string; assignmentsBefore: HomeAssignment[] } | null>(null);
+  // Home changes as an undo/redo history (masterplan audit 11-26). It belongs to the plan the last
+  // step drew: once the sheet moves on (a re-solve, another option), the history goes.
+  type HomeStep = { elements: Element[]; assignments: HomeAssignment[]; message: string };
+  const [homeHistory, setHomeHistory] = useState<{ past: HomeStep[]; future: HomeStep[]; current: Element[]; message: string } | null>(null);
   // House choices made on this parcel, remembered by the ground they stand on so a re-solve can
   // put them back where they still fit (housing/carry.ts), and what the last re-solve did with them.
   const homeAssignmentsRef = useRef<{ parcel: string; list: HomeAssignment[] }>({ parcel: '', list: [] });
   const homeSetbacksRef = useRef<{ front: number; side: number; rear: number }>({ front: 20, side: 5, rear: 20 });
+  const homeStudioBoundaryRef = useRef<Element['geometry'] | null>(null);
   const [homeCarry, setHomeCarry] = useState<{ kept: number; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   // The competition's best on the sheet in place of the default answer, and why
   // (the default drew no lots, the same lots on a worse plan, or fewer lots).
@@ -1790,6 +1796,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setHousingDesignId(null);
     // house choices made on the last plan go back where they still fit; the rest are reported by lot
     let planElements = [...base, ...drawn];
+    // a reopened saved plan carries its choices on its houses; remember them before the plan is replaced
+    if (homeAssignmentsRef.current.parcel !== parcelIdStr || homeAssignmentsRef.current.list.length === 0) {
+      const onPlan = assignmentsFromElements(elements);
+      if (onPlan.length) homeAssignmentsRef.current = { parcel: parcelIdStr, list: onPlan };
+    }
     const remembered = homeAssignmentsRef.current;
     if (remembered.parcel === parcelIdStr && remembered.list.length > 0) {
       const carried = carryAssignments(remembered.list, planElements, homeSetbacksRef.current);
@@ -2107,6 +2118,40 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [rpcMetrics, plannerCtx]);
   homeSetbacksRef.current = homeSetbacks;
 
+  /** One home change as a history step: the plan and the remembered choices before it, then the new plan. */
+  const commitHomeStep = useCallback((next: Element[], houseId: string, designId: string, kind: 'stock' | 'concept', message: string) => {
+    const assignmentsBefore = homeAssignmentsRef.current.parcel === parcelIdStr ? homeAssignmentsRef.current.list : [];
+    const a = assignmentFor(houseId, next, designId, kind);
+    if (a) {
+      const others = assignmentsBefore.filter(x => !(Math.hypot(x.lotCentre[0] - a.lotCentre[0], x.lotCentre[1] - a.lotCentre[1]) < 0.5));
+      homeAssignmentsRef.current = { parcel: parcelIdStr, list: [...others, a] };
+    }
+    setHomeCarry(null);
+    setHomeHistory(h => ({
+      past: [...(h && h.current === elements ? h.past : []), { elements, assignments: assignmentsBefore, message }],
+      future: [],
+      current: next,
+      message,
+    }));
+    setPlanOutput(next, metrics);
+  }, [parcelIdStr, elements, metrics, setPlanOutput]);
+
+  /** Undo or redo one home change; only while the plan on the sheet is the one the history drew. */
+  const stepHomeHistory = useCallback((dir: 'undo' | 'redo') => {
+    setHomeHistory(h => {
+      if (!h || h.current !== elements) return null;
+      const from = dir === 'undo' ? h.past : h.future;
+      const to = from[from.length - 1];
+      if (!to) return h;
+      const here: HomeStep = { elements: h.current, assignments: homeAssignmentsRef.current.list, message: to.message };
+      homeAssignmentsRef.current = { parcel: parcelIdStr, list: to.assignments };
+      setPlanOutput(to.elements, metrics);
+      return dir === 'undo'
+        ? { past: h.past.slice(0, -1), future: [...h.future, here], current: to.elements, message: `Undid: ${to.message}` }
+        : { past: [...h.past, here], future: h.future.slice(0, -1), current: to.elements, message: to.message };
+    });
+  }, [elements, metrics, parcelIdStr, setPlanOutput]);
+
   /** Change the home on one lot: only that house changes; the design is
    *  re-checked against that lot first, and a stale choice is refused. */
   const handleHousingDesignSelect = useCallback((designId: string, houseId: string) => {
@@ -2118,16 +2163,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     setViolations(v => v.filter(x => x.code !== 'home-change'));
     setHousingDesignId(applied.design.id);
-    const assignmentsBefore = homeAssignmentsRef.current.parcel === parcelIdStr ? homeAssignmentsRef.current.list : [];
-    const a = assignmentFor(applied.houseId, applied.elements, applied.design.id);
-    if (a) {
-      const others = assignmentsBefore.filter(x => !(Math.hypot(x.lotCentre[0] - a.lotCentre[0], x.lotCentre[1] - a.lotCentre[1]) < 0.5));
-      homeAssignmentsRef.current = { parcel: parcelIdStr, list: [...others, a] };
+    commitHomeStep(applied.elements, applied.houseId, applied.design.id, 'stock', `${applied.lotLabel} now carries ${applied.design.name}. The other houses are unchanged.`);
+  }, [parcelIdStr, sfV1Shown, elements, homeSetbacks, commitHomeStep]);
+
+  /** Commit a concept study on one lot: it becomes the plan (not a preview). */
+  const handleConceptApply = useCallback((designId: string, houseId: string) => {
+    const res = commitConcept(designId, houseId, elements, homeStudioBoundaryRef.current);
+    if (!res.ok) {
+      setViolations(v => [...v.filter(x => x.code !== 'home-change'), { code: 'home-change', message: `Home not changed: ${res.reason}. The plan is unchanged.`, severity: 'warning' }]);
+      return;
     }
-    setHomeCarry(null);
-    setHomeChange({ before: elements, after: applied.elements, assignmentsBefore, message: `${applied.lotLabel} now carries ${applied.design.name}. The other houses are unchanged.` });
-    setPlanOutput(applied.elements, metrics);
-  }, [parcelIdStr, sfV1Shown, elements, metrics, setPlanOutput, homeSetbacks]);
+    setViolations(v => v.filter(x => x.code !== 'home-change'));
+    setHouseStudy(null);
+    const house = res.elements.find(e => e.id === houseId);
+    const lot = house ? parentLotOf(house, res.elements) : null;
+    commitHomeStep(res.elements, houseId, designId, 'concept', `${lot?.name ?? house?.name ?? 'The lot'} now carries ${res.name} (concept study). The other houses are unchanged.`);
+  }, [elements, commitHomeStep]);
 
   /** "View this plan" on a row of the pattern competition: `best` and
    *  `structured` arrive whole with the competition; the default is the plan
@@ -3398,6 +3449,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       coordinates: scene.parcel.polygons[0]!.map((r) => r.map((p) => scene.frame.fromFeet(p))),
     };
   }, [scene]);
+  homeStudioBoundaryRef.current = homeStudioBoundary;
   // One eligibility result per detached house, shared by the sidebar summary,
   // the studio list and apply (housing/eligibility.ts).
   const stockRows = useMemo(
@@ -3435,8 +3487,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   useEffect(() => { if (homeDesignsUi.enabled || !homeDesignsUi.show) setHomesWhyOpen(false); }, [homeDesignsUi.enabled, homeDesignsUi.show]);
   // A home-change undo belongs to the plan it drew: once the sheet moves on, it goes.
   useEffect(() => {
-    if (homeChange && elements !== homeChange.after) setHomeChange(null);
-  }, [elements, homeChange]);
+    if (homeHistory && elements !== homeHistory.current) setHomeHistory(null);
+  }, [elements, homeHistory]);
   useEffect(() => {
     if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
   }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
@@ -4272,6 +4324,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           stockPlans={sfStockDesigns}
           stockSetbacks={homeSetbacks}
           stockEligibilityRows={stockRows}
+          onApplyConcept={(designId, houseId) => { handleConceptApply(designId, houseId); handleSceneSelection([houseId]); }}
           onApplyStock={sfStockDesigns.length > 0 ? (designId, houseId) => { handleHousingDesignSelect(designId, houseId); handleSceneSelection([houseId]); } : undefined}
           onClose={closeHomes}
           onPreview={study => {
@@ -4293,10 +4346,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <button type="button" className="underline" onClick={() => setHomesWhyOpen(false)}>Close</button>
         </div>
       </div>}
-      {homeChange && !activeHome && <div role="status" data-testid="home-change-status" className="flex flex-wrap items-center justify-between gap-2 border-y border-sky-200 bg-sky-50 px-4 py-1 text-xs text-sky-950">
-        <span>{homeChange.message}</span>
-        <button type="button" className="underline" onClick={() => { const before = homeChange.before; homeAssignmentsRef.current = { parcel: parcelIdStr, list: homeChange.assignmentsBefore }; setHomeChange(null); setPlanOutput(before, metrics); }}>Undo home change</button></div>}
-      {homeCarry && !homeChange && !activeHome && (homeCarry.kept > 0 || homeCarry.lost.length > 0) && <div role="status" data-testid="home-carry-status" className={`border-y px-4 py-1 text-xs ${homeCarry.lost.length ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-sky-200 bg-sky-50 text-sky-950'}`}>
+      {homeHistory && !activeHome && <div role="status" data-testid="home-change-status" className="flex flex-wrap items-center justify-between gap-2 border-y border-sky-200 bg-sky-50 px-4 py-1 text-xs text-sky-950">
+        <span>{homeHistory.message}</span>
+        <span className="flex gap-3">
+          <button type="button" className="underline disabled:opacity-40 disabled:no-underline" disabled={!homeHistory.past.length} onClick={() => stepHomeHistory('undo')}>Undo home change</button>
+          <button type="button" className="underline disabled:opacity-40 disabled:no-underline" disabled={!homeHistory.future.length} onClick={() => stepHomeHistory('redo')}>Redo</button>
+        </span></div>}
+      {homeCarry && !homeHistory && !activeHome && (homeCarry.kept > 0 || homeCarry.lost.length > 0) && <div role="status" data-testid="home-carry-status" className={`border-y px-4 py-1 text-xs ${homeCarry.lost.length ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-sky-200 bg-sky-50 text-sky-950'}`}>
         {homeCarry.kept > 0 && <span>Kept {homeCarry.kept} home choice{homeCarry.kept === 1 ? '' : 's'} on the new plan. </span>}
         {homeCarry.lost.map(l => <span key={l.lotLabel + l.designId} className="block">Not kept on this plan: {l.designId.replace(/^abhp:/, '')} on {l.lotLabel} — {l.reason}. It comes back on a plan where it fits.</span>)}
       </div>}
@@ -4435,6 +4491,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                     parcelId: parcelIdStr,
                     rows: stockRows,
                     onOpen: homeDesignsUi.enabled ? () => setHomesOpen(true) : null,
+                    schedule: homesSchedule(displayElements),
                   }
                 : null}
             />

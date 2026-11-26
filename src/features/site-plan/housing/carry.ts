@@ -17,8 +17,37 @@ import { applyStockDesignToHouse } from './apply';
 import { housingDesignById } from './catalogue';
 import { detachedHouses, parentLotOf, ringAreaSf } from './eligibility';
 import { pointInPolygon, type Pt, type Setbacks } from './lotFit';
+import { HOME_DESIGNS } from './originalDesigns';
+import { placeHome } from './placement';
+
+/** The parts a concept placement adds for a house (porch, walk, pad, carriage house). */
+export const homePartsOf = (houseId: string) => (e: Element) => e.id.startsWith(houseId + '-home-');
+
+/** The plan with a house's concept parts taken off, ready for that house to be placed again. */
+export function withoutHomeParts(elements: Element[], houseId: string): Element[] {
+  const isPart = homePartsOf(houseId);
+  return elements.filter(e => !isPart(e));
+}
+
+/**
+ * Commit a concept placement on one house: the placement's plan, with any parts an earlier
+ * concept left on that house removed first (placeHome was asked on the plan without them).
+ */
+export function commitConcept(designId: string, houseId: string, elements: Element[], siteBoundary?: Element['geometry'] | null):
+  { ok: true; elements: Element[]; name: string } | { ok: false; reason: string } {
+  const design = HOME_DESIGNS.find(d => d.id === designId);
+  if (!design) return { ok: false, reason: 'that concept study is not in the catalogue' };
+  const base = withoutHomeParts(elements, houseId);
+  const house = base.find(e => e.id === houseId);
+  if (!house) return { ok: false, reason: 'that house is no longer on the plan — the scheme was redrawn' };
+  const fit = placeHome(design, house, base, siteBoundary);
+  if (!fit.placement) return { ok: false, reason: fit.reason ?? `${design.name} does not fit this lot` };
+  return { ok: true, elements: fit.placement.elements, name: design.name };
+}
 
 export interface HomeAssignment {
+  /** stock: a publisher plan (housing catalogue); concept: an original concept study */
+  kind?: 'stock' | 'concept';
   designId: string;
   lotLabel: string;
   /** centre and area of the lot the choice was made on, EPSG:3857 / ground sf */
@@ -45,13 +74,31 @@ function centre(r: Pt[]): Pt {
 }
 
 /** The assignment for a house that now carries `designId`, read off its lot. */
-export function assignmentFor(houseId: string, elements: Element[], designId: string): HomeAssignment | null {
+export function assignmentFor(houseId: string, elements: Element[], designId: string, kind: 'stock' | 'concept' = 'stock'): HomeAssignment | null {
   const house = elements.find(e => e.id === houseId);
   if (!house) return null;
   const lot = parentLotOf(house, elements);
   const r = lot ? ring(lot) : null;
   if (!lot || !r) return null;
-  return { designId, lotLabel: lot.name ?? lot.id, lotCentre: centre(r), lotAreaSf: ringAreaSf(r) };
+  return { kind, designId, lotLabel: lot.name ?? lot.id, lotCentre: centre(r), lotAreaSf: ringAreaSf(r) };
+}
+
+/**
+ * The choices a plan already carries (a reopened saved plan): every detached house whose
+ * design was placed by a change — a stock plan (it records its lot) or a concept study.
+ */
+export function assignmentsFromElements(elements: Element[]): HomeAssignment[] {
+  const out: HomeAssignment[] = [];
+  for (const h of detachedHouses(elements)) {
+    const p = h.properties ?? {};
+    const id = typeof p.housingDesignId === 'string' ? p.housingDesignId : null;
+    if (!id || p.housingPlacementStatus !== 'placed') continue;
+    const concept = HOME_DESIGNS.some(d => d.id === id);
+    if (!concept && typeof p.lotId !== 'string') continue; // a stamp without a placement, not a choice
+    const a = assignmentFor(h.id, elements, id, concept ? 'concept' : 'stock');
+    if (a) out.push(a);
+  }
+  return out;
 }
 
 /** Put the remembered choices back onto a new plan where they still fit. */
@@ -74,7 +121,9 @@ export function carryAssignments(assignments: HomeAssignment[], elements: Elemen
       next.push(a);
       continue;
     }
-    const res = applyStockDesignToHouse({ designId: a.designId, houseId: house.id, elements: els, setbacks });
+    const res = a.kind === 'concept'
+      ? (() => { const c = commitConcept(a.designId, house.id, els); return c.ok ? { ok: true as const, elements: c.elements, lotLabel: parentLotOf(house, els)?.name ?? a.lotLabel } : c; })()
+      : applyStockDesignToHouse({ designId: a.designId, houseId: house.id, elements: els, setbacks });
     if (!res.ok) {
       lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: res.reason });
       next.push(a);
@@ -82,7 +131,7 @@ export function carryAssignments(assignments: HomeAssignment[], elements: Elemen
     }
     els = res.elements;
     kept.push({ lotLabel: res.lotLabel, designId: a.designId });
-    const again = assignmentFor(house.id, els, a.designId);
+    const again = assignmentFor(house.id, els, a.designId, a.kind ?? 'stock');
     if (again) next.push(again);
   }
   return { elements: els, kept, lost, next };
