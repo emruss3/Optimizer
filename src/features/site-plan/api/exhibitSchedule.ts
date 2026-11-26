@@ -139,7 +139,7 @@ export type ExhibitProduct =
       contextUnverified?: boolean;
       revision?: string | null;
     }
-  | { product: 'detached'; revision?: string | null }
+  | { product: 'detached'; revision?: string | null; homes?: ScheduleRow[] }
   | { product: 'conditional'; input: ExhibitScheduleInput; revision?: string | null }
   | { product: 'none'; revision?: string | null };
 
@@ -154,6 +154,8 @@ export interface ResolveExhibitProductInput {
   guestGraded?: boolean | null;
   /** Detached SF only — must not include thv3 (see isDetachedSfPlanElement). */
   detachedSfOnSheet?: boolean;
+  /** the homes on a detached plan, by design (housing/schedule homesScheduleRows) */
+  homes?: ScheduleRow[];
   conditional?: ExhibitScheduleInput | null;
   contextUnverified?: boolean;
   revision?: string | null;
@@ -186,7 +188,7 @@ export function resolveExhibitProduct(i: ResolveExhibitProductInput): ExhibitPro
       revision,
     };
   }
-  if (i.detachedSfOnSheet) return { product: 'detached', revision };
+  if (i.detachedSfOnSheet) return { product: 'detached', revision, ...(i.homes?.length ? { homes: i.homes } : {}) };
   if (i.conditional) return { product: 'conditional', input: i.conditional, revision };
   return { product: 'none', revision };
 }
@@ -197,6 +199,10 @@ export function scheduleForProduct(product: ExhibitProduct): ScheduleRow[] {
     case 'apartment':
     case 'conditional':
       return exhibitSchedule(product.input);
+    case 'detached':
+      // each design on the plan, with its lots and what kind of geometry it is (PR 221 audit:
+      // "reference export should carry per-lot family/version and classify schematic stock")
+      return product.homes ?? [];
     case 'townhome':
       return exhibitSchedule({
         guestStalls: product.guestStalls,
