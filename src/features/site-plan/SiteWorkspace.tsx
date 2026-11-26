@@ -3834,11 +3834,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const withBreak = routeBreak && routeBreakLabel
       ? [...marked, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: routeBreakLabel }]
       : marked;
-    if (!showFrontage || !line || line.length < 2) return withBreak;
+    // every bay a car cannot reach from the street, marked on the plan with its stalls (PR 221 audit:
+    // "show route resolution or a documented failing result per bay")
+    const unreached = displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated
+      ? (mfAccess.bayChecks ?? []).filter(b => !b.served).slice(0, 24)
+      : [];
+    const withBays = unreached.length
+      ? [...withBreak, ...unreached.map(b => {
+          const c = b.ring.slice(0, -1).reduce((acc, p) => [acc[0] + (p[0] ?? 0) / (b.ring.length - 1), acc[1] + (p[1] ?? 0) / (b.ring.length - 1)], [0, 0]);
+          return { kind: 'highlight' as const, line: b.ring, x: c[0], y: c[1], text: `Not reached from the street${b.stalls != null ? ` · ${b.stalls} stalls` : ''}` };
+        })]
+      : withBreak;
+    if (!showFrontage || !line || line.length < 2) return withBays;
     const mid = line[Math.floor(line.length / 2)] ?? line[0]!;
     const prev = line[Math.floor(line.length / 2) - 1] ?? line[0]!;
-    return [...withBreak, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
-  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel, garageEntries]);
+    return [...withBays, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
+  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel, garageEntries, displayElements, mfAccess]);
 
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation

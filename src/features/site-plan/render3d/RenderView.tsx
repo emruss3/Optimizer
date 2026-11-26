@@ -17,6 +17,8 @@ import { ArchStylePicker } from '../ui/ArchStylePicker';
 import { Render4kPanel } from './Render4kPanel';
 import type { RenderCameraId } from './exportJob';
 
+const RENDER_SERVICE = Boolean((import.meta.env.VITE_RENDER_SERVICE_URL as string | undefined)?.trim());
+
 export interface RenderViewProps {
   elements: Element[];
   /** The parcel outline, EPSG:3857. */
@@ -459,8 +461,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         </button>}
         {showy && ready && scene.buildings.length > 0 && (
           <button type="button" className={btn} data-testid="render-4k" aria-expanded={renderCamera !== null}
-            onClick={() => setRenderCamera(previous => previous ? null : lastShot.current?.shot === 'street' ? 'street' : lastShot.current?.shot === 'approach' ? 'approach' : 'drone')}>
-            Render 4K
+            onClick={() => setRenderCamera(previous => previous ? null : lastShot.current?.shot === 'street' ? 'street' : lastShot.current?.shot === 'approach' ? 'approach' : 'drone')}
+            // without a render service there is no finished image to give: the label says what you get (PR 221 audit)
+            title={RENDER_SERVICE ? 'Render a 3840 × 2160 image of this revision' : 'Export this revision\'s scene and cameras for an offline 4K render in Blender — no finished image is produced here'}>
+            {RENDER_SERVICE ? 'Render 4K' : '4K scene pack'}
           </button>
         )}
         <button className={btn} onClick={() => setPresent(p => !p)} data-testid="render-present" aria-pressed={present} title={present ? 'Back to the workspace (Esc)' : 'Fill the window with the rendering'}>{present ? 'Exit' : 'Present'}</button>
