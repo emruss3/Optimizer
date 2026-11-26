@@ -11,6 +11,7 @@
 import React from 'react';
 import type { Element, SiteMetrics } from '../../../engine/types';
 import { reconcileUnitMix, residualWords } from './unitMixReconcile';
+import { parkingCounts, parkingCountsDisagree, parkingSupplyForAdequacy, parkingSupplyParts } from './parkingCounts';
 
 export interface BuiltSummary {
   units: number;
@@ -110,8 +111,12 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   const noun = townhomes ? (units === 1 ? 'townhome' : 'townhomes') : (units === 1 ? 'apartment' : 'apartments');
 
   const gsf = metrics?.totalBuiltSF && metrics.totalBuiltSF > 0 ? Math.round(metrics.totalBuiltSF) : null;
-  const stalls = typeof metrics?.stallsProvided === 'number' ? Math.round(metrics.stallsProvided) : null;
-  const stallsPerUnit = stalls != null && units > 0 ? Math.round((stalls / units) * 10) / 10 : null;
+  // parking: every count with its name when they differ (audit 11-26, 6420 Holt Rd: "0 stalls" was
+  // the street-reachable count over 150 drawn); one figure and a per-unit ratio when they agree
+  const counts = parkingCounts(metrics);
+  const split = parkingCountsDisagree(counts);
+  const stalls = split ? parkingSupplyForAdequacy(counts) : (counts.drawn ?? counts.reported);
+  const stallsPerUnit = !split && stalls != null && units > 0 ? Math.round((stalls / units) * 10) / 10 : null;
 
   const composition = compositionWords(buildings[0].properties?.compositionNote as string | undefined, buildings.length);
   const parking = parkingWords(metrics, stalls);
@@ -120,7 +125,9 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   const headline = [
     `${units} ${noun} in ${where}`,
     gsf != null ? `${gsf.toLocaleString()} GSF` : null,
-    stalls != null ? `${stalls} stall${stalls === 1 ? '' : 's'}${stallsPerUnit != null ? ` (${stallsPerUnit} per unit)` : ''}` : null,
+    split
+      ? `stalls: ${parkingSupplyParts(counts).join(', ')}`
+      : stalls != null ? `${stalls} stall${stalls === 1 ? '' : 's'}${stallsPerUnit != null ? ` (${stallsPerUnit} per unit)` : ''}` : null,
   ].filter(Boolean).join(' · ');
 
   const first = composition.charAt(0).toUpperCase() + composition.slice(1);

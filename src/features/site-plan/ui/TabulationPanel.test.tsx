@@ -46,7 +46,7 @@ describe('TabulationPanel reads the same plan as the header (0 Whites Creek Pike
     expect(total.endsWith('92')).toBe(true);
     expect(rows.find(r => r.startsWith('1 Bed'))).toContain('22');
     expect(screen.getByText(/Parking required: 92 from the engine/)).toBeTruthy();
-    expect(screen.getByTestId('tab-stalls-reported').textContent).toContain('engine summary 85');
+    expect(screen.getByTestId('tab-stalls-line').textContent).toContain('85 in the engine summary');
   });
 
   it('without an engine requirement the typology defaults stand, and say so', () => {
@@ -75,7 +75,8 @@ describe('TabulationPanel — the requirement column is honest about what it kno
       properties: { use: 'residential', floors: 3, unitMix: [{ type: '1br', count: 53, avgSqft: 900, rentPerMonth: 0, parkingRatio: 1.5 }] },
     } as unknown as Element;
     render(<TabulationPanel elements={[bar]} metrics={{ totalUnits: 53, stallsProvided: 292, stallsRequired: 92, stallsDrawn: 292, stallsReported: 85, parkingStatus: 'needs_verification' } as SiteMetrics} plannerCtx={null} />);
-    expect(screen.getByTestId('tab-stalls-reported').textContent).toBe('(engine summary 85 · needs verification)');
+    expect(screen.getByTestId('tab-stalls-reported').textContent).toBe('(needs verification)');
+    expect(screen.getByTestId('tab-stalls-line').textContent).toMatch(/drawn · 85 in the engine summary/);
     expect(screen.getByText(/provided count needs verification/)).toBeTruthy();
   });
 });

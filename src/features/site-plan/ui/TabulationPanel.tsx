@@ -6,6 +6,7 @@ import {
   type UnitMixEntry,
 } from '../../../engine/model';
 import type { PlannerContextResponse } from '../api/plannerContext';
+import { parkingCounts, parkingCountsDisagree, parkingCountsLine } from './parkingCounts';
 
 const TYPE_LABELS: Record<UnitMixEntry['type'], string> = {
   studio: 'Studio',
@@ -227,9 +228,13 @@ const TabulationPanel: React.FC<{
               : undefined
           }
         >
-          Stalls <b>{metrics?.stallsProvided ?? 0} / {notEvaluated ? 'not evaluated' : (metrics?.stallsRequired ?? 0)}</b>
-          {typeof metrics?.stallsDrawn === 'number' && typeof metrics?.stallsReported === 'number' && metrics.stallsDrawn !== metrics.stallsReported && (
-            <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">(engine summary {metrics.stallsReported}{metrics.parkingCountNote ? ' · difference accounted for' : ''}{unverified ? ' · needs verification' : ''})</span>
+          {parkingCountsDisagree(parkingCounts(metrics)) ? (
+            <>
+              Stalls <b data-testid="tab-stalls-line">{parkingCountsLine(parkingCounts(metrics))}</b>
+              <span data-testid="tab-stalls-reported" className="ml-1 text-[10px] text-amber-700">({metrics?.parkingCountNote ? 'difference accounted for · ' : ''}{unverified ? 'needs verification' : 'counts differ'})</span>
+            </>
+          ) : (
+            <>Stalls <b>{metrics?.stallsProvided ?? 0} / {notEvaluated ? 'not evaluated' : (metrics?.stallsRequired ?? 0)}</b></>
           )}
         </span>
         {metrics?.totalUnits ? (

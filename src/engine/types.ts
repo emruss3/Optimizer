@@ -136,6 +136,8 @@ export interface SiteMetrics {
    */
   stallsDrawn?: number;
   stallsReported?: number;
+  /** Stalls on bays a car can reach from the street through the drawn drives (mfAccess); absent when not checked. */
+  stallsReachable?: number;
   /**
    * Whether the parking figures can be stood on (the cohort retest, 2026-11-09):
    * `verified` when the drawn bays and the engine's summary agree (or only one

@@ -3599,7 +3599,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // Display metrics: stallsProvided stands on curb-reachable supply when known.
   const accessAwareMetrics = useMemo(() => {
     if (!metrics || stallsUsable == null) return metrics;
-    return { ...metrics, stallsProvided: stallsUsable };
+    // adequacy stands on the reachable supply; the count keeps its own name
+    return { ...metrics, stallsProvided: stallsUsable, stallsReachable: stallsUsable };
   }, [metrics, stallsUsable]);
   const routeBreakLabel = routeBreak
     ? routeBreak.gapFt != null
@@ -4646,7 +4647,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               <TabulationPanel
                 elements={displayElements}
                 // the quick massing tabulates its own mix; the solved plan's metrics are not its totals
-                metrics={seedViewOn ? null : metrics}
+                metrics={seedViewOn ? null : accessAwareMetrics}
                 plannerCtx={plannerCtx}
                 // the same acres the header and the sheets divide by
                 acres={mappedAcres ?? parcel.deeded_acres}

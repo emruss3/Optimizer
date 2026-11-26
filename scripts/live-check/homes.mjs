@@ -64,9 +64,13 @@ for (const p of PARCELS) {
       if (!target) throw new Error('no lot with two or more fitting plans to change');
       const before = ev.homes.pads;
       const homesBtn = page.locator('[data-testid="home-designs"]').first();
+      row.homesButton = { visible: await homesBtn.isVisible().catch(() => false), disabled: await homesBtn.isDisabled().catch(() => null), title: await homesBtn.getAttribute('title').catch(() => null) };
       await homesBtn.click();
       const lotSel = page.locator('[data-testid="home-stock-lot"]').first();
-      await lotSel.waitFor({ state: 'visible', timeout: 20000 });
+      await lotSel.waitFor({ state: 'visible', timeout: 20000 }).catch(async (e) => {
+        row.dialog = (await page.locator('[role="dialog"]').first().innerText().catch(() => 'no dialog')).replace(/\s+/g, ' ').slice(0, 300);
+        throw e;
+      });
       await lotSel.selectOption(target.house);
       const listed = await page.locator('nav[aria-label="Buildable stock plans"] button strong').allInnerTexts();
       row.studioListed = listed;
@@ -95,6 +99,7 @@ for (const p of PARCELS) {
     await page.screenshot({ path: path.join(out, `${p.id}-problem.png`) }).catch(() => {});
   }
   row.errors = errors.slice(0, 5);
+  if (row.problem) console.log(`  diagnostics ${p.id}: button ${JSON.stringify(row.homesButton ?? null)} dialog ${JSON.stringify(row.dialog ?? null)} errors ${JSON.stringify(row.errors)}`);
   results.push(row);
   await context.close();
 }

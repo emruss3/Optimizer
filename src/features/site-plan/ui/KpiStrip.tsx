@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
 import type { SiteMetrics } from '../../../engine/types';
 import type { InvestmentAnalysis } from '../../../types/parcel';
 import type { MfMoney } from '../api/generateMfPlan';
+import { parkingCounts, parkingCountsDisagree, parkingCountsLine } from './parkingCounts';
 
 /** Financial UI parked by directive — computation dormant, not deleted. */
 const SHOW_YIELD_CHIP = false;
@@ -193,8 +194,8 @@ const KpiStrip: React.FC<{
         <Stat
           label="Stalls"
           value={
-            parkingUnverified
-              ? `${metrics.stallsDrawn ?? stallsProvided} drawn · ${metrics.stallsReported ?? '?'} reported / ${stallsRequired}`
+            parkingCountsDisagree(parkingCounts(metrics))
+              ? parkingCountsLine(parkingCounts(metrics)) ?? `${stallsProvided} / ${stallsRequired}`
               : parkingNotEvaluated
                 ? `${stallsProvided} / not evaluated`
                 : `${stallsProvided} / ${stallsRequired}`
@@ -264,7 +265,7 @@ const KpiStrip: React.FC<{
           className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
         >
           <XCircle className="w-3.5 h-3.5" />
-          Parking needs verification · {metrics.stallsDrawn ?? stallsProvided} drawn / {metrics.stallsReported ?? '?'} reported · {stallsRequired} required
+          Parking needs verification · {parkingCountsLine(parkingCounts(metrics)) ?? `${stallsProvided} provided · ${stallsRequired} required`}
         </div>
       ) : metrics.conditional ? (
         // A sketch that depends on an assumed easement or a flood scenario is

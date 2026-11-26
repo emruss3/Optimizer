@@ -166,9 +166,9 @@ describe('KpiStrip — parking the evidence cannot settle (the cohort retest, 20
         investment={null}
       />
     );
-    expect(screen.getByTestId('kpi-parking-verify').textContent).toBe('Parking needs verification · 292 drawn / 85 reported · 92 required');
+    expect(screen.getByTestId('kpi-parking-verify').textContent).toBe('Parking needs verification · 292 drawn · 85 in the engine summary · 92 required');
     expect(screen.queryByText(/Checks passed/)).toBeNull();
-    expect(screen.getByText('292 drawn · 85 reported / 92')).toBeTruthy();
+    expect(screen.getByText('292 drawn · 85 in the engine summary · 92 required')).toBeTruthy();
   });
 
   it('a requirement that was not evaluated reads as unknown, and the badge scopes its claim (1289 Currey Rd)', () => {
