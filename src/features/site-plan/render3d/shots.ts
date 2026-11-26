@@ -265,3 +265,20 @@ function extent(pts: Array<[number, number]>): number {
   const [x, y] = centre(pts);
   return Math.max(0, ...pts.map(p => Math.hypot(p[0] - x, p[1] - y)));
 }
+
+/**
+ * Why no eye-level view was found, in words a reviewer can act on (PR 221 audit: "street failure
+ * should have actual camera and reason"). Read from the same inputs the camera searches use.
+ */
+export function shotUnavailableReason(
+  shot: 'street' | 'approach',
+  subjects: Subject[], roads: number[][][], approaches: ApproachAnchor[],
+): string {
+  if (!subjects.some(s => s.points.length >= 3)) return 'no building is drawn to frame';
+  if (shot === 'approach') {
+    if (!approaches.some(a => a.kind === 'walk')) return 'no entrance walk is drawn, so there is no entrance to stand at';
+    return 'every point along the entrance walks has its view of the door blocked (buildings, trees or ground)';
+  }
+  if (!roads.length) return 'no street is mapped beside the buildings, so there is no street to stand on';
+  return 'every eye-level position on the street side with the whole building in frame is blocked (neighbouring buildings, trees or ground), or the building faces away from the mapped street';
+}

@@ -16,7 +16,7 @@ on:
         required: true
         default: map
         type: choice
-        options: [map, search, homes]
+        options: [map, search, homes, views]
       app_ref:
         description: optional - build this git ref on the runner and check it against the live database instead of app_url (for a branch whose preview is login-protected)
         required: false
@@ -68,6 +68,12 @@ jobs:
           APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
           OUT: live-check
         run: node scripts/live-check/homes.mjs
+      - name: Check 3D views, cameras and timings on a laptop viewport
+        if: inputs.check == 'views'
+        env:
+          APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
+          OUT: live-check
+        run: node scripts/live-check/views.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:

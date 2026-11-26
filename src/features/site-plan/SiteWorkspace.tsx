@@ -55,7 +55,8 @@ import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { assignmentFor, assignmentsFromElements, carryAssignments, commitConcept, type HomeAssignment } from './housing/carry';
 import { parentLotOf } from './housing/eligibility';
 import { homeDesignsDiagnosis } from './housing/diagnosis';
-import { homesSchedule } from './housing/schedule';
+import { homesSchedule, homesScheduleRows } from './housing/schedule';
+import { mark, markOnce } from '../../lib/timeline';
 import {
   applyStockDesignToHouse,
   designsForParcel,
@@ -192,6 +193,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const [dockOpen, setDockOpenState] = useState(() => remembered(DOCK_KEY) ?? false);
   const setDockOpen = useCallback((open: boolean) => { remember(DOCK_KEY, open); setDockOpenState(open); }, []);
   const [dockTab, setDockTab] = useState<'tabulation' | 'schemes' | 'flags' | 'results' | 'profile'>('tabulation');
+  // On a laptop-height screen the 3D view gets the room: an open schedule dock folds while 3D is
+  // shown and comes back in 2D (PR 221 audit: Main's 3D was a shallow strip under the tables).
+  const dockFoldedFor3dRef = useRef(false);
+  useEffect(() => {
+    const short = typeof window !== 'undefined' && window.innerHeight < 900;
+    if (viewMode === '3d' && short && dockOpen) { dockFoldedFor3dRef.current = true; setDockOpenState(false); }
+    if (viewMode === '2d' && dockFoldedFor3dRef.current) { dockFoldedFor3dRef.current = false; setDockOpenState(true); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
   // The drawing scene path (2026-11-11). `?drawing=classic` turns it off: the
   // plan, the 3D view and the export then draw exactly as they did before it.
   const classicDrawing = useMemo(() => {
@@ -3490,6 +3500,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     [homesWhyOpen, homeDesignsUi.show, homeDesignsUi.enabled, baseElements, homeStudioBoundary, stockRows, sfStockDesigns],
   );
   useEffect(() => { if (homeDesignsUi.enabled || !homeDesignsUi.show) setHomesWhyOpen(false); }, [homeDesignsUi.enabled, homeDesignsUi.show]);
+  // Session milestones (lib/timeline): the planner shell, the compiled context, each settled plan revision.
+  useEffect(() => { mark('planner-shell', { ogcFid: parcelIdStr }); }, [parcelIdStr]);
+  useEffect(() => {
+    if (plannerCtx) markOnce(`ctx|${parcelIdStr}|${plannerCtx.context_id ?? ''}`, 'context-compiled', { ogcFid: parcelIdStr, typology: plannerCtx.context?.typology ?? null });
+  }, [plannerCtx, parcelIdStr]);
+  useEffect(() => {
+    const rev = scene?.identity.revision;
+    if (rev && !isGenerating && !isGeneratingLots) markOnce(`rev|${parcelIdStr}|${rev}`, 'plan-revision', { ogcFid: parcelIdStr, revision: rev, buildings: scene?.buildings.length ?? 0 });
+  }, [scene, isGenerating, isGeneratingLots, parcelIdStr]);
   // A home-change undo belongs to the plan it drew: once the sheet moves on, it goes.
   useEffect(() => {
     if (homeHistory && elements !== homeHistory.current) setHomeHistory(null);
@@ -3781,6 +3800,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       guestTarget: thV3Summary?.guestTarget ?? null,
       guestGraded: guest?.graded ?? false,
       detachedSfOnSheet,
+      homes: detachedSfOnSheet ? homesScheduleRows(displayElements) : undefined,
       conditional: conditionalInput,
       contextUnverified: contextState === 'unavailable',
       revision: scene?.identity.revision ?? null,

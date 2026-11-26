@@ -18,6 +18,22 @@ export interface HomeRow {
 export interface DesignTotal { design: string; kind: HomeRow['kind']; homes: number; lots: string[]; footprintSf: number; heatedSf: number | null }
 export interface HomesTotals { homes: number; footprintSf: number; heatedSf: number; heatedUnknown: number }
 
+/** The schedule as sheet rows: a summary, then one row per design with its lots, kind and area. */
+export function homesScheduleRows(elements: Element[]): Array<{ label: string; value: string }> {
+  const s = homesSchedule(elements);
+  if (!s.rows.length) return [];
+  const kindWords: Record<HomeRow['kind'], string> = {
+    stock: 'publisher stock plan · listing footprint, schematic (construction drawings licensed separately)',
+    concept: 'Parcel Proforma concept study · schematic',
+    engine: 'engine catalogue home',
+  };
+  const out = [{ label: 'Homes', value: `${s.all.homes} homes · ${s.totals.length} design${s.totals.length === 1 ? '' : 's'}${s.all.heatedSf > 0 ? ` · ${s.all.heatedSf.toLocaleString()} heated sf stated` : ''}${s.all.heatedUnknown ? ` (${s.all.heatedUnknown} without a stated area)` : ''}` }];
+  for (const t of s.totals) {
+    out.push({ label: t.design, value: `${t.lots.join(', ')} · ${kindWords[t.kind]}${t.heatedSf ? ` · ${t.heatedSf.toLocaleString()} heated sf` : ''}` });
+  }
+  return out;
+}
+
 export function homesSchedule(elements: Element[]): { rows: HomeRow[]; totals: DesignTotal[]; all: HomesTotals } {
   const rows: HomeRow[] = detachedHouses(elements).map(h => {
     const p = h.properties ?? {};

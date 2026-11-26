@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { mark } from './timeline';
 
 export interface ParcelHit {
   ogcFid: number;
@@ -50,8 +51,10 @@ export async function searchParcels(query: string, limit = 10, signal?: AbortSig
     const cancelled = new Promise<never>((_, reject) => {
       controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
     });
+    const started = typeof performance !== 'undefined' ? performance.now() : 0;
     const { data, error } = await Promise.race([request(), cancelled]);
-    if (error) throw new Error(error.message ?? String(error));
+    if (error) { mark('search-failed', { error: error.message ?? String(error) }); throw new Error(error.message ?? String(error)); }
+    mark('search-results', { rows: (data ?? []).length, ms: Math.round((typeof performance !== 'undefined' ? performance.now() : 0) - started) });
     return ((data ?? []) as ParcelSearchRow[]).map(p => ({
       ogcFid: p.ogc_fid,
       address: p.address || 'Unknown Address',
@@ -66,6 +69,7 @@ export async function searchParcels(query: string, limit = 10, signal?: AbortSig
 
 /** Open a parcel the way a map click does. `planner` goes straight to its plan. */
 export function openParcel(hit: { ogcFid: number | string; address?: string | null; zoning?: string | null }, planner = false): void {
+  mark(planner ? 'planner-requested' : 'parcel-opened', { ogcFid: String(hit.ogcFid) });
   document.dispatchEvent(new CustomEvent('openParcelDrawer', {
     detail: { ogc_fid: String(hit.ogcFid), address: hit.address ?? undefined, zoning: hit.zoning ?? undefined, openPlanner: planner },
   }));

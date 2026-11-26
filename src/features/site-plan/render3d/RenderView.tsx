@@ -11,11 +11,12 @@ import { buildSiteModel, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
-import { aerialShot, approachShot, prominentSubject, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
+import { aerialShot, approachShot, prominentSubject, shotUnavailableReason, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 import { Render4kPanel } from './Render4kPanel';
 import type { RenderCameraId } from './exportJob';
+import { mark, markOnce } from '../../../lib/timeline';
 
 const RENDER_SERVICE = Boolean((import.meta.env.VITE_RENDER_SERVICE_URL as string | undefined)?.trim());
 
@@ -128,7 +129,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // the last preset the camera was put on, so a capture can be regenerated from it
   const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number; lift?: number } | null>(null);
   const [shotNote, setShotNote] = useState<string | null>(null);
-  const [, setShotStamp] = useState(0);
+  const [shotStamp, setShotStamp] = useState(0);
   // lens shift of the street view (render3d/shots): 1 is none
   const lift = useRef(1);
   const lens = useCallback((camera: THREE.PerspectiveCamera, w: number, h: number) => {
@@ -168,7 +169,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : null;
       r.controls.minDistance = arrival && shot === 'approach' ? 0.55 : 8;
       r.controls.maxPolarAngle = arrival && shot === 'approach' ? 2.05 : Math.PI / 2;
-      setShotNote((shot === 'street' || shot === 'approach') && !arrival ? 'A clear entrance view is unavailable for this scheme. Showing the aerial.' : null);
+      const asked = shot === 'street' ? 'Street view' : 'Entrance view';
+      setShotNote((shot === 'street' || shot === 'approach') && !arrival
+        ? `${asked} requested · showing the aerial instead: ${shotUnavailableReason(shot, subjects, roads, entranceWalks)}.`
+        : null);
       if (arrival) {
         // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
         lift.current = arrival.lift;
@@ -190,6 +194,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       }
     }
     setShotStamp(s => s + 1);
+    mark('camera', { requested: shot, shown: lastShot.current?.shot ?? null, revision: scene.identity.revision });
     r.controls.update();
     r.request();
   }, []);
@@ -292,6 +297,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       frame('iso');
     }
     setReady(true);
+    markOnce(`3d|${scene.identity.revision}`, "3d-interactive", { revision: scene.identity.revision, buildings: scene.buildings.length });
     setBuilt(n => n + 1);
     let active = true;
     const refresh = () => { if (active) request(); };
@@ -472,6 +478,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       {scene.buildings.length === 0 && (
         <div className="absolute top-11 left-1/2 -translate-x-1/2 bg-white/95 border border-gray-300 text-gray-800 rounded-lg px-3 py-1.5 text-[11px] shadow-sm max-w-md" data-testid="empty-scheme" role="status">
           No building is drawn here: the current plan places none on this parcel. The view shows the land and what surrounds it. The plan's own reason is in the workspace.
+        </div>
+      )}
+      {lastShot.current && scene.buildings.length > 0 && shotStamp > 0 && (
+        // the camera as it stands, named, with any fallback kept beside it (PR 221 audit)
+        <div className="absolute bottom-8 left-2 max-w-[60%] rounded bg-white/90 border border-gray-300 px-2 py-0.5 text-[10.5px] text-gray-700 shadow-sm" data-testid="camera-label" data-camera={lastShot.current.shot} data-fallback={shotNote ? 'true' : 'false'}>
+          Camera: {lastShot.current.basis}{shotNote ? ' · fallback' : ''}
         </div>
       )}
       {shotNote && scene.buildings.length > 0 && (
