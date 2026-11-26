@@ -1,44 +1,27 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { HousingDesignPicker } from './HousingDesignPicker';
-import { DELK_COTTAGE_1754_00010, DELK_PARCEL_ID } from '../housing';
+import { DELK_PARCEL_ID, buildableStockPlans, stockEligibility } from '../housing';
+import fixture from '../api/__fixtures__/delk-675423.json';
+import { sfV1ToElements, type SfV1Response } from '../api/sfV1Plan';
 
-describe('HousingDesignPicker', () => {
-  it('lists plan identity, heated area, stories, beds/baths, parking and source', () => {
-    render(
-      <HousingDesignPicker
-        parcelId={DELK_PARCEL_ID}
-        designs={[DELK_COTTAGE_1754_00010]}
-        selectedId={null}
-        fits={null}
-        onSelect={() => undefined}
-      />,
-    );
-    const btn = screen.getByTestId('housing-design-1754-00010');
-    expect(btn.textContent).toMatch(/1,141 sf heated/);
-    expect(btn.textContent).toMatch(/1 story/);
-    expect(btn.textContent).toMatch(/3 bed · 2 ba/);
-    expect(btn.textContent).toMatch(/parking pad \(no garage\)/);
-    expect(btn.textContent).toMatch(/America's Best House Plans/);
+const rows = () => stockEligibility(buildableStockPlans(), sfV1ToElements(fixture.deep as unknown as SfV1Response).elements);
+
+describe('HousingDesignPicker (stock plans lot by lot)', () => {
+  it('counts the plans that fit each lot and says why a lot takes none', () => {
+    render(<HousingDesignPicker parcelId={DELK_PARCEL_ID} rows={rows()} onOpen={() => undefined} />);
+    expect(screen.getByTestId('housing-fit-summary').textContent).toBe('3 of 5 lots can change');
+    const items = screen.getByTestId('housing-lot-counts').querySelectorAll('li');
+    expect(items).toHaveLength(5);
+    expect(Number(items[0]!.getAttribute('data-eligible'))).toBeGreaterThanOrEqual(2);
+    expect(items[4]!.textContent).toMatch(/Lot 5: none fit — .*(pie|irregular)/);
   });
 
-  it('reports fit and unplaced reasons when selected', () => {
-    const onSelect = vi.fn();
-    render(
-      <HousingDesignPicker
-        parcelId={DELK_PARCEL_ID}
-        designs={[DELK_COTTAGE_1754_00010]}
-        selectedId={DELK_COTTAGE_1754_00010.id}
-        fits={[
-          { status: 'placed', reason: 'trial cleared setbacks on lot 1 with porch to the lane on the 40-ft face', placement: null },
-          { status: 'unplaced', reason: 'lot 5: pie lot — resolve edges from actual frontage', placement: null },
-        ]}
-        onSelect={onSelect}
-      />,
-    );
-    expect(screen.getByTestId('housing-fit-summary').textContent).toBe('1 placed · 1 open');
-    expect(screen.getByTestId('housing-unplaced').textContent).toMatch(/pie lot/);
-    fireEvent.click(screen.getByTestId('housing-design-1754-00010'));
-    expect(onSelect).toHaveBeenCalledWith(DELK_COTTAGE_1754_00010.id);
+  it('opens the studio instead of applying a plan to every lot', () => {
+    const onOpen = vi.fn();
+    render(<HousingDesignPicker parcelId={DELK_PARCEL_ID} rows={rows()} onOpen={onOpen} />);
+    expect(screen.queryByTestId('housing-design-1754-00010')).toBeNull();
+    fireEvent.click(screen.getByTestId('housing-change-home'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 });

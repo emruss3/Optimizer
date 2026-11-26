@@ -6,7 +6,8 @@ import { hasPhotorealElevation, photorealElevationSrc } from './elevationAssets'
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
-import { designsFittingHouse, eligibleStockDesigns, stepHomeDesignIndex } from './homeDesignsGate';
+import { designsFittingHouse, stepHomeDesignIndex } from './homeDesignsGate';
+import { DEFAULT_HOME_SETBACKS, detachedHouses, houseEligibility, stockEligibility } from './eligibility';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
 
@@ -20,8 +21,10 @@ interface Props {
   designs?: readonly HomeDesign[];
   /** Buildable publisher stock plans (defaults to the ABHP citation catalogue). */
   stockPlans?: readonly HousingDesignRecord[];
-  /** Stamp a stock plan onto the scheme pads / lots. */
-  onApplyStock?: (designId: string) => void;
+  /** Setbacks the fit uses (the zoning brief's); a lot's own engine setbacks win. */
+  stockSetbacks?: { front: number; side: number; rear: number };
+  /** Change the home on one house's lot to this stock plan. */
+  onApplyStock?: (designId: string, houseId: string) => void;
   onClose: () => void;
   onPreview: (placement: HomePlacement) => void;
 }
@@ -70,6 +73,7 @@ export default function HomeStudio({
   siteBoundary,
   designs = HOME_DESIGNS,
   stockPlans,
+  stockSetbacks = DEFAULT_HOME_SETBACKS,
   onApplyStock,
 }: Props) {
   // Explicit empty list means “no SF stock for this session” (MF/CS) — do not
@@ -112,14 +116,21 @@ export default function HomeStudio({
   }, [designs, selectedHouse, elements, siteBoundary]);
   const emptyEligible = catalogue.length === 0;
 
-  // Per-selected-lot catalogue filter for buildable stock.
-  const stock = useMemo(
-    () =>
-      eligibleStockDesigns(stockAll, elements, {
-        selectedHouseId: selectedHouse?.id ?? (houseId || null),
-      }),
-    [stockAll, elements, selectedHouse?.id, houseId],
+  // Buildable stock for the selected lot: the shared eligibility result, so
+  // the list, the preview and Change home all agree (stock is detached only).
+  const stockHouses = useMemo(() => detachedHouses(elements), [elements]);
+  const stockRows = useMemo(
+    () => (stockAll.length ? stockEligibility(stockAll, elements, stockSetbacks) : []),
+    [stockAll, elements, stockSetbacks],
   );
+  const stockRow = useMemo(
+    () => {
+      const h = stockHouses.find((x) => x.id === houseId);
+      return h ? stockRows.find((r) => r.houseId === h.id) ?? houseEligibility(h, stockAll, elements, stockSetbacks) : null;
+    },
+    [stockHouses, stockRows, houseId, stockAll, elements, stockSetbacks],
+  );
+  const stock = useMemo(() => stockRow?.eligible.map((e) => e.design) ?? [], [stockRow]);
 
   useEffect(() => {
     if (stockIndex >= stock.length) setStockIndex(0);
@@ -263,21 +274,22 @@ export default function HomeStudio({
           {mode === 'stock' ? (
             <>
               <nav aria-label="Buildable stock plans">
-                {houses.length > 0 && (
+                {stockHouses.length > 0 && (
                   <div className="home-stock-lot">
                     <label>
-                      Lot filter{' '}
+                      Lot{' '}
                       <select
-                        aria-label="House lot to filter stock plans"
+                        aria-label="House lot to change"
+                        data-testid="home-stock-lot"
                         value={houseId}
                         onChange={(e) => {
                           setHouseId(e.target.value);
                           setStockIndex(0);
                         }}
                       >
-                        {houses.map((e) => (
-                          <option key={e.id} value={e.id}>
-                            {e.name}
+                        {stockRows.map((r) => (
+                          <option key={r.houseId} value={r.houseId}>
+                            {r.lotLabel} · {r.eligible.length} plan{r.eligible.length === 1 ? '' : 's'} fit
                           </option>
                         ))}
                       </select>
@@ -285,10 +297,14 @@ export default function HomeStudio({
                   </div>
                 )}
                 {stock.length === 0 ? (
-                  <p className="home-empty-eligible">
+                  <p className="home-empty-eligible" data-testid="home-stock-none">
                     {stockAll.length === 0
                       ? 'No SF stock on this parcel.'
-                      : 'No stock plans fit this selected lot. Pick another house lot.'}
+                      : stockRow?.lotProblem
+                        ? `No stock plan can be placed on ${stockRow.lotLabel}: ${stockRow.lotProblem}.`
+                        : stockRow
+                          ? `None of the ${stockAll.length} stock plans fit ${stockRow.lotLabel}${stockRow.rejected[0] ? ` — for example ${stockRow.rejected[0].design.planNumber}: ${stockRow.rejected[0].reason}` : ''}.`
+                          : 'Pick a house lot.'}
                   </p>
                 ) : (
                   stock.map((h, i) => (
@@ -355,29 +371,30 @@ export default function HomeStudio({
                     </div>
                     <section className="home-placement">
                       <h4>Apply on this site</h4>
-                      {houses.length && onApplyStock ? (
+                      {stockRow && onApplyStock ? (
                         <>
                           <div>
                             <button
                               type="button"
                               className="home-primary"
+                              data-testid="home-stock-apply"
                               onClick={() => {
-                                onApplyStock(plan.id);
+                                onApplyStock(plan.id, stockRow.houseId);
                                 onClose();
                               }}
                             >
-                              Apply to house lots
+                              Change home on {stockRow.lotLabel}
                             </button>
                           </div>
-                          <p>
-                            Stamps this stock plan’s listing-overall footprint, parking, and citation onto
-                            the drawn house pads that clear setbacks. Construction drawings are licensed
+                          <p data-testid="home-stock-fit">
+                            {stockRow.eligible.find((e) => e.design.id === plan.id)?.fit.reason ?? ''}. Only this
+                            lot changes: its pad takes this plan’s listing-overall footprint in the placed
+                            position; the other houses keep their plans. Construction drawings are licensed
                             from the publisher separately.
                           </p>
                           <p className="home-fit-hint">
-                            Showing {stock.length} plan{stock.length === 1 ? '' : 's'} that fit
-                            {selectedHouse ? ` “${selectedHouse.name}”` : ' this scheme'}. Use ← → to browse
-                            without losing the lot.
+                            Showing the {stock.length} plan{stock.length === 1 ? '' : 's'} that fit {stockRow.lotLabel}
+                            {' '}of {stockAll.length}. Use ← → to browse without losing the lot.
                           </p>
                         </>
                       ) : houses.length ? (
@@ -398,8 +415,8 @@ export default function HomeStudio({
                   <p role="status">
                     {stockPlans !== undefined && stockPlans.length === 0
                       ? 'No SF stock on this parcel — apply is limited to single-family / by-right detached sessions (or a labeled rezone).'
-                      : selectedHouse
-                        ? `No stock plans fit “${selectedHouse.name}”. Switch lots above, or close and adjust the scheme.`
+                      : stockRow
+                        ? `No stock plans fit ${stockRow.lotLabel}. Switch lots above, or close and adjust the scheme.`
                         : 'No buildable stock plans are loaded.'}
                   </p>
                 )}
