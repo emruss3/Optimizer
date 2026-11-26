@@ -1866,18 +1866,29 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
     }
     boxW = Math.ceil(boxW) + pad * 2;
     const boxH = rows.reduce((s, r) => s + r.h + r.gap, 0) + pad * 2 - 2;
-    // right-aligned, leaving the north arrow its 50 px
-    const x = Math.max(12, cssW - 52 - boxW);
+    // right-aligned, leaving the north arrow its 50 px — unless that covers the selected element
+    // (PR 221 audit: the title block sat over the house being changed). Then the first free corner.
+    const sel: Array<{ x0: number; y0: number; x1: number; y1: number }> = [];
+    for (const el of elements) {
+      if (!selectedElements.has(el.id)) continue;
+      const b = ElementService.getElementBounds(el);
+      sel.push({ x0: viewport.panX + zoom * b.minX, x1: viewport.panX + zoom * b.maxX, y0: viewport.panY - zoom * b.maxY, y1: viewport.panY - zoom * b.minY });
+    }
+    const cssH = ctx.canvas.height / (ctx.canvas.width / Math.max(1, cssW));
+    const covers = (bx: number, by: number) => sel.some(r => r.x1 > bx && r.x0 < bx + boxW && r.y1 > by && r.y0 < by + boxH);
+    const corners: Array<[number, number]> = [[Math.max(12, cssW - 52 - boxW), y], [12, y], [12, Math.max(y, cssH - boxH - 40)]];
+    const [x, yy] = corners.find(([cx, cy]) => !covers(cx, cy)) ?? corners[0]!;
+    const yPos = yy;
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     ctx.strokeStyle = '#E5E7EB';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(x, y, boxW, boxH, 6);
+    ctx.roundRect(x, yPos, boxW, boxH, 6);
     ctx.fill();
     ctx.stroke();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    let cy = y + pad;
+    let cy = yPos + pad;
     for (const r of rows) {
       cy += r.gap;
       ctx.font = r.font;
@@ -1886,7 +1897,7 @@ export const SitePlanCanvas: React.FC<SitePlanCanvasProps> = ({
       cy += r.h;
     }
     ctx.restore();
-  }, [sheet, groundScale]);
+  }, [sheet, groundScale, elements, selectedElements, viewport.panX, viewport.panY]);
 
   // Render function
   const render = useCallback(() => {
