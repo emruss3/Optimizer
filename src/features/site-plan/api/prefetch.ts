@@ -17,7 +17,7 @@ import { compilePlannerContext } from './plannerContext';
 import { fetchParcelTopo } from './parcelTopo';
 import { fetchPlannerNeighbors } from './neighbors';
 import { fetchSeedPlan } from './seedPlan';
-import { fetchPermittedUses, normalizePermittedUses, pickDefaultUse, defaultUseFromZoningBase } from './designContext';
+import { fetchPermittedUses, normalizePermittedUses, pickDefaultUse, defaultUseFromZoningBase, isNonResidentialOnly } from './designContext';
 
 export interface PrefetchDeps {
   topo: (id: number) => Promise<unknown>;
@@ -25,7 +25,20 @@ export interface PrefetchDeps {
   seed: (id: number) => Promise<unknown>;
   permittedUses: (id: number) => Promise<unknown>;
   compile: (id: number, use: string) => Promise<unknown>;
-  useFor: (raw: unknown, zoning: string | null | undefined) => string;
+  /** The use the planner compiles first, or null when there is none to
+   *  compile (a commercial-only parcel: the planner shows its capacity card). */
+  useFor: (raw: unknown, zoning: string | null | undefined) => string | null;
+}
+
+/**
+ * The use the planner compiles first, the same choice SiteWorkspace makes, or
+ * null on a commercial-only parcel: no use there compiles, and the server
+ * declines the single_family placeholder, so there is nothing worth starting.
+ */
+export function plannerUseFor(raw: unknown, zoning: string | null | undefined): string | null {
+  const list = normalizePermittedUses(raw as never);
+  if (isNonResidentialOnly(list)) return null;
+  return (list.length ? pickDefaultUse(list) : defaultUseFromZoningBase(zoning ?? undefined)) || 'single_family';
 }
 
 const defaultDeps: PrefetchDeps = {
@@ -34,11 +47,7 @@ const defaultDeps: PrefetchDeps = {
   seed: id => fetchSeedPlan(id),
   permittedUses: id => fetchPermittedUses(id),
   compile: (id, use) => compilePlannerContext(id, use),
-  // the same choice the planner makes before its first compile (SiteWorkspace)
-  useFor: (raw, zoning) => {
-    const list = normalizePermittedUses(raw as never);
-    return (list.length ? pickDefaultUse(list) : defaultUseFromZoningBase(zoning ?? undefined)) || 'single_family';
-  },
+  useFor: plannerUseFor,
 };
 
 const started = new Set<number>();
@@ -52,7 +61,8 @@ export function prefetchPlanner(ogcFid: number, zoning: string | null | undefine
     // the context needs the use first; topography, neighbours and the seed do not
     const context = (async () => {
       const raw = await swallow(deps.permittedUses(ogcFid));
-      await swallow(deps.compile(ogcFid, deps.useFor(raw, zoning)));
+      const use = deps.useFor(raw, zoning);
+      if (use) await swallow(deps.compile(ogcFid, use));
     })();
     await Promise.all([context, swallow(deps.topo(ogcFid)), swallow(deps.neighbors(ogcFid)), swallow(deps.seed(ogcFid))]);
   })().finally(() => { inFlight = null; });
