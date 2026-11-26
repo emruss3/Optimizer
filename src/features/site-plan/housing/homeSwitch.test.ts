@@ -33,17 +33,19 @@ const rot = (p: Pt, deg: number): Pt => {
 };
 
 describe('stock eligibility on the Delk five-lot plan (675423)', () => {
-  it('fits at least two different plans on standard lots 1–3 and none on 4–5, with reasons', () => {
+  it('fits at least two different plans on standard lots 1–3; the irregular and pie lots 4–5 report their own, smaller counts', () => {
     const rows = stockEligibility(stock, delk());
     expect(rows.map(r => r.lotLabel)).toEqual(['Lot 1', 'Lot 2', 'Lot 3', 'Lot 4', 'Lot 5']);
     for (const r of rows.slice(0, 3)) {
       expect(r.eligible.length).toBeGreaterThanOrEqual(2);
       expect(new Set(r.eligible.map(e => `${e.design.footprint.widthFt}x${e.design.footprint.depthFt}`)).size).toBeGreaterThanOrEqual(2);
     }
-    expect(rows[3]!.eligible).toEqual([]);
-    expect(rows[3]!.lotProblem).toMatch(/irregular|pie/);
-    expect(rows[4]!.eligible).toEqual([]);
-    expect(rows[4]!.rejected[0]!.reason).toMatch(/pie lot/);
+    // lots 4 (8 edges) and 5 (pie) are fitted on their true outline, their front fixed by their driveway
+    for (const r of rows.slice(3)) {
+      expect(r.eligible.length).toBeLessThan(rows[0]!.eligible.length);
+      expect(r.rejected.length).toBeGreaterThan(0);
+      expect(r.rejected[0]!.reason).toMatch(/does not fit inside the lot/);
+    }
   });
 
   it('matches each house to its lot by reference, not by list order', () => {
@@ -60,7 +62,7 @@ describe('stock eligibility on the Delk five-lot plan (675423)', () => {
 
   it('places every eligible footprint inside its lot, clear of the driveway', () => {
     const els = delk();
-    for (const r of stockEligibility(stock, els).slice(0, 3)) {
+    for (const r of stockEligibility(stock, els)) {
       const lot = els.find(e => e.id === r.lotId)!;
       const geo = lotGeometry(lot, els, { front: 20, side: 5, rear: 20 })!;
       for (const { fit } of r.eligible) {
@@ -103,6 +105,15 @@ describe('true-polygon fit (rotated and tapered lots)', () => {
     const ok = { ...stock[0]!, id: 'test:ok', footprint: { widthFt: 36, depthFt: 40 }, porchFace: 'width' as const };
     const fit = fitStockDesignInLot(ok, geo, 0);
     expect(fit.status).toBe('placed');
+  });
+
+  it('refuses a pie lot with only a street beside it: the driveway decides the front', () => {
+    const pie: Pt[] = [[0, 0], [30, 0], [80, 90], [40, 120], [-20, 100]];
+    const street = polyEl('z-street-1', [[-10, -30], [40, -30], [40, -2], [-10, -2]], 'circulation', { kind: 'street' });
+    const els = [lotEl('z-lot-1', pie, { lotKind: 'pie' }), street];
+    const fit = fitStockDesignInLot(stock[0]!, lotGeometry(els[0]!, els, { front: 20, side: 5, rear: 20 })!, 0);
+    expect(fit.status).toBe('unplaced');
+    expect(fit.reason).toMatch(/pie lot with no driveway/);
   });
 
   it('refuses a lot no driveway or street meets: the front is not guessed', () => {
@@ -148,7 +159,8 @@ describe('changing the home on one lot', () => {
     const gone = applyStockDesignToHouse({ designId: stock[0]!.id, houseId: 'sfv1-pad-9', elements: els });
     expect(gone.ok).toBe(false);
     if (!gone.ok) expect(gone.reason).toMatch(/redrawn/);
-    const pie = applyStockDesignToHouse({ designId: stock[0]!.id, houseId: 'sfv1-pad-5', elements: els });
+    const tooBig = houseEligibility(els.find(e => e.id === 'sfv1-pad-5')!, stock, els).rejected[0]!.design;
+    const pie = applyStockDesignToHouse({ designId: tooBig.id, houseId: 'sfv1-pad-5', elements: els });
     expect(pie.ok).toBe(false);
     if (!pie.ok) expect(pie.reason).toMatch(/does not fit Lot 5/);
   });

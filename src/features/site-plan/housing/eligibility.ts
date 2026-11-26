@@ -104,8 +104,8 @@ export function houseEligibility(
   }
   const lotProblem = geo.frontEdge == null
     ? 'frontage unresolved: no driveway or street meets this lot'
-    : geo.lotKind === 'pie' || geo.ringFt.length > 4
-      ? 'irregular or pie lot: resolve the frontage edge before placing a stock plan'
+    : (geo.lotKind === 'pie' || geo.ringFt.length > 4) && geo.frontSource !== 'driveway'
+      ? 'irregular or pie lot with no driveway: resolve the frontage edge before placing a stock plan'
       : null;
   return { ...base, eligible, rejected, lotProblem };
 }

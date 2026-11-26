@@ -10,11 +10,20 @@ const rows = () => stockEligibility(buildableStockPlans(), sfV1ToElements(fixtur
 describe('HousingDesignPicker (stock plans lot by lot)', () => {
   it('counts the plans that fit each lot and says why a lot takes none', () => {
     render(<HousingDesignPicker parcelId={DELK_PARCEL_ID} rows={rows()} onOpen={() => undefined} />);
-    expect(screen.getByTestId('housing-fit-summary').textContent).toBe('3 of 5 lots can change');
+    const r = rows();
+    const withChoice = r.filter(x => x.eligible.length > 0).length;
+    expect(screen.getByTestId('housing-fit-summary').textContent).toBe(`${withChoice} of 5 lots can change`);
     const items = screen.getByTestId('housing-lot-counts').querySelectorAll('li');
     expect(items).toHaveLength(5);
     expect(Number(items[0]!.getAttribute('data-eligible'))).toBeGreaterThanOrEqual(2);
-    expect(items[4]!.textContent).toMatch(/Lot 5: none fit — .*(pie|irregular)/);
+    expect(items[0]!.textContent).toMatch(/^Lot 1: \d+ plans fit$/);
+  });
+
+  it('says why a lot takes none', () => {
+    const r = rows().map((x, i) => (i === 4 ? { ...x, eligible: [], lotProblem: 'irregular or pie lot with no driveway: resolve the frontage edge before placing a stock plan' } : x));
+    render(<HousingDesignPicker parcelId={DELK_PARCEL_ID} rows={r} onOpen={() => undefined} />);
+    const items = screen.getByTestId('housing-lot-counts').querySelectorAll('li');
+    expect(items[4]!.textContent).toMatch(/Lot 5: none fit — irregular or pie lot with no driveway/);
   });
 
   it('opens the studio instead of applying a plan to every lot', () => {

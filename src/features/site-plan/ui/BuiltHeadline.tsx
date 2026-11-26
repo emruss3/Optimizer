@@ -10,6 +10,7 @@
  */
 import React from 'react';
 import type { Element, SiteMetrics } from '../../../engine/types';
+import { reconcileUnitMix, residualWords } from './unitMixReconcile';
 
 export interface BuiltSummary {
   units: number;
@@ -19,6 +20,9 @@ export interface BuiltSummary {
   gsf: number | null;
   stalls: number | null;
   stallsPerUnit: number | null;
+  /** Homes the unit mix lists, and the plan's count minus that (0 when they agree). */
+  mixUnits: number;
+  unitResidual: number;
   mix: Array<{ type: string; label: string; count: number }>;
   /** e.g. "one connected S-form bar" */
   composition: string;
@@ -88,25 +92,11 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   const storySet = new Set(buildings.map(storiesOf));
   const stories = storySet.size === 1 ? [...storySet][0] : null;
 
-  // Unit mix: the server's rows travel on each building; sum them by type.
-  const byType = new Map<string, number>();
-  for (const b of buildings) {
-    const mix = b.properties?.unitMix as Array<{ type?: string; count?: number }> | undefined;
-    for (const row of mix ?? []) {
-      if (!row?.type || !(row.count! > 0)) continue;
-      byType.set(row.type, (byType.get(row.type) ?? 0) + Math.round(row.count!));
-    }
-  }
-  // The buildings' mixes are rounded one building at a time and can fall a home short of the
-  // plan's own count. The schedule below the plan puts the difference in the largest type; the
-  // sentence does the same, so the two cannot disagree (1710 Meharry Blvd: "30 apartments" over
-  // 3 + 12 + 10 + 4, and 13 one-beds in the schedule).
-  const planned = Math.round(metrics?.totalUnits ?? 0);
-  const summed = [...byType.values()].reduce((a, v) => a + v, 0);
-  if (planned > 0 && summed > 0 && planned !== summed) {
-    const largest = [...byType.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (largest) byType.set(largest[0], Math.max(0, largest[1] + planned - summed));
-  }
+  // Unit mix as the buildings carry it, and the plan's count beside it: a
+  // difference is named, never folded into the largest type (audit 11-26,
+  // 535 Main St: 131 over a mix of 129).
+  const recon = reconcileUnitMix(buildings, metrics?.totalUnits);
+  const byType = new Map(recon.rows.map(r => [r.type, r.units] as const));
   const mix = [...byType.entries()]
     .filter(([, count]) => count > 0)
     .sort((a, b) => MIX_ORDER.indexOf(a[0]) - MIX_ORDER.indexOf(b[0]))
@@ -134,12 +124,14 @@ export function builtSummary(metrics: SiteMetrics | null, elements: Element[]): 
   ].filter(Boolean).join(' · ');
 
   const first = composition.charAt(0).toUpperCase() + composition.slice(1);
+  const residual = residualWords(recon);
   const detail = [
     parking ? `${first} with ${parking}` : first,
     mix.length > 0 ? mix.map(m => m.label).join(', ') : null,
+    residual,
   ].filter(Boolean).join(' · ');
 
-  return { units, buildings: buildings.length, stories, gsf, stalls, stallsPerUnit, mix, composition, parking, headline, detail };
+  return { units, buildings: buildings.length, stories, gsf, stalls, stallsPerUnit, mix, mixUnits: recon.mixUnits, unitResidual: recon.residual, composition, parking, headline, detail };
 }
 
 export const BuiltHeadline: React.FC<{ metrics: SiteMetrics | null; elements: Element[] }> = ({ metrics, elements }) => {

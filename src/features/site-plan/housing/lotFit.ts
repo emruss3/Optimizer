@@ -17,8 +17,9 @@
  *      the front setback back. The first position that is inside the lot,
  *      keeps every setback and stays off the driveway wins.
  *
- * Pie lots and outlines of more than four edges are still refused with the
- * reason stated: their front needs resolving from the actual frontage first.
+ * Pie lots and outlines of more than four edges are fitted on their true
+ * outline when their own driveway fixes the front edge; with only a street
+ * nearby they are refused, because which edge is the front is not known.
  */
 import type { Element } from '../../../engine/types';
 import { createGroundFrame, type GroundFrame } from '../scene/frame';
@@ -162,6 +163,8 @@ function nearestEdge(ring: Pt[], target: Pt[]): { index: number; dist: number } 
 }
 
 const FRONT_TOUCH_FT = 3;
+/** A placed house must lie within this distance of its lot's driveway. */
+const DRIVE_REACH_FT = 25;
 
 const isStreetLike = (e: Element) =>
   /(^|[-:])(street|row|lane|alley)-\d+$/.test(e.id) || (e.type === 'circulation' && e.properties?.kind !== 'driveway');
@@ -226,14 +229,20 @@ export function lotGeometry(lot: Element, elements: Element[], fallback: Setback
 export function fitStockDesignInLot(design: HousingDesignRecord, lot: LotGeometry, lotIndex: number): LotFitResult {
   const W = design.footprint.widthFt, D = design.footprint.depthFt;
   if (!(W > 0) || !(D > 0)) return { placement: null, status: 'unplaced', reason: 'design footprint not stated' };
-  if (lot.lotKind === 'pie') {
-    return { placement: null, status: 'unplaced', reason: 'pie lot: frontage edge unresolved — cannot place a rectangular house honestly' };
-  }
-  if (lot.ringFt.length > 4) {
-    return { placement: null, status: 'unplaced', reason: `irregular lot outline (${lot.ringFt.length} edges): resolve frontage edges before placing` };
-  }
   if (lot.frontEdge == null) {
     return { placement: null, status: 'unplaced', reason: 'frontage unresolved: no driveway or street meets this lot' };
+  }
+  // A pie or many-sided lot is fitted on its true outline only when its own
+  // driveway says which edge is the front; a street merely nearby does not.
+  const irregular = lot.lotKind === 'pie' || lot.ringFt.length > 4;
+  if (irregular && lot.frontSource !== 'driveway') {
+    return {
+      placement: null,
+      status: 'unplaced',
+      reason: lot.lotKind === 'pie'
+        ? 'pie lot with no driveway: its front edge is unresolved'
+        : `irregular lot outline (${lot.ringFt.length} edges) with no driveway: its front edge is unresolved`,
+    };
   }
 
   const ring = lot.ringFt;
@@ -270,7 +279,10 @@ export function fitStockDesignInLot(design: HousingDesignRecord, lot: LotGeometr
         if (segSegDist(rect[k]!, rect[(k + 1) % 4]!, a, b) < edgeSetback[i]! - 1e-6) return false;
       }
     }
-    return lot.drivesFt.every(d => !polysOverlap(rect, d));
+    if (!lot.drivesFt.every(d => !polysOverlap(rect, d))) return false;
+    // the lot's driveway still has to reach the house (or its parking beside it)
+    if (lot.frontSource === 'driveway' && lot.drivesFt.length && Math.min(...lot.drivesFt.map(d => polyPolyDist(rect, d))) > DRIVE_REACH_FT) return false;
+    return true;
   };
 
   for (const o of orientations) {
@@ -315,6 +327,6 @@ export function fitStockDesignInLot(design: HousingDesignRecord, lot: LotGeometr
   return {
     placement: null,
     status: 'unplaced',
-    reason: `footprint ${r2(W)}×${r2(D)} ft does not fit inside the lot with its setbacks (about ${widthAvail} ft wide × ${depthAvail} ft deep to build on${lot.drivesFt.length ? ', clear of the driveway' : ''})`,
+    reason: `footprint ${r2(W)}×${r2(D)} ft does not fit inside the lot with its setbacks (about ${widthAvail} ft wide × ${depthAvail} ft deep to build on${lot.drivesFt.length ? `, clear of the driveway and within ${DRIVE_REACH_FT} ft of it` : ''})`,
   };
 }
