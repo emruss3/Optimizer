@@ -402,3 +402,7 @@
     box-shadow: -12px 0 40px #101f1b33;
   }
 }
+
+.home-also { margin-top: 8px; border: 1px solid #d9ddd3; border-radius: 6px; padding: 6px 8px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.home-also legend { font-size: 11px; color: #56645c; padding: 0 4px; }
+.home-also button { margin-left: auto; border: 1px solid #20362e; border-radius: 6px; padding: 2px 8px; background: #fff; }
