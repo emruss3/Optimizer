@@ -55,7 +55,7 @@ import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { assignmentFor, assignmentsFromElements, carryAssignments, commitConcept, type HomeAssignment } from './housing/carry';
 import { parentLotOf } from './housing/eligibility';
 import { homeDesignsDiagnosis } from './housing/diagnosis';
-import { homesSchedule } from './housing/schedule';
+import { homesSchedule, homesScheduleRows } from './housing/schedule';
 import { mark, markOnce } from '../../lib/timeline';
 import {
   applyStockDesignToHouse,
@@ -3800,6 +3800,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       guestTarget: thV3Summary?.guestTarget ?? null,
       guestGraded: guest?.graded ?? false,
       detachedSfOnSheet,
+      homes: detachedSfOnSheet ? homesScheduleRows(displayElements) : undefined,
       conditional: conditionalInput,
       contextUnverified: contextState === 'unavailable',
       revision: scene?.identity.revision ?? null,

@@ -127,3 +127,18 @@ describe('PR 221 audit fixes', () => {
     expect(s.rows.slice(0, 3).every(r => (r.heatedSf ?? 0) > 0)).toBe(true);
   });
 });
+
+describe('the exhibit carries the homes by design', () => {
+  it('a detached plan schedules each design with its lots and what kind of geometry it is', async () => {
+    const { homesScheduleRows } = await import('./schedule');
+    const { resolveExhibitProduct, scheduleForProduct } = await import('../api/exhibitSchedule');
+    const { els } = mixedPlan();
+    const rows = homesScheduleRows(els);
+    expect(rows[0]!.label).toBe('Homes');
+    expect(rows[0]!.value).toMatch(/^5 homes · \d designs/);
+    expect(rows.some(r => /listing footprint, schematic/.test(r.value))).toBe(true);
+    expect(rows.some(r => /concept study/.test(r.value))).toBe(true);
+    const product = resolveExhibitProduct({ detachedSfOnSheet: true, homes: rows, revision: 'r1' });
+    expect(scheduleForProduct(product)).toEqual(rows);
+  });
+});
