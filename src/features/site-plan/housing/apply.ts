@@ -160,14 +160,19 @@ export function applyStockDesignToHouse(opts: {
   }
   const footprintSf = Math.round(ringAreaSf(hit.fit.footprint3857));
   const n = /(\d+)$/.exec(row.lotId ?? house.id)?.[1] ?? '';
-  const elements = opts.elements.map(el => {
+  // a concept study placed here before leaves its own anchors, gross area and parts (porch,
+  // walk, pad): none of them belongs to the stock plan (PR 221 audit, stale product metadata)
+  const conceptKeys = ['homeEntry3857', 'homeVehicle3857', 'homeOrigin', 'homeAxis', 'homeGrossSf', 'heightFt', 'storiesAssumed', 'floorplanId', 'label'];
+  const isPart = (e: Element) => e.id.startsWith(house.id + '-home-');
+  const elements = opts.elements.filter(e => !isPart(e)).map(el => {
     if (el.id === house.id) {
+      const kept = Object.fromEntries(Object.entries(el.properties ?? {}).filter(([k]) => !conceptKeys.includes(k)));
       return {
         ...el,
         name: `House ${n} · ${design.beds} bed · ${design.heatedSf.toLocaleString()} sf`,
         geometry: { type: 'Polygon', coordinates: [hit.fit.footprint3857!.map(p => [p[0], p[1]])] } as Element['geometry'],
         properties: {
-          ...(el.properties ?? {}),
+          ...kept,
           ...placementToElementProps(design, hit.fit.placement),
           lotId: row.lotId ?? undefined,
           floors: design.stories,

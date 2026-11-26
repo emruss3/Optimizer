@@ -163,7 +163,7 @@ export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, sa
     <section className="absolute right-2 top-16 z-20 w-80 max-w-[calc(100%-1rem)] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-800 shadow-lg"
       aria-label="4K render" data-testid="render-4k-panel">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">4K render</h2>
+        <h2 className="text-sm font-semibold">{service ? '4K render' : '4K scene pack (offline)'}</h2>
         <button type="button" aria-label="Close 4K render" className="px-2 py-1 text-lg leading-none text-slate-500 hover:text-slate-900" onClick={onClose}>×</button>
       </div>
       <p className="mt-1 text-slate-600">3840 × 2160 · revision {scene.identity.revision}</p>
@@ -202,7 +202,7 @@ export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, sa
             Export scene ZIP
           </button>
         </div>
-        {!service && <p className="mt-2 text-slate-600">The ZIP contains the scene, cameras and instructions for rendering in Blender.</p>}
+        {!service && <p className="mt-2 text-slate-600" data-testid="render-4k-offline">No render service is connected, so no finished 4K image is made here. The ZIP holds this revision's scene, cameras and instructions; rendering it in Blender produces the 3840 × 2160 image.</p>}
       </>}
       {error && <div className="mt-3 space-y-2">
         <p role="alert" className="text-amber-800">{error}</p>

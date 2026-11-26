@@ -14,7 +14,7 @@ export const CIVIL_DILIGENCE = 'survey and legal access, utility service and cap
 import { SfV1CompetitionBlock, type SfV1CompetitionState } from './SfV1Competition';
 import { HousingDesignPicker } from './HousingDesignPicker';
 import type { HouseLotEligibility } from '../housing/eligibility';
-import type { HomeRow, DesignTotal } from '../housing/schedule';
+import type { HomeRow, DesignTotal, HomesTotals } from '../housing/schedule';
 
 function testLabel(id: string): string {
   return id.replace(/\./g, ' · ').replace(/_/g, ' ');
@@ -164,7 +164,7 @@ export function SfV1Panel({
     parcelId: string;
     rows: HouseLotEligibility[];
     onOpen: (() => void) | null;
-    schedule?: { rows: HomeRow[]; totals: DesignTotal[] } | null;
+    schedule?: { rows: HomeRow[]; totals: DesignTotal[]; all?: HomesTotals } | null;
   } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');

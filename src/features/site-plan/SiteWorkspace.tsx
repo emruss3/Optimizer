@@ -343,6 +343,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const homeAssignmentsRef = useRef<{ parcel: string; list: HomeAssignment[] }>({ parcel: '', list: [] });
   const homeSetbacksRef = useRef<{ front: number; side: number; rear: number }>({ front: 20, side: 5, rear: 20 });
   const homeStudioBoundaryRef = useRef<Element['geometry'] | null>(null);
+  // the home-change history as the top bar and Ctrl+Z see it
+  const homeStepRef = useRef<{ canUndo: boolean; canRedo: boolean; step: (dir: 'undo' | 'redo') => void } | null>(null);
   const [homeCarry, setHomeCarry] = useState<{ kept: number; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   // The competition's best on the sheet in place of the default answer, and why
   // (the default drew no lots, the same lots on a worse plan, or fewer lots).
@@ -1625,12 +1627,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const k = e.key.toLowerCase();
+      // a home change is the latest step while its history is live: the same keys undo it
+      const home = homeStepRef.current;
       if (k === 'z' && !e.shiftKey) {
         e.preventDefault();
-        undo();
+        if (home?.canUndo) home.step('undo'); else undo();
       } else if ((k === 'z' && e.shiftKey) || k === 'y') {
         e.preventDefault();
-        redo();
+        if (home?.canRedo) home.step('redo'); else redo();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -3436,7 +3440,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           context: neighbors,
           schedule: seedViewOn || activeHome ? null : { units: metrics?.totalUnits ?? null, stalls: metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null },
           generator: planLineage?.generatorVersion ?? null,
-          housingDesignId: activeHome?.elements.find(e=>e.id===activeHome.house)?.properties.housingDesignId ?? housingDesignId,
+          // the scheme names one design only when every house carries it; a mix is read per building (PR 221 audit)
+          housingDesignId: undefined,
         })),
     [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, activeHome, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion, housingDesignId],
   );
@@ -3833,11 +3838,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const withBreak = routeBreak && routeBreakLabel
       ? [...marked, { kind: 'gap' as const, line: [routeBreak.from, routeBreak.to], x: routeBreak.from[0] ?? 0, y: routeBreak.from[1] ?? 0, text: routeBreakLabel }]
       : marked;
-    if (!showFrontage || !line || line.length < 2) return withBreak;
+    // every bay a car cannot reach from the street, marked on the plan with its stalls (PR 221 audit:
+    // "show route resolution or a documented failing result per bay")
+    const unreached = displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated
+      ? (mfAccess.bayChecks ?? []).filter(b => !b.served).slice(0, 24)
+      : [];
+    const withBays = unreached.length
+      ? [...withBreak, ...unreached.map(b => {
+          const c = b.ring.slice(0, -1).reduce((acc, p) => [acc[0] + (p[0] ?? 0) / (b.ring.length - 1), acc[1] + (p[1] ?? 0) / (b.ring.length - 1)], [0, 0]);
+          return { kind: 'highlight' as const, line: b.ring, x: c[0], y: c[1], text: `Not reached from the street${b.stalls != null ? ` · ${b.stalls} stalls` : ''}` };
+        })]
+      : withBreak;
+    if (!showFrontage || !line || line.length < 2) return withBays;
     const mid = line[Math.floor(line.length / 2)] ?? line[0]!;
     const prev = line[Math.floor(line.length / 2) - 1] ?? line[0]!;
-    return [...withBreak, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
-  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel, garageEntries]);
+    return [...withBays, { kind: 'highlight' as const, line, x: ((mid[0] ?? 0) + (prev[0] ?? 0)) / 2, y: ((mid[1] ?? 0) + (prev[1] ?? 0)) / 2, text: access?.frontageLabel ?? 'Street frontage' }];
+  }, [sheetAnnotations, access, showFrontage, routeBreak, routeBreakLabel, garageEntries, displayElements, mfAccess]);
 
   // Test evidence hook (dev builds only): the headless battery gate reads
   // what ACTUALLY rendered — who solved it, the basis line, the violation
@@ -4043,8 +4059,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     : createFallbackParcel(parcel.ogc_fid || parcel.id || 'unknown', parcel.sqft || 4356);
 
   // historyVersion re-renders this component whenever the undo stacks change
-  const canUndo = historyVersion >= 0 && pastRef.current.length > 0;
-  const canRedo = historyVersion >= 0 && futureRef.current.length > 0;
+  // one Undo/Redo in the top bar: a live home-change history takes it first (PR 221 audit: the
+  // generic control stayed disabled while a separate "Undo home change" did the work)
+  const homeLive = homeHistory != null && homeHistory.current === elements;
+  const homeCanUndo = homeLive && homeHistory!.past.length > 0;
+  const homeCanRedo = homeLive && homeHistory!.future.length > 0;
+  homeStepRef.current = { canUndo: homeCanUndo, canRedo: homeCanRedo, step: stepHomeHistory };
+  const canUndo = homeCanUndo || (historyVersion >= 0 && pastRef.current.length > 0);
+  const canRedo = homeCanRedo || (historyVersion >= 0 && futureRef.current.length > 0);
 
   return (
     <div className="h-full min-h-0 flex flex-col bg-gray-100">
@@ -4198,17 +4220,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 max-w-full xl:flex-shrink-0">
         <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-sm">
           <button
-            onClick={undo}
+            onClick={() => (homeCanUndo ? stepHomeHistory('undo') : undo())}
             disabled={!canUndo}
-            title={canUndo ? 'Undo the last change to the plan (Ctrl+Z)' : 'Nothing to undo yet'}
+            data-testid="plan-undo"
+            title={homeCanUndo ? 'Undo the last home change (Ctrl+Z)' : canUndo ? 'Undo the last change to the plan (Ctrl+Z)' : 'Nothing to undo yet'}
             className="px-2.5 py-1.5 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Undo2 className="w-4 h-4" />
           </button>
           <button
-            onClick={redo}
+            onClick={() => (homeCanRedo ? stepHomeHistory('redo') : redo())}
             disabled={!canRedo}
-            title="Redo (Ctrl+Shift+Z)"
+            data-testid="plan-redo"
+            title={homeCanRedo ? 'Redo the home change (Ctrl+Shift+Z)' : 'Redo (Ctrl+Shift+Z)'}
             className="px-2.5 py-1.5 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed border-l border-gray-200"
           >
             <Redo2 className="w-4 h-4" />

@@ -97,3 +97,33 @@ describe('a mixed-home masterplan on one scheme', () => {
     expect([id('sfv1-pad-1'), id('sfv1-pad-2'), id('sfv1-pad-3')]).toEqual([a, b, concept]);
   });
 });
+
+describe('PR 221 audit fixes', () => {
+  it('a stock plan over a concept study removes the concept porch, walk, pad and anchors', () => {
+    const { els } = mixedPlan(); // lot 3 carries a concept study
+    expect(els.some(e => e.id.startsWith('sfv1-pad-3-home-'))).toBe(true);
+    const d = stockOn(els, 'sfv1-pad-3', 0);
+    const r = applyStockDesignToHouse({ designId: d, houseId: 'sfv1-pad-3', elements: els, setbacks: SB });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.elements.some(e => e.id.startsWith('sfv1-pad-3-home-'))).toBe(false);
+    const p = r.elements.find(e => e.id === 'sfv1-pad-3')!.properties;
+    for (const k of ['homeEntry3857', 'homeVehicle3857', 'homeOrigin', 'homeAxis', 'homeGrossSf']) expect(p[k]).toBeUndefined();
+    expect(p.housingDesignId).toBe(d);
+  });
+
+  it('a mixed plan names no single scheme design; each building keeps its own', () => {
+    const { els, a, b, concept } = mixedPlan();
+    const scene = buildDrawingScene({ parcelId: '675423', schemeId: 'deep', elements: els });
+    expect(scene?.identity.housingDesignId ?? null).toBeNull();
+    expect((scene?.buildings ?? []).map(x => x.housing?.designId).filter(Boolean)).toEqual(expect.arrayContaining([a, b, concept]));
+  });
+
+  it('the schedule totals follow the plan: stated heated area for placed designs, engine homes counted as unknown', () => {
+    const { els } = mixedPlan();
+    const s = homesSchedule(els);
+    expect(s.all.homes).toBe(5);
+    expect(s.all.heatedUnknown).toBe(2);
+    expect(s.all.heatedSf).toBe(s.rows.slice(0, 3).reduce((n, r) => n + (r.heatedSf ?? 0), 0));
+    expect(s.rows.slice(0, 3).every(r => (r.heatedSf ?? 0) > 0)).toBe(true);
+  });
+});

@@ -382,3 +382,23 @@
   color: #56695d;
   margin-top: 4px;
 }
+
+/* PR 221 audit: the studio covered the masterplan. On a wide screen it docks to the right and the
+   plan stays visible and clickable: select a house on the plan and the studio follows that lot. */
+@media (min-width: 1280px) {
+  .home-studio-scrim {
+    inset: 0 0 0 auto;
+    width: min(760px, 52vw);
+    padding: 0;
+    background: transparent;
+    display: block;
+  }
+  .home-studio {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border-width: 0 0 0 1px;
+    box-shadow: -12px 0 40px #101f1b33;
+  }
+}
