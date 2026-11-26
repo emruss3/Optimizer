@@ -9,16 +9,20 @@
  * drawing.
  */
 import type { HouseLotEligibility } from '../housing/eligibility';
+import type { HomeRow, DesignTotal } from '../housing/schedule';
 import { designsWithLots } from '../housing/eligibility';
 
 export function HousingDesignPicker({
   parcelId,
   rows,
   onOpen,
+  schedule,
 }: {
   parcelId: string;
   rows: HouseLotEligibility[];
   onOpen: (() => void) | null;
+  /** the homes on the plan, by lot and by design (housing/schedule.ts) */
+  schedule?: { rows: HomeRow[]; totals: DesignTotal[] } | null;
 }) {
   if (!rows.length) return null;
   const union = designsWithLots(rows);
@@ -57,6 +61,22 @@ export function HousingDesignPicker({
             ))}
           </ul>
         </details>
+      )}
+      {schedule && schedule.rows.length > 0 && (
+        <div className="mt-2 border-t border-slate-200 pt-2" data-testid="homes-schedule">
+          <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Homes on this plan</h4>
+          <table className="mt-1 w-full text-[11px] tabular-nums">
+            <tbody>
+              {schedule.totals.map(t => (
+                <tr key={t.design} data-kind={t.kind}>
+                  <td className="py-0.5 pr-2">{t.design}</td>
+                  <td className="text-right">{t.homes}</td>
+                  <td className="pl-2 text-slate-500">{t.lots.join(', ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {onOpen && lotsWithChoice > 0 && (
         <button

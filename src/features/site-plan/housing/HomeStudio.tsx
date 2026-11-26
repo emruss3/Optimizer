@@ -7,6 +7,7 @@ import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
 import { designsFittingHouse, stepHomeDesignIndex } from './homeDesignsGate';
+import { withoutHomeParts } from './carry';
 import { DEFAULT_HOME_SETBACKS, detachedHouses, houseEligibility, stockEligibility, type HouseLotEligibility } from './eligibility';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
@@ -27,6 +28,8 @@ interface Props {
   stockSetbacks?: { front: number; side: number; rear: number };
   /** Change the home on one house's lot to this stock plan. */
   onApplyStock?: (designId: string, houseId: string) => void;
+  /** Commit a concept study on one house's lot (not a preview: it becomes the plan). */
+  onApplyConcept?: (designId: string, houseId: string) => void;
   onClose: () => void;
   onPreview: (placement: HomePlacement) => void;
 }
@@ -78,6 +81,7 @@ export default function HomeStudio({
   stockSetbacks = DEFAULT_HOME_SETBACKS,
   stockEligibilityRows,
   onApplyStock,
+  onApplyConcept,
 }: Props) {
   // Explicit empty list means “no SF stock for this session” (MF/CS) — do not
   // fall back to the full catalogue and offer Apply on apartment land.
@@ -111,12 +115,18 @@ export default function HomeStudio({
 
   const selectedHouse = houses.find((e) => e.id === houseId);
 
+  // A house that already carries a committed concept is fitted again on the plan without that
+  // concept's porch, walk and pad (they would collide with the new design's own).
+  const conceptBase = useMemo(
+    () => (selectedHouse ? withoutHomeParts(elements, selectedHouse.id) : elements),
+    [elements, selectedHouse],
+  );
   // Fit-first: when a lot is selected, only offer concept designs that place on that lot.
   const catalogue = useMemo(() => {
     if (!designs.length) return [] as HomeDesign[];
     if (!selectedHouse) return [...designs];
-    return designsFittingHouse(designs, selectedHouse, elements, siteBoundary);
-  }, [designs, selectedHouse, elements, siteBoundary]);
+    return designsFittingHouse(designs, selectedHouse, conceptBase, siteBoundary);
+  }, [designs, selectedHouse, conceptBase, siteBoundary]);
   const emptyEligible = catalogue.length === 0;
 
   // Buildable stock for the selected lot: the shared eligibility result, so
@@ -181,8 +191,8 @@ export default function HomeStudio({
       setFit(null);
       return;
     }
-    setFit({ key, result: placeHome(home, selectedHouse, elements, siteBoundary) });
-  }, [mode, key, home, selectedHouse, elements, siteBoundary]);
+    setFit({ key, result: placeHome(home, selectedHouse, conceptBase, siteBoundary) });
+  }, [mode, key, home, selectedHouse, conceptBase, siteBoundary]);
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
@@ -629,10 +639,23 @@ export default function HomeStudio({
                                 </option>
                               ))}
                             </select>
-                            {current?.placement && (
+                            {current?.placement && onApplyConcept && selectedHouse && home && (
                               <button
                                 type="button"
                                 className="home-primary"
+                                data-testid="home-concept-apply"
+                                onClick={() => {
+                                  onApplyConcept(home.id, selectedHouse.id);
+                                  onClose();
+                                }}
+                              >
+                                Apply to this lot
+                              </button>
+                            )}
+                            {current?.placement && (
+                              <button
+                                type="button"
+                                className={onApplyConcept ? undefined : 'home-primary'}
                                 onClick={() => onPreview(current.placement!)}
                               >
                                 Preview in 3D massing
