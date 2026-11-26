@@ -220,3 +220,30 @@ describe('formatGapFt', () => {
     expect(formatGapFt(10)).toBe('10');
   });
 });
+
+describe('mfAccessSummary — per bay, and "not checked" kept apart from "none reached" (PR 221 audit)', () => {
+  const drive = el('drive', 'circulation', rect(0, 0, 8, 60));
+  const near = el('bay-a', 'parking', rect(10, 50, 30, 60), { stalls: 10 });
+  const far = el('bay-b', 'parking', rect(60, 20, 80, 40), { stalls: 8 });
+
+  it('names each bay and whether a car reaches it from the street', () => {
+    const s = mfAccessSummary([drive, near, far], parcel);
+    expect(s.evaluated).toBe(true);
+    expect(s.bayChecks?.map(b => [b.id, b.served, b.stalls])).toEqual([['bay-a', true, 10], ['bay-b', false, 8]]);
+  });
+
+  it('with the drive deleted, every bay is checked and none is reached: a measured zero', () => {
+    const s = mfAccessSummary([near, far], parcel);
+    expect(s.evaluated).toBe(true);
+    expect(s.stallsServed).toBe(0);
+    expect(s.bayChecks?.every(b => !b.served)).toBe(true);
+  });
+
+  it('with no parcel line or street edge to reach, nothing is checked: no reachable figure, not 0', () => {
+    const s = mfAccessSummary([drive, near, far], null);
+    expect(s.evaluated).toBe(false);
+    expect(s.stallsServed).toBeNull();
+    expect(s.stallsStriped).toBe(18);
+    expect(s.bayChecks).toBeUndefined();
+  });
+});

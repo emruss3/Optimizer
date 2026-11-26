@@ -33,6 +33,14 @@ export interface MfAccessSummary {
   stallsServed: number | null;
   /** Sum of stalls on all striped bays when every bay carries a stall count. */
   stallsStriped: number | null;
+  /**
+   * false when the check could not be made (no parcel line or street edge to reach): then
+   * nothing is reachable *or* unreachable, and `stallsServed` is null, not 0 (PR 221 audit:
+   * "separate an evaluated graph with no paths from missing input").
+   */
+  evaluated?: boolean;
+  /** Each bay's result, for marking it on the plan: reached from the street or not. */
+  bayChecks?: Array<{ id: string; ring: number[][]; stalls: number | null; served: boolean }>;
 }
 
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
@@ -80,7 +88,7 @@ const ringOf = (el: Element): number[][] | null => {
   return r && r.length >= 4 ? r : null;
 };
 
-type Bay = { ring: number[][]; stalls: number | null };
+type Bay = { id: string; ring: number[][]; stalls: number | null };
 
 function bayStalls(el: Element): number | null {
   const p = el.properties as { stalls?: unknown; parkingSpaces?: unknown } | undefined;
@@ -185,7 +193,7 @@ function collectBays(elements: Element[]): Bay[] {
     .filter(e => (e.type === 'parking' || e.type === 'parking-bay') && !(e.properties as { apron?: boolean } | undefined)?.apron)
     .map(e => {
       const ring = ringOf(e);
-      return ring ? { ring, stalls: bayStalls(e) } : null;
+      return ring ? { id: e.id, ring, stalls: bayStalls(e) } : null;
     })
     .filter((b): b is Bay => b != null);
 }
@@ -227,9 +235,13 @@ export function mfAccessSummary(
   const bays = collectBays(elements);
   const empty = { curb: false, bays: bays.length, served: 0, drives: drives.length, stallsServed: null as number | null, stallsStriped: null as number | null };
   const edge = curbEdge(parcelRing, streetEdge);
-  if (!edge || drives.length === 0) {
+  if (!edge) {
+    // nothing to reach: not checked, so no reachable count at all
+    return { ...empty, stallsServed: null, stallsStriped: stallTotals(bays, bays.map(() => false)).stallsStriped, evaluated: false };
+  }
+  if (drives.length === 0) {
     const totals = stallTotals(bays, bays.map(() => false));
-    return { ...empty, ...totals };
+    return { ...empty, ...totals, evaluated: true, bayChecks: bays.map(b => ({ id: b.id, ring: b.ring, stalls: b.stalls, served: false })) };
   }
 
   const comps = driveComponents(drives, tolM);
@@ -248,7 +260,11 @@ export function mfAccessSummary(
   const served = servedMask.filter(Boolean).length;
   const totals = stallTotals(bays, servedMask);
 
-  return { curb, bays: bays.length, served, drives: drives.length, ...totals };
+  return {
+    curb, bays: bays.length, served, drives: drives.length, ...totals,
+    evaluated: true,
+    bayChecks: bays.map((b, i) => ({ id: b.id, ring: b.ring, stalls: b.stalls, served: servedMask[i]! })),
+  };
 }
 
 export type AccessBreak = {
