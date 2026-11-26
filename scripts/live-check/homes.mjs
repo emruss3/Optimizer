@@ -105,11 +105,12 @@ for (const p of PARCELS) {
       row.onlyTargetChanged = changed.length === 1 && changed[0] === target.house;
       row.status = await page.locator('[data-testid="home-change-status"]').innerText().catch(() => null);
       await page.screenshot({ path: path.join(out, `${p.id}-changed.png`) });
-      await page.getByText('Undo home change').first().click();
+      // the top bar's Undo, the one control every change shares
+      await page.locator('[data-testid="plan-undo"]').first().click();
       const undone = (await waitFor(page, e => JSON.stringify(e.homes?.pads) === JSON.stringify(before), 15000))?.homes?.pads;
       row.undoRestored = JSON.stringify(undone) === JSON.stringify(before);
       // Redo puts the change back
-      await page.getByText('Redo').first().click().catch(() => {});
+      await page.locator('[data-testid="plan-redo"]').first().click().catch(() => {});
       row.redo = (await waitFor(page, e => e.homes?.pads?.find(x => x.id === target.house)?.design === row.changedDesign, 15000))?.homes?.pads?.find(x => x.id === target.house)?.design === row.changedDesign;
 
       // a mixed masterplan: three different plans on three lots of the same scheme

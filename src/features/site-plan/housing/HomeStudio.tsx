@@ -113,6 +113,11 @@ export default function HomeStudio({
     }
   }, [houses, houseId, selected]);
 
+  // the studio follows the house selected on the plan (2D or 3D) while it is open
+  useEffect(() => {
+    if (selected && houses.some((h) => h.id === selected)) setHouseId(selected);
+  }, [selected, houses]);
+
   const selectedHouse = houses.find((e) => e.id === houseId);
 
   // A house that already carries a committed concept is fitted again on the plan without that
@@ -198,6 +203,9 @@ export default function HomeStudio({
     const before = document.activeElement as HTMLElement | null;
     root.current?.querySelector<HTMLButtonElement>('button')?.focus();
     function keys(event: KeyboardEvent) {
+      // docked beside the plan (wide screens), the studio answers keys only while focus is in it
+      const docked = typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1280px)').matches;
+      if (docked && root.current && !root.current.contains(event.target as Node)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -247,7 +255,7 @@ export default function HomeStudio({
     >
       <section
         role="dialog"
-        aria-modal="true"
+        aria-modal={typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1280px)').matches ? 'false' : 'true'}
         aria-label={mode === 'stock' ? 'Buildable stock plans' : 'Concept home studies'}
         className="home-studio"
         ref={root}

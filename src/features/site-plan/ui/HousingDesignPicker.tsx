@@ -9,7 +9,7 @@
  * drawing.
  */
 import type { HouseLotEligibility } from '../housing/eligibility';
-import type { HomeRow, DesignTotal } from '../housing/schedule';
+import type { HomeRow, DesignTotal, HomesTotals } from '../housing/schedule';
 import { designsWithLots } from '../housing/eligibility';
 
 export function HousingDesignPicker({
@@ -22,7 +22,7 @@ export function HousingDesignPicker({
   rows: HouseLotEligibility[];
   onOpen: (() => void) | null;
   /** the homes on the plan, by lot and by design (housing/schedule.ts) */
-  schedule?: { rows: HomeRow[]; totals: DesignTotal[] } | null;
+  schedule?: { rows: HomeRow[]; totals: DesignTotal[]; all?: HomesTotals } | null;
 }) {
   if (!rows.length) return null;
   const union = designsWithLots(rows);
@@ -76,6 +76,14 @@ export function HousingDesignPicker({
               ))}
             </tbody>
           </table>
+          {schedule.all && (
+            <p data-testid="homes-totals" className="mt-1 text-[11px] text-slate-600">
+              {schedule.all.homes} homes · {schedule.all.footprintSf.toLocaleString()} sf of footprint
+              {schedule.all.heatedSf > 0 ? ` · ${schedule.all.heatedSf.toLocaleString()} heated sf stated` : ''}
+              {schedule.all.heatedUnknown > 0 ? ` (${schedule.all.heatedUnknown} engine home${schedule.all.heatedUnknown === 1 ? '' : 's'} without a stated heated area)` : ''}
+              . Read off the plan on the sheet, so it follows every change.
+            </p>
+          )}
         </div>
       )}
       {onOpen && lotsWithChoice > 0 && (

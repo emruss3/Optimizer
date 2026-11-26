@@ -64,12 +64,15 @@ function housingFromProps(p: Record<string, unknown>, frame: GroundFrame): NonNu
   };
 }
 
-function housingDesignFromElements(elements: Element[]): string | null {
+/** The scheme's one housing design, or null when its houses carry a mix (a masterplan is not
+ *  one house: each building keeps its own design in `housing`; PR 221 audit). */
+export function housingDesignFromElements(elements: Element[]): string | null {
+  const ids = new Set<string>();
   for (const el of elements) {
     const id = (el.properties as Record<string, unknown> | undefined)?.housingDesignId;
-    if (typeof id === 'string' && id.length) return id;
+    if (typeof id === 'string' && id.length) ids.add(id);
   }
-  return null;
+  return ids.size === 1 ? [...ids][0]! : null;
 }
 
 const ROLE: Record<string, [FeatureRole, StyleRole]> = {
@@ -257,9 +260,15 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
     const floors: Sourced<number> = { value: floorsN, authority: authored || p.storiesAssumed ? 'estimated' : 'engine' };
     const fp = num(p.areaSqFt);
     const footprintSqFt: Sourced<number> | null = fp != null && fp > 0 ? { value: fp, authority: authored ? 'estimated' : 'engine' } : null;
-    // Outdoor decks are open use: gross area is the pad, not pad × stories.
+    // Outdoor decks: pad area only. Placed stock: heated sf. Else footprint × floors.
+    const stockHeated = !authored && p.housingPlacementStatus === 'placed' ? num(p.housingHeatedSf) : null;
     const grossSqFt: Sourced<number> | null = footprintSqFt
-      ? { value: (authored ? num(p.homeGrossSf) : null) ?? (outdoor ? footprintSqFt.value : footprintSqFt.value * floorsN), authority: 'derived' }
+      ? {
+          value:
+            (authored ? num(p.homeGrossSf) : null) ??
+            (outdoor ? footprintSqFt.value : stockHeated ?? footprintSqFt.value * floorsN),
+          authority: 'derived',
+        }
       : null;
     const mix = Array.isArray(p.unitMix) ? (p.unitMix as Array<{ count?: number }>) : null;
     const mixUnits = mix ? mix.reduce((s, m) => s + (num(m.count) ?? 0), 0) : null;
