@@ -46,7 +46,7 @@ describe('TabulationPanel reads the same plan as the header (0 Whites Creek Pike
     expect(total.endsWith('92')).toBe(true);
     expect(rows.find(r => r.startsWith('1 Bed'))).toContain('22');
     expect(screen.getByText(/Parking required: 92 from the engine/)).toBeTruthy();
-    expect(screen.getByTestId('tab-stalls-reported').textContent).toContain('engine summary 85');
+    expect(screen.getByTestId('tab-stalls-line').textContent).toContain('85 in the engine summary');
   });
 
   it('without an engine requirement the typology defaults stand, and say so', () => {
@@ -75,7 +75,8 @@ describe('TabulationPanel — the requirement column is honest about what it kno
       properties: { use: 'residential', floors: 3, unitMix: [{ type: '1br', count: 53, avgSqft: 900, rentPerMonth: 0, parkingRatio: 1.5 }] },
     } as unknown as Element;
     render(<TabulationPanel elements={[bar]} metrics={{ totalUnits: 53, stallsProvided: 292, stallsRequired: 92, stallsDrawn: 292, stallsReported: 85, parkingStatus: 'needs_verification' } as SiteMetrics} plannerCtx={null} />);
-    expect(screen.getByTestId('tab-stalls-reported').textContent).toBe('(engine summary 85 · needs verification)');
+    expect(screen.getByTestId('tab-stalls-reported').textContent).toBe('(needs verification)');
+    expect(screen.getByTestId('tab-stalls-line').textContent).toMatch(/drawn · 85 in the engine summary/);
     expect(screen.getByText(/provided count needs verification/)).toBeTruthy();
   });
 });
@@ -97,5 +98,32 @@ describe('TabulationPanel: a missing figure is not a zero (1710 Meharry Blvd, 20
     render(<TabulationPanel elements={[bar]} metrics={{ totalUnits: 30, totalBuiltSF: 54244, achievedFAR: 0.7, siteCoveragePct: 18 } as SiteMetrics} plannerCtx={null} />);
     expect(screen.getByTestId('tab-far').textContent).toBe('FAR 0.70');
     expect(screen.getByTestId('tab-coverage').textContent).toBe('Coverage 18%');
+  });
+});
+
+describe('TabulationPanel: the plan count against the unit mix (535 Main St, 2026-11-26)', () => {
+  const main = {
+    id: 'b1', type: 'building', name: 'Building A', geometry: sq(0), metadata: meta,
+    properties: { use: 'residential', floors: 5, unitMix: [
+      { type: 'studio', count: 13, avgSqft: 550, rentPerMonth: 0, parkingRatio: 1 },
+      { type: '1br', count: 52, avgSqft: 700, rentPerMonth: 0, parkingRatio: 1 },
+      { type: '2br', count: 45, avgSqft: 1100, rentPerMonth: 0, parkingRatio: 1 },
+      { type: '3br', count: 19, avgSqft: 1600, rentPerMonth: 0, parkingRatio: 1 },
+    ] },
+  } as unknown as Element;
+
+  it('keeps the mix as carried and puts the 2 untyped homes on their own row; the total is the plan count', () => {
+    render(<TabulationPanel elements={[main]} metrics={{ totalUnits: 131, totalBuiltSF: 150000 } as SiteMetrics} plannerCtx={null} />);
+    const untyped = screen.getByTestId('tab-untyped');
+    expect(untyped.textContent).toMatch(/No type in the unit mix\s*2/);
+    expect(screen.getByText('52')).toBeTruthy(); // one-beds not padded to 54
+    expect(screen.queryByText('54')).toBeNull();
+    expect(screen.getByText('131')).toBeTruthy();
+  });
+
+  it('says so when the mix lists more homes than the plan counts', () => {
+    render(<TabulationPanel elements={[main]} metrics={{ totalUnits: 127, totalBuiltSF: 150000 } as SiteMetrics} plannerCtx={null} />);
+    expect(screen.getByTestId('tab-mix-over').textContent).toBe('The unit mix lists 129 homes, 2 more than the 127 the plan counts.');
+    expect(screen.queryByTestId('tab-untyped')).toBeNull();
   });
 });
