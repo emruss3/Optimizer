@@ -80,11 +80,12 @@ export {
 export {
   applyHousingDesign,
   applyStockDesignToHouse,
+  applyStockDesignToHouses,
   lotsFromElements,
   ring3857ToFeet,
   sfLotElements,
 } from './apply';
-export type { ApplyHousingResult, ApplyHouseResult } from './apply';
+export type { ApplyHousingResult, ApplyHouseResult, ApplyHousesResult } from './apply';
 export {
   DEFAULT_HOME_SETBACKS,
   designsWithLots,

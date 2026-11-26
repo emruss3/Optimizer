@@ -142,3 +142,23 @@ describe('the exhibit carries the homes by design', () => {
     expect(scheduleForProduct(product)).toEqual(rows);
   });
 });
+
+describe('one plan on several chosen lots', () => {
+  it('applies to every chosen lot it fits, refuses the rest by name, and leaves the others untouched', async () => {
+    const { applyStockDesignToHouses } = await import('./apply');
+    const els = plan();
+    const d = stockOn(els, 'sfv1-pad-1', 0);
+    const fitsLot5 = houseEligibility(els.find(e => e.id === 'sfv1-pad-5')!, buildableStockPlans(), els, SB).eligible.some(e => e.design.id === d);
+    const r = applyStockDesignToHouses({ designId: d, houseIds: ['sfv1-pad-1', 'sfv1-pad-2', 'sfv1-pad-3', 'sfv1-pad-5'], elements: els, setbacks: SB });
+    expect(r.applied.map(a => a.lotLabel).slice(0, 3)).toEqual(['Lot 1', 'Lot 2', 'Lot 3']);
+    for (const h of ['sfv1-pad-1', 'sfv1-pad-2', 'sfv1-pad-3']) expect(r.elements.find(e => e.id === h)!.properties.housingDesignId).toBe(d);
+    if (fitsLot5) expect(r.applied).toHaveLength(4);
+    else {
+      expect(r.refused).toHaveLength(1);
+      expect(r.refused[0]!.reason).toMatch(/does not fit Lot 5/);
+    }
+    const fresh = plan();
+    const x = r.elements.find(e => e.id === 'sfv1-pad-4')!, y = fresh.find(e => e.id === 'sfv1-pad-4')!;
+    expect([x.geometry, x.properties]).toEqual([y.geometry, y.properties]);
+  });
+});
