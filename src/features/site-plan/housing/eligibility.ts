@@ -97,11 +97,35 @@ export function houseEligibility(
   const lotIndex = Math.max(0, Number(numberOf(lot.id) ?? 1) - 1);
   const eligible: HouseLotEligibility['eligible'] = [];
   const rejected: HouseLotEligibility['rejected'] = [];
-  for (const design of designs) {
+  // Smallest footprints first: a plan at least as wide and as deep as one that did not fit
+  // cannot fit either (both orientations are tried), so it is refused without a search.
+  const dims = (d: HousingDesignRecord) => {
+    const a = d.footprint.widthFt, b = d.footprint.depthFt;
+    return [Math.min(a, b), Math.max(a, b)] as const;
+  };
+  const failed: Array<{ lo: number; hi: number; design: HousingDesignRecord; reason: string }> = [];
+  const order = designs.map((d, i) => ({ d, i })).sort((x, y) => dims(x.d)[0] * dims(x.d)[1] - dims(y.d)[0] * dims(y.d)[1]);
+  const byIndex = new Map<number, { fit?: LotFitResult; reason?: string }>();
+  for (const { d: design, i } of order) {
+    const [lo, hi] = dims(design);
+    const beaten = lo > 0 ? failed.find(f => f.lo <= lo && f.hi <= hi) : undefined;
+    if (beaten) {
+      byIndex.set(i, { reason: `footprint ${design.footprint.widthFt}×${design.footprint.depthFt} ft is no smaller than ${beaten.design.planNumber}, which does not fit: ${beaten.reason}` });
+      continue;
+    }
     const fit = fitStockDesignInLot(design, geo, lotIndex);
-    if (fit.status === 'placed' && fit.placement) eligible.push({ design, fit });
-    else rejected.push({ design, reason: fit.reason });
+    if (fit.status === 'placed' && fit.placement) byIndex.set(i, { fit });
+    else {
+      byIndex.set(i, { reason: fit.reason });
+      if (lo > 0 && geo.frontEdge != null) failed.push({ lo, hi, design, reason: fit.reason });
+    }
   }
+  // back in catalogue order
+  designs.forEach((design, i) => {
+    const r = byIndex.get(i)!;
+    if (r.fit) eligible.push({ design, fit: r.fit });
+    else rejected.push({ design, reason: r.reason ?? 'not placed' });
+  });
   const lotProblem = geo.frontEdge == null
     ? 'frontage unresolved: no driveway or street meets this lot'
     : (geo.lotKind === 'pie' || geo.ringFt.length > 4) && geo.frontSource !== 'driveway'

@@ -7,7 +7,7 @@ import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
 import { designsFittingHouse, stepHomeDesignIndex } from './homeDesignsGate';
-import { DEFAULT_HOME_SETBACKS, detachedHouses, houseEligibility, stockEligibility } from './eligibility';
+import { DEFAULT_HOME_SETBACKS, detachedHouses, houseEligibility, stockEligibility, type HouseLotEligibility } from './eligibility';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
 
@@ -21,6 +21,8 @@ interface Props {
   designs?: readonly HomeDesign[];
   /** Buildable publisher stock plans (defaults to the ABHP citation catalogue). */
   stockPlans?: readonly HousingDesignRecord[];
+  /** The workspace's eligibility rows for these elements (computed once there); recomputed when absent. */
+  stockEligibilityRows?: HouseLotEligibility[];
   /** Setbacks the fit uses (the zoning brief's); a lot's own engine setbacks win. */
   stockSetbacks?: { front: number; side: number; rear: number };
   /** Change the home on one house's lot to this stock plan. */
@@ -74,6 +76,7 @@ export default function HomeStudio({
   designs = HOME_DESIGNS,
   stockPlans,
   stockSetbacks = DEFAULT_HOME_SETBACKS,
+  stockEligibilityRows,
   onApplyStock,
 }: Props) {
   // Explicit empty list means “no SF stock for this session” (MF/CS) — do not
@@ -120,8 +123,8 @@ export default function HomeStudio({
   // the list, the preview and Change home all agree (stock is detached only).
   const stockHouses = useMemo(() => detachedHouses(elements), [elements]);
   const stockRows = useMemo(
-    () => (stockAll.length ? stockEligibility(stockAll, elements, stockSetbacks) : []),
-    [stockAll, elements, stockSetbacks],
+    () => stockEligibilityRows ?? (stockAll.length ? stockEligibility(stockAll, elements, stockSetbacks) : []),
+    [stockEligibilityRows, stockAll, elements, stockSetbacks],
   );
   const stockRow = useMemo(
     () => {

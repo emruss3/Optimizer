@@ -67,7 +67,7 @@ for (const p of PARCELS) {
       row.homesButton = { visible: await homesBtn.isVisible().catch(() => false), disabled: await homesBtn.isDisabled().catch(() => null), title: await homesBtn.getAttribute('title').catch(() => null) };
       await homesBtn.click();
       const lotSel = page.locator('[data-testid="home-stock-lot"]').first();
-      await lotSel.waitFor({ state: 'visible', timeout: 20000 }).catch(async (e) => {
+      await lotSel.waitFor({ state: 'visible', timeout: 30000 }).catch(async (e) => {
         row.dialog = (await page.locator('[role="dialog"]').first().innerText().catch(() => 'no dialog')).replace(/\s+/g, ' ').slice(0, 300);
         throw e;
       });

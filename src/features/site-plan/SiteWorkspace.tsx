@@ -4218,6 +4218,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           designs={homeDesignsUi.eligible}
           stockPlans={sfStockDesigns}
           stockSetbacks={homeSetbacks}
+          stockEligibilityRows={stockRows}
           onApplyStock={sfStockDesigns.length > 0 ? (designId, houseId) => { handleHousingDesignSelect(designId, houseId); handleSceneSelection([houseId]); } : undefined}
           onClose={closeHomes}
           onPreview={study => {

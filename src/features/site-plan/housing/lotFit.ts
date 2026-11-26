@@ -271,8 +271,20 @@ export function fitStockDesignInLot(design: HousingDesignRecord, lot: LotGeometr
     const o = add(add(fa, mul(u, s)), mul(n, t));
     return [o, add(o, mul(u, along)), add(add(o, mul(u, along)), mul(n, back)), add(o, mul(n, back))];
   };
+  const driveBoxes = lot.drivesFt.map(d => ({
+    x0: Math.min(...d.map(p => p[0])), x1: Math.max(...d.map(p => p[0])),
+    y0: Math.min(...d.map(p => p[1])), y1: Math.max(...d.map(p => p[1])),
+  }));
+  const needReach = lot.frontSource === 'driveway' && lot.drivesFt.length > 0;
   const fits = (rect: Pt[]): boolean => {
+    // cheapest first: corners inside the lot
     if (!rect.every(p => pointInPolygon(p, ring))) return false;
+    // a quick box test before the exact reach: no drive box within reach → out
+    if (needReach) {
+      const x0 = Math.min(rect[0]![0], rect[1]![0], rect[2]![0], rect[3]![0]), x1 = Math.max(rect[0]![0], rect[1]![0], rect[2]![0], rect[3]![0]);
+      const y0 = Math.min(rect[0]![1], rect[1]![1], rect[2]![1], rect[3]![1]), y1 = Math.max(rect[0]![1], rect[1]![1], rect[2]![1], rect[3]![1]);
+      if (!driveBoxes.some(b => Math.max(0, b.x0 - x1, x0 - b.x1) <= DRIVE_REACH_FT && Math.max(0, b.y0 - y1, y0 - b.y1) <= DRIVE_REACH_FT)) return false;
+    }
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i]!, b = ring[(i + 1) % ring.length]!;
       for (let k = 0; k < 4; k++) {
@@ -281,18 +293,33 @@ export function fitStockDesignInLot(design: HousingDesignRecord, lot: LotGeometr
     }
     if (!lot.drivesFt.every(d => !polysOverlap(rect, d))) return false;
     // the lot's driveway still has to reach the house (or its parking beside it)
-    if (lot.frontSource === 'driveway' && lot.drivesFt.length && Math.min(...lot.drivesFt.map(d => polyPolyDist(rect, d))) > DRIVE_REACH_FT) return false;
+    if (needReach && Math.min(...lot.drivesFt.map(d => polyPolyDist(rect, d))) > DRIVE_REACH_FT) return false;
     return true;
   };
 
+  // The house must sit within DRIVE_REACH_FT of the driveway, so only the window around the
+  // drives is searched (a 33-edge lot with a long drive took 46 s scanning the whole lot).
+  const reach = lot.frontSource === 'driveway' && lot.drivesFt.length > 0;
+  const dPts = reach ? lot.drivesFt.flat() : [];
+  const dS = dPts.map(p => dot(sub(p, fa), u)), dT = dPts.map(p => dot(sub(p, fa), n));
+  const win = reach
+    ? { s0: Math.min(...dS) - DRIVE_REACH_FT, s1: Math.max(...dS) + DRIVE_REACH_FT, t0: Math.min(...dT) - DRIVE_REACH_FT, t1: Math.max(...dT) + DRIVE_REACH_FT }
+    : null;
   for (const o of orientations) {
-    for (let t = lot.setbacks.front; t + o.back <= tMax + 1e-6; t += 1) {
-      // centred on the front edge first, then outward in 1 ft steps either side
-      const centre = frontMid - o.along / 2;
-      const span = Math.ceil(Math.max(centre - sMin, sMax - o.along - centre)) + 1;
+    const tStart = Math.max(lot.setbacks.front, win ? Math.floor(win.t0 - o.back) : -Infinity);
+    const tEnd = Math.min(tMax - o.back, win ? win.t1 : Infinity);
+    const sLo = Math.max(sMin, win ? win.s0 - o.along : -Infinity);
+    const sHi = Math.min(sMax - o.along, win ? win.s1 : Infinity);
+    if (sHi < sLo - 1e-6) continue;
+    // 1 ft steps; 2 ft on a large search window (a long drive), which keeps a lot under ~0.5 s
+    const step = (tEnd - tStart) * (sHi - sLo) > 20000 ? 2 : 1;
+    for (let t = tStart; t <= tEnd + 1e-6; t += step) {
+      // centred on the front edge first (clamped into the window), then outward in 1 ft steps
+      const centre = Math.min(Math.max(frontMid - o.along / 2, sLo), sHi);
+      const span = Math.ceil(Math.max(centre - sLo, sHi - centre) / step) + 1;
       for (let k = 0; k <= 2 * span; k++) {
-        const s = centre + (k % 2 === 0 ? k / 2 : -(k + 1) / 2);
-        if (s < sMin - 1e-6 || s + o.along > sMax + 1e-6) continue;
+        const s = centre + step * (k % 2 === 0 ? k / 2 : -(k + 1) / 2);
+        if (s < sLo - 1e-6 || s > sHi + 1e-6) continue;
         const rect = rectAt(s, t, o.along, o.back);
         if (!fits(rect)) continue;
         const rotationDeg = (Math.atan2(u[1], u[0]) * 180) / Math.PI + (o.turned ? 90 : 0);
