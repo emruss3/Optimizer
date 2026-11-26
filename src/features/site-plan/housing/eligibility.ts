@@ -103,12 +103,15 @@ export function houseEligibility(
     const a = d.footprint.widthFt, b = d.footprint.depthFt;
     return [Math.min(a, b), Math.max(a, b)] as const;
   };
-  const failed: Array<{ lo: number; hi: number; design: HousingDesignRecord; reason: string }> = [];
+  // only like with like: a plan with a different parking arrangement, porch face or vehicle door
+  // meets the lot differently, so its failure says nothing about another (PR 221 audit)
+  const kindOf = (d: HousingDesignRecord) => `${d.parking}|${d.porchFace}|${d.vehicle ? d.vehicle.wall : 'none'}`;
+  const failed: Array<{ lo: number; hi: number; kind: string; design: HousingDesignRecord; reason: string }> = [];
   const order = designs.map((d, i) => ({ d, i })).sort((x, y) => dims(x.d)[0] * dims(x.d)[1] - dims(y.d)[0] * dims(y.d)[1]);
   const byIndex = new Map<number, { fit?: LotFitResult; reason?: string }>();
   for (const { d: design, i } of order) {
     const [lo, hi] = dims(design);
-    const beaten = lo > 0 ? failed.find(f => f.lo <= lo && f.hi <= hi) : undefined;
+    const beaten = lo > 0 ? failed.find(f => f.kind === kindOf(design) && f.lo <= lo && f.hi <= hi) : undefined;
     if (beaten) {
       byIndex.set(i, { reason: `footprint ${design.footprint.widthFt}×${design.footprint.depthFt} ft is no smaller than ${beaten.design.planNumber}, which does not fit: ${beaten.reason}` });
       continue;
@@ -117,7 +120,7 @@ export function houseEligibility(
     if (fit.status === 'placed' && fit.placement) byIndex.set(i, { fit });
     else {
       byIndex.set(i, { reason: fit.reason });
-      if (lo > 0 && geo.frontEdge != null) failed.push({ lo, hi, design, reason: fit.reason });
+      if (lo > 0 && geo.frontEdge != null) failed.push({ lo, hi, kind: kindOf(design), design, reason: fit.reason });
     }
   }
   // back in catalogue order

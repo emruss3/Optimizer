@@ -3436,7 +3436,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           context: neighbors,
           schedule: seedViewOn || activeHome ? null : { units: metrics?.totalUnits ?? null, stalls: metrics?.stallsDrawn ?? metrics?.stallsProvided ?? null },
           generator: planLineage?.generatorVersion ?? null,
-          housingDesignId: activeHome?.elements.find(e=>e.id===activeHome.house)?.properties.housingDesignId ?? housingDesignId,
+          // the scheme names one design only when every house carries it; a mix is read per building (PR 221 audit)
+          housingDesignId: undefined,
         })),
     [classicDrawing, displayElements, parcel.ogc_fid, parcel.geometry, sceneSchemeId, envelopeMeters, neighbors, seedViewOn, activeHome, metrics?.totalUnits, metrics?.stallsDrawn, metrics?.stallsProvided, planLineage?.generatorVersion, housingDesignId],
   );
