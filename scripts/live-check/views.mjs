@@ -63,6 +63,20 @@ for (const p of PARCELS) {
     row.shotNote = await page.locator('[data-testid="shot-note"]').innerText().catch(() => null);
     row.fourK = await page.locator('[data-testid="render-4k"]').innerText().catch(() => null);
     await page.screenshot({ path: path.join(out, `${p.id}-street.png`) });
+    // Present (audit 9379472 F8): the look label follows what is on screen, never Review over an illustration
+    await page.locator('[data-testid="look-review"]').first().click().catch(() => {});
+    await page.waitForTimeout(800);
+    await page.locator('[data-testid="render-present"]').first().click();
+    await page.waitForTimeout(2000);
+    row.present = {
+      on: await page.locator('[data-testid="massing-3d"]').getAttribute('data-present').catch(() => null),
+      reviewPressed: await page.locator('[data-testid="look-review"]').getAttribute('aria-pressed').catch(() => null),
+      renderingPressed: await page.locator('[data-testid="look-rendering"]').getAttribute('aria-pressed').catch(() => null),
+      label: await page.locator('[data-testid="look-illustration"]').innerText().catch(() => null),
+    };
+    await page.screenshot({ path: path.join(out, `${p.id}-present.png`) });
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
     await page.getByText('2D Plan', { exact: false }).first().click().catch(() => {});
     await page.waitForTimeout(1000);
     row.dockBack2d = await page.locator('[data-testid="dock"]').getAttribute('data-open').catch(() => null);
@@ -75,6 +89,7 @@ for (const p of PARCELS) {
     };
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
+    if (row.present?.on !== 'true' || row.present.reviewPressed !== 'false' || row.present.renderingPressed !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong look label: ${JSON.stringify(row.present)}`);
     if (row.timeline.revision == null || row.timeline.interactive3d == null) throw new Error('timeline missing the plan revision or 3D milestone');
   } catch (e) {
     row.problem = String(e.message ?? e).slice(0, 240);
@@ -87,7 +102,7 @@ for (const p of PARCELS) {
 await browser.close();
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
+  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
 const failed = results.filter(r => r.problem);
 if (failed.length) { console.log(`${failed.length} of ${results.length} parcels failed`); process.exit(1); }

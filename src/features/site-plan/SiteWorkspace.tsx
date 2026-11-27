@@ -372,6 +372,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // the by-right plan as it stood before a re-solve, kept while a locked home conflicts with the new one
   type SfSnapshot = { elements: Element[]; metrics: typeof metrics; summary: SfV1Summary | null; impBase: number | null; override: SfV1Options };
   const sfSnapshotRef = useRef<SfSnapshot | null>(null);
+  // the plan as it stood when a re-solve began: what "Return to the previous plan" restores. Taken before
+  // the solve renders anything, so it still carries the previous override (the override control sets the
+  // new one, then asks for the solve).
+  const solveFromRef = useRef<SfSnapshot | null>(null);
   const [homeLockConflict, setHomeLockConflict] = useState<{ before: SfSnapshot; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   const [homeCarry, setHomeCarry] = useState<{ kept: number; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   // The competition's best on the sheet in place of the default answer, and why
@@ -1842,7 +1846,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setHomeCarry({ kept: carried.kept.length, lost: carried.lost });
       // a locked home the new plan cannot keep: keep the previous plan to go back to, and ask
       const lockedLost = carried.lost.filter(l => l.locked);
-      setHomeLockConflict(lockedLost.length && sfSnapshotRef.current ? { before: sfSnapshotRef.current, lost: lockedLost } : null);
+      const before = solveFromRef.current ?? sfSnapshotRef.current;
+      setHomeLockConflict(lockedLost.length && before ? { before, lost: lockedLost } : null);
     } else {
       setHomeCarry(null);
     }
@@ -1981,6 +1986,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setLotFitSummary('Lot fit needs a numeric parcel id.');
       return;
     }
+    solveFromRef.current = sfSnapshotRef.current;
     setIsGeneratingLots(true);
     try {
       const pattern = await fetchPlanPattern(contextOgcFid).catch(() => null);

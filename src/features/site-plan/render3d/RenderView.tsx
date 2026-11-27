@@ -416,6 +416,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
   // light, style and photoreal are for showing the plan, not for reading it
   const showy = look === 'rendering' || present;
+  // the look on screen: Present always shows the rendering, whatever the toggle was left on
+  const shownLook: 'review' | 'rendering' = showy ? 'rendering' : 'review';
   const hazards = new Set(data.polygons.map(p => p.hazard));
 
   return (
@@ -429,7 +431,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       )}
       {showy && (
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
-        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium" data-testid="look-illustration" title="Materials, planting, light and the surroundings are illustration, not site data">Illustration</span>
+        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium" data-testid="look-illustration" title="Materials, planting, light and the surroundings are illustration, not site data">{present ? 'Illustration · Present' : 'Illustration'}</span>
         <select value={sunKey} onChange={e => setSunKey(e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 bg-white" data-testid="sun-date" aria-label="Date of the sun study">
           {SUN_DATES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
         </select>
@@ -442,9 +444,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
         <div className="inline-flex rounded border border-gray-200 overflow-hidden mr-1" role="group" aria-label="View">
           {(['review', 'rendering'] as const).map(k => (
-            <button key={k} type="button" aria-pressed={look === k} onClick={() => setLook(k)} data-testid={`look-${k}`}
-              title={k === 'review' ? 'For reading the plan: the proposal stands out; the parcel, the envelope and the access are marked' : 'For showing the plan: materials, planting and the neighbourhood'}
-              className={`px-1.5 py-0.5 ${look === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+            <button key={k} type="button" aria-pressed={shownLook === k} onClick={() => { setLook(k); if (k === 'review') setPresent(false); }} data-testid={`look-${k}`}
+              title={k === 'review' ? (present ? 'Leave Present and read the plan: the proposal stands out; the parcel, the envelope and the access are marked' : 'For reading the plan: the proposal stands out; the parcel, the envelope and the access are marked') : 'For showing the plan: materials, planting and the neighbourhood'}
+              className={`px-1.5 py-0.5 ${shownLook === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
               {k === 'review' ? 'Review' : 'Rendering'}
             </button>
           ))}

@@ -12,6 +12,7 @@ import type { ForegroundObstacle, Subject } from './shots';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
+import { CROWN_DRAWN } from '../scene/landscape';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
@@ -960,7 +961,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
     const ranked = standing.length > plantBudget && sitters().length ? [...standing].sort((a, b) => distance(a) - distance(b)) : standing;
     const detail = ranked === standing ? standing : ranked.slice(0, plantBudget);
-    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
+    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * CROWN_DRAWN, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
     if (ranked !== standing) plant(ranked.slice(plantBudget).map(([x, y, r]) => [x, y, r * 1.12]), 'site-trees', true);
     if (bushes.length) {
       const shrubs = opts.light && data.shrubs.length > 144 ? [...data.shrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : data.shrubs;
