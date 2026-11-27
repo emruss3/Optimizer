@@ -110,6 +110,8 @@ export interface WindowSpec {
   interiorDepth?: number;
   /** An authored room pocket already provides the opaque surfaces behind the glass. */
   roomBehindGlass?: boolean;
+  /** Window in a cut masonry/cladding opening. The outer wall face is still d. */
+  insetJoinery?: boolean;
 }
 
 export interface Architecture {
@@ -235,6 +237,49 @@ export class Kit {
     if (this.lite) {
       this.panel(w, a - 0.05, b + 0.05, z0 - 0.05, z1 + 0.05, d + 0.02, o.frame);
       this.pane(w, a, b, z0, z1, d + 0.04);
+      return;
+    }
+    if (o.insetJoinery) {
+      // A layered opening, not a dark decal on the house: interior stop, deep-lined
+      // jambs, face flashing and a sloping sill. The opening itself is unchanged.
+      const frame = 0.047, setBack = d - 0.105;
+      const insideA = a + frame, insideB = b - frame;
+      const low = z0 + frame, high = z1 - frame;
+      const along = (s: number, depth: number, z: number) => [...on(w, s, depth), z];
+      const reveal = o.sill ?? o.frame;
+      const casing = o.casing ?? o.frame;
+      const ledge = 0.105;
+      // Returns run to the actual opening edges, leaving the room pocket unobstructed.
+      this.box(w, a, insideA, setBack, d + 0.028, z0, z1 - z0, reveal);
+      this.box(w, insideB, b, setBack, d + 0.028, z0, z1 - z0, reveal);
+      this.box(w, insideA, insideB, setBack, d + 0.029, high, frame, reveal);
+      this.box(w, insideA, insideB, setBack, d + 0.026, z0, frame, reveal);
+      const trimA = Math.max(0, a - 0.055), trimB = Math.min(w.len, b + 0.055);
+      this.box(w, trimA, trimB, d - 0.01, d + ledge, z0 - 0.043, 0.018, casing);
+      this.flat([along(trimA, d, z0 - 0.002), along(trimB, d, z0 - 0.002),
+        along(trimB, d + ledge, z0 - 0.024), along(trimA, d + ledge, z0 - 0.024)], casing);
+      for (const edge of [trimA, trimB]) this.flat([
+        along(edge, d, z0 - 0.025), along(edge, d, z0 - 0.002), along(edge, d + ledge, z0 - 0.025),
+      ], casing);
+      this.box(w, trimA, trimB, d, d + 0.068, z1 + 0.009, 0.022, casing);
+      const sash = 0.022, paneDepth = setBack + 0.009, barDepth = paneDepth + 0.017;
+      this.box(w, insideA, insideA + sash, setBack, barDepth, low, high - low, o.frame);
+      this.box(w, insideB - sash, insideB, setBack, barDepth, low, high - low, o.frame);
+      for (const z of [low, high - sash]) this.box(w, insideA, insideB, setBack, barDepth, z, sash, o.frame);
+      if (!o.roomBehindGlass) {
+        const backing = pick(WINDOW_INTERIORS, hashId(`${this.seed}|${w.a}|${s.toFixed(2)}|${z0.toFixed(2)}`));
+        this.recess(w, insideA, insideB, low, high, setBack, d - Math.max(0.22, o.interiorDepth ?? 0.31), backing, tone(backing, 0.9));
+      }
+      this.pane(w, insideA, insideB, low, high, paneDepth, o.glazed);
+      const [cols, rows] = o.grid ?? [1, 1];
+      for (let i = 1; i < cols; i++) {
+        const x = insideA + (insideB - insideA) * i / cols;
+        this.box(w, x - 0.012, x + 0.012, paneDepth, barDepth, low, high - low, o.frame);
+      }
+      for (let i = 1; i < rows; i++) {
+        const z = low + (high - low) * i / rows;
+        this.box(w, insideA, insideB, paneDepth, barDepth, z - 0.012, 0.024, o.frame);
+      }
       return;
     }
     // The frame stands 4 inches proud of the glass, so the opening has a reveal and casts its own
