@@ -9,6 +9,7 @@ import { pointsAlongSegment, type Segment } from '../../../components/site-plann
 import { createGroundFrame, pointInPolygon } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
+import { isOutdoorAmenityName, OUTDOOR_DECK_HEIGHT_FT } from '../scene/outdoorAmenity';
 import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
 import { buildArchitecture, DEFAULT_STYLE, type ArchStyle } from './architecture';
 import type { HouseAccess } from './architecture/fittedHouse';
@@ -190,8 +191,23 @@ export function buildMassingData(
   const m = (p: number[]): number[] => frame.toMeters(p);
   // A building's height comes from the one place a story count becomes a
   // height (scene/heights), so the model, the plan and the sheets agree.
-  const heightOf = (el: Element) =>
-    buildingHeight(buildingUse(el), (el.properties?.floors as number) ?? (el.properties?.stories as number) ?? 1, el.properties?.heightFt);
+  // Outdoor amenity pads (pool decks) are a paved surface, not a story.
+  const propertiesOutdoor = (el: Element) =>
+    el.properties?.outdoor === true || isOutdoorAmenityName(el.name);
+  const heightOf = (el: Element) => {
+    const outdoor = propertiesOutdoor(el);
+    if (buildingUse(el) === 'amenity' && outdoor) {
+      return {
+        aboveGradeFt: OUTDOOR_DECK_HEIGHT_FT,
+        basis: 'estimated' as const,
+        label: 'Estimated height' as const,
+        levelsFt: [OUTDOOR_DECK_HEIGHT_FT],
+        assumption: null,
+        note: 'Outdoor amenity pad: paved deck surface, not an enclosed story.',
+      };
+    }
+    return buildingHeight(buildingUse(el), (el.properties?.floors as number) ?? (el.properties?.stories as number) ?? 1, el.properties?.heightFt);
+  };
 
   const polygons: MassingPolygon[] = drawable.map(el => {
     const hazard = el.properties?.hazardKind;
@@ -207,7 +223,9 @@ export function buildMassingData(
       elevation: el.type === 'building' ? heightOf(el).aboveGradeFt * METERS_PER_FOOT : 0.15,
       color: TYPE_COLORS[el.type]!,
       label: el.type === 'building'
-        ? `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`
+        ? (propertiesOutdoor(el)
+          ? `${el.name ?? el.id} · outdoor deck`
+          : `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`)
         : el.name ?? el.id,
     };
   });
@@ -347,7 +365,10 @@ export function buildMassingData(
     const shrubs: Array<[number, number, number]> = [];
     buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
-      const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
+      const outdoor = propertiesOutdoor(el);
+      const label = outdoor
+        ? `${el.name ?? el.id} · outdoor deck`
+        : `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
       const use = buildingUse(el), properties = el.properties;
       const garage = garageOf(el), deck = deckUnder(el);
       const neighbours = outlines.filter((_, j) => j !== i);
@@ -425,7 +446,9 @@ export function buildMassingData(
       if (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? '')) {
         walks.push({ id, path, widthM: 22 * METERS_PER_FOOT, strip: true });
       }
-      if (use === 'apartments' || use === 'amenity' || use === 'other') walks.push({ id, path, widthM: 12 * METERS_PER_FOOT, strip: false });
+      if ((use === 'apartments' || use === 'amenity' || use === 'other') && !propertiesOutdoor(el)) {
+        walks.push({ id, path, widthM: 12 * METERS_PER_FOOT, strip: false });
+      }
       if (kind === 'drive' || (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? ''))) curbs.push({ id, path });
     }
   }

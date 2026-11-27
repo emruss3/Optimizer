@@ -17,6 +17,7 @@ import { geom2274To4326 } from '../../../utils/tnStatePlane';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { supabase } from '../../../lib/supabase';
 import { toCanvasPolygon } from './generateSfPlan';
+import { isOutdoorAmenityName } from '../scene/outdoorAmenity';
 
 /** Matches the server's average-unit assumption (units = GFA / 950). */
 const AVG_UNIT_SF = 950;
@@ -739,9 +740,10 @@ export function seedFamilyPlanToElements(
     } catch { /* one malformed geometry must not sink the plan */ }
   }
 
-  // Named pads: the courtyard on the deck is open space, the pool deck an
-  // amenity building of one story — the legacy mapper's vocabulary, so the
-  // legend and the gate already know them.
+  // Named pads: the courtyard on the deck is open space. Amenity pads stay in
+  // the amenity vocabulary for the legend and gate, but outdoor names (pool
+  // deck) are flagged so massing draws a surface — not an enclosed pavilion
+  // with windows and a roof (Main St live audit 2026-11-24).
   (resp.greens ?? []).forEach((g, i) => {
     if (!g?.geom_2274) return;
     try {
@@ -758,12 +760,23 @@ export function seedFamilyPlanToElements(
   (resp.amenity ?? []).forEach((a, i) => {
     if (!a?.geom_2274) return;
     try {
+      const name = a.name ?? 'Clubhouse';
+      const outdoor = isOutdoorAmenityName(name);
       elements.push({
         id: `${prefix}-amenity-${i + 1}`,
         type: 'building',
-        name: a.name ?? 'Clubhouse',
+        name,
         geometry: seedTo3857(a.geom_2274 as Polygon),
-        properties: { areaSqFt: num(a.area_sqft) ?? undefined, floors: 1, stories: 1, use: 'amenity', color: '#F59E0B' },
+        properties: {
+          areaSqFt: num(a.area_sqft) ?? undefined,
+          // Story count stays 1 for sheet/legend vocabulary; outdoor:true tells
+          // massing to draw a deck surface instead of an enclosed pavilion.
+          floors: 1,
+          stories: 1,
+          use: 'amenity',
+          ...(outdoor ? { outdoor: true, outdoorUse: 'deck' as const } : {}),
+          color: outdoor ? '#7DD3FC' : '#F59E0B',
+        },
         metadata: meta,
       } as Element);
     } catch { /* skip malformed pad */ }
