@@ -2,7 +2,7 @@ import polygonClipping from 'polygon-clipping';
 import type { Element } from '../../../engine/types';
 import { createGroundFrame, type GroundFrame } from '../scene/frame';
 import { type HomeDesign, type Point, type Rect, type Face } from './originalDesigns';
-import { corners, designBounds, doorAnchors, floorArea, floorBase, normal, program } from './drawings';
+import { corners, designBounds, doorAnchors, floorArea, floorBase, normal, program, roofHeight } from './drawings';
 
 type Ring = Point[];
 type Poly = Ring[];
@@ -140,12 +140,16 @@ export const residentialHomes = (elements: Element[]) =>
     (e) =>
       e.type === 'building' && (e.properties.house || e.properties.singleFamilyHouse || e.properties.townhome),
   );
+const isAlley = (el: Element) => /\balley\b/i.test(el.name) || el.properties.kind === 'alley';
 export function placeHome(
   h: HomeDesign,
   selected: Element,
   elements: Element[],
   siteBoundary?: Element['geometry'] | null,
+  maxHeightFt?: number | null,
 ): FitResult {
+  if (h.rearLoadPrecedent && maxHeightFt != null && maxHeightFt > 0 && roofHeight(h) > maxHeightFt)
+    return { reason: `The roof height exceeds the recorded ${maxHeightFt} ft limit.` };
   try {
     return fitHome(h, selected, elements, siteBoundary);
   } catch {
@@ -162,6 +166,10 @@ function fitHome(
 ): FitResult {
   if (Boolean(selected.properties.townhome) !== Boolean(h.attached))
     return { reason: h.attached ? 'Choose an attached row home.' : 'Choose a detached house lot.' };
+  // Most detached schemes have no alley. Avoid projecting the whole plan for each rear-load candidate.
+  if (h.rearLoadPrecedent && !elements.some(el =>
+    (el.type === 'road' || el.type === 'circulation' || el.type === 'parking-aisle') && isAlley(el)))
+    return { reason: 'The rear garage needs a separately mapped alley.' };
   const first = selected.geometry.coordinates[0]?.[0];
   if (!first) return { reason: 'The house has no placed footprint.' };
   const frame = createGroundFrame(first[0]!, first[1]!),
@@ -173,14 +181,34 @@ function fitHome(
   const drives = local
     .filter(({ el }) => el.name === 'Driveway' || el.properties.kind === 'driveway')
     .map((o) => o.poly);
-  const mappedStreets = local
-    .filter(
-      ({ el }) =>
-        el.type === 'road' ||
-        (el.type === 'circulation' && !/walk|sidewalk|driveway/i.test(el.name)) ||
-        el.type === 'parking-aisle',
-    )
-    .map((o) => o.poly);
+  const pavedWays = local.filter(
+    ({ el }) =>
+      el.type === 'road' ||
+      (el.type === 'circulation' && !/walk|sidewalk|driveway/i.test(el.name)) ||
+      el.type === 'parking-aisle',
+  );
+  const mappedStreets = pavedWays.map((o) => o.poly);
+  let rearLanes: Poly[] = [];
+  let rearLoadFrontStreets: Poly[] = [];
+  if (h.rearLoadPrecedent) {
+    rearLoadFrontStreets = pavedWays
+      .filter(({ el }) => !isAlley(el) && (el.type === 'road' || /street|mews|private lane/i.test(el.name)))
+      .map((o) => o.poly);
+    if (!rearLoadFrontStreets.length) return { reason: 'A separate mapped front street is needed for this rear-load study.' };
+    const alleys = pavedWays.filter(({ el }) => isAlley(el)).map((o) => o.poly);
+    if (!alleys.length) return { reason: 'The rear garage needs a separately mapped alley.' };
+    // Check connected pavement in the drawn scheme, not legal access, turning radius or grade.
+    const reaches = (a: Poly, b: Poly) =>
+      area(polygonClipping.intersection(a, b)) > 0.01 ||
+      a[0]!.some((p) => closest(p, [b]).distance <= 0.06) ||
+      b[0]!.some((p) => closest(p, [a]).distance <= 0.06);
+    const connectedWays = new Set(rearLoadFrontStreets);
+    for (const pavement of connectedWays)
+      for (const other of mappedStreets)
+        if (!connectedWays.has(other) && reaches(pavement, other)) connectedWays.add(other);
+    rearLanes = alleys.filter((lane) => connectedWays.has(lane));
+    if (!rearLanes.length) return { reason: 'No drawn alley connects to the street for this rear-load study.' };
+  }
   const walks = local.filter(({ el }) => /^(walk|sidewalk|footpath)/i.test(el.name)).map((o) => o.poly);
   const accessBands = local
     .filter(
@@ -199,6 +227,7 @@ function fitHome(
       : [];
   const streets = mappedStreets.length ? mappedStreets : frontageApproaches;
   if (!streets.length) return { reason: 'The scheme has no mapped vehicle approach for a driveway check.' };
+  const frontStreets = h.rearLoadPrecedent ? rearLoadFrontStreets : streets;
   const routeLimit = lot ? polygonClipping.union(snap(lot.poly), ...accessBands.map(snap)) : site ? [site] : null;
   const allParts = local
     .filter(
@@ -220,14 +249,14 @@ function fitHome(
     own &&
     (streets.some((street) => area(polygonClipping.intersection(own, street)) > 0.01) ||
       own[0]!.some((p) => closest(p, streets).distance < 1.25));
-  const vehicle = [...(connected && own ? [own] : []), ...streets];
-  const approach = closest(centre, streets).point;
+  const vehicle = h.rearLoadPrecedent ? rearLanes : [...(connected && own ? [own] : []), ...streets];
+  const approach = closest(centre, h.rearLoadPrecedent ? rearLanes : streets).point;
   const toward = unit(diff(approach, centre)),
     outer = lot?.poly[0];
   const edgeBands: Poly[] = [];
   if (outer && setbacks) {
     const lotMid = mean(outer),
-      roadNormal = unit(diff(closest(lotMid, streets).point, lotMid));
+      roadNormal = unit(diff(closest(lotMid, frontStreets).point, lotMid));
     const signed = outer.reduce((s, a, i) => {
       const b = outer[(i + 1) % outer.length]!;
       return s + a[0] * b[1] - b[0] * a[1];
@@ -269,7 +298,7 @@ function fitHome(
     if (dot(direction(axis, orientation), toward) < 0.3) continue;
     const centreOrigin = add(centre, add(scale(axis, -bx - bw / 2), scale(depth, -by - bd / 2)));
     const origins: Point[] = [];
-    if (own && connected && garages.length && !h.attached) {
+    if (own && connected && garages.length && !h.attached && !h.rearLoadPrecedent) {
       const g = garages[0]!,
         out = direction(axis, g.face),
         ring = own[0]!.slice(0, -1);
@@ -285,7 +314,7 @@ function fitHome(
     for (const origin of origins) {
       const pt = (p: Point) => add(origin, add(scale(axis, p[0]), scale(depth, p[1])));
       const poly = (shape: Poly): Poly => shape.map((r) => r.map(pt));
-      const solids = h.volumes.map((v) => poly(rect(v.rect)));
+      const solids = [...h.volumes, ...(h.roofBulkhead ? [h.roofBulkhead] : [])].map(v => poly(rect(v.rect)));
       const accessSolids = h.volumes.filter((v) => floorBase(h, v.first) < 9).map((v) => poly(rect(v.rect)));
       const porches = h.porches.map((p) => poly(rect(p.rect)));
       const occupied = [...solids, ...porches];
@@ -321,7 +350,7 @@ function fitHome(
         for (const part of newParts) paths.push({ poly: part, kind: 'driveway' });
         return true;
       };
-      let walkTarget: Poly[] = [...walks, ...(own && connected ? [own] : []), ...streets];
+      let walkTarget: Poly[] = h.rearLoadPrecedent ? frontStreets : [...walks, ...(own && connected ? [own] : []), ...streets];
       if (garages.length) {
         if (!garages.every((g) => ride(pt(g.point), direction(axis, g.face), g.width + 0.5))) continue;
         if (h.parking === 'side') {
@@ -375,9 +404,10 @@ function fitHome(
       const threshold = pt([en[0], porch ? porch.rect[1] : en[1]]),
         front = direction(axis, entry.face),
         landing = add(threshold, scale(front, 2.4));
-      const nearestWalk = closest(landing, [...walkTarget, ...paths.map((p) => p.poly)]);
+      const nearestWalk = closest(landing, h.rearLoadPrecedent ? walkTarget : [...walkTarget, ...paths.map((p) => p.poly)]);
       if (nearestWalk.distance > 90) continue;
       const target = nearestWalk.point;
+      if (h.rearLoadPrecedent && dot(diff(target, landing), front) < -0.06) continue;
       const walk = segmentRect(threshold, landing, 3.5);
       const end = dist(landing, target) > 0.5 ? segmentRect(landing, target, 3.5) : null;
       if (blocked(walk) || (end && blocked(end))) continue;
@@ -408,7 +438,7 @@ function fitHome(
           housingBaths: info.baths,
           housingHeatedSf: info.heated,
           housingStories: h.levels.length,
-          housingSource: 'Parcel Proforma original schematic design',
+          housingSource: h.rearLoadPrecedent?.source ?? 'Parcel Proforma original schematic design',
           housingVerification: 'provisional',
           housingAttachedGarage: garages.length > 0 && h.id !== 'tn-garden-infill-v1',
           housingFitReason:
@@ -422,16 +452,17 @@ function fitHome(
           floors: h.levels.length,
           stories: h.levels.length,
           storiesAssumed: false,
-          heightFt: floorBase(h, h.levels.length),
+          heightFt: h.rearLoadPrecedent ? roofHeight(h) : floorBase(h, h.levels.length),
           housePlan: h.name,
           floorplanId: undefined,
-          houseSource: 'Parcel Proforma original design',
+          houseSource: h.rearLoadPrecedent?.source ?? 'Parcel Proforma original design',
           houseGarage: garages.length > 0 && h.id !== 'tn-garden-infill-v1',
           houseBeds: info.beds,
           houseBaths: info.baths,
           houseFootprintSf: floorArea(h, 0),
           areaSqFt: area([union[0]!]),
-          homeGrossSf: h.levels.reduce((sum, _, i) => sum + floorArea(h, i), 0),
+          homeGrossSf: h.levels.reduce((sum, level, i) => sum + floorArea(h, i)
+            - level.rooms.filter(r => r.name === 'Covered balcony').reduce((out, r) => out + r.rect[2] * r.rect[3], 0), 0),
           label: h.name,
         },
       };
@@ -531,6 +562,8 @@ function fitHome(
   }
   return {
     reason:
-      'No full-size placement cleared the available footprint, setbacks and mapped approaches. The base scheme is available.',
+      h.rearLoadPrecedent
+        ? 'No full-size placement cleared the available footprint, setbacks, rear garage approach and separate front walk.'
+        : 'No full-size placement cleared the available footprint, setbacks and mapped approaches. The base scheme is available.',
   };
 }
