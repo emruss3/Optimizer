@@ -102,6 +102,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const canvas = useRef<HTMLCanvasElement>(null);
   const rig = useRef<Rig | null>(null);
   const [ready, setReady] = useState(false);
+  // initialised (model and stage built) is not the same as a picture on screen: data-ready waits for the
+  // first frame actually drawn (navigation audit 11-27: an empty canvas read as ready on 211 N 7th)
+  const [painted, setPainted] = useState(false);
   // true when the model stands on surveyed ground that was graded for the picture: the view says so
   const [graded, setGraded] = useState(false);
   const [ground, setGround] = useState<Record<string, unknown>>({ kind: 'flat' });
@@ -357,6 +360,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         const t = performance.now();
         stage.render(camera, moving);
         // the first frame actually painted, not the moment the model was handed over (audit cf4f0e8)
+        if (frames === 0) setPainted(true);
         if (frames === 0) markOnce(`3d|${scene.identity.revision}`, '3d-interactive', { revision: scene.identity.revision, buildings: scene.buildings.length, look: reviewLook ? 'review' : 'rendering' });
         if (frames++ < 3 && (window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] frame ${frames}: ${Math.round(performance.now() - t)} ms`);
       } catch (err) {
@@ -480,6 +484,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         ...(lastShot.current ? { shot: lastShot.current.shot, basis: lastShot.current.basis } : {}),
       });
       setReady(false);
+      setPainted(false);
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
       cv.removeEventListener('pointerdown', onDown);
@@ -592,7 +597,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const hazards = new Set(data.polygons.map(p => p.hazard));
 
   return (
-    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-buildings={scene.buildings.length} data-ground={JSON.stringify(ground)} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
+    <div ref={host} data-testid="massing-3d" data-rendered="pbr" data-ready={ready && painted ? 'true' : 'false'} data-initialized={ready ? 'true' : 'false'} data-scene-key={scene.identity.key} data-present={present ? 'true' : 'false'} data-quality={quality} data-look={look === 'review' && !present ? 'review' : 'rendering'} data-buildings={scene.buildings.length} data-ground={JSON.stringify(ground)} data-shot={lastShot.current ? JSON.stringify({ ...lastShot.current, units: 'ft', frame: 'local east, north, up', position: lastShot.current.position.map(v => Math.round((v / FT) * 100) / 100), target: lastShot.current.target.map(v => Math.round((v / FT) * 100) / 100), revision: scene.identity.revision, style: archStyle, sunKey, sunHour }) : undefined} className={present ? 'fixed inset-0 z-50 bg-[#dfe7ee]' : 'relative w-full h-full rounded-lg overflow-hidden border border-gray-200 bg-[#dfe7ee]'}>
       <canvas ref={canvas} className="block w-full h-full touch-none" aria-label="Rendering of the site plan" />
       {/* Review reads the site data; light, style and photoreal belong to showing it */}
       {!showy && (
@@ -661,6 +666,11 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         // the camera as it stands, named, with any fallback kept beside it (PR 221 audit)
         <div className="absolute bottom-8 left-2 max-w-[60%] rounded bg-white/90 border border-gray-300 px-2 py-0.5 text-[10.5px] text-gray-700 shadow-sm" data-testid="camera-label" data-camera={lastShot.current.shot} data-fallback={shotNote ? 'true' : 'false'}>
           Camera: {lastShot.current.basis}{shotNote ? ' · fallback' : ''}
+        </div>
+      )}
+      {!painted && (
+        <div className="absolute inset-0 z-[1] grid place-items-center pointer-events-none" data-testid="3d-drawing" role="status">
+          <span className="rounded bg-white/85 px-2 py-1 text-[11px] text-gray-700 shadow-sm">{ready ? 'Drawing the model…' : 'Building the model…'}</span>
         </div>
       )}
       {sightNote && !shotNote && (

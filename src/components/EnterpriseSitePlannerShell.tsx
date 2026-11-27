@@ -16,6 +16,7 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Building, Crosshair, Hand, Maximize2, Undo2 } from 'lucide-react';
 import { centerOf, panFor, recall2D, remember2D } from '../lib/viewMemory';
+import { overlaysOver, safeInsets } from '../lib/safeInsets';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -373,7 +374,10 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     const rect = canvas.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    viewport.fitToBounds(processedGeometry.bounds, rect.width, rect.height);
+    // fit between the controls, not under them (navigation audit 11-27)
+    const scope = canvas.closest('[data-testid="site-workspace"]') ?? canvas.parentElement ?? document;
+    const insets = safeInsets({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, overlaysOver(canvas, scope));
+    viewport.fitToBounds(processedGeometry.bounds, rect.width, rect.height, insets);
     setHasInitializedView(true);
   }, [processedGeometry, viewport]);
 
@@ -509,7 +513,9 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     // a single small building is framed with the lot around it, not filling the canvas edge to edge
     const pad = Math.max(maxX - minX, maxY - minY) * 0.6 + 6;
     userMovedViewRef.current = true;
-    viewport.fitToBounds({ minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }, rect.width, rect.height);
+    const container = canvasContainerRef.current!;
+    const scope = container.closest('[data-testid="site-workspace"]') ?? container.parentElement ?? document;
+    viewport.fitToBounds({ minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }, rect.width, rect.height, safeInsets({ left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, overlaysOver(container, scope)));
   }, [elements, selection.selectedCount, selection.selectedElements, pushView, viewport]);
 
   // Handle mouse down
