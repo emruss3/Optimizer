@@ -1,5 +1,7 @@
 # Apartment layout rules: parking must touch something (g58, 2026-11-27)
 
+> Correction (same day, g59): the seed gate described below did not run for anonymous visitors on the live site. See `2026-11-27-mf-frontage-drafter.md`.
+
 Owner audit of 1710 Meharry Blvd (parcel 488278, RM20, 1.76 ac): "we shouldn't have random parking lots not touching the building or another lot."
 
 ## What the plan on screen measured
