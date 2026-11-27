@@ -12,7 +12,7 @@ import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
 import { recall3D, remember3D } from '../../../lib/viewMemory';
-import { aerialShot, aimedSubject, approachShot, prominentSubject, shotUnavailableReason, sightReport, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
+import { aerialShot, aimedSubject, approachShot, prominentSubject, isArchitecturalSubject, shotUnavailableReason, sightReport, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 import { Render4kPanel } from './Render4kPanel';
@@ -146,6 +146,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const previewHouse = useRef<string | undefined>(undefined);
   previewHouse.current = useMemo(() => elements.find(el => Array.isArray(el.properties.homeOrigin))?.id, [elements]);
   // the building selected on the plan: Street and Entry frame it first (handoff 11-27)
+  const elementsRef = useRef(elements);
+  elementsRef.current = elements;
+  const compareRef = useRef(homeCompare);
+  compareRef.current = homeCompare;
   const selectedRef = useRef<string | null | undefined>(selectedId);
   selectedRef.current = selectedId;
   const stood = useRef<{ revision: string; scheme?: string; compare?: boolean; review: boolean; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
@@ -253,7 +257,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
       const { subjects, obstacles, roads, trees, approaches, foreground, garagePavementAt } = r.model.ground;
       const chosen = selectedRef.current;
-      const house = chosen && subjects.some(s => s.id === chosen) ? chosen : previewHouse.current;
+      const house = chosen && subjects.some(s => s.id === chosen && isArchitecturalSubject(s)) ? chosen
+        : compareRef.current ? previewHouse.current : undefined;
       const entranceWalks = house ? approaches.filter(a => a.building === house) : approaches;
       const arrival = shot === 'approach' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
         : shot === 'garage' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron', garagePavementAt)
@@ -273,7 +278,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
         t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
         r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
-        lastShot.current = { shot, ...arrival };
+        const subject = arrival.subjectId ? elementsRef.current.find(e => e.id === arrival.subjectId)?.name : undefined;
+        lastShot.current = { shot, ...arrival, basis: shot === 'street' && subject ? `${subject} · ${arrival.basis}` : arrival.basis };
       } else {
         lift.current = 1;
         r.camera.fov = AERIAL_FOV;

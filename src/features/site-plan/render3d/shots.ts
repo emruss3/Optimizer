@@ -11,6 +11,8 @@ export interface Subject {
   roofHeight?: number;
   /** The level the building stands on, metres above the model's zero: 0 on flat ground. */
   base?: number;
+  /** A pad or outdoor deck can be picked, but is not an architectural camera subject. */
+  siteSurface?: boolean;
   /** For a fitted detached house, the elevation served by its driveway and front walk. */
   facing?: [number, number];
 }
@@ -27,6 +29,7 @@ export interface Shot {
   lift: number;
   /** Why this place: what the reader of a stored shot needs to regenerate or question it. */
   basis: string;
+  subjectId?: string;
 }
 
 export type ForegroundObstacle = [x: number, y: number, radius: number];
@@ -51,8 +54,10 @@ export function aerialShot(focus: { x: number; y: number; radius: number }, azim
   };
 }
 
+export const isArchitecturalSubject = (subject: Subject) => !subject.siteSurface && subject.points.length >= 3;
+
 export function prominentSubject(subjects: Subject[]): Subject | undefined {
-  return [...subjects].filter(s => s.points.length >= 3).sort((a, b) => extent(b.points) - extent(a.points))[0];
+  return [...subjects].filter(isArchitecturalSubject).sort((a, b) => extent(b.points) - extent(a.points))[0];
 }
 
 const centre = (pts: Array<[number, number]>): [number, number] => {
@@ -132,12 +137,14 @@ export function approachShot(
   garagePavementAt?: (x: number, y: number) => boolean,
 ): Shot | null {
   const main = prominentSubject(subjects);
-  const ranked = approaches.filter(a => a.kind === kind).sort((a, b) =>
+  const architecture = subjects.filter(isArchitecturalSubject);
+  const ranked = approaches.filter(a => a.kind === kind && architecture.some(s => s.id === a.building)).sort((a, b) =>
     Number(b.building === main?.id) - Number(a.building === main?.id));
-  const blockers = [...obstacles, ...subjects.map(s => s.points)];
   let fallback: Shot | null = null;
   for (const a of ranked) {
     const [x, y, z] = a.threshold;
+    const blockers = [...obstacles, ...architecture.filter(s => s.id !== a.building).map(s => s.points)];
+    const own = architecture.find(s => s.id === a.building)?.points;
     const dx = a.connection[0] - x, dy = a.connection[1] - y;
     const distance = Math.hypot(dx, dy);
     if (distance < 0.18) continue;
@@ -159,12 +166,16 @@ export function approachShot(
       const point: [number, number] = [x + tx * reach - ty * offset, y + ty * reach + tx * offset];
       if (shortApron && !garagePavementAt?.(...point)) continue;
       if (blockers.some(r => pointInPolygon(point[0], point[1], [r]) || crosses(point, [x, y], r))) continue;
+      // The door can sit inside the roof/porch hull. Test the approach up to the
+      // assembly, not as a ray required to miss the very building it views.
+      const beforeDoor: [number, number] = [x + tx * 0.85, y + ty * 0.85];
+      if (own && (pointInPolygon(point[0], point[1], [own]) || crosses(point, beforeDoor, own))) continue;
       if (trees.some(tree => nearCanopy(point, [x, y], tree, 1.55))) continue;
       const eye = groundAt(...point) + EYE, targetHeight = z + 0.95;
       if (terrainBlocks(point, eye, [x, y], targetHeight, groundAt)) continue;
       const shot: Shot = {
         position: [...point, eye], target: [x - tx * 0.65, y - ty * 0.65, targetHeight],
-        fovDeg: 46, lift: 1, basis: kind === 'apron' ? `Eye level on the drive at the garage of ${a.building}` : `Eye level at the entrance walk of ${a.building}`,
+        fovDeg: 46, lift: 1, subjectId: a.building, basis: kind === 'apron' ? `Eye level on the drive at the garage of ${a.building}` : `Eye level at the entrance walk of ${a.building}`,
       };
       if (!foregroundBlocks(point, [x, y], aspect, 46, foreground)) return shot;
       fallback ??= shot;
@@ -182,7 +193,7 @@ export function streetShot(
   trees: Array<[number, number, number]> = [], groundAt: (x: number, y: number) => number = () => 0,
   foreground: readonly ForegroundObstacle[] = [], preferredHouse?: string,
 ): Shot | null {
-  const ordered = subjects.filter(s => s.points.length >= 3 && (!preferredHouse || s.id === preferredHouse)).map(subject => ({
+  const ordered = subjects.filter(s => isArchitecturalSubject(s) && (!preferredHouse || s.id === preferredHouse)).map(subject => ({
     subject, size: extent(subject.points), road: nearestRoad(centre(subject.points), roads),
   })).sort((a, b) => b.size - a.size);
   if (ordered.length && ordered.every(x => x.subject.facing)) {
@@ -194,7 +205,7 @@ export function streetShot(
   if (!main) return null;
   rest.sort((a, b) => a.road === b.road ? b.size - a.size : a.road - b.road);
   for (const { subject } of [main, ...rest.slice(0, 7)]) {
-    const blockers = [...obstacles, ...subjects.filter(s => s !== subject).map(s => s.points)];
+    const blockers = [...obstacles, ...subjects.filter(s => s !== subject && isArchitecturalSubject(s)).map(s => s.points)];
     const shot = frameStreetSubject(subject, blockers, roads, aspect, trees, groundAt, foreground);
     if (shot) return shot;
   }
@@ -274,6 +285,7 @@ function frameStreetSubject(
     target: [cx, cy, pick.eye],
     fovDeg: STREET_FOV,
     lift: pick.lift,
+    ...(main.id ? { subjectId: main.id } : {}),
     basis: `Street arrival at eye level (${(EYE / FT).toFixed(1)} ft), clear line of sight; ${pick.why}`,
   };
 }
@@ -291,7 +303,9 @@ export function shotUnavailableReason(
   shot: 'street' | 'approach' | 'garage',
   subjects: Subject[], roads: number[][][], approaches: ApproachAnchor[],
 ): string {
-  if (!subjects.some(s => s.points.length >= 3)) return 'no building is drawn to frame';
+  if (!subjects.some(isArchitecturalSubject)) return subjects.some(s => s.siteSurface)
+    ? 'this scheme shows site surfaces or provisional pads, not a building design to frame'
+    : 'no building is drawn to frame';
   if (shot === 'garage') {
     if (!approaches.some(a => a.kind === 'apron')) return 'no drive is drawn to a garage on this plan, so there is no garage approach to stand on';
     return 'every point along the drive has its view of the garage blocked (buildings, trees or ground)';

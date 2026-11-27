@@ -194,7 +194,11 @@ export function SfV1Panel({
   // and is not planned…"); the panel already says it once from remainder_ac, so the note is not repeated.
   const remainderShown = summary.remainder != null && summary.lots > 0;
   const deadEndText = `${summary.deadEnds != null ? ` · ${summary.deadEnds} dead end${summary.deadEnds === 1 ? '' : 's'}` : ''}${summary.deadEndMaxFt != null && summary.deadEndMaxFt > 0 ? ` (max ${Math.round(summary.deadEndMaxFt)} ft)` : ''}`;
-  const otherNotes = summary.notes.filter(n => n !== steep && !(remainderShown && isRemainderNote(n)));
+  const schedule = housing?.schedule;
+  const assigned = schedule?.rows.filter(row => row.kind !== 'engine').length ?? 0;
+  const pads = schedule?.rows.length ? schedule.rows.length - assigned : 0;
+  const otherNotes = summary.notes.filter(n => n !== steep && !(remainderShown && isRemainderNote(n))
+    && !(schedule?.rows.length && /lots? carry a house plan from the catalogue/i.test(n)));
   // An answer that drew nothing on steep ground the engine did not remark on
   // (930 Morton Mill Rd: 28.5% mean slope, "no lot of 20000 sf fits"): the
   // DEM's figures, so the lot module is not blamed alone.
@@ -384,12 +388,13 @@ export function SfV1Panel({
                 <dd>{Object.entries(summary.lotKinds).map(([k, n]) => `${n} ${k}`).join(' · ')}</dd>
               </>
             )}
-            {summary.housesPlaced != null && summary.lots > 0 && (
+            {(schedule?.rows.length || summary.housesPlaced != null) && summary.lots > 0 && (
               <>
                 <dt className="text-slate-500">House plans</dt>
                 <dd data-testid="sfv1-houses">
-                  {summary.housesPlaced} of {summary.lots} lot{summary.lots === 1 ? '' : 's'} carr{summary.housesPlaced === 1 ? 'ies' : 'y'} a catalogue plan
-                  {summary.housesPlaced < summary.lots ? ' · the rest keep a generic pad' : ''}
+                  {schedule?.rows.length
+                    ? `${assigned} assigned ${assigned === 1 ? 'design' : 'designs'} · ${pads} provisional ${pads === 1 ? 'pad' : 'pads'}`
+                    : `${summary.housesPlaced} of ${summary.lots} lot${summary.lots === 1 ? '' : 's'} have engine footprints · design assignment not reported`}
                 </dd>
               </>
             )}

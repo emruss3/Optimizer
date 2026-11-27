@@ -129,7 +129,7 @@ function rayDistance(start: Point, direction: Point, pavement: Poly[], limit: nu
 }
 const groundPoly = (e: Element, fr: GroundFrame): Poly =>
   e.geometry.coordinates.map((r) => r.map((p) => fr.toFeet(p)));
-const setbackValues = (s: unknown): Record<'front' | 'rear' | 'side', number> | null => {
+export const setbackValues = (s: unknown): Record<'front' | 'rear' | 'side', number> | null => {
   if (!s || typeof s !== 'object') return null;
   const x = s as Record<string, number>;
   return ['front', 'rear', 'side'].every((k) => Number.isFinite(x[k]) && x[k]! >= 0)
@@ -148,7 +148,7 @@ export function placeHome(
   siteBoundary?: Element['geometry'] | null,
   maxHeightFt?: number | null,
 ): FitResult {
-  if (h.rearLoadPrecedent && maxHeightFt != null && maxHeightFt > 0 && roofHeight(h) > maxHeightFt)
+  if (maxHeightFt != null && maxHeightFt > 0 && roofHeight(h) > maxHeightFt)
     return { reason: `The roof height exceeds the recorded ${maxHeightFt} ft limit.` };
   try {
     return fitHome(h, selected, elements, siteBoundary);

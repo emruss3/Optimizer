@@ -53,7 +53,7 @@ import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { assignmentFor, assignmentsFromElements, carryAssignments, commitConcept, type HomeAssignment } from './housing/carry';
 import { parentLotOf } from './housing/eligibility';
-import { placeStarterHomes } from './housing/starterHomes';
+import { placeStarterHomes, starterHomeBlock, starterSiteBoundary } from './housing/starterHomes';
 import { homesSchedule, homesScheduleRows } from './housing/schedule';
 import { imperviousAreaSf, imperviousNowPct } from './api/impervious';
 import { mark, markOnce } from '../../lib/timeline';
@@ -1878,12 +1878,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setHomeCarry(null);
     }
     // Use the boundary of this solve, never the previous scene's boundary.
-    const siteGeometry = parcel?.geometry as Polygon | MultiPolygon | undefined;
-    const xy = siteGeometry?.type === 'Polygon' ? siteGeometry.coordinates[0]?.[0] : null;
-    const boundary = siteGeometry?.type === 'Polygon' && xy
-      ? (Math.abs(xy[0] ?? 0) > 1000 || Math.abs(xy[1] ?? 0) > 1000 ? siteGeometry : feature4326To3857(siteGeometry) as Polygon)
-      : null;
-    planElements = placeStarterHomes(planElements, boundary, plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft);
+    const boundary = starterSiteBoundary(parcel?.geometry as Polygon | MultiPolygon | undefined);
+    const maxHeight = plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft;
+    const starterBlock = starterHomeBlock(planElements, boundary, maxHeight);
+    planElements = placeStarterHomes(planElements, boundary, maxHeight);
+    const unassigned = homesSchedule(planElements).rows.filter(r => r.kind === 'engine').length;
+    if (unassigned) answer.notes = [...answer.notes, starterBlock ??
+      'Unassigned pads did not clear the automatic starter checks. The broader catalog is available for a manual fit review.'];
     setPlanOutput(planElements, answerMetrics);
     setSubdivisionSummary(null);
     setSfV1Summary(answer);
@@ -4695,7 +4696,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               autoBest={sfV1AutoBest}
               holeOverlap={sfV1HoleOverlap}
               frontageLandlocked={noStreetAccess}
-              housing={stockRows.length > 0
+              housing={homesAvailable
                 ? {
                     parcelId: parcelIdStr,
                     rows: stockRows,

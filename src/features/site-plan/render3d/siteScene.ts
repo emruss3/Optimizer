@@ -1162,11 +1162,13 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const top = Math.max(...roof.polygon.map(p => p[2] ?? 0));
     roofs.set(roof.id, Math.max(roofs.get(roof.id) ?? 0, top));
   }
+  const siteSurfaces = new Set(data.polygons.filter(p => p.siteSurface).map(p => p.id));
   const detached = new Set(data.polygons.filter(p => p.detached).map(p => p.id));
   const arrivals = new Map(approaches.filter(a => a.kind === 'walk' && a.facing).map(a => [a.building, a.facing]));
   const ground = {
     subjects: [...byBuilding.entries()].map(([id, pts]) => ({
       id: String(id), points: convexHull(pts), height: tops.get(id) ?? 3,
+      ...(siteSurfaces.has(id) ? { siteSurface: true } : {}),
       roofHeight: roofs.get(id) ?? 3, base: grade?.pads.get(String(id)) ?? 0,
       ...(detached.has(id) && arrivals.get(id) ? { facing: arrivals.get(id)! } : {}),
     })),

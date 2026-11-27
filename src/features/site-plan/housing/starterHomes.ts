@@ -1,8 +1,10 @@
+import type { MultiPolygon, Polygon } from 'geojson';
+import { feature4326To3857 } from '../../../utils/reproject';
 import type { Element } from '../../../engine/types';
 import { parentLotOf } from './eligibility';
 import { roofHeight } from './drawings';
 import { findHome } from './originalDesigns';
-import { placeHome, residentialHomes } from './placement';
+import { placeHome, residentialHomes, setbackValues } from './placement';
 
 // Small-lot pilot: these are authored, dimensioned-in-the-model concepts, NOT
 // architect-issued plans. Keep the automatic solver independent of stock listings,
@@ -22,6 +24,25 @@ export function isGeometryBackedHome(element: Element): boolean {
     && Array.isArray(element.properties.homeOrigin) && Array.isArray(element.properties.homeAxis);
 }
 
+/** Preserve holes and unwrap a single component. A true multi-part parcel
+ * needs per-component checks and is not eligible for automatic placement yet. */
+export function starterSiteBoundary(geometry?: Polygon | MultiPolygon | null): Polygon | null {
+  const polygon = geometry?.type === 'Polygon' ? geometry
+    : geometry?.type === 'MultiPolygon' && geometry.coordinates.length === 1
+      ? { type: 'Polygon' as const, coordinates: geometry.coordinates[0]! } : null;
+  const xy = polygon?.coordinates[0]?.[0];
+  if (!polygon || !xy) return null;
+  return Math.abs(xy[0] ?? 0) > 1000 || Math.abs(xy[1] ?? 0) > 1000
+    ? polygon : feature4326To3857(polygon) as Polygon;
+}
+
+export function starterHomeBlock(elements: Element[], boundary: Element['geometry'] | null, height: number | null | undefined): string | null {
+  if (!boundary) return 'No single parcel boundary was available for automatic placement.';
+  if (height == null || !Number.isFinite(height) || height <= 0) return 'No recorded height limit was available for automatic placement.';
+  if (residentialHomes(elements).length > MAX_PILOT_LOTS) return 'Automatic placement is limited to smaller detached schemes.';
+  return null;
+}
+
 /** Runs only on fresh SF-v1 solves, after explicit assignments have been carried.
  * Non-matches keep the surveyed/solver geometry and legacy IDs for traceability. */
 export function placeStarterHomes(
@@ -30,7 +51,7 @@ export function placeStarterHomes(
   maxHeightFt: number | null | undefined,
 ): Element[] {
   const houses = residentialHomes(elements);
-  if (!siteBoundary || maxHeightFt == null || !Number.isFinite(maxHeightFt) || maxHeightFt <= 0 || houses.length > MAX_PILOT_LOTS) return elements;
+  if (starterHomeBlock(elements, siteBoundary, maxHeightFt) || maxHeightFt == null) return elements;
   const candidates = STARTERS.flatMap(id => {
     const design = findHome(id);
     return design && roofHeight(design) <= maxHeightFt ? [design] : [];
@@ -38,7 +59,7 @@ export function placeStarterHomes(
   let plan = elements;
   for (const house of houses) {
     if (!isProvisionalPad(house) || house.properties.townhome) continue;
-    if (!parentLotOf(house, plan)?.properties.homeSetbacksFt) continue;
+    if (!setbackValues(parentLotOf(house, plan)?.properties.homeSetbacksFt)) continue;
     for (const design of candidates) {
       const fit = placeHome(design, house, plan, siteBoundary, maxHeightFt);
       if (!fit.placement) continue;

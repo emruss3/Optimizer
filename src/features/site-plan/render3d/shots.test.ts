@@ -148,3 +148,28 @@ describe('a kept camera restates what it sees (handoff 11-27)', () => {
     expect(shotUnavailableReason('garage', [house], [], [])).toContain('no drive is drawn to a garage');
   });
 });
+
+describe('architectural subject selection', () => {
+  const pad = { id: 'pad', points: rect(-80, -12, 160, 24), height: 0.25, siteSurface: true };
+  const design = { ...building, id: 'design' };
+
+  it('does not call a big pad an architectural shot, even when it is selected', async () => {
+    const { prominentSubject, shotUnavailableReason } = await import('./shots');
+    expect(streetShot([pad], [], street)).toBeNull();
+    expect(prominentSubject([pad])).toBeUndefined();
+    expect(shotUnavailableReason('street', [pad], street, [])).toContain('provisional pads');
+    expect(streetShot([pad, design], [], street, 16 / 9, [], () => 0, [], pad.id)).toBeNull();
+    expect(streetShot([pad, design], [], street)?.subjectId).toBe('design');
+  });
+
+  it('approaches a recessed threshold without treating the subject as its own fence', async () => {
+    const { approachShot } = await import('./shots');
+    const door = {
+      id: 'porch', building: 'design', kind: 'walk' as const,
+      threshold: [0, -8.5, 0] as [number, number, number],
+      connection: [0, -15, 0] as [number, number, number],
+    };
+    expect(approachShot([door], [design], [], [], () => 0)?.subjectId).toBe('design');
+    expect(approachShot([door], [design], [rect(-50, -13, 100, 1)], [], () => 0)).toBeNull();
+  });
+});
