@@ -428,6 +428,8 @@ function fitHome(
           ...selected.properties,
           housingDesignId: h.id,
           housingAssetVersion: '1',
+          housingAssignmentSource: 'manual',
+          housingPreviousEnginePlan: undefined,
           housingPlacementStatus: 'placed',
           housingParking:
             h.parking === 'pad' ? 'pad' : h.id === 'tn-garden-infill-v1' ? 'detached-garage' : 'attached-garage',

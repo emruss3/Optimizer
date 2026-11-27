@@ -30,9 +30,11 @@ function plan() {
 }
 
 describe('complete authored housing catalog', () => {
-  it('registers fourteen distinct authored concepts', () => {
-    expect(HOME_DESIGNS).toHaveLength(14);
-    expect(new Set(HOME_DESIGNS.map(h => h.id)).size).toBe(14);
+  it('registers fifteen distinct authored concepts', () => {
+    // Pocket Cottage (tn-pocket-cottage-v1) is an extra catalogue concept on this branch.
+    expect(HOME_DESIGNS).toHaveLength(15);
+    expect(new Set(HOME_DESIGNS.map(h => h.id)).size).toBe(15);
+    expect(HOME_DESIGNS.some(h => h.id === 'tn-pocket-cottage-v1')).toBe(true);
   });
 
   it('places Lockeland on Delk without changing its neighbors', () => {

@@ -732,6 +732,8 @@ describe('the wrap payload (wrap_v1) rides the seed family', () => {
     expect(court?.properties?.areaSqFt).toBe(27324);
     const pool = elements.find(e => e.type === 'building' && e.properties?.use === 'amenity');
     expect(pool?.name).toBe('Pool deck');
+    expect(pool?.properties?.outdoor).toBe(true);
+    expect(pool?.properties?.outdoorUse).toBe('deck');
 
     const drives = elements.filter(e => e.type === 'circulation');
     expect(drives.map(d => d.name)).toEqual(['Access drive', 'Rear drive']);

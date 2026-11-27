@@ -5,6 +5,8 @@ import { designBounds, program, roofHeight } from './drawings';
 import { exteriorRendering, hasPhotorealElevation, interiorRenderings, photorealElevationSrc } from './elevationAssets';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { StockDrawings } from './StockDrawings';
+import { PROVISIONAL_PAD } from './starterHomes';
+import { parentLotOf } from './eligibility';
 import { residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
 import { stepHomeDesignIndex } from './homeDesignsGate';
@@ -40,6 +42,9 @@ interface Props {
   onApplyConcept?: ((designId: string, houseId: string) => void) | undefined;
   onClose: () => void;
   onPreview: (placement: HomePlacement) => void;
+  preview?: HomePlacement | null;
+  onCancelPreview?: () => void;
+  onTargetLot?: (houseId: string) => void;
 }
 
 const TITLES: Record<StudioMode, string> = { mine: 'My plans', catalog: 'Authored catalog', stock: 'Stock plans' };
@@ -85,6 +90,9 @@ export default function HomeStudio({
   selected,
   onClose,
   onPreview,
+  preview,
+  onCancelPreview,
+  onTargetLot,
   siteBoundary,
   maxHeightFt,
   designs = HOME_DESIGNS,
@@ -107,7 +115,7 @@ export default function HomeStudio({
   // a project with its own plans opens on them; otherwise the authored catalogue
   const [mode, setMode] = useState<StudioMode>(() => (projectDesignIds.length ? 'mine' : 'catalog'));
   const [stockIndex, setStockIndex] = useState(0);
-  const [index, setIndex] = useState(0),
+  const [choiceId, setChoiceId] = useState<string | null>(null),
     [level, setLevel] = useState(0),
     [view, setView] = useState<'Exterior' | 'Plans' | 'Elevations' | 'Interiors'>('Exterior');
   const [side, setSide] = useState<Face>('front'),
@@ -135,6 +143,10 @@ export default function HomeStudio({
   }, [selected, houses]);
 
   const selectedHouse = houses.find((e) => e.id === houseId);
+  const currentDesignId = selectedHouse?.properties.housingDesignId;
+  const currentAuthored = typeof currentDesignId === 'string' ? designs.find(d => d.id === currentDesignId) : undefined;
+  const targetLabel = (selectedHouse && parentLotOf(selectedHouse, elements)?.name) ?? selectedHouse?.name;
+
 
 
   // Every design in the list, fitted to the target lot: fits first, the others with their reason.
@@ -175,14 +187,13 @@ export default function HomeStudio({
     if (stockIndex >= stock.length) setStockIndex(0);
   }, [stock, stockIndex]);
 
-  useEffect(() => {
-    if (catalogue.length && index >= catalogue.length) setIndex(0);
-  }, [catalogue, index]);
-
+  // Track by identity: a fit or lot change may re-sort the list.
+  const index = Math.max(0, catalogue.findIndex(d => d.id === choiceId));
   const stepConcept = (delta: number) => {
     if (!catalogue.length) return;
-    setIndex((i) => stepHomeDesignIndex(i, catalogue.length, delta));
+    setChoiceId(catalogue[stepHomeDesignIndex(index, catalogue.length, delta)]!.id);
     setLevel(0);
+    onCancelPreview?.();
   };
 
   const stepStock = (delta: number) => {
@@ -218,7 +229,7 @@ export default function HomeStudio({
     root.current?.querySelector<HTMLButtonElement>('button')?.focus();
     function keys(event: KeyboardEvent) {
       // docked beside the plan (wide screens), the studio answers keys only while focus is in it
-      const docked = typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1280px)').matches;
+      const docked = typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1000px)').matches;
       if (docked && root.current && !root.current.contains(event.target as Node)) return;
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -269,7 +280,7 @@ export default function HomeStudio({
     >
       <section
         role="dialog"
-        aria-modal={typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1280px)').matches ? 'false' : 'true'}
+        aria-modal={typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1000px)').matches ? 'false' : 'true'}
         aria-label={TITLES[mode]}
         className="home-studio"
         ref={root}
@@ -298,13 +309,13 @@ export default function HomeStudio({
           </div>
         </header>
         <div className="home-mode-tabs" role="tablist" aria-label="Home design source">
-          <button type="button" role="tab" aria-selected={mode === 'mine'} data-testid="home-tab-mine" onClick={() => { setMode('mine'); setIndex(0); }}>
+          <button type="button" role="tab" aria-selected={mode === 'mine'} data-testid="home-tab-mine" onClick={() => { setMode('mine'); setChoiceId(null); onCancelPreview?.(); }}>
             My plans{projectDesignIds.length ? ` · ${projectDesignIds.length}` : ''}
           </button>
-          <button type="button" role="tab" aria-selected={mode === 'catalog'} data-testid="home-tab-catalog" onClick={() => { setMode('catalog'); setIndex(0); }}>
+          <button type="button" role="tab" aria-selected={mode === 'catalog'} data-testid="home-tab-catalog" onClick={() => { setMode('catalog'); setChoiceId(null); onCancelPreview?.(); }}>
             Authored catalog · {designs.length}
           </button>
-          <button type="button" role="tab" aria-selected={mode === 'stock'} data-testid="home-tab-stock" onClick={() => setMode('stock')}>
+          <button type="button" role="tab" aria-selected={mode === 'stock'} data-testid="home-tab-stock" onClick={() => { setMode('stock'); onCancelPreview?.(); }}>
             Stock plans
           </button>
         </div>
@@ -319,8 +330,9 @@ export default function HomeStudio({
                 value={houseId}
                 onChange={(e) => {
                   setHouseId(e.target.value);
+                  onTargetLot?.(e.target.value);
                   setStockIndex(0);
-                  setIndex(0);
+                  setChoiceId(null);
                   setCompatible(null);
                 }}
               >
@@ -328,16 +340,40 @@ export default function HomeStudio({
                   const r = stockRows.find((x) => x.houseId === h.id);
                   return (
                     <option key={h.id} value={h.id}>
-                      {r?.lotLabel ?? h.name}{r ? ` · ${r.eligible.length} stock plan${r.eligible.length === 1 ? '' : 's'} fit` : ''}
+                      {r?.lotLabel ?? parentLotOf(h, elements)?.name ?? h.name}
                     </option>
                   );
                 })}
               </select>
             </label>
+            {mode === 'stock' && selectedHouse && (
+              <span className="home-target-count">{stock.length} stock plans fit this lot</span>
+            )}
             {mode !== 'stock' && selectedHouse && (
               <span className="home-target-count" data-testid="home-target-fits">
                 {fitsHere} of {rows.length} {mode === 'mine' ? 'project plans' : 'authored designs'} fit this lot
               </span>
+            )}
+          </div>
+        )}
+        {selectedHouse && (
+          <div className="home-current" aria-label="Current home">
+            <strong>Current home</strong>{' '}
+            {typeof selectedHouse.properties.housingDesignId === 'string'
+              ? <>
+                  {HOME_DESIGNS.find(d => d.id === selectedHouse.properties.housingDesignId)?.name ?? selectedHouse.properties.housePlan ?? selectedHouse.name}
+                  {' · '}{selectedHouse.properties.housingAssignmentSource === 'starter' ? 'suggested concept' :
+                    HOME_DESIGNS.some(d => d.id === selectedHouse.properties.housingDesignId) ? 'concept study' : 'stock reference'}
+                </>
+              : <>{PROVISIONAL_PAD} · no home plan selected</>}
+            {currentAuthored && (
+              <button type="button" className="home-link" onClick={() => {
+                onCancelPreview?.();
+                setMode(projectDesignIds.includes(currentAuthored.id) ? 'mine' : 'catalog');
+                setChoiceId(currentAuthored.id);
+                setView('Plans');
+                setLevel(0);
+              }}>See current floor plans</button>
             )}
           </div>
         )}
@@ -525,7 +561,8 @@ export default function HomeStudio({
                       data-fit={r.status}
                       aria-current={i === index ? 'true' : undefined}
                       onClick={() => {
-                        setIndex(i);
+                        setChoiceId(r.design.id);
+                        onCancelPreview?.();
                         setLevel(0);
                         setCompatible(null);
                       }}
@@ -547,8 +584,8 @@ export default function HomeStudio({
                     </p>
                     {mode === 'mine' && (
                       <p>
-                        <button type="button" className="home-primary" onClick={() => { setMode('catalog'); setIndex(0); }}>Browse the authored catalog</button>{' '}
-                        <button type="button" onClick={() => setMode('stock')}>Stock plans</button>
+                        <button type="button" className="home-primary" onClick={() => { setMode('catalog'); setChoiceId(null); onCancelPreview?.(); }}>Browse the authored catalog</button>{' '}
+                        <button type="button" onClick={() => { setMode('stock'); onCancelPreview?.(); }}>Stock plans</button>
                       </p>
                     )}
                   </div>
@@ -698,7 +735,7 @@ export default function HomeStudio({
                       {houses.length ? (
                         <>
                           <div>
-                            <span className="home-target-name" data-testid="home-concept-target">{selectedHouse ? `On ${stockRows.find((r) => r.houseId === selectedHouse.id)?.lotLabel ?? selectedHouse.name}` : 'Choose a target lot above'}</span>
+                            <span className="home-target-name" data-testid="home-concept-target">{selectedHouse ? `On ${targetLabel}` : 'Choose a target lot above'}</span>
                             {current?.placement && onApplyConcept && selectedHouse && home && (
                               <button
                                 type="button"
@@ -706,25 +743,28 @@ export default function HomeStudio({
                                 data-testid="home-concept-apply"
                                 onClick={() => {
                                   onApplyConcept(home.id, selectedHouse.id);
-                                  onClose();
                                 }}
                               >
-                                Apply to {stockRows.find((r) => r.houseId === selectedHouse.id)?.lotLabel ?? 'this lot'}
+                                Apply to {targetLabel ?? 'this lot'}
                               </button>
+                            )}
+                            {preview?.house === selectedHouse?.id && onCancelPreview && (
+                              <button type="button" onClick={onCancelPreview}>Cancel preview</button>
                             )}
                             {current?.placement && (
                               <button
                                 type="button"
                                 className={onApplyConcept ? undefined : 'home-primary'}
+                                aria-pressed={preview?.house === current.placement.house && preview.name === current.placement.name}
                                 onClick={() => onPreview(current.placement!)}
                               >
-                                Preview in 3D massing
+                                Preview on site
                               </button>
                             )}
                           </div>
                           <p aria-live="polite" data-testid="home-concept-reason" data-fit={row?.status ?? ''}>
                             {current?.placement?.basis ??
-                              (current?.reason ? `Does not fit: ${current.reason}.` : 'Choose a target lot to check the fit. Preview opens live 3D massing on that house.')}
+                              (current?.reason ? `Does not fit: ${current.reason}.` : 'Choose a target lot to check the fit. Preview compares the candidate on the current site view.')}
                           </p>
                           {home && row && row.status !== 'fits' && row.status !== 'no-lot' && (
                             <div className="home-compatible">
@@ -740,7 +780,7 @@ export default function HomeStudio({
                                   <span data-testid="home-compatible-lots">
                                     Fits on:{' '}
                                     {compatible.lots.map((l) => (
-                                      <button key={l.id} type="button" className="home-link" onClick={() => { setHouseId(l.id); setCompatible(null); }}>{l.name}</button>
+                                      <button key={l.id} type="button" className="home-link" onClick={() => { setHouseId(l.id); onTargetLot?.(l.id); setCompatible(null); }}>{l.name}</button>
                                     ))}
                                   </span>
                                 ) : (

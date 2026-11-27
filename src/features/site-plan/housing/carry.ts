@@ -94,7 +94,7 @@ export function assignmentsFromElements(elements: Element[]): HomeAssignment[] {
   for (const h of detachedHouses(elements)) {
     const p = h.properties ?? {};
     const id = typeof p.housingDesignId === 'string' ? p.housingDesignId : null;
-    if (!id || p.housingPlacementStatus !== 'placed') continue;
+    if (!id || p.housingPlacementStatus !== 'placed' || p.housingAssignmentSource === 'starter') continue;
     const concept = HOME_DESIGNS.some(d => d.id === id);
     if (!concept && typeof p.lotId !== 'string') continue; // a stamp without a placement, not a choice
     const a = assignmentFor(h.id, elements, id, concept ? 'concept' : 'stock');

@@ -78,6 +78,7 @@ type Massing3DProps = {
   /** Home-design preview: building id + token so the camera frames that house. */
   focusHomeId?: string | null;
   focusHomeToken?: number;
+  homeCompare?: boolean;
 };
 
 /** The deck.gl view: the original massing, and the fallback for the rendering. */
@@ -701,6 +702,7 @@ const Massing3D: React.FC<Massing3DProps> = props => {
         accessBreak={props.accessBreak}
         focusHomeId={props.focusHomeId}
         focusHomeToken={props.focusHomeToken}
+        homeCompare={props.homeCompare}
         onFail={onFail}
       />
     );
