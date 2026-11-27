@@ -100,7 +100,8 @@ def encode(p):
     pts = []; fe = [(T(g), ECLS.get(t, 7)) for g, t in edges]
     for i in range(NB):
         q = ring.interpolate(i / NB, normalized=True)
-        cls = min(fe, key=lambda e: e[0].distance(q))[1] if fe else 7
+        near = min(fe, key=lambda e: e[0].distance(q)) if fe else None
+        cls = near[1] if near is not None and near[0].distance(q) <= 3.0 else 7   # boundary with no recorded edge: unknown
         pts.append((q.x / S, q.y / S, cls))
     bl = []
     for b in p.get('b') or []:
@@ -110,7 +111,7 @@ def encode(p):
         u = int(float(b['u'])) if b.get('u') else None
         bl.append(dict(t=TYPES.index(b['t'] if b.get('t') in TYPES else 'none'), x=g.centroid.x / S, y=g.centroid.y / S, w=L, d=D, a=a, u=u, g=g))
     units = ((p.get('tm') or {}).get('units')) or sum(b['u'] or 0 for b in bl) or None
-    e = dict(pid=p.get('pid'), typ=p.get('typ'), split=p.get('split'), site=fs, S=S, has=has, pts=pts, b=bl,
+    e = dict(pid=p.get('pid'), typ=p.get('typ'), split=p.get('split'), site=fs, loc=p.get('loc') or {}, src=p.get('src') or 'sp', S=S, has=has, pts=pts, b=bl,
              units=float(units) if units else None, ac=site.area / 43560, T=T, Ti=Ti,
              street=unary_union([g for g, c in fe if c == 0]) if has else None, drv=[], prk=[])
     if p.get('d'):
@@ -131,9 +132,18 @@ def encode(p):
     return e
 
 
-def cond(e, units=None):
+NC_BASE = 8   # site size, units, density, street known, product (4)
+NC_LOC = 4    # v2: miles from downtown, built-up share and height within a quarter mile, drives and parking drawn in the source
+
+
+def cond(e, units=None, nc=NC_BASE):
     u = units or e['units'] or 1
     v = [math.log(e['ac']), math.log(u), math.log(u / e['ac']), float(e['has'])] + [float(e['typ'] == t) for t in TYPS]
+    if nc > NC_BASE:
+        loc = e.get('loc') or {}
+        d = loc.get('dist_cbd_mi'); c = loc.get('nbhd_cover'); h = loc.get('nbhd_stories')
+        v += [math.log1p(float(d)) if d is not None else 1.6, float(c) if c is not None else 0.15,
+              (float(h) if h is not None else 2.0) / 10.0, float(e.get('src', 'sp') != 'built')]
     return np.array(v, dtype=np.float32)
 
 
@@ -196,10 +206,11 @@ def parse_lines(lines, log=print):
 
 # ---------------------------------------------------------------- model
 class Gen2(nn.Module):
-    def __init__(s, d=128, L=4, H=4, p=0.2):
+    def __init__(s, d=128, L=4, H=4, p=0.2, nc=NC_BASE):
         super().__init__()
+        s.nc = nc
         s.tok = nn.Embedding(VOCAB2, d); s.pos = nn.Embedding(MAXL, d)
-        s.c = nn.Sequential(nn.Linear(8, d), nn.GELU(), nn.Linear(d, d)); s.bp = nn.Linear(2, d); s.be = nn.Embedding(NE, d); s.bpos = nn.Embedding(NB, d)
+        s.c = nn.Sequential(nn.Linear(nc, d), nn.GELU(), nn.Linear(d, d)); s.bp = nn.Linear(2, d); s.be = nn.Embedding(NE, d); s.bpos = nn.Embedding(NB, d)
         l = nn.TransformerEncoderLayer(d, H, 4 * d, p, batch_first=True, norm_first=True, activation='gelu')
         s.tr = nn.TransformerEncoder(l, L, enable_nested_tensor=False)
         s.ln = nn.LayerNorm(d); s.out = nn.Linear(d, VOCAB2); s.drop = nn.Dropout(p); s.rem = nn.Linear(2, d)
@@ -219,21 +230,21 @@ def prog(x, tgt):
     return out
 
 
-def batch(es, aug, dev):
+def batch(es, aug, dev, nc=NC_BASE):
     C = []; BP = []; X = []; R = []
     for e in es:
         mir = aug and random.random() < 0.5; b = bpts(e, mir)
         if aug: b = np.roll(b, random.randrange(NB), 0)
         u = e['units']
         if aug and u: u = u * math.exp(random.gauss(0, 0.05))
-        C.append(cond(e, u)); BP.append(b); X.append(toks2(e, mir)[:MAXL]); R.append(prog(X[-1], u))
+        C.append(cond(e, u, nc)); BP.append(b); X.append(toks2(e, mir)[:MAXL]); R.append(prog(X[-1], u))
     T = max(map(len, X)); R = [r + [(0., 0.)] * (T - len(x)) for r, x in zip(R, X)]; X = [x + [PAD] * (T - len(x)) for x in X]
     f = lambda a, **k: torch.tensor(np.array(a), **k).to(dev)
     return f(C), f(BP), f(X), f(R, dtype=torch.float32)
 
 
 def loss_of(m, es, aug, dev):
-    c, bp, x, r = batch(es, aug, dev); lg = m(c, bp, x[:, :-1], r[:, :-1])
+    c, bp, x, r = batch(es, aug, dev, m.nc); lg = m(c, bp, x[:, :-1], r[:, :-1])
     return F.cross_entropy(lg.reshape(-1, VOCAB2), x[:, 1:].reshape(-1), ignore_index=PAD, label_smoothing=0.05 if aug else 0.)
 
 
@@ -249,7 +260,11 @@ def train(minutes, lines, out_dir, cfg=None, log=print, **_):
     if cfg.get('val') == 'hash':                                # alternative: hold a hashed seventh of train back
         va = [e for e in tr if isval(e['pid'])]; tr = [e for e in tr if not isval(e['pid'])]
     log(f"plans: train {len(tr)}, validation {len(va)}, device {dev}")
-    arch = dict(d=int(cfg.get('d', 128)), L=int(cfg.get('L', 4)), H=int(cfg.get('H', 4)), p=float(cfg.get('dropout', 0.2)))
+    arch = dict(d=int(cfg.get('d', 128)), L=int(cfg.get('L', 4)), H=int(cfg.get('H', 4)), p=float(cfg.get('dropout', 0.2)),
+                nc=NC_BASE + (NC_LOC if cfg.get('location', True) else 0))
+    if cfg.get('val_sp_only', True):                           # validate on approved plans only, as before
+        va = [e for e in va if e.get('src', 'sp') == 'sp']
+    log(f"sources: train sp {sum(1 for e in tr if e.get('src','sp')=='sp')}, built {sum(1 for e in tr if e.get('src')=='built')}")
     m = Gen2(**arch).to(dev); opt = torch.optim.AdamW(m.parameters(), float(cfg.get('lr', 3e-4)), weight_decay=float(cfg.get('wd', 0.05)))
     bsz = int(cfg.get('batch', 12)); best = 1e9; ep = 0; t0 = time.time(); hist = []; since = 0
     patience = int(cfg.get('patience_evals', 12))
@@ -311,7 +326,7 @@ def sample(m, e, N=8, temp=0.9, tries=60, place=None):
     planner context supplies one, otherwise the site."""
     m.eval(); S = e['S']; site = e['site']; sb = site.buffer(2); tgt = e['units']; place = place if place is not None else site
     dev = next(m.parameters()).device
-    c = torch.tensor(cond(e, tgt))[None].repeat(N, 1).to(dev); bp = torch.tensor(bpts(e))[None].repeat(N, 1, 1).to(dev)
+    c = torch.tensor(cond(e, tgt, getattr(m, 'nc', NC_BASE)))[None].repeat(N, 1).to(dev); bp = torch.tensor(bpts(e))[None].repeat(N, 1, 1).to(dev)
     st = [dict(seq=[BOS], cur=[], sec=0, drv=[], b=[], prk=[], ll=0., cl=0., done=False, fails=0, un=0, pave=None, nt=0, tf=0) for _ in range(N)]
     stats = dict(d=[0, 0], b=[0, 0], p=[0, 0])
 
@@ -380,7 +395,7 @@ def propose(model, req, n=8, temp=0.9, tries=60):
     Returns proposals with buildings, drives and parking fields as EPSG:2274 WKT."""
     p = dict(pid='request', typ=req.get('typ') or 'multifamily', split='request', site=req['site_wkt'],
              ctx=dict(boundary_edges=[dict(type=e['type'], wkt=e['wkt']) for e in req.get('edges') or []]),
-             b=[], tm=dict(units=req.get('units')))
+             b=[], tm=dict(units=req.get('units')), loc=req.get('loc') or {}, src='sp')
     e = encode(p)
     if not e['units']: return dict(error='a unit target is required')
     place = None
