@@ -14,7 +14,8 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Building, Maximize2 } from 'lucide-react';
+import { Building, Hand, Maximize2 } from 'lucide-react';
+import { centerOf, panFor, recall2D, remember2D } from '../lib/viewMemory';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
 import { feature4326To3857 } from '../utils/reproject';
@@ -358,6 +359,12 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   // Fit button (and the '0' key) re-arm it. Until then the parcel stays
   // centred through modal layout settles, devtools opens, window resizes.
   const userMovedViewRef = useRef(false);
+  // the view is kept per parcel across the 2D ↔ 3D switch (navigation audit 11-27)
+  const viewKey = String((parcel as { ogc_fid?: unknown } | null)?.ogc_fid ?? parcel?.id ?? '');
+  // pan without editing: Space held, or the Hand tool on (navigation audit 11-27)
+  const spaceDownRef = useRef(false);
+  const [handTool, setHandTool] = useState(false);
+  const [spaceDown, setSpaceDown] = useState(false);
 
   // Fit viewport to parcel
   const fitViewToParcel = useCallback(() => {
@@ -394,11 +401,46 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           setTimeout(initViewport, 50);
           return;
         }
+        // back from 3D (or another panel): the view the user left, centred on the same world point
+        const kept = viewKey ? recall2D(viewKey) : null;
+        if (kept) {
+          viewport.setViewport(panFor(kept, rect.width, rect.height));
+          userMovedViewRef.current = kept.userMoved;
+          setHasInitializedView(true);
+          return;
+        }
         fitViewToParcel();
       };
       requestAnimationFrame(() => initViewport());
     }
-  }, [processedGeometry, hasInitializedView, fitViewToParcel]);
+  }, [processedGeometry, hasInitializedView, fitViewToParcel, viewKey, viewport]);
+
+  // remember the view as it changes (centre and zoom), for the next time this canvas mounts
+  useEffect(() => {
+    if (!hasInitializedView || !viewKey) return;
+    const rect = canvasContainerRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    remember2D(viewKey, { ...centerOf(viewport.viewport, rect.width, rect.height), zoom: viewport.viewport.zoom, userMoved: userMovedViewRef.current });
+  }, [viewport.viewport, hasInitializedView, viewKey]);
+
+  // Space held pans (released, or the window losing focus, ends it); typing in a field is left alone
+  useEffect(() => {
+    const typing = (t: EventTarget | null) => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || (t instanceof HTMLElement && t.isContentEditable);
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || typing(e.target) || e.repeat) return;
+      // only while the pointer or focus is on the canvas, so Space still presses buttons elsewhere
+      if (!canvasContainerRef.current?.matches(':hover') && !canvasContainerRef.current?.contains(document.activeElement)) return;
+      e.preventDefault();
+      spaceDownRef.current = true;
+      setSpaceDown(true);
+    };
+    const up = (e: KeyboardEvent) => { if (e.code === 'Space') { spaceDownRef.current = false; setSpaceDown(false); } };
+    const reset = () => { spaceDownRef.current = false; setSpaceDown(false); setIsPanning(false); };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', reset);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', reset); };
+  }, []);
 
   // Re-fit whenever the canvas container changes size (modal layout settling,
   // window resize, devtools) — the fit computed at mount is stale the moment
@@ -438,7 +480,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     // Panning (middle mouse or Alt+drag). Alt is used instead of Ctrl so that
     // Ctrl/Cmd+click remains available for multi-select below.
-    if (event.button === 1 || (event.button === 0 && event.altKey)) {
+    // Space+drag and the Hand tool pan too, and never select or edit (navigation audit 11-27)
+    if (event.button === 1 || (event.button === 0 && (event.altKey || spaceDownRef.current || handTool))) {
       userMovedViewRef.current = true;
       setIsPanning(true);
       setLastPanPoint({ x: event.clientX, y: event.clientY });
@@ -574,7 +617,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         setLastPanPoint({ x: event.clientX, y: event.clientY });
       }
     }
-  }, [elements, viewport.viewport, drawingTools, selection, drag, grid, measurement, vertexEditing, rotation, onBuildingUpdate, findBuildingCorner, startCornerResize]);
+  }, [elements, viewport.viewport, handTool, drawingTools, selection, drag, grid, measurement, vertexEditing, rotation, onBuildingUpdate, findBuildingCorner, startCornerResize]);
 
   // Handle mouse move
   const handleMouseMove = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1241,7 +1284,17 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
           })()}
           {/* On-canvas zoom cluster — always visible, works on any input
               device, and (unlike wheel semantics) needs no discovery. */}
-          <div className="absolute bottom-4 right-4 z-10 flex flex-col rounded-lg shadow-md border border-gray-200 bg-white overflow-hidden">
+          <div className="absolute bottom-4 right-4 z-10 flex flex-col rounded-lg shadow-md border border-gray-200 bg-white overflow-hidden" data-testid="plan-nav">
+            <button
+              onClick={() => setHandTool(h => !h)}
+              aria-pressed={handTool}
+              data-testid="plan-hand"
+              className={`w-9 h-9 flex items-center justify-center border-b border-gray-100 ${handTool ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-50'}`}
+              title={handTool ? 'Pan tool on: drag moves the view and never edits. Click to go back to selecting.' : 'Pan tool: drag moves the view and never edits (or hold Space, or Alt+drag, or middle-drag)'}
+              aria-label="Pan tool"
+            >
+              <Hand className="w-4 h-4" />
+            </button>
             <button
               onClick={zoomInCentered}
               className="w-9 h-9 flex items-center justify-center text-gray-700 hover:bg-gray-50 text-lg font-semibold"
@@ -1296,6 +1349,8 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             cursor={
               isPanning
                 ? 'grabbing'
+                : spaceDown || handTool
+                  ? 'grab'
                 : drawingTools.activeTool === 'measure'
                   ? 'crosshair'
                   : hoveringResizeCorner
