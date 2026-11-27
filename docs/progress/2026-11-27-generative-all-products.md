@@ -57,4 +57,5 @@ Unchanged: `mfgen_1126b` proposals compete with the engine and podium plans (see
 ## Not done
 
 - Zoning limits and planning principles as model inputs. Today the models take location, product, unit target and the buildable envelope.
-- `fn_th_ai_design` is executable by any role (default grant); it should be limited to signed-in users.
+- A random-options control for townhomes at equal tries.
+- `mfgen_1127a` tested on the apartment review set.
