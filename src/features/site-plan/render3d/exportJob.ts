@@ -112,10 +112,10 @@ export function projectPx(cam: THREE.PerspectiveCamera, p_ft: [number, number, n
 export async function buildRenderJob(
   data: MassingData,
   scene: DrawingScene,
-  opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null | undefined; preset?: 'gray-pass' | 'daylight' },
+  opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null | undefined; alleyPavers?: boolean | undefined; preset?: 'gray-pass' | 'daylight' },
 ): Promise<{ glb: ArrayBuffer; job: RenderJob }> {
   await loadTreeKit();
-  const model = buildSiteModel(data, { keepParts: true });
+  const model = buildSiteModel(data, { keepParts: true, ...(opts.alleyPavers ? { alleyPavers: true } : {}) });
   try {
     await model.ready;
     const vehicles = model.root.getObjectByName('parked-vehicles');

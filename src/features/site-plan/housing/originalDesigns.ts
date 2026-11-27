@@ -61,6 +61,8 @@ export interface HomeDesign {
   attached?: boolean;
   /** This drawn detached rear-load study needs separate mapped front and rear approaches. */
   rearLoadPrecedent?: { source: string };
+  /** Exterior garage treatment when verified by the model's elevation. */
+  garageDoor?: 'solid-sectional';
   sideWindows?: SideWindow[];
   balconyScreen?: { level: number; width: number; openingAt: number; openingWidth: number };
   roofBulkhead?: { rect: Rect; heightFt: number };
@@ -115,6 +117,39 @@ export const HOME_DESIGNS: HomeDesign[] = [
           room('Primary bath', 32, 16, 6, 12),
         ],
         'Living / dining~Kitchen;Living / dining~Hall;Hall|Bedroom 2;Hall|Bedroom 3;Hall|Primary bedroom;Hall|Laundry;Laundry|Bath;Primary bedroom|Closet;Closet|Primary bath;Closet|Mech / HVAC',
+      ),
+    ],
+  },
+  {
+    id: 'tn-pocket-cottage-v1',
+    name: 'Pocket Cottage',
+    setting: 'Compact detached',
+    parking: 'pad',
+    cars: 1,
+    description:
+      'A shorter one-story cottage for tight Mid-Tennessee lots. Living opens to the kitchen; two bedrooms and a primary suite share a compact hall.',
+    access: 'One 9 × 18 ft surface space beside the porch. The front walk reaches the porch independently of the parking space.',
+    palette: ['#a8b0a4', '#f0e8d8', '#5a4a3c'],
+    heights: [9.5],
+    volumes: [vol([0, 0, 36, 26], 0, 1, 'width', 6, 'board')],
+    porches: [{ rect: [0, -5, 14, 5], finish: 'metal' }],
+    doors: [opening('Living', 'front', 6, 3, 'entry'), opening('Kitchen', 'back', 7, 3, 'garden')],
+    levels: [
+      level(
+        'Ground',
+        [
+          room('Living', 0, 0, 18, 16),
+          room('Kitchen', 0, 16, 18, 10),
+          room('Bedroom 2', 18, 0, 8, 12),
+          room('Hall', 18, 12, 8, 4),
+          room('Bath', 18, 16, 8, 6),
+          room('Laundry', 18, 22, 5, 4),
+          room('Mech / HVAC', 23, 22, 3, 4),
+          room('Primary bedroom', 26, 0, 10, 16),
+          room('Primary bath', 26, 16, 10, 6),
+          room('Closet', 26, 22, 10, 4),
+        ],
+        'Living~Kitchen;Living~Hall;Hall|Bedroom 2;Hall|Bath;Hall|Primary bedroom;Kitchen|Laundry;Laundry|Mech / HVAC;Primary bedroom|Primary bath;Primary bath|Closet',
       ),
     ],
   },

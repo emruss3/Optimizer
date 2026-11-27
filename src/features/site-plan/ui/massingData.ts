@@ -1,3 +1,5 @@
+import { isProvisionalPad, PROVISIONAL_PAD } from '../housing/starterHomes';
+import { Kit, mat } from './architecture/kit';
 import { findHome } from '../housing/originalDesigns';
 import { placedArchitecture } from '../housing/architecture';
 import { makeTerrain } from '../render3d/terrain';
@@ -9,6 +11,8 @@ import { pointsAlongSegment, type Segment } from '../../../components/site-plann
 import { createGroundFrame, pointInPolygon } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
+import { isMappedAlley } from '../scene/mappedAlley';
+import { isOutdoorAmenityName, OUTDOOR_DECK_HEIGHT_FT } from '../scene/outdoorAmenity';
 import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
 import { buildArchitecture, DEFAULT_STYLE, type ArchStyle } from './architecture';
 import type { HouseAccess } from './architecture/fittedHouse';
@@ -42,6 +46,7 @@ export interface MassingPolygon {
   /** what the held land is (wetland, its buffer, a fill hold, a hillside), apart from its hatch */
   source?: ConstraintSource;
   privateDrive?: boolean;
+  mappedAlley?: boolean;
   /** Polygon rings in local metres, centred on the plan's bbox centre */
   polygon: number[][][];
   /** Extrusion height in metres */
@@ -56,6 +61,7 @@ const TYPE_COLORS: Record<string, [number, number, number, number]> = {
   parking: [226, 232, 240, 210],
   'parking-aisle': [203, 213, 225, 190],
   circulation: [148, 163, 184, 190],
+  road: [148, 163, 184, 190],
   greenspace: [134, 239, 172, 170],
 };
 
@@ -126,7 +132,7 @@ export function buildMassingData(
    *  streets (with a planted strip inside the walk) and the larger buildings. */
   walks: Array<{ id?: string; path: number[][]; widthM: number; strip: boolean }>;
   /** Curbs: the edges of the plan's streets and drives. */
-  curbs: Array<{ id?: string; path: number[][] }>;
+  curbs: Array<{ id?: string; path: number[][]; guideOnly?: boolean }>;
   /** The block's streets, centre lines in local metres. */
   roads: Array<{ id?: string; path: number[][] }>;
   /** Stall stripes, where a bay's reported count divides into whole stalls. */
@@ -190,8 +196,23 @@ export function buildMassingData(
   const m = (p: number[]): number[] => frame.toMeters(p);
   // A building's height comes from the one place a story count becomes a
   // height (scene/heights), so the model, the plan and the sheets agree.
-  const heightOf = (el: Element) =>
-    buildingHeight(buildingUse(el), (el.properties?.floors as number) ?? (el.properties?.stories as number) ?? 1, el.properties?.heightFt);
+  // Outdoor amenity pads (pool decks) are a paved surface, not a story.
+  const propertiesOutdoor = (el: Element) =>
+    el.properties?.outdoor === true || isOutdoorAmenityName(el.name);
+  const heightOf = (el: Element) => {
+    const outdoor = propertiesOutdoor(el);
+    if (buildingUse(el) === 'amenity' && outdoor) {
+      return {
+        aboveGradeFt: OUTDOOR_DECK_HEIGHT_FT,
+        basis: 'estimated' as const,
+        label: 'Estimated height' as const,
+        levelsFt: [OUTDOOR_DECK_HEIGHT_FT],
+        assumption: null,
+        note: 'Outdoor amenity pad: paved deck surface, not an enclosed story.',
+      };
+    }
+    return buildingHeight(buildingUse(el), (el.properties?.floors as number) ?? (el.properties?.stories as number) ?? 1, el.properties?.heightFt);
+  };
 
   const polygons: MassingPolygon[] = drawable.map(el => {
     const hazard = el.properties?.hazardKind;
@@ -200,6 +221,7 @@ export function buildMassingData(
       building: el.type === 'building',
       ...(el.type === 'building' && buildingUse(el) === 'house' ? { detached: true } : {}),
       kind: el.type === 'circulation' && el.name === 'Walk' ? 'walk' : el.properties?.kind === 'pond' ? 'pond' : pavementKind(el) ?? el.type,
+      ...(isMappedAlley(el) ? { mappedAlley: true } : {}),
       ...(hazard === 'wetland' || hazard === 'floodplain' || hazard === 'floodway' || hazard === 'slope' ? { hazard } : {}),
       ...(isConstraintSource(el.properties?.constraintSource) ? { source: el.properties.constraintSource } : {}),
       ...(el.properties?.privateDrive === true || /private drive/i.test(el.name ?? '') ? { privateDrive: true } : {}),
@@ -207,7 +229,9 @@ export function buildMassingData(
       elevation: el.type === 'building' ? heightOf(el).aboveGradeFt * METERS_PER_FOOT : 0.15,
       color: TYPE_COLORS[el.type]!,
       label: el.type === 'building'
-        ? `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`
+        ? (propertiesOutdoor(el)
+          ? `${el.name ?? el.id} · outdoor deck`
+          : `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`)
         : el.name ?? el.id,
     };
   });
@@ -347,7 +371,16 @@ export function buildMassingData(
     const shrubs: Array<[number, number, number]> = [];
     buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
-      const label = `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
+      if (isProvisionalPad(el)) {
+        const pad = new Kit(el.id, PROVISIONAL_PAD);
+        pad.mass(rings, 0, 0.25, mat(167, 165, 155, 'concrete'), 'base');
+        slabs.push(...pad.done().slabs);
+        return;
+      }
+      const outdoor = propertiesOutdoor(el);
+      const label = outdoor
+        ? `${el.name ?? el.id} · outdoor deck`
+        : `${el.name ?? el.id} · ${Math.max(1, Math.floor((el.properties?.floors as number) ?? 1))} floors`;
       const use = buildingUse(el), properties = el.properties;
       const garage = garageOf(el), deck = deckUnder(el);
       const neighbours = outlines.filter((_, j) => j !== i);
@@ -415,18 +448,22 @@ export function buildMassingData(
   if (debug) console.info(`[time] buildings settled at ${Math.round(performance.now() - t0)} ms: ${slabs.length} solids, ${roofs.length} flats, ${windows.length} panes`);
   // walks and curbs follow the plan's own shapes
   const walks: Array<{ id: string; path: number[][]; widthM: number; strip: boolean }> = [];
-  const curbs: Array<{ id: string; path: number[][] }> = [];
+  const curbs: Array<{ id: string; path: number[][]; guideOnly?: boolean }> = [];
   for (const el of drawable) {
     const kind = pavementKind(el);
+    const guideOnly = el.type === 'road' || isMappedAlley(el);
     const use = el.type === 'building' ? buildingUse(el) : null;
     for (const [index, ring] of el.geometry.coordinates.entries()) {
       const path = ring.map(p => [...m(p)]);
       const id = `${el.id}:${index}`;
-      if (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? '')) {
+      if (!guideOnly && kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? '')) {
         walks.push({ id, path, widthM: 22 * METERS_PER_FOOT, strip: true });
       }
-      if (use === 'apartments' || use === 'amenity' || use === 'other') walks.push({ id, path, widthM: 12 * METERS_PER_FOOT, strip: false });
-      if (kind === 'drive' || (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? ''))) curbs.push({ id, path });
+      if ((use === 'apartments' || use === 'amenity' || use === 'other') && !propertiesOutdoor(el)) {
+        walks.push({ id, path, widthM: 12 * METERS_PER_FOOT, strip: false });
+      }
+      if (guideOnly) curbs.push({ id, path, guideOnly: true });
+      else if (kind === 'drive' || (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? ''))) curbs.push({ id, path });
     }
   }
   // stalls: stripes only where they show exactly the count the plan reports
@@ -484,8 +521,9 @@ export function buildMassingData(
   // The plan's drives and lanes stop at the right-of-way line; the street's pavement is drawn from its
   // centre line and is narrower than the right-of-way. The apron across that strip is drawn here, so
   // the scheme's pavement meets the street. Illustration: the plan gives the mouth, not the apron.
+  const mappedRoads = new Set(drawable.filter(el => el.type === 'road').map(el => el.id));
   const mouth = streetConnection(
-    polygons.filter(q => !q.building && PAVED.has(q.kind ?? '')).map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
+    polygons.filter(q => !q.building && !q.mappedAlley && !mappedRoads.has(q.id ?? '') && PAVED.has(q.kind ?? '')).map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
     roads.map(r => r.path.map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
     // Where the record has no centre line for the street, the parcel line stands for it: a lane that
     // leaves the site leaves it across the line, and the mouth nearest the line is the way out.

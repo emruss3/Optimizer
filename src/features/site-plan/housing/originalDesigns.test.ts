@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { HOME_DESIGNS } from './originalDesigns';
 import { wallsFor, doorAnchors, floorArea, program, roofHeight } from './drawings';
@@ -10,6 +10,18 @@ import fixture from '../api/__fixtures__/delk-675423.json';
 import type { SfV1Response } from '../api/sfV1Plan';
 import { buildDrawingScene } from '../scene/buildScene';
 import { buildMassingData } from '../ui/massingData';
+
+it('draws the E2 rear garage with the solid recessed sectional leaf from its elevation', () => {
+  const home = HOME_DESIGNS.find(h => h.id === 'tn-west-heiman-e2-study-v1')!;
+  const kit = new Kit(home.id, home.name);
+  const garage = vi.spyOn(kit, 'garage');
+  drawHome(kit, home);
+  expect(garage).toHaveBeenCalledOnce();
+  const [, start, end, , , finish, recess] = garage.mock.calls[0]!;
+  expect((end - start) / 0.3048).toBeCloseTo(16, 4);
+  expect(finish).toMatchObject({ lites: false, rows: 4 });
+  expect(recess).toBeLessThan(0);
+});
 
 for (const h of HOME_DESIGNS)
   it(h.name + ' has connected room drawings, fixed dimensions and matching exterior openings', () => {
@@ -68,12 +80,24 @@ for (const h of HOME_DESIGNS)
 it('places a full-size cottage on the real Delk five-lot layout and keeps the accepted plan intact', () => {
   const elements = sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
   const homes = residentialHomes(elements);
-  const fits = homes.map((e) => placeHome(HOME_DESIGNS[0]!, e, elements));
+  const court = HOME_DESIGNS.find((h) => h.id === 'tn-court-cottage-v1')!;
+  const pocket = HOME_DESIGNS.find((h) => h.id === 'tn-pocket-cottage-v1')!;
+  const lantern = HOME_DESIGNS.find((h) => h.id === 'tn-lantern-narrow-v1')!;
+  const fits = homes.map((e) => placeHome(court, e, elements));
   expect(fits.map((f) => Boolean(f.placement))).toEqual([true, true, true, false, false]);
   const cottage = fits[0]!.placement!;
   expect(cottage.elements.some((e) => e.name === 'Parking pad · 9 × 18 ft')).toBe(true);
   expect(cottage.elements.find((e) => e.id === cottage.house)?.properties.houseGarage).toBe(false);
-  expect(homes.map((el) => placeHome(HOME_DESIGNS[1]!, el, elements).placement)).toEqual(Array(5).fill(undefined));
+  // Second compact pad cottage also clears lots 1–3 so SF layouts keep ≥2 concept swaps.
+  expect(homes.map((el) => Boolean(placeHome(pocket, el, elements).placement))).toEqual([
+    true,
+    true,
+    true,
+    false,
+    false,
+  ]);
+  // Narrow 3-story lantern still does not clear the Delk lane lots.
+  expect(homes.map((el) => placeHome(lantern, el, elements).placement)).toEqual(Array(5).fill(undefined));
   expect(elements.some((e) => e.properties.housingDesignId)).toBe(false);
 }, 30000);
 

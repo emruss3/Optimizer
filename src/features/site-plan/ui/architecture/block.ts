@@ -5,11 +5,44 @@
 // style finishes the top its own way: a mansard story with dormers, gabled
 // bays, raised parapets, or a cornice.
 import type { BuildingUse, SceneHeight } from '../../scene/heights';
+import { isOutdoorAmenityName } from '../../scene/outdoorAmenity';
 import { BLACK, Frame, Kit, frontOf, inRing, insetRing, mat, on, ringWalls, tone, wallsOf, type V2, type Wall, type WindowSpec } from './kit';
 import { MEMBRANE, blockPalette, housePalette, type ArchStyle, type BlockPalette } from './styles';
 import { FLAT_ROOF, levelsM } from './house';
 
 const UNIT = mat(196, 198, 196);
+const DECK = mat(198, 196, 190, 'concrete');
+const WATER = mat(56, 152, 196, 'plain');
+const COPING = mat(220, 218, 212, 'concrete');
+
+/**
+ * An outdoor amenity pad (pool deck): paved surface and optional water, with
+ * no enclosed walls, windows, or roof (Main St live audit 2026-11-24).
+ */
+function outdoorDeck(k: Kit, rings: number[][][]): boolean {
+  const outer = rings[0];
+  if (!outer || outer.length < 4 || rings.length !== 1) return false;
+  const loop = ringWalls(outer);
+  if (loop.length < 3) return false;
+  k.mass(rings, 0, 0.12, DECK, 'base');
+  // Pool water sits inside a coping band when the pad is large enough to inset.
+  let area = 0;
+  let around = 0;
+  for (const w of loop) {
+    const e = on(w, w.len);
+    area += w.a[0] * e[1] - e[0] * w.a[1];
+    around += w.len;
+  }
+  const halfWidth = Math.abs(area) / Math.max(1, around);
+  const inset = Math.min(1.4, Math.max(0.45, halfWidth * 0.28));
+  if (halfWidth > inset * 2.2) {
+    const water = insetRing(loop, inset);
+    const coping = insetRing(loop, Math.max(0.2, inset * 0.35));
+    k.prism(coping, 0.1, 0.08, COPING, 'detail');
+    k.prism(water, 0.04, 0.1, WATER, 'detail');
+  }
+  return true;
+}
 
 /** A clubhouse on a four-cornered pad: one tall story of glass under a roof of the style. */
 function pavilion(k: Kit, rings: number[][][], top: number, p: BlockPalette, style: ArchStyle, pavement: V2[]): boolean {
@@ -83,6 +116,8 @@ export function cottage(k: Kit, rings: number[][][], height: SceneHeight): void 
 export function block(k: Kit, rings: number[][][], use: BuildingUse, height: SceneHeight, pavement: V2[], style: ArchStyle, bayScale: number): void {
   const p = blockPalette(style, k.seed);
   const lv = levelsM(height), n = lv.length, top = lv[n - 1] ?? 4, first = lv[0] ?? top;
+  // Outdoor pads first: never fall through to pavilion / windowed amenity massing.
+  if (use === 'amenity' && isOutdoorAmenityName(k.label) && outdoorDeck(k, rings)) return;
   if (use === 'amenity' && pavilion(k, rings, top, p, style, pavement)) return;
   const lite = bayScale > 1.6;
   k.lite = lite;

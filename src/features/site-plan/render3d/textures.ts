@@ -246,8 +246,12 @@ const DRAW: Record<Drawn, () => Tile> = {
   },
 };
 
-// Surfaces that have a photograph (public/textures/site, from Poly Haven, CC0), and the metres one tile covers.
-const PHOTOS: Record<string, (typeof siteAssets.textures)[keyof typeof siteAssets.textures]> = siteAssets.textures;
+// The review keeps the original finishes for familiar, stable plan legibility.
+type Photo = { tile_m: number[]; normal_strength: number; roughness: number; color: string; normal: string; roughness_map?: string };
+const PHOTOS: Partial<Record<string, Photo>> = siteAssets.textures;
+const REVIEW_PHOTOS: Partial<Record<string, Photo>> = {
+  ...siteAssets.textures, ...siteAssets.review_textures, siding: undefined, pavers: undefined,
+};
 
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
 export class Surfaces {
@@ -260,7 +264,7 @@ export class Surfaces {
 
   /** Put the photograph of a surface, and its normal map, in place of the drawn pattern once they have loaded. */
   private photograph(kind: string, m: THREE.MeshStandardMaterial): void {
-    const entry = PHOTOS[kind];
+    const entry = (this.photographic ? PHOTOS : REVIEW_PHOTOS)[kind];
     if (!entry || typeof document === 'undefined') return;
     const { tile_m: size, normal_strength: relief } = entry;
     const loader = new THREE.TextureLoader();
@@ -274,13 +278,15 @@ export class Surfaces {
         resolve(t);
       }, undefined, () => resolve(null));
     });
-    this.pending.push(Promise.all([one(entry.color, true), one(entry.normal, false)]).then(([map, normal]) => {
+    const roughnessMap = entry.roughness_map ? one(entry.roughness_map, false) : null;
+    this.pending.push(Promise.all([one(entry.color, true), one(entry.normal, false), roughnessMap]).then(([map, normal, roughness]) => {
       if (!map || !normal) return;       // the drawn pattern stays
       m.map = map;
       m.bumpMap = null;
       m.normalMap = normal;
       m.normalScale.set(relief, relief);
-      m.roughness = entry.roughness;
+      m.roughnessMap = roughness;
+      m.roughness = roughness ? 1 : entry.roughness;
       m.needsUpdate = true;
     }));
   }
@@ -316,12 +322,14 @@ export class Surfaces {
       const map = finish(c, 2.7, 2.7, true);
       this.tiles.set(kind, { map, bump: map, bumpScale: 0, roughness: 1 });
       m = new THREE.MeshBasicMaterial({ vertexColors: true, map, transparent: true, opacity: 0.69, depthWrite: false });
+    } else if (kind === 'interior-light') {
+      m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.60, emissive: 0xffd8a8, emissiveIntensity: this.photographic ? 0.62 : 0 });
     } else if (kind === 'plain') {
       m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
     } else if (kind === 'metalwork') {
       m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.47, metalness: 0.38 });
     } else {
-      const t = DRAW[kind]();
+      const t = DRAW[kind === 'pavers' ? 'asphalt' : kind]();
       this.tiles.set(kind, t);
       const bump = this.photographic && (kind === 'siding' || kind === 'batten' || kind === 'panel') ? t.bumpScale * 0.46 : t.bumpScale;
       const drawn = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: bump, roughness: t.roughness, metalness: t.metalness ?? 0 });

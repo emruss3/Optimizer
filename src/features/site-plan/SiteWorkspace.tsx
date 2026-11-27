@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Undo2, Redo2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import EnterpriseSitePlanner from '../../components/EnterpriseSitePlannerShell';
-import { SitePlannerErrorBoundary } from '../../components/ErrorBoundary';
+import { ErrorBoundary, SitePlannerErrorBoundary } from '../../components/ErrorBoundary';
 import type { InvestmentAnalysis, SelectedParcel } from '../../types/parcel';
 import { createFallbackParcel, isValidParcel } from '../../types/parcel';
 import { useBuildableEnvelope } from './api/useBuildableEnvelope';
@@ -10,10 +10,7 @@ import { residentialHomes } from './housing/placement';
 import { HOME_DESIGNS } from './housing/originalDesigns';
 import { projectPlansFor } from './housing/projectPlans';
 import {
-  HOME_DESIGNS_NONE_FIT_TITLE,
   schemeAllowsHomeDesigns,
-  eligibleHomeDesigns,
-  typologyEligibleHomeDesigns,
 } from './housing/homeDesignsGate';
 import { useSitePlanState } from './state/useSitePlanState';
 import { workerManager } from '../../workers/workerManager';
@@ -56,7 +53,7 @@ import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { assignmentFor, assignmentsFromElements, carryAssignments, commitConcept, type HomeAssignment } from './housing/carry';
 import { parentLotOf } from './housing/eligibility';
-import { homeDesignsDiagnosis } from './housing/diagnosis';
+import { placeStarterHomes } from './housing/starterHomes';
 import { homesSchedule, homesScheduleRows } from './housing/schedule';
 import { imperviousAreaSf, imperviousNowPct } from './api/impervious';
 import { mark, markOnce } from '../../lib/timeline';
@@ -70,7 +67,8 @@ import { fetchThV3Plan, guestParkingLine, thV3ToElements, type ThV3Summary } fro
 import { chooseLayout, isFloodSkip, type LayoutKind } from './api/layoutChoice';
 import { LayoutChoicePanel } from './ui/LayoutChoicePanel';
 import { line2274To3857 } from './api/parcelTopo';
-import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { engineLong } from './api/engineLong';
+import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney, type MfAiPick } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
@@ -122,7 +120,7 @@ import { buildDrawingScene, sceneEvidence, sceneRevision, selectionFor, type Sel
 import { ExhibitSheets } from './ui/ExhibitSheets';
 import { useArchStyle } from './ui/archStyle';
 import { DOCK_KEY, INSPECTOR_KEY } from './ui/workspaceLayout';
-import { currentEntry, loadChunk } from '../../lib/staleBuild';
+import { currentEntry, isChunkLoadError, loadChunk } from '../../lib/staleBuild';
 import { clearRecovery, loadRecovery, openOnNextLoad, saveRecovery, type PlanRecovery } from '../../lib/planRecovery';
 // The 3D view is fetched late. Each Retry asks for its file afresh: React keeps a failed lazy
 // import for good, so the same lazy component could never recover (audit cf4f0e8, R3).
@@ -226,10 +224,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, []);
   const [sheetsOpen, setSheetsOpen] = useState(false);
   const [homesOpen, setHomesOpen] = useState(false);
-  const closeHomes = useCallback(() => setHomesOpen(false), []);
   const [houseStudy, setHouseStudy] = useState<{ parcel: string; base: Element[]; study: HomePlacement } | null>(null);
   /** Bumped when a home-design preview lands so 3D massing reframes on that house. */
-  const [homePreviewFocus, setHomePreviewFocus] = useState(0);
+  const closeHomes = useCallback(() => { setHomesOpen(false); setHouseStudy(null); }, []);
   // which sheet the Export menu opened, and whether it asked for the whole set
   const [sheetsAsk, setSheetsAsk] = useState<{ initial: 'plan' | 'view' | 'section'; printSet: boolean }>({ initial: 'plan', printSet: false });
   const [sceneSelection, setSceneSelection] = useState<SelectionCache | null>(null);
@@ -1048,7 +1045,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const label = cleaned.some(c => c.includes('free pack')) ? 'relaxed' : 'in-family';
       return ` · ${label}: ${cleaned.join(', ')}`;
     })();
-    setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}${relaxNote}`);
+    const pick = resp.ai_pick;
+    const aiNote = (pick?.picked === 'model' || pick?.picked === 'podium') && pick.engine && pick.winner
+      ? ` · ${pick.picked === 'podium' ? 'podium layout (parking in a garage under the building)' : `design model layout (${pick.model_version ?? 'model'})`}: ${pick.winner.n_fail ?? '?'} design flags vs ${pick.engine.n_fail ?? '?'} for the engine's layout, ${pick.winner.units ?? '?'} vs ${pick.engine.units ?? '?'} homes`
+      : '';
+    setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}${relaxNote}${aiNote}`);
     // A3: value the scheme against local sales — the margin ticks live
     loadMoney(serverMetrics?.totalBuiltSF, serverMetrics?.totalUnits);
     if (opts.persist !== false) {
@@ -1056,6 +1057,22 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (resp.candidate_id) {
         void recordPlannerFeedback(resp.context_id ?? plannerCtxRef.current?.context_id, 'candidate_generated', resp.candidate_id, { seed: opts.seed, pins: opts.pins?.length ?? 0 });
       }
+    }
+    // Owner 2026-11-27: the default apartment plan is the better of the engine's plan and the design model's
+    // plans (fn_mf_ai_design; pick rule in training.ai_config 'mf_ai_default'). The engine's plan shows at once;
+    // the pick runs in the background (about 5-25 s, longer when the model has to start). If the model's layout
+    // wins, the default is drawn again: the server then returns the saved pick, as an undoable step.
+    const freshDefault = !opts.preview && !opts.fromHistory && opts.contextId === undefined && !degraded
+      && effectiveProduct !== 'townhomes' && opts.seed === 1 && !(opts.pins?.length) && !opts.parentId
+      && opts.persist !== false && !resp.ai_pick && !!effectiveContextId;
+    if (freshDefault) {
+      void engineLong<{ ai_pick?: MfAiPick }>('fn_mf_ai_design', { p_ogc_fid: contextOgcFid }).then(r => {
+        if (stale()) return;
+        const won = r.data?.ai_pick?.picked;
+        if (won === 'model' || won === 'podium') {
+          void runServerMfPlan({ seed: 1, pins: [], action: won === 'podium' ? 'A podium layout (parking in a garage) fits more homes' : 'The design model found a better layout' });
+        }
+      });
     }
     return true;
   }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates, loadMoney, markCompileBlocked]);
@@ -1860,6 +1877,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     } else {
       setHomeCarry(null);
     }
+    // Use the boundary of this solve, never the previous scene's boundary.
+    const siteGeometry = parcel?.geometry as Polygon | MultiPolygon | undefined;
+    const xy = siteGeometry?.type === 'Polygon' ? siteGeometry.coordinates[0]?.[0] : null;
+    const boundary = siteGeometry?.type === 'Polygon' && xy
+      ? (Math.abs(xy[0] ?? 0) > 1000 || Math.abs(xy[1] ?? 0) > 1000 ? siteGeometry : feature4326To3857(siteGeometry) as Polygon)
+      : null;
+    planElements = placeStarterHomes(planElements, boundary, plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft);
     setPlanOutput(planElements, answerMetrics);
     setSubdivisionSummary(null);
     setSfV1Summary(answer);
@@ -1887,6 +1911,26 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   /** The pattern competition for the parcel and the option set (cached per
    *  parcel in the client). A newer ask — a new parcel, a new override —
    *  supersedes an older one still in flight. */
+  /**
+   * 303 E Palestine Ave (RS10, 9,973 sf against a 10,000 sf minimum, 2026-11-26): no new lot can be made, but
+   * the parcel is itself a lot of record and carries one house. The sheet showed "0 lots" and a refusal until
+   * the user clicked "Draw the house". When the by-right answer and the pattern comparison both draw no lots,
+   * the single-family seed (server-verified house and driveway) goes on the sheet unasked. A plan the user
+   * chose, a skipped run (landlocked, flood) and a drawn house are left alone; the deep search can still
+   * replace it with a subdivision that draws more.
+   */
+  const drawSfSeedRef = useRef<(() => Promise<void>) | null>(null);
+  const autoDrawLotOfRecordHouse = (sheetLots: number) => {
+    const def = sfV1DefaultRespRef.current;
+    if (sheetLots > 0 || !def || def.error || def.status !== 'done' || (def.lots ?? 0) > 0) return;
+    if (layoutUserChoseRef.current) return;
+    if (elementsRef.current.some(e => e.id.startsWith('sfseed-'))) return;
+    // Flood hold (Martingale / 680719): leave the hatch and the "draw the house" offer alone.
+    // Auto-drawing the seed strips sfv1-hold-* (isSfPlanElement) and hides sfv1-draw-house.
+    if (def.flood_hold || elementsRef.current.some(e => e.id.startsWith('sfv1-hold-'))) return;
+    void drawSfSeedRef.current?.();
+  };
+
   const runCompetition = useCallback((fid: number, opt: SfV1Options) => {
     const seq = ++competitionSeqRef.current;
     setSfV1AutoBest(null);
@@ -1896,6 +1940,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (seq !== competitionSeqRef.current) return;
       if (r.error || !r.data) {
         setSfV1Competition({ state: 'error', data: null, error: competitionErrorText(r.error ?? 'the engine returned nothing') });
+        autoDrawLotOfRecordHouse(0);
         return;
       }
       sfV1CandidatesRef.current = r.data;
@@ -1921,6 +1966,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         void renderSfV1Ref.current(r.data.best, opt, auto.requested);
         sheetLots = Math.max(sheetLots, r.data.best.lots ?? 0);
       }
+      autoDrawLotOfRecordHouse(sheetLots);
       // under the fill scenario every run is the heavy one, so the search waits to be asked (as the comparison does)
       if (!opt.flood) void runDeepSearch(fid, opt, seq, sheetLots);
     });
@@ -2556,6 +2602,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setIsGenerating(false);
     }
   }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan, sfV1Summary]);
+  drawSfSeedRef.current = handleDrawSfSeed;
 
   const handleAddBuilding = useCallback(async () => {
     if (!envelopeMeters) {
@@ -3330,17 +3377,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (!quickMassingAvailable) setShowSeed(false);
   }, [quickMassingAvailable]);
   const baseElements = seedViewOn && seedRender ? seedRender.elements : elements;
-  // Keep the study while this parcel's base plan is unchanged (same element ids + geometries).
-  // Reference equality alone drops the preview if React rebuilds the elements array without a plan change.
-  const basePlanKey = useMemo(
-    () => baseElements.map(e => `${e.id}:${e.type}:${Math.round((e.geometry?.coordinates?.[0]?.[0]?.[0] ?? 0) * 100)}`).join('|'),
-    [baseElements],
-  );
-  const houseStudyBaseKey = useMemo(
-    () => houseStudy?.base.map(e => `${e.id}:${e.type}:${Math.round((e.geometry?.coordinates?.[0]?.[0]?.[0] ?? 0) * 100)}`).join('|') ?? null,
-    [houseStudy],
-  );
-  const activeHome = houseStudy?.parcel === parcelIdStr && houseStudyBaseKey === basePlanKey ? houseStudy.study : null;
+  // Both user edits and solves replace the element array. Never show or apply
+  // a preview calculated on an older draft (even if its first vertices match).
+  const activeHome = houseStudy?.parcel === parcelIdStr && houseStudy.base === baseElements ? houseStudy.study : null;
   const displayElements = activeHome?.elements ?? baseElements;
   const displayBasis = activeHome ? activeHome.name + ' · original home design study. ' + activeHome.basis : seedViewOn && seedRender
     ? seedRender.basis + (seedRender.inFamily ? ` · in-family: ${seedRender.inFamily}` : '')
@@ -3567,37 +3606,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     () => (sfStockDesigns.length ? stockEligibility(sfStockDesigns, baseElements, homeSetbacks) : []),
     [sfStockDesigns, baseElements, homeSetbacks],
   );
-  const homeDesignsUi = useMemo(() => {
-    const houses = residentialHomes(baseElements);
-    if (
-      !schemeAllowsHomeDesigns({
-        layoutShown,
-        product,
-        houseCount: houses.length,
-      })
-    ) {
-      return { show: false as const, enabled: false as const, eligible: [] as typeof HOME_DESIGNS };
-    }
-    const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
-    const eligible = typed.length
-      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary, homeHeightLimitFt)
-      : ([] as typeof HOME_DESIGNS);
-    // Scheme allows homes: keep the control visible; enable it only when a
-    // concept study or a stock plan actually places on some lot.
-    const stockOk = stockRows.some(r => r.eligible.length > 0);
-    return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
-  }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows, homeHeightLimitFt]);
-  // The reasons nothing fits, read only when asked (a 79-lot plan is checked on a sample of 40 lots).
-  // designs linked to this parcel's project ("My plans"); none until the project's parcels are mapped
+  const homesAvailable = schemeAllowsHomeDesigns({ layoutShown, product, houseCount: residentialHomes(baseElements).length });
   const projectPlans = useMemo(() => projectPlansFor(parcelIdStr), [parcelIdStr]);
-  const [homesWhyOpen, setHomesWhyOpen] = useState(false);
-  const homesWhy = useMemo(
-    () => (homesWhyOpen && homeDesignsUi.show && !homeDesignsUi.enabled
-      ? homeDesignsDiagnosis({ elements: baseElements, concepts: HOME_DESIGNS, siteBoundary: homeStudioBoundary, stockRows, stockAllowed: sfStockDesigns.length > 0 })
-      : null),
-    [homesWhyOpen, homeDesignsUi.show, homeDesignsUi.enabled, baseElements, homeStudioBoundary, stockRows, sfStockDesigns],
-  );
-  useEffect(() => { if (homeDesignsUi.enabled || !homeDesignsUi.show) setHomesWhyOpen(false); }, [homeDesignsUi.enabled, homeDesignsUi.show]);
   // Session milestones (lib/timeline): the planner shell, the compiled context, each settled plan revision.
   useEffect(() => { mark('planner-shell', { ogcFid: parcelIdStr }); }, [parcelIdStr]);
   useEffect(() => {
@@ -3612,8 +3622,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (homeHistory && elements !== homeHistory.current) setHomeHistory(null);
   }, [elements, homeHistory]);
   useEffect(() => {
-    if ((!homeDesignsUi.show || !homeDesignsUi.enabled) && homesOpen) setHomesOpen(false);
-  }, [homeDesignsUi.show, homeDesignsUi.enabled, homesOpen]);
+    if (!homesAvailable && homesOpen) setHomesOpen(false);
+  }, [homesAvailable, homesOpen]);
 
   // One selection for the plan and the 3D view, remembered for this parcel and scheme.
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
@@ -4217,7 +4227,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   return (
     // with the studio docked beside it (wide screens) the workspace gives up that width, so the drawing
     // reflows beside the studio instead of lying under it (handoff 11-27)
-    <div className={`h-full min-h-0 flex flex-col bg-gray-100${homesOpen && homeDesignsUi.show && homeDesignsUi.enabled ? ' pp-studio-docked' : ''}`} data-testid="site-workspace">
+    <div className={`h-full min-h-0 flex flex-col bg-gray-100${homesOpen && homesAvailable ? ' pp-studio-docked' : ''}`} data-testid="site-workspace">
       <CensusBanner />
       {/* Order-8: on a commercial-only lot the multifamily refusal (and its
           "draw the house" switch) is the wrong conversation — no residential
@@ -4282,7 +4292,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           </div>
         );
       })()}
-      {!nonResidentialOnly && !unsupportedUse && isRefusal(buildability) && product === 'apartments' && buildability && layoutShown !== 'neighborhood' && (
+      {!nonResidentialOnly && !unsupportedUse && isRefusal(buildability) && product === 'apartments' && buildability && layoutShown !== 'neighborhood'
+        // the lot-of-record house is on the sheet: the apartment refusal is no longer the answer
+        && !displayElements.some(e => e.id.startsWith('sfseed-')) && (
         <RefusalCard
           buildability={buildability}
           onSwitchToTownhomes={() => handleProductChange('townhomes')}
@@ -4399,21 +4411,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           >
             3D Massing
           </button>
-          {homeDesignsUi.show && (
+          {homesAvailable && (
             <button
               type="button"
               data-testid="home-designs"
-              // nothing fits: the button opens the reasons instead of sitting disabled (audit 11-26, 330 Athens Way)
-              onClick={() => (homeDesignsUi.enabled ? setHomesOpen(true) : setHomesWhyOpen(o => !o))}
-              aria-expanded={homeDesignsUi.enabled ? undefined : homesWhyOpen}
-              title={
-                homeDesignsUi.enabled
-                  ? 'Browse buildable stock plans and concept studies for house lots on this plan'
-                  : `${HOME_DESIGNS_NONE_FIT_TITLE} — select to see why`
-              }
-              className={`px-3 py-1.5 border-l border-gray-200 bg-white hover:bg-gray-50 ${homeDesignsUi.enabled ? 'text-gray-700' : 'text-gray-400'}`}
+              onClick={() => homesOpen ? closeHomes() : setHomesOpen(true)}
+              aria-expanded={homesOpen}
+              title="Inspect homes and browse designs for the selected lot"
+              className="px-3 py-1.5 border-l border-gray-200 bg-white hover:bg-gray-50 text-gray-700"
             >
-              Buildable plans{homeDesignsUi.enabled ? '' : ' · none fit'}
+              Buildable plans
             </button>
           )}
           {!classicDrawing && scene && scene.buildings.length > 0 && (
@@ -4488,7 +4495,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
       {/* What is being built, in one plain sentence, before any receipt: the
           solver's basis line below it is the audit trail, not the answer. */}
-      {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
+      {homesOpen && homesAvailable && <ErrorBoundary fallback={error => (
+        <div className="home-studio-standby p-4 bg-white border" role="alert">
+          <p>Buildable plans couldn’t open. The site and your edits are intact.</p>
+          <button type="button" className="underline mr-4" onClick={closeHomes}>Close</button>
+          {isChunkLoadError(error) && <button type="button" className="underline" onClick={moveToNewRelease}>Open updated planner</button>}
+        </div>
+      )}><React.Suspense fallback={<div className="home-studio-standby p-4 bg-white border" role="status">Opening buildable plans…</div>}>
         <HomeStudio
           siteBoundary={homeStudioBoundary}
           maxHeightFt={homeHeightLimitFt}
@@ -4504,25 +4517,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           onApplyStockMany={sfStockDesigns.length > 0 ? (designId, houseIds) => { handleHousingDesignMany(designId, houseIds); handleSceneSelection(houseIds); } : undefined}
           onApplyStock={sfStockDesigns.length > 0 ? (designId, houseId, lock) => { handleHousingDesignSelect(designId, houseId, lock); handleSceneSelection([houseId]); } : undefined}
           onClose={closeHomes}
+          preview={activeHome}
+          onCancelPreview={() => setHouseStudy(null)}
+          onTargetLot={id => {
+            setHouseStudy(null);
+            handleSceneSelection([id]);
+          }}
           onPreview={study => {
             setHouseStudy({ parcel: parcelIdStr, base: baseElements, study });
-            setHomesOpen(false);
-            // Concept previews land in the live 3D massing (same authored geometry as the gallery).
-            setViewMode('3d');
             handleSceneSelection([study.house]);
-            setHomePreviewFocus(n => n + 1);
           }}
         />
-      </React.Suspense>}
-      {homesWhyOpen && homesWhy && <div role="region" aria-label="Why no home design fits" data-testid="home-designs-why" className="border-y border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-800">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="font-medium">{HOME_DESIGNS_NONE_FIT_TITLE}: {homesWhy.summary}.</p>
-            <ul className="mt-1 list-disc pl-4">{homesWhy.lines.map(l => <li key={l}>{l}</li>)}</ul>
-          </div>
-          <button type="button" className="underline" onClick={() => setHomesWhyOpen(false)}>Close</button>
-        </div>
-      </div>}
+      </React.Suspense></ErrorBoundary>}
       {homeHistory && !activeHome && <div role="status" data-testid="home-change-status" className="flex flex-wrap items-center justify-between gap-2 border-y border-sky-200 bg-sky-50 px-4 py-1 text-xs text-sky-950">
         <span>{homeHistory.message}</span>
         <span className="flex gap-3">
@@ -4558,8 +4564,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         {homeCarry.lost.map(l => <span key={l.lotLabel + l.designId} className="block">Not kept on this plan: {l.designId.replace(/^abhp:/, '')} on {l.lotLabel} — {l.reason}. It comes back on a plan where it fits.</span>)}
       </div>}
       {activeHome && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-y border-emerald-200 bg-emerald-50 px-4 py-1 text-xs text-emerald-950">
-        <span><strong>{activeHome.name} · 3D massing preview.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>
-        <button type="button" className="underline" onClick={() => { setHouseStudy(null); setHomePreviewFocus(0); }}>Return to base scheme</button></div>}
+        <span><strong>{activeHome.name} · site preview, not applied.</strong> The yield, site checks and underwriting figures describe the base scheme. Rooms are schematic zones (kitchen, baths, HVAC), not full interior design.</span>
+        <button type="button" className="underline" onClick={() => setHouseStudy(null)}>Return to base scheme</button></div>}
       {!seedViewOn && !compact3d && <BuiltHeadline metrics={accessAwareMetrics} elements={elements} />}
       {/* 2026-09-04 (Eric, 2622 W Heiman: "difficult to see the site planner,
           there is a ton of data"): the basis line, the context lineage, the
@@ -4610,7 +4616,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       )}
 
       <div className="flex-1 min-h-0 flex flex-col xl:flex-row gap-4 p-4 overflow-auto xl:overflow-hidden">
-        {!leftRailCollapsed && (
+        {!leftRailCollapsed && !(homesOpen && homesAvailable) && (
         <div className="w-full xl:w-80 flex-shrink-0 xl:min-h-0 xl:overflow-y-auto space-y-4">
           {isRmLayout && (
             <LayoutChoicePanel
@@ -4693,8 +4699,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 ? {
                     parcelId: parcelIdStr,
                     rows: stockRows,
-                    onOpen: homeDesignsUi.enabled ? () => setHomesOpen(true) : null,
-                    schedule: homesSchedule(displayElements),
+                    onOpen: homesAvailable ? () => setHomesOpen(true) : null,
+                    schedule: homesSchedule(baseElements),
                   }
                 : null}
             />
@@ -4843,14 +4849,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 edgeClassifications={edgeClassifications}
                 scene={scene}
                 selectedId={sceneSelectedIds.length === 1 ? sceneSelectedIds[0] : null}
-                onSelect={scene ? (id => handleSceneSelection(id ? [id] : [])) : undefined}
+                onSelect={scene ? (id => {
+                  if (activeHome && id !== activeHome.house) setHouseStudy(null);
+                  handleSceneSelection(id ? [id] : []);
+                }) : undefined}
                 topo={topo}
                 accessBreak={routeBreak}
+                homeCompare={!!activeHome}
                 grossSf={seedViewOn || activeHome ? null : metrics?.totalBuiltSF}
                 savedPlanId={scene && savedRenderPlan?.parcel === scene.identity.parcelId && savedRenderPlan.revision === scene.identity.revision
                   ? savedRenderPlan.id : undefined}
-                focusHomeId={activeHome?.house ?? null}
-                focusHomeToken={homePreviewFocus}
               />
               </React.Suspense>
             </SitePlannerErrorBoundary>
@@ -4865,7 +4873,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 sheet={sheetTitle}
                 scene={scene}
                 initialSelectedIds={sceneSelectedIds}
-                onSelectionChange={scene ? handleSceneSelection : undefined}
+                onSelectionChange={scene ? ids => {
+                  if (activeHome && !ids.includes(activeHome.house)) setHouseStudy(null);
+                  handleSceneSelection(ids);
+                } : undefined}
                 parcel={plannerParcel}
                 planElements={displayElements}
                 metrics={metrics || undefined}

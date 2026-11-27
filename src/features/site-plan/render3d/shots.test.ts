@@ -129,6 +129,20 @@ describe('a kept camera restates what it sees (handoff 11-27)', () => {
     expect(aimedSubject([5, 4], [house])?.id).toBe('h1');
   });
 
+  it('frames a short garage ramp from its connected drawn pavement, but not across a gap', async () => {
+    const { approachShot } = await import('./shots');
+    const apron = {
+      id: 'ramp', building: 'h1', kind: 'apron' as const,
+      threshold: [5, 0, 0.1] as [number, number, number],
+      connection: [5, -0.28, 0.3] as [number, number, number],
+    };
+    const camera = (inPavement: (x: number, y: number) => boolean) =>
+      approachShot([apron], [house], [], [], () => 0, [], 16 / 9, 'apron', inPavement);
+    const driveway = (x: number, y: number) => x >= 4 && x <= 6 && y <= -0.28 && y >= -4;
+    expect(camera(driveway)?.position).toEqual([5, expect.closeTo(-3.98), expect.closeTo(1.6764)]);
+    expect(camera((x, y) => driveway(x, y) && (y > -1 || y < -1.6))).toBeNull();
+  });
+
   it('names the garage camera\'s limitation instead of counting an aerial as success', async () => {
     const { shotUnavailableReason } = await import('./shots');
     expect(shotUnavailableReason('garage', [house], [], [])).toContain('no drive is drawn to a garage');

@@ -209,7 +209,9 @@ def shared_catalog(job, report):
         raise ValueError("The worker and render job have different asset catalogs")
     manifest = {catalog["sky"]["file"]: catalog["sky"]["sha256"]}
     for material in catalog["textures"].values():
-        for kind in ("color", "normal"):
+        for kind in ("color", "normal", "roughness_map"):
+            if kind == "roughness_map" and kind not in material:
+                continue
             manifest[material[kind]] = material[f"{kind}_sha256"]
     for name, wanted in manifest.items():
         if file_digest(SITE_TEXTURES / name) != wanted:
@@ -245,6 +247,8 @@ def shared_texture_material(slot, entry):
     link(image("normal", "Non-Color"), normal.inputs["Color"])
     link(normal.outputs["Normal"], bsdf.inputs["Normal"])
     bsdf.inputs["Roughness"].default_value = entry["roughness"]
+    if "roughness_map" in entry:
+        link(image("roughness_map", "Non-Color"), bsdf.inputs["Roughness"])
     return mat
 
 
@@ -378,6 +382,11 @@ def slot_material(slot):
         link(_mix(nt, tint, fine.outputs["Fac"], 0.35), bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.9
         _bump(nt, bsdf, wave.outputs[0], 0.8, 0.01)
+    elif slot == "interior-light":
+        link(tint, bsdf.inputs["Base Color"])
+        bsdf.inputs["Emission Color"].default_value = (1.0, 0.69, 0.41, 1)
+        bsdf.inputs["Emission Strength"].default_value = 0.8
+        bsdf.inputs["Roughness"].default_value = 0.60
     elif slot == "paint":
         link(tint, bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.35

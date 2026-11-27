@@ -1,5 +1,6 @@
 import polygonClipping from 'polygon-clipping';
 import type { Element } from '../../../engine/types';
+import { isMappedAlley } from '../scene/mappedAlley';
 import { createGroundFrame, type GroundFrame } from '../scene/frame';
 import { type HomeDesign, type Point, type Rect, type Face } from './originalDesigns';
 import { corners, designBounds, doorAnchors, floorArea, floorBase, normal, program, roofHeight } from './drawings';
@@ -140,7 +141,6 @@ export const residentialHomes = (elements: Element[]) =>
     (e) =>
       e.type === 'building' && (e.properties.house || e.properties.singleFamilyHouse || e.properties.townhome),
   );
-const isAlley = (el: Element) => /\balley\b/i.test(el.name) || el.properties.kind === 'alley';
 export function placeHome(
   h: HomeDesign,
   selected: Element,
@@ -167,8 +167,7 @@ function fitHome(
   if (Boolean(selected.properties.townhome) !== Boolean(h.attached))
     return { reason: h.attached ? 'Choose an attached row home.' : 'Choose a detached house lot.' };
   // Most detached schemes have no alley. Avoid projecting the whole plan for each rear-load candidate.
-  if (h.rearLoadPrecedent && !elements.some(el =>
-    (el.type === 'road' || el.type === 'circulation' || el.type === 'parking-aisle') && isAlley(el)))
+  if (h.rearLoadPrecedent && !elements.some(isMappedAlley))
     return { reason: 'The rear garage needs a separately mapped alley.' };
   const first = selected.geometry.coordinates[0]?.[0];
   if (!first) return { reason: 'The house has no placed footprint.' };
@@ -192,10 +191,10 @@ function fitHome(
   let rearLoadFrontStreets: Poly[] = [];
   if (h.rearLoadPrecedent) {
     rearLoadFrontStreets = pavedWays
-      .filter(({ el }) => !isAlley(el) && (el.type === 'road' || /street|mews|private lane/i.test(el.name)))
+      .filter(({ el }) => !isMappedAlley(el) && (el.type === 'road' || /street|mews|private lane/i.test(el.name)))
       .map((o) => o.poly);
     if (!rearLoadFrontStreets.length) return { reason: 'A separate mapped front street is needed for this rear-load study.' };
-    const alleys = pavedWays.filter(({ el }) => isAlley(el)).map((o) => o.poly);
+    const alleys = pavedWays.filter(({ el }) => isMappedAlley(el)).map((o) => o.poly);
     if (!alleys.length) return { reason: 'The rear garage needs a separately mapped alley.' };
     // Check connected pavement in the drawn scheme, not legal access, turning radius or grade.
     const reaches = (a: Poly, b: Poly) =>
@@ -428,6 +427,8 @@ function fitHome(
           ...selected.properties,
           housingDesignId: h.id,
           housingAssetVersion: '1',
+          housingAssignmentSource: 'manual',
+          housingPreviousEnginePlan: undefined,
           housingPlacementStatus: 'placed',
           housingParking:
             h.parking === 'pad' ? 'pad' : h.id === 'tn-garden-infill-v1' ? 'detached-garage' : 'attached-garage',

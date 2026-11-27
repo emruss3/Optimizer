@@ -116,12 +116,18 @@ describe('West Heiman per-lot placement', () => {
   it('routes the selected lot and authored design through Home Studio Apply, with interior views', async () => {
     const elements = plan();
     const onApply = vi.fn((id: string, lot: string) => commitConcept(id, lot, elements));
+    const onPreview = vi.fn();
+    const onClose = vi.fn();
     render(<HomeStudio elements={elements} selected="test-pad-2" designs={[WEST_HEIMAN_DESIGNS[1]!]} stockPlans={[]}
-      onPreview={() => undefined} onClose={() => undefined} onApplyConcept={onApply} />);
+      onPreview={onPreview} onClose={onClose} onApplyConcept={onApply} />);
     fireEvent.click(screen.getByRole('tab', { name: /Authored catalog/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Interiors' }));
     expect(screen.getAllByRole('img', { name: /West Heiman E2, illustrative/i })).toHaveLength(2);
-    fireEvent.click(await screen.findByRole('button', { name: 'Apply to this lot' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview on site' }));
+    expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ house: 'test-pad-2', name: 'West Heiman E2' }));
+    expect(onApply).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply to Lot 2' }));
+    expect(onClose).not.toHaveBeenCalled();
     expect(onApply).toHaveBeenCalledWith(WEST_HEIMAN_IDS[1], 'test-pad-2');
     expect(onApply.mock.results[0]?.value).toMatchObject({ ok: true, name: 'West Heiman E2' });
   });

@@ -1,5 +1,6 @@
 import { METERS_PER_FOOT as FT } from '../../../engine/units';
 import { Frame, Kit, inRing, CONCRETE, mat, tone, type Mat, type Wall, type V2 } from '../ui/architecture/kit';
+import { drawWindowRoom, type WindowRoom } from '../ui/architecture/windowRooms';
 import type { Surface } from '../ui/renderModel';
 import { type HomeDesign, type Point, type Rect, type Face, type Finish } from './originalDesigns';
 import { floorBase, normal, pointOn, wallsFor, type WallRun } from './drawings';
@@ -45,17 +46,26 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
           ? mat(175, 162, 141, 'concrete')
           : color(body, surface[finish]);
   const ring = ([x, y, w, d]: Rect) => f.ring(x * FT, (x + w) * FT, y * FT, (y + d) * FT);
+  let roomViews = 0;
+  const dressed = new Set<string>();
   for (let floor = 0; floor < home.levels.length; floor++) {
     const base = floorBase(home, floor) * FT,
       top = base + home.heights[floor]! * FT;
     for (const room of home.levels[floor]!.rooms) {
       const garage = room.name === 'Garage',
         z = garage ? 0.1 : base;
+      const [x, y, w, d] = room.rect;
+      const wing = home.rearLoadPrecedent && floor > 0
+        ? home.volumes.find(v => floor >= v.first && floor < v.first + v.count && inside([x + w / 2, y + d / 2], v.rect))
+        : undefined;
+      // A thin rim behind the façade. The old coplanar trim at the slab edge fought the cladding
+      // below it, leaving white flashes between stories. An exposed cantilever keeps its own finish.
+      const inset = wing ? Math.min(0.03 / FT, w / 4, d / 4) : 0;
       kit.prism(
-        ring(room.rect),
+        ring([x + inset, y + inset, w - 2 * inset, d - 2 * inset]),
         floor === 0 ? 0 : z - 0.11,
         floor === 0 ? z : 0.11,
-        floor === 0 ? mat(150, 139, 124, 'concrete') : trim,
+        floor === 0 ? mat(150, 139, 124, 'concrete') : wing ? wallMat(wing.finish) : trim,
         'base',
       );
     }
@@ -88,20 +98,34 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
         bodySegment(a, b, head, top);
         low = b;
         if (c.kind === 'window') {
+          const room = home.levels[floor]!.rooms.find(r => r.name === w.room);
+          const kind = /^bedroom \d+$/i.test(w.room) ? 'bedroom' : /living room|family room|great room|sitting|study/i.test(w.room) ? 'living' : null;
+          const depth = room ? (w.face === 'front' || w.face === 'back' ? room.rect[3] : room.rect[2]) * FT : 0;
+          const key = `${floor}|${w.room}`;
+          const view: WindowRoom | null = !kit.lite && kind && (w.face === 'front' || w.face === 'back') &&
+            width >= 0.74 && head - sill >= 0.42 && depth >= 1.06 && roomViews < 5 && !dressed.has(key)
+            ? {
+                left: Math.max(s - width / 2 - 0.58, ((room?.rect[0] ?? w.lo) - w.lo) * FT + 0.025),
+                right: Math.min(s + width / 2 + 0.58, ((room ? room.rect[0] + room.rect[2] : w.hi) - w.lo) * FT - 0.025),
+                depth: Math.min(depth - 0.18, 1.95), floor: z, ceiling: top, kind,
+              }
+            : null;
+          if (view) { drawWindowRoom(kit, wall, view); dressed.add(key); roomViews++; }
           kit.window(wall, s, width, sill, head, {
             frame: FRAME,
             sill: trim,
             grid: c.width >= 4 ? [2, 2] : [1, 2],
             glazed: true,
             interiorDepth: 0.31,
+            roomBehindGlass: !!view,
           });
         } else if (c.kind === 'garage') {
           kit.garage(wall, s - width / 2, s + width / 2, z, head - z, {
             frame: trim,
             leaf: tone(accent, 0.85),
-            lites: true,
+            lites: home.garageDoor !== 'solid-sectional',
             rows: 4,
-          });
+          }, home.garageDoor === 'solid-sectional' ? -0.065 : 0);
           kit.lamp(wall, s + width / 2 + 0.22, head - 0.3);
         } else if (c.kind === 'garden' && deck && (w.room === deck.name || w.other === deck.name)) {
           const side = w.room === deck.name ? { ...wall, n: [-wall.n[0], -wall.n[1]] as V2 } : wall;

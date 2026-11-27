@@ -108,6 +108,8 @@ export interface WindowSpec {
   glazed?: boolean;
   /** Depth of the interior, behind an actual opening in the exterior wall. */
   interiorDepth?: number;
+  /** An authored room pocket already provides the opaque surfaces behind the glass. */
+  roomBehindGlass?: boolean;
 }
 
 export interface Architecture {
@@ -246,7 +248,7 @@ export class Kit {
     this.box(w, b - f, b, d, d + p, z0 + f, z1 - z0 - 2 * f, o.frame);
     const paneDepth = d + (o.glazed ? 0.085 : 0.02);
     const barDepth = d + (o.glazed ? 0.102 : 0.045);
-    if (o.glazed) {
+    if (o.glazed && !o.roomBehindGlass) {
       // The glass, shade and interior sit at three different depths in the jamb.
       const seed = hashId(`${this.seed}|${w.a}|${s.toFixed(2)}|${z0.toFixed(2)}`);
       const backing = pick(WINDOW_INTERIORS, seed);

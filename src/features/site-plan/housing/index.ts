@@ -40,12 +40,15 @@ export type {
 
 export {
   ABHP_110_00108,
+  ABHP_110_00220,
   ABHP_340_00011,
   ABHP_4848_00368,
   ABHP_526_00030,
   ABHP_526_00035,
   ABHP_526_00051,
   ABHP_5633_00014,
+  ABHP_5633_00022,
+  ABHP_5633_00340,
   ABHP_5633_00358,
   ABHP_5633_00365,
   ABHP_5633_00366,
@@ -74,7 +77,14 @@ export {
   rememberHousingChoice,
 } from './handoff';
 
-export { applyHousingDesign, applyStockDesignToHouse, applyStockDesignToHouses, lotsFromElements } from './apply';
+export {
+  applyHousingDesign,
+  applyStockDesignToHouse,
+  applyStockDesignToHouses,
+  lotsFromElements,
+  ring3857ToFeet,
+  sfLotElements,
+} from './apply';
 export type { ApplyHousingResult, ApplyHouseResult, ApplyHousesResult } from './apply';
 export {
   DEFAULT_HOME_SETBACKS,

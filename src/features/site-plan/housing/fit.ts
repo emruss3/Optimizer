@@ -180,10 +180,10 @@ export function fitDesignToLot(design: HousingDesignRecord, lot: LotFitInput): D
  * Delk five-lot candidate: place the cottage on lots 1–3 (porch to lane),
  * leave 4–5 unplaced with an explicit constraint string.
  *
- * Lots 1–3 were trial-cleared against RS5 setbacks in the Nov 22 brief; we do
- * not re-derive the envelope from sheet coordinates here (SF pads arrive in
- * EPSG:3857 while setbacks are feet). Geometric fitDesignToLot stays for
- * unit tests and Helen Street orientation regressions in local feet.
+ * Lots 1–3 were trial-cleared against RS5 setbacks in the Nov 22 brief.
+ * Geometric fitDesignToLot is used for non-Delk stock and for unit tests /
+ * Helen Street orientation regressions in local feet. Sheet lots are converted
+ * 3857 → ground feet in lotsFromElements before envelope checks.
  */
 export function fitDelkCottage(
   design: HousingDesignRecord,

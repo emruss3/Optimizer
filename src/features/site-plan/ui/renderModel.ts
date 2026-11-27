@@ -17,10 +17,12 @@ export type Surface =
   | 'panel'      // fibre-cement panels with joints
   | 'concrete'
   | 'asphalt'
+  | 'pavers'
   | 'grass'
   | 'site-hatch'
   | 'railing'    // a balustrade of thin bars: see-through between them
   | 'glassrail'  // a glass balustrade
+  | 'interior-light' // a small practical fixture behind glazing
   | 'water'
   | 'plain';
 

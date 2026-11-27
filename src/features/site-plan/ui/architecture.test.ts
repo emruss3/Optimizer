@@ -229,7 +229,7 @@ describe('infill apartment elevations', () => {
     const doors = a.glass.filter(g => g.clear && g.polygon.some(p => (p[2] ?? 9) < 0.3));
     expect(doors).toHaveLength(4);
     expect(doors.every(g => g.polygon.every(p => (p[1] ?? 0) > 0.04 && (p[1] ?? 0) < 0.2))).toBe(true);
-    expect(a.flats.some(f => f.polygon.every(p => Math.abs((p[1] ?? 0) - 1.85) < 0.001))).toBe(true);
+    expect(a.flats.some(f => f.polygon.every(p => Math.abs((p[1] ?? 0) - 2.8) < 0.001))).toBe(true);
   });
 
   it('keeps the warm fiber-cement bays distinct from a brick-only apartment elevation', () => {
@@ -248,6 +248,20 @@ describe('a clubhouse', () => {
     expect(span(solid(a))).toEqual([0, 18, 0, 12]);
     expect(Math.max(...walls(a).map(top))).toBeCloseTo(h.aboveGradeFt * METERS_PER_FOOT, 6);
     expect(a.glass.length).toBeGreaterThan(8);
+  });
+});
+
+describe('an outdoor pool deck', () => {
+  it('draws a paved surface with no windows or roof (Main St live audit)', () => {
+    const h = buildingHeight('amenity', 1);
+    const a = buildArchitecture('pool', 'Pool deck', rect(18, 9), 'amenity', h, [[9, -4]], 1, 'modern');
+    expect(a.glass).toHaveLength(0);
+    expect(a.flats).toHaveLength(0);
+    expect(Math.max(...a.slabs.map(top))).toBeLessThan(0.35);
+    expect(walls(a).length).toBeGreaterThan(0);
+    // Clubhouse path still encloses; pool must not reuse that glass count
+    const club = buildArchitecture('club', 'Clubhouse', rect(18, 9), 'amenity', h, [[9, -4]], 1, 'modern');
+    expect(club.glass.length).toBeGreaterThan(0);
   });
 });
 

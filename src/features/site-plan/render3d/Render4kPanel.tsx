@@ -26,6 +26,7 @@ type Props = {
   grossSf?: number | null | undefined;
   savedPlanId?: string | undefined;
   camera: RenderCameraId;
+  alleyPavers?: boolean | undefined;
   onClose: () => void;
 };
 
@@ -57,7 +58,7 @@ const secondary = 'rounded-md border border-slate-300 px-2 py-1 hover:bg-slate-5
 const pending = (status?: JobStatus['status']) => status === 'queued' || status === 'running';
 const describeError = (error: unknown) => error instanceof Error ? error.message : 'The render request could not be completed.';
 
-export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, savedPlanId, camera, onClose }: Props) {
+export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, savedPlanId, camera, alleyPavers, onClose }: Props) {
   const [bundle, setBundle] = useState<Package | null>(null);
   const [choice, setChoice] = useState<RenderCameraId>(camera);
   const [job, setJob] = useState<JobStatus | null>(null);
@@ -79,14 +80,14 @@ export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, sa
     setJob(null);
     setError(undefined);
     void import('./exportJob').then(({ buildRenderJob }) =>
-      buildRenderJob(data, scene, { style, sunKey, sunHour, grossSf }),
+      buildRenderJob(data, scene, { style, sunKey, sunHour, grossSf, alleyPavers }),
     ).then(result => {
       if (!active) return;
       setBundle(result);
       setChoice(result.job.cameras.some(c => c.id === camera) ? camera : 'drone');
     }).catch(e => { if (active) setError(describeError(e)); });
     return () => { active = false; };
-  }, [data, scene, style, sunKey, sunHour, grossSf, camera, refresh]);
+  }, [data, scene, style, sunKey, sunHour, grossSf, camera, alleyPavers, refresh]);
 
   const jobId = job?.id, jobStatus = job?.status;
   useEffect(() => {

@@ -40,6 +40,7 @@ export interface RenderViewProps {
   /** Home-design study: frame this building when focusHomeToken changes. */
   focusHomeId?: string | null | undefined;
   focusHomeToken?: number | undefined;
+  homeCompare?: boolean | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
@@ -67,7 +68,7 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, homeCompare, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   // The look 3D opens on: the user's explicit choice this session, else the default (handoff 11-27).
@@ -100,6 +101,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       }),
     [elements, parcelRing, envelopeRing, accessBreak, neighbors, edgeClassifications, scene, archStyle, topo],
   );
+
+  const [alleyPavers, setAlleyPavers] = useState(false);
+  const hasMappedAlley = data.polygons.some(p => p.mappedAlley);
+  const usePavers = alleyPavers && hasMappedAlley;
 
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -143,7 +148,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // the building selected on the plan: Street and Entry frame it first (handoff 11-27)
   const selectedRef = useRef<string | null | undefined>(selectedId);
   selectedRef.current = selectedId;
-  const stood = useRef<{ revision: string; review: boolean; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
+  const stood = useRef<{ revision: string; scheme?: string; compare?: boolean; review: boolean; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -246,12 +251,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
-      const { subjects, obstacles, roads, trees, approaches, foreground } = r.model.ground;
+      const { subjects, obstacles, roads, trees, approaches, foreground, garagePavementAt } = r.model.ground;
       const chosen = selectedRef.current;
       const house = chosen && subjects.some(s => s.id === chosen) ? chosen : previewHouse.current;
       const entranceWalks = house ? approaches.filter(a => a.building === house) : approaches;
       const arrival = shot === 'approach' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
-        : shot === 'garage' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron')
+        : shot === 'garage' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron', garagePavementAt)
         : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : null;
       const close = shot === 'approach' || shot === 'garage';
       r.controls.minDistance = arrival && close ? 0.55 : 8;
@@ -336,7 +341,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const reviewLook = look === 'review' && !present;
     try {
       const review = look === 'review' && !present;
-      model = buildSiteModel(data, { light, review, planLines: planLines && !present });
+      model = buildSiteModel(data, { light, review, planLines: planLines && !present, alleyPavers: usePavers });
       stage = createStage(cv, model, { width: Math.max(2, el.clientWidth), height: Math.max(2, el.clientHeight), preserve: true, light, studio: review });
     } catch (err) {
       fail.current(err instanceof Error ? err : new Error(String(err)));
@@ -438,7 +443,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const was = stood.current;
     const reviewNow = look === 'review' && !present;
     const placed = lastShot.current?.shot;
-    if (was && was.revision === modelRevision) {
+    if (was && (was.revision === modelRevision || (was.scheme === scene.identity.key && (was.compare || homeCompare)))) {
       if (lastShot.current?.shot === 'approach' || lastShot.current?.shot === 'garage') {
         controls.minDistance = 0.55;
         controls.maxPolarAngle = 2.05;
@@ -480,7 +485,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     return () => {
       active = false;
       clearTimeout(settle);
-      stood.current = { revision: modelRevision, review: look === 'review' && !present, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
+      stood.current = { revision: modelRevision, scheme: scene.identity.key, compare: homeCompare, review: look === 'review' && !present, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
       remember3D(scene.identity.parcelId, {
         revision: modelRevision, review: stood.current.review,
         position: camera.position.toArray() as [number, number, number], target: controls.target.toArray() as [number, number, number], fov: camera.fov,
@@ -500,7 +505,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, lens, quality, look, present, planted, treesHere, planLines]);
+  }, [data, frame, lens, quality, look, present, planted, treesHere, planLines, usePavers]);
 
   // Home designs → 3D: frame the previewed house once per token after the model includes it.
   // Do not re-frame on later rebuilds of the same token (avoids fighting the user).
@@ -618,6 +623,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <ArchStylePicker />
       </div>
       )}
+      {showy && hasMappedAlley && (
+        <label className="absolute top-11 left-2 inline-flex items-center gap-1.5 rounded-md bg-white/90 px-2 py-1 text-[11px] text-gray-700 shadow-sm" title="Try herringbone pavers on mapped alleys. This illustrative finish does not change the plan.">
+          <input type="checkbox" checked={alleyPavers} onChange={e => setAlleyPavers(e.target.checked)} data-testid="render-alley-pavers" />
+          Alley pavers
+        </label>
+      )}
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
         <button type="button" aria-pressed={planLines} onClick={() => setPlanLines(!planLines)} data-testid="plan-lines"
           title={planLines ? 'Hide the parcel line, buildable envelope, access and hazard areas' : 'Draw the parcel line, buildable envelope, access and hazard areas on the model'}
@@ -716,7 +727,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       {showy && renderCamera !== null && (
         <Render4kPanel key={JSON.stringify([scene.identity.key, scene.identity.revision, archStyle, sunKey, sunHour, savedPlanId])}
           data={data} scene={scene} style={archStyle} sunKey={sunKey} sunHour={sunHour} camera={renderCamera}
-          grossSf={grossSf} savedPlanId={savedPlanId} onClose={() => setRenderCamera(null)} />
+          grossSf={grossSf} savedPlanId={savedPlanId} alleyPavers={usePavers} onClose={() => setRenderCamera(null)} />
       )}
       {photo.status === 'working' && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/35 text-white text-sm" role="status" data-testid="photoreal-working">

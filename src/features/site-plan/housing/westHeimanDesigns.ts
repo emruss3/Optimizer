@@ -125,7 +125,7 @@ function westHeiman(variant: 'B2' | 'E2' | 'F2'): HomeDesign {
     ],
     porches: [], parking: 'rear', cars: 2,
     rearLoadPrecedent: { source: 'The Bradley Projects · West Heiman · ' + sheet + ' · Revision 14 (2026-09-22)' },
-    ...(e ? { sideWindows: e2Windows } : {}),
+    ...(e ? { sideWindows: e2Windows, garageDoor: 'solid-sectional' as const } : {}),
     ...(f ? { roofBulkhead: { rect: [w - 5.75, 6, 5, 14], heightFt: 7 } as NonNullable<HomeDesign['roofBulkhead']> } : {}),
     ...(variant === 'B2' ? {
       sideWindows: b2Windows,

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Element } from '../../../engine/types';
 import type { ArchStyle } from './architecture';
 import { buildMassingData, buildingHeightM } from './massingData';
+import { buildSiteModel } from '../render3d/siteScene';
 
 const el = (
   id: string,
@@ -40,6 +41,41 @@ describe('buildingHeightM', () => {
 });
 
 describe('buildMassingData', () => {
+  it('renders the mapped alley without inventing curbs or sidewalks, and applies a finish only on that alley', async () => {
+    const front = el('Front street', 'road', square(X, Y, 10));
+    const rear = el('Rear access', 'road', square(X, Y + 30, 10));
+    rear.properties.kind = 'alley';
+    const drive = el('Driveway', 'circulation', square(X, Y + 20, 10));
+    const path = el('Alley sidewalk', 'circulation', square(X + 12, Y + 30, 5));
+    const data = buildMassingData([front, rear, drive, path]);
+    const lane = data.polygons.find(p => p.id === rear.id)!;
+    expect(lane).toMatchObject({ kind: 'street', mappedAlley: true });
+    expect(lane.polygon).toEqual(rear.geometry.coordinates.map(r => r.map(data.toLocal)));
+    expect(data.polygons.filter(p => p.mappedAlley)).toEqual([lane]);
+    expect(data.walks).toHaveLength(0);
+    expect(data.curbs.find(c => c.id === 'Rear access:0')?.guideOnly).toBe(true);
+    const standard = buildSiteModel(data, { keepParts: true, noContext: true, light: true });
+    const preview = buildSiteModel(data, { keepParts: true, noContext: true, light: true, alleyPavers: true });
+    const review = buildSiteModel(data, { keepParts: true, noContext: true, light: true, alleyPavers: true, review: true });
+    try {
+      await Promise.all([standard.ready, preview.ready, review.ready]);
+      const pavement = (model: typeof standard, id: string) => model.parts.find(p => p.owner === id)!;
+      const original = pavement(standard, 'pavement:Rear access');
+      const changed = pavement(preview, 'pavement:Rear access');
+      expect(original.slot).toBe('asphalt');
+      expect(changed.slot).toBe('pavers');
+      expect(pavement(review, 'pavement:Rear access').slot).toBe('asphalt');
+      expect(pavement(preview, 'pavement:Front street').slot).toBe('asphalt');
+      expect(pavement(preview, 'driveway:Driveway').slot).toBe('concrete');
+      expect([...changed.geometry.getAttribute('position').array]).toEqual([...original.geometry.getAttribute('position').array]);
+      expect(changed.geometry.getAttribute('uv').array).toEqual(original.geometry.getAttribute('uv').array);
+      expect(standard.parts.filter(p => p.owner === 'curb:Rear access:0')).toHaveLength(0);
+      expect(review.parts.filter(p => p.owner === 'curb:Rear access:0')).toHaveLength(1);
+    } finally {
+      standard.dispose(); preview.dispose(); review.dispose();
+    }
+  });
+
   it('keeps drawn stalls while hiding decorative vehicles at a known access break', () => {
     const bay = el('verified-bay', 'parking-bay', [[X, Y], [X + 46, Y], [X + 46, Y + 7], [X, Y + 7]]);
     bay.properties.parkingSpaces = 13;
