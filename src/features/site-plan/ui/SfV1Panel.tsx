@@ -130,6 +130,7 @@ export function SfV1Panel({
   competition, shownRequested, onViewCandidate, onRetryCompetition, terrain, site,
   autoBest, holeOverlap, frontageLandlocked, deepSearch,
   housing,
+  imperviousNow = null,
 }: {
   /** the deep search that keeps looking after the quick plan is drawn (fn_sf_v1_deep_search) */
   deepSearch?: SfV1DeepProgress | null;
@@ -159,6 +160,8 @@ export function SfV1Panel({
   holeOverlap?: HoleOverlap | null;
   /** the frontage layer finds no street on the parcel */
   frontageLandlocked?: boolean;
+  /** Impervious as the plan stands after home changes: the solver's figure moved by the change in roof and paving */
+  imperviousNow?: { pct: number; deltaSf: number } | null;
   /** Stock plans that fit each lot (shared eligibility result); changing a home opens the studio */
   housing?: {
     parcelId: string;
@@ -406,7 +409,9 @@ export function SfV1Panel({
                 summary.rowPct != null ? `${summary.rowPct}% ${summary.privateDrive ? 'easement' : 'ROW'}` : null,
                 summary.lotPct != null ? `${summary.lotPct}% lots` : null,
                 summary.openPct != null ? `${summary.openPct}% open` : null,
-                summary.imperviousPct != null ? `${summary.imperviousPct}% impervious` : null,
+                imperviousNow && Math.abs(imperviousNow.deltaSf) >= 1
+                  ? `${imperviousNow.pct}% impervious (solver ${summary.imperviousPct}%, ${imperviousNow.deltaSf > 0 ? '+' : ''}${imperviousNow.deltaSf.toLocaleString()} sf of roof and paving since the home changes)`
+                  : summary.imperviousPct != null ? `${summary.imperviousPct}% impervious` : null,
               ].filter(Boolean).join(' · ') || '—'}
             </dd>
             {summary.privateDrive && (

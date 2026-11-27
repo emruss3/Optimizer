@@ -17,9 +17,47 @@ interface ParcelSearchRow {
   zoning: string | null;
 }
 
+/** Street words as the assessor writes them ("2500 West Heiman Street" → "2500 W HEIMAN ST"). */
+const ABBREV: Record<string, string> = {
+  NORTH: 'N', SOUTH: 'S', EAST: 'E', WEST: 'W',
+  AVENUE: 'AVE', STREET: 'ST', DRIVE: 'DR', ROAD: 'RD', LANE: 'LN', COURT: 'CT', BOULEVARD: 'BLVD',
+  PLACE: 'PL', CIRCLE: 'CIR', HIGHWAY: 'HWY', PARKWAY: 'PKWY', TERRACE: 'TER', TRAIL: 'TRL',
+};
+export function assessorStyle(term: string): string {
+  return term.toUpperCase().split(' ').map(w => ABBREV[w] ?? w).join(' ');
+}
+
+/**
+ * Parcel search (audit 9379472 F7): an address or parcel number as before; the app's own parcel ID
+ * (the number in planner links and fixtures, e.g. 675423) found exactly; and when the words as typed
+ * find nothing, one more try with street words abbreviated the assessor's way. The retry only runs on
+ * an empty answer, so "West End Ave" still finds West End Avenue.
+ */
 export async function searchParcels(query: string, limit = 10, signal?: AbortSignal): Promise<ParcelHit[]> {
   const term = query.replace(/[,()"\\*%_]/g, ' ').replace(/\s+/g, ' ').trim();
   if (term.length < 2) return [];
+  const byId = /^\d{4,8}$/.test(term) ? await parcelById(Number(term), signal).catch(() => null) : null;
+  let rows = await searchTerm(term, limit, signal);
+  if (!rows.length) {
+    const alt = assessorStyle(term);
+    if (alt !== term.toUpperCase()) rows = await searchTerm(alt, limit, signal);
+  }
+  return byId ? [byId, ...rows.filter(r => r.ogcFid !== byId.ogcFid)].slice(0, limit) : rows;
+}
+
+/** The parcel with this app ID (ogc_fid), or null. */
+async function parcelById(id: number, signal?: AbortSignal): Promise<ParcelHit | null> {
+  if (!supabase || !Number.isFinite(id)) return null;
+  let q = supabase.from('parcels').select('ogc_fid, parcelnumb, address, zoning').eq('ogc_fid', id).limit(1);
+  if (signal) q = q.abortSignal(signal);
+  const { data, error } = await q;
+  if (error || !data?.length) return null;
+  const p = data[0] as ParcelSearchRow;
+  mark('search-by-id', { ogcFid: p.ogc_fid });
+  return { ogcFid: p.ogc_fid, address: p.address || 'Unknown Address', parcelNumber: p.parcelnumb, zoning: p.zoning };
+}
+
+async function searchTerm(term: string, limit: number, signal?: AbortSignal): Promise<ParcelHit[]> {
   if (!supabase) throw new Error('the database client is not configured');
   signal?.throwIfAborted();
 

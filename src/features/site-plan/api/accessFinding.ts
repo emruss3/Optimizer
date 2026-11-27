@@ -124,3 +124,15 @@ export function accessFinding(input: {
     clears: [],
   };
 }
+
+/**
+ * The engine's basis line beside the drawn plan's measured access (audit 9379472 F2): where the
+ * drawn drives reach no parking bay from the street, a "connected" access claim in the line is
+ * corrected in place. Nothing changes when the access was not checked or some bay is reached.
+ */
+export function reconcileBasisAccess(basis: string, access: { evaluated?: boolean; bays: number; served: number } | null): string {
+  if (!access || !access.evaluated || access.bays <= 0 || access.served > 0) return basis;
+  const note = `the drawn drives reach none of the ${access.bays} parking bays from the street`;
+  const claim = /\baccess\b[^·;.]*\bconnected\b|\bconnected\b[^·;.]*\baccess\b/i;
+  return claim.test(basis) ? basis.replace(claim, m => `${m} (engine summary — ${note})`) : basis;
+}

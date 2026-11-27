@@ -167,7 +167,6 @@ export default function HomeStudio({
     if (!catalogue.length) return;
     setIndex((i) => stepHomeDesignIndex(i, catalogue.length, delta));
     setLevel(0);
-    setFit(null);
   };
 
   const stepStock = (delta: number) => {
@@ -494,7 +493,6 @@ export default function HomeStudio({
                         onChange={(e) => {
                           setHouseId(e.target.value);
                           setIndex(0);
-                          setFit(null);
                         }}
                       >
                         {houses.map((e) => (
@@ -521,7 +519,6 @@ export default function HomeStudio({
                       onClick={() => {
                         setIndex(i);
                         setLevel(0);
-                        setFit(null);
                       }}
                     >
                       <strong>{h.name}</strong>
@@ -676,7 +673,6 @@ export default function HomeStudio({
                               onChange={(e) => {
                                 setHouseId(e.target.value);
                                 setIndex(0);
-                                setFit(null);
                               }}
                             >
                               {houses.map((e) => (
