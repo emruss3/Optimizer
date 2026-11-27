@@ -61,15 +61,19 @@ for (const p of PARCELS) {
     await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
       .catch(() => page.locator('[data-testid="camera-street"]').first().click({ force: true }));
     await page.waitForTimeout(1500);
-    const camsBefore = (await page.evaluate(() => window.__ppTimeline ?? [])).filter(m => m.name === 'camera').length;
-    row.reviewShot = await page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null')?.shot ?? null; } catch { return null; } }).catch(() => null);
+    const shotOf = () => page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null'); } catch { return null; } }).catch(() => null);
+    const before = await shotOf();
+    row.reviewShot = before?.shot ?? null;
     await page.locator('[data-testid="look-rendering"]').first().click().catch(() => {});
     await page.locator('[data-testid="massing-3d"][data-ready="true"][data-look="rendering"]').first().waitFor({ timeout: 60000 }).catch(() => {});
     row.treeFetchesInRendering = treeFetches.length;
     await page.waitForTimeout(1500);
-    const camsAfter = (await page.evaluate(() => window.__ppTimeline ?? [])).filter(m => m.name === 'camera');
-    row.streetReplaced = camsAfter.length > camsBefore && camsAfter[camsAfter.length - 1]?.detail?.requested === 'street';
-    row.streetBasisInRendering = await page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null')?.basis ?? null; } catch { return null; } }).catch(() => null);
+    // handoff 11-27: a look change keeps the camera where the user left it and restates what it sees
+    const after = await shotOf();
+    const moved = before?.position && after?.position ? Math.hypot(...before.position.map((v, i) => v - after.position[i])) : null;
+    row.cameraKept = moved != null ? moved < 0.05 : null;
+    row.streetBasisInRendering = after?.basis ?? null;
+    row.sightNote = await page.locator('[data-testid="sight-note"]').innerText({ timeout: 1500 }).catch(() => null);
     await page.waitForTimeout(1500);
     // the 3D toolbar can re-render while the scene settles: retry the click, then force it
     await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
@@ -107,7 +111,8 @@ for (const p of PARCELS) {
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
     if (row.present?.on !== 'true' || row.present.reviewPressed !== 'false' || row.present.renderingPressed !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong look label: ${JSON.stringify(row.present)}`);
-    if (row.reviewShot === 'street' && row.streetReplaced === false) throw new Error(`the street camera from Review was kept in Rendering: ${row.streetBasisInRendering}`);
+    if (row.reviewShot === 'street' && row.cameraKept === false) throw new Error('a look change moved the camera');
+    if (row.reviewShot === 'street' && !/kept from Review: \d+ trees? in the line of sight/.test(row.streetBasisInRendering ?? '')) throw new Error(`the kept camera's basis was not restated for Rendering: ${row.streetBasisInRendering}`);
     if (row.treeFetchesInReview !== 0 || !(row.treeFetchesInRendering > 0)) throw new Error(`tree grower fetched ${row.treeFetchesInReview} times in Review and ${row.treeFetchesInRendering} by Rendering`);
     if (row.timeline.revision == null || row.timeline.interactive3d == null) throw new Error('timeline missing the plan revision or 3D milestone');
   } catch (e) {
@@ -189,7 +194,7 @@ for (const l of layout) console.log(`LAYOUT 1280×720 ${l.parcel} | ${JSON.strin
 await browser.close();
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, layout }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | street re-placed ${r.streetReplaced} "${r.streetBasisInRendering ?? ''}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
+  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | camera kept ${r.cameraKept} "${r.streetBasisInRendering ?? ''}" note "${r.sightNote ?? ''}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
 const failed = results.filter(r => r.problem);
 if (failed.length) { console.log(`${failed.length} of ${results.length} parcels failed`); process.exit(1); }

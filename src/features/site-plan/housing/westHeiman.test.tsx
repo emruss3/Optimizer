@@ -118,11 +118,69 @@ describe('West Heiman per-lot placement', () => {
     const onApply = vi.fn((id: string, lot: string) => commitConcept(id, lot, elements));
     render(<HomeStudio elements={elements} selected="test-pad-2" designs={[WEST_HEIMAN_DESIGNS[1]!]} stockPlans={[]}
       onPreview={() => undefined} onClose={() => undefined} onApplyConcept={onApply} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Concept studies' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Authored catalog/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Interiors' }));
     expect(screen.getAllByRole('img', { name: /West Heiman E2, illustrative/i })).toHaveLength(2);
     fireEvent.click(await screen.findByRole('button', { name: 'Apply to this lot' }));
     expect(onApply).toHaveBeenCalledWith(WEST_HEIMAN_IDS[1], 'test-pad-2');
     expect(onApply.mock.results[0]?.value).toMatchObject({ ok: true, name: 'West Heiman E2' });
+  });
+});
+
+describe('Buildable plans: the whole catalogue, fit per lot, one target (handoff 11-27)', () => {
+  it('lists every authored design for the target lot, fits first, the others with their reason', async () => {
+    const { HOME_DESIGNS } = await import('./originalDesigns');
+    const { catalogFitRows } = await import('./catalogFit');
+    const elements = plan();
+    const house = elements.find(e => e.id === 'test-pad-2')!;
+    const rows = catalogFitRows(HOME_DESIGNS, house, elements);
+    expect(rows).toHaveLength(HOME_DESIGNS.length);
+    const firstMiss = rows.findIndex(r => r.status !== 'fits');
+    expect(rows.slice(0, firstMiss).every(r => r.status === 'fits')).toBe(true);
+    for (const id of WEST_HEIMAN_IDS) expect(rows.find(r => r.design.id === id)?.status).toBe('fits');
+    // an attached design on a detached lot is listed with that reason, not dropped
+    const attached = rows.find(r => r.design.attached);
+    expect(attached?.status).toBe('other-typology');
+    // the same result drives Apply: a design that fits carries its placement
+    expect(rows.find(r => r.design.id === WEST_HEIMAN_IDS[0])?.result?.placement).toBeTruthy();
+  });
+
+  it('keeps a design that does not fit in the list with its reason, and finds the lots it fits', async () => {
+    const { catalogFitRows, compatibleLots } = await import('./catalogFit');
+    // no rear alley: the rear-load studies cannot reach their garages
+    const elements = plan().filter(e => e.id !== 'alley' && e.id !== 'link');
+    const house = elements.find(e => e.id === 'test-pad-1')!;
+    const rows = catalogFitRows(WEST_HEIMAN_DESIGNS, house, elements);
+    expect(rows.every(r => r.status === 'no-fit' && !!r.result?.reason)).toBe(true);
+    expect(compatibleLots(WEST_HEIMAN_DESIGNS[0]!, elements.filter(e => e.properties?.house), elements)).toEqual([]);
+  });
+
+  it('opens on the authored catalogue with one target lot, and My plans says when none are linked', () => {
+    const elements = plan();
+    render(<HomeStudio elements={elements} selected="test-pad-2" stockPlans={[]} onPreview={() => undefined} onClose={() => undefined} />);
+    expect(screen.getByRole('tab', { name: /Authored catalog/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getAllByLabelText('Target house lot')).toHaveLength(1);
+    expect((screen.getByTestId('home-target-lot') as HTMLSelectElement).value).toBe('test-pad-2');
+    expect(screen.getByTestId('home-design-tn-west-heiman-b2-study-v1').getAttribute('data-fit')).toBe('fits');
+    expect(screen.getByTestId('home-design-source').textContent).toContain('Authored concept · schematic');
+    fireEvent.click(screen.getByTestId('home-tab-mine'));
+    expect(screen.getByTestId('home-mine-empty').textContent).toContain('No project plans linked');
+  });
+
+  it('opens on My plans when the parcel\'s project links designs', () => {
+    const elements = plan();
+    render(<HomeStudio elements={elements} selected="test-pad-1" stockPlans={[]} projectDesignIds={WEST_HEIMAN_IDS} projectName="QA fixture"
+      onPreview={() => undefined} onClose={() => undefined} />);
+    expect(screen.getByRole('tab', { name: /My plans · 3/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('home-target-fits').textContent).toBe('3 of 3 project plans fit this lot');
+  });
+});
+
+describe('project plan links', () => {
+  it('links no parcel to The Lanes until its parent and phase parcels are mapped', async () => {
+    const { projectPlansFor, PROJECT_PLAN_LINKS } = await import('./projectPlans');
+    expect(PROJECT_PLAN_LINKS.find(l => l.projectId === 'the-lanes-2500-w-heiman')?.missing).toBeTruthy();
+    expect(projectPlansFor('675423')).toBeNull();
+    expect(projectPlansFor('1', [{ projectId: 'p', name: 'P', parcels: ['1'], designIds: ['x'], missing: null }])?.designIds).toEqual(['x']);
   });
 });
