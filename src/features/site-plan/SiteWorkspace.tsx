@@ -779,6 +779,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     action?: string;
     /** A replay: the figures this plan had when the user last saw it. */
     expected?: PlanSummary;
+    /** The background redraw after a saved pick: if the server does not return that pick, the sheet is left as it is. */
+    expectAiPick?: boolean;
   }): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     serverRejectRef.current = null;
@@ -828,6 +830,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       : null;
     // A newer run or another parcel has taken over: this answer is nobody's.
     if (stale()) return false;
+    // 1710 Meharry Blvd, 2026-11-27: the redraw came back with the engine's own plan and the sheet said "the design
+    // model found a better layout". A redraw that does not carry the saved pick changes nothing and says nothing.
+    if (opts.expectAiPick && !resp?.ai_pick) return false;
     // Townhomes have no legacy fallback: silently rendering apartments in
     // their place would misrepresent the selected product.
     if (!resp && effectiveProduct === 'townhomes') {
@@ -1059,8 +1064,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return ` · ${label}: ${cleaned.join(', ')}`;
     })();
     const pick = resp.ai_pick;
-    const aiNote = (pick?.picked === 'model' || pick?.picked === 'podium') && pick.engine && pick.winner
-      ? ` · ${pick.picked === 'podium' ? 'podium layout (parking in a garage under the building)' : `design model layout (${pick.model_version ?? 'model'})`}: ${pick.winner.n_fail ?? '?'} design flags vs ${pick.engine.n_fail ?? '?'} for the engine's layout, ${pick.winner.units ?? '?'} vs ${pick.engine.units ?? '?'} homes`
+    const aiWho = pick?.picked === 'podium' ? 'podium layout (parking in a garage under the building)'
+      : pick?.picked === 'model' ? `design model layout (${pick.model_version ?? 'model'})`
+      : pick?.picked === 'engine_alternative' ? 'another engine layout (the engine did not follow the design model\'s proposal)' : null;
+    const aiNote = aiWho && pick?.engine && pick.winner
+      ? ` · ${aiWho}: ${pick.winner.n_fail ?? '?'} design flags vs ${pick.engine.n_fail ?? '?'} for the first layout, ${pick.winner.units ?? '?'} vs ${pick.engine.units ?? '?'} homes`
       : '';
     setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}${relaxNote}${aiNote}`);
     // A3: value the scheme against local sales — the margin ticks live
@@ -1079,12 +1087,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       && effectiveProduct !== 'townhomes' && opts.seed === 1 && !(opts.pins?.length) && !opts.parentId
       && opts.persist !== false && !resp.ai_pick && !!effectiveContextId;
     if (freshDefault) {
-      void engineLong<{ ai_pick?: MfAiPick }>('fn_mf_ai_design', { p_ogc_fid: contextOgcFid }).then(r => {
+      void engineLong<{ ai_pick?: MfAiPick }>('fn_mf_ai_design', { p_ogc_fid: contextOgcFid, p_context_id: effectiveContextId }).then(r => {
         if (stale()) return;
-        const won = r.data?.ai_pick?.picked;
-        if (won === 'model' || won === 'podium') {
-          void runServerMfPlan({ seed: 1, pins: [], action: won === 'podium' ? 'A podium layout (parking in a garage) fits more homes' : 'The design model found a better layout' });
-        }
+        const pick = r.data?.ai_pick;
+        const won = pick?.picked;
+        if (won !== 'model' && won !== 'podium' && won !== 'engine_alternative') return;
+        const homes = pick?.winner?.units != null && pick.engine?.units != null && pick.winner.units !== pick.engine.units
+          ? `${pick.winner.units} homes instead of ${pick.engine.units}` : 'fewer design flags, same homes';
+        const action = won === 'podium' ? `A podium layout (parking in a garage): ${homes}`
+          : won === 'model' ? `The design model's layout: ${homes}`
+          : `Another engine layout: ${homes}`;
+        void runServerMfPlan({ seed: 1, pins: [], action, expectAiPick: true });
       });
     }
     return true;
