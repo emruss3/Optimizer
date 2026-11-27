@@ -209,7 +209,9 @@ def shared_catalog(job, report):
         raise ValueError("The worker and render job have different asset catalogs")
     manifest = {catalog["sky"]["file"]: catalog["sky"]["sha256"]}
     for material in catalog["textures"].values():
-        for kind in ("color", "normal"):
+        for kind in ("color", "normal", "roughness_map"):
+            if kind == "roughness_map" and kind not in material:
+                continue
             manifest[material[kind]] = material[f"{kind}_sha256"]
     for name, wanted in manifest.items():
         if file_digest(SITE_TEXTURES / name) != wanted:
@@ -245,6 +247,8 @@ def shared_texture_material(slot, entry):
     link(image("normal", "Non-Color"), normal.inputs["Color"])
     link(normal.outputs["Normal"], bsdf.inputs["Normal"])
     bsdf.inputs["Roughness"].default_value = entry["roughness"]
+    if "roughness_map" in entry:
+        link(image("roughness_map", "Non-Color"), bsdf.inputs["Roughness"])
     return mat
 
 

@@ -885,6 +885,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       void Promise.all(surfaces.pending).then(() => {
         if (both.map === single.map) return;
         both.map = single.map; both.bumpMap = single.bumpMap; both.normalMap = single.normalMap;
+        both.roughnessMap = single.roughnessMap; both.roughness = single.roughness;
         if (single.normalScale) both.normalScale = single.normalScale.clone();
         both.needsUpdate = true;
       });
