@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { plantTrees, seeded, MAX_TREES } from './landscape';
+import { plantTrees, seeded, MAX_TREES, CROWN_DRAWN } from './landscape';
 import { pointInPolygon, type Pt } from './frame';
 import { renderSitePlanSheet, renderViewSheet, sheetLayout, stallStripes, viewSheetLayout } from './sheetSvg';
 import { buildDrawingScene } from './buildScene';
@@ -30,6 +30,22 @@ describe('planting', () => {
       expect(pointInPolygon(t.at[0], t.at[1], parcel[0] ?? [])).toBe(true);
     }
     for (const t of trees.filter(x => x.kind === 'yard')) expect(pointInPolygon(t.at[0], t.at[1], lot.polygons[0] ?? [])).toBe(true);
+  });
+
+  it('never lets a crown, as the model draws it, hang over a house (audit 9379472 F8)', () => {
+    // a tight lot: the yard is narrow on every side of the house
+    const tight = feature('lot-2', 'lot', 'lot', box(120, 170, 190, 290));
+    const home = feature('house-2', 'building', 'house', box(132, 196, 178, 262));
+    const trees = plantTrees([street, lot, house, drive, tight, home], parcel);
+    const edgeDist = (p: Pt, ring: Pt[]) => Math.min(...ring.slice(0, -1).map((a, i) => {
+      const b = ring[i + 1]!, dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+      return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+    }));
+    expect(trees.length).toBeGreaterThan(0);
+    for (const t of trees) for (const h of [house, home]) {
+      expect(edgeDist(t.at, h.polygons[0]![0]!)).toBeGreaterThanOrEqual(t.radiusFt * CROWN_DRAWN - 1e-6);
+    }
   });
 
   it('plants the same trees every time', () => {

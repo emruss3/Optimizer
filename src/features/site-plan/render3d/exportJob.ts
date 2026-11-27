@@ -13,7 +13,7 @@ import polygonClipping from 'polygon-clipping';
 import type { MassingData } from '../ui/massingData';
 import type { DrawingScene } from '../scene/types';
 import { sunPosition, SUN_DATES } from '../ui/sunPosition';
-import { buildSiteModel, plantId } from './siteScene';
+import { buildSiteModel, loadTreeKit, plantId } from './siteScene';
 import { aerialShot, approachShot, prominentSubject, streetShot, DEFAULT_RENDER_SUN, FT, type Shot } from './shots';
 import { BUILD_SHA } from '../../../lib/buildInfo';
 import siteAssets from './siteAssets.json';
@@ -114,6 +114,7 @@ export async function buildRenderJob(
   scene: DrawingScene,
   opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null | undefined; preset?: 'gray-pass' | 'daylight' },
 ): Promise<{ glb: ArrayBuffer; job: RenderJob }> {
+  await loadTreeKit();
   const model = buildSiteModel(data, { keepParts: true });
   try {
     await model.ready;
@@ -121,10 +122,6 @@ export async function buildRenderJob(
     // each building's extent in the model's own frame (metres, z up), before anything is turned
     const extents = new Map<string, THREE.Box3>();
     for (const part of model.parts) {
-      if (vehicles && part.owner.startsWith('car:')) {
-        part.geometry.dispose();
-        continue;
-      }
       if (!part.owner.startsWith('building:')) continue;
       part.geometry.computeBoundingBox();
       const b = extents.get(part.owner) ?? new THREE.Box3();
@@ -294,7 +291,7 @@ export async function buildRenderJob(
         shrubs: data.shrubs.map(b => ({ id: plantId(b[0], b[1], 'shrub'), position_ft: [ft(b[0]), ft(b[1]), ft(groundAt(b[0], b[1]))] as [number, number, number], radius_ft: ft(b[2] * 1.7) })),
         shared: [...shared],
       },
-      omitted: ['Distant crowns use simplified counterparts.', ...(vehicles ? [] : ['Vehicles use the plan’s simplified geometry.'])],
+      omitted: ['Distant crowns use simplified counterparts.', ...(!vehicles && data.cars.length ? ['Decorative vehicles omitted.'] : [])],
       terrain: terrain ? {
         source: terrain.source, datum: 'NAVD88', samples: terrain.samples,
         zero_elevation_ft: terrain.zeroFt,

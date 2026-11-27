@@ -12,13 +12,29 @@ import type { ForegroundObstacle, Subject } from './shots';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
+import { CROWN_DRAWN } from '../scene/landscape';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
-import { carParts, carSpot, type CarSpot } from './cars';
+import { carSpot } from './cars';
+import { foregroundVehicles, seatVehicle, vehicleWheelPoints } from './vehiclePlacement';
 import { drape, gradeMassingSite, latticeHeight, lift, type Grade } from './terrain';
 import { approachCut, approachGeometry, cutGround, planCurb, streetDetails, type ApproachAnchor } from './streetDetails';
-import { Tree } from '@dgreenheck/ez-tree';
+import type { Tree as EzTree } from '@dgreenheck/ez-tree';
+
+// ez-tree carries its bark and leaf pictures inside it (about 4 MB): it is fetched only when a model
+// is planted (the Rendering look, the stills, the 4K pack), never for Review, which plants nothing.
+let TreeKit: typeof EzTree | null = null;
+let treeKitLoad: Promise<boolean> | null = null;
+/** Whether the tree grower is here; until it is, a model is planted with the lobed crowns. */
+export const treeKitLoaded = (): boolean => !!TreeKit;
+/** Fetch the tree grower once; resolves false (lobed crowns) if it cannot be fetched. */
+export function loadTreeKit(): Promise<boolean> {
+  if (TreeKit) return Promise.resolve(true);
+  return (treeKitLoad ??= import('@dgreenheck/ez-tree')
+    .then(m => { TreeKit = m.Tree; return true; })
+    .catch(err => { console.warn('[render] the tree grower could not load; lobed crowns stand in.', err); treeKitLoad = null; return false; }));
+}
 
 /** One part of the model as it is handed to an exporter: local metres, z up. */
 export interface ModelPart { owner: string; slot: string; geometry: THREE.BufferGeometry }
@@ -83,8 +99,9 @@ interface TreeForm {
  * is grown with few limbs: it is seen small, and there are many of them.
  */
 function grow(preset: string, seed: number, opacity: number, shrub = false): TreeForm | null {
+  if (!TreeKit) return null;
   try {
-    const tree = new Tree();
+    const tree = new TreeKit();
     tree.loadPreset(preset);
     tree.options.seed = seed;
     const o = tree.options;
@@ -432,6 +449,18 @@ function plane(points: number[][]): THREE.BufferGeometry | null {
   return g;
 }
 
+/** Turf is a surface draped over the terrain, not an extruded green platform. */
+function turfSheet(ring: number[][], z: number): THREE.BufferGeometry | null {
+  if (ring.length < 3) return null;
+  const points = ring.map(p => new THREE.Vector2(p[0] ?? 0, p[1] ?? 0));
+  if (points.length > 3 && points[0]!.distanceToSquared(points[points.length - 1]!) < 1e-9) points.pop();
+  const indexed = new THREE.ShapeGeometry(new THREE.Shape(points));
+  const sheet = indexed.toNonIndexed();
+  indexed.dispose();
+  sheet.translate(0, 0, z);
+  return sheet;
+}
+
 /** A line drawn `width` wide on the ground at height `z`, joints rounded. */
 function ribbon(path: number[][], width: number, z: number): THREE.BufferGeometry | null {
   const pos: number[] = [], uv: number[] = [];
@@ -545,7 +574,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const debug = typeof window !== 'undefined' && !!(window as unknown as { __renderDebug?: boolean }).__renderDebug;
   const t0 = debug ? performance.now() : 0;
   const lap = (what: string) => { if (debug) console.info(`[time] model: ${what} at ${Math.round(performance.now() - t0)} ms`); };
-  const surfaces = new Surfaces();
+  const real = !opts.clayContext && !opts.review;
+  const surfaces = new Surfaces(real);
   const root = new THREE.Group();
   root.rotation.x = -Math.PI / 2;          // z up in the model, y up on the stage
   const bins = new Map<string, THREE.BufferGeometry[]>();
@@ -600,17 +630,16 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   };
 
   // ground: a wide plate that runs out into the haze, then the neighbourhood on it
-  const real = !opts.clayContext && !opts.review;
   const paved = real ? data.polygons.flatMap(p => {
     if (p.building || !p.kind || !SITE[p.kind] || p.kind === 'walk' || p.kind === 'greenspace') return [];
     const ring = p.polygon[0] ?? [];
     if (ring.length < 3) return [];
     const xs = ring.map(q => q[0] ?? 0), ys = ring.map(q => q[1] ?? 0);
-    return [{ rings: p.polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }];
+    return [{ kind: p.kind, rings: p.polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }];
   }) : [];
   const pavedAt = (x: number, y: number) => paved.some(p => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings));
   const reach = Math.max(1600, data.extent * 16);
-  put('plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
+  put(real ? 'grass|ground' : 'plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
   // Public streets. The record gives the neighbouring parcels, and often no street lines: a gap
   // between two parcels is right of way. A road-coloured strip is laid across each such gap, so
   // the streets read even where no line was sent. Open land beside a parcel is not a street: a
@@ -707,7 +736,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const l of data.lawn) {
     const ring = l.polygon[0];
     // in review the parcel is lighter than the land round it, so there is no doubt which one it is
-    if (ring) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), opts.review ? [214, 224, 170, 255] : LAWN);
+    if (ring) put('grass|flat', real ? turfSheet(ring, 0.17) : prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), opts.review ? [214, 224, 170, 255] : LAWN);
     // the parcel line, on the ground: a pale band over a dark one, so it reads on grass and on pavement
     if (ring && opts.markSite) {
       const line = [...ring, ring[0] ?? []].map(p => [p[0] ?? 0, p[1] ?? 0]);
@@ -728,8 +757,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     data.lots.forEach((lot, i) => {
       owner = `lot:${i + 1}`;
       const ring = lot.map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]);
-      const t = 0.94 + ((i * 37) % 13) / 100;
-      put('grass|flat', prism([ring.map(q => [q[0], q[1], 0])], 0.19), [LAWN[0] * t, LAWN[1] * (t + ((i * 11) % 5 - 2) / 100), LAWN[2] * t, 255]);
+      const t = 0.985 + ((i * 37) % 7) / 180;
+      put('grass|flat', real ? turfSheet(ring, 0.19) : prism([ring.map(q => [q[0], q[1], 0])], 0.19), [LAWN[0] * t, LAWN[1] * t, LAWN[2] * t, 255]);
       const pad = pads.find(r => r.length >= 3 && pointInPolygon(middle(r)[0], middle(r)[1], [ring]));
       if (!pad || !paved.length) return;
       // the house faces the nearest pavement; the fence stands on the lot lines behind the middle of the house
@@ -825,28 +854,22 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       put('concrete|solid', prism([ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], 0.6), [150, 148, 142, 255]);
     }
   }
-  const detailedCars = real && !opts.light && data.cars.length <= 160;
-  const parked: CarSpot[] = [];
-  const carFallback = new THREE.Group();
-  const carKey = (key: string) => detailedCars ? `${key}|car` : key;
   const foreground: ForegroundObstacle[] = opts.review ? [] : data.shrubs.map(([x, y, r]) => [x, y, r * 1.7]);
-  // The body footprint sets the car's placement. Use the shaped car on both
-  // viewing tiers, and swap in the detailed model where available.
-  data.cars.forEach((c, i) => {
-    if (c.elevation <= 0.6) return;
+  const parking = paved.filter(p => p.kind === 'parking' || p.kind === 'parking-bay' || p.kind === 'driveway');
+  const supported = (x: number, y: number) => parking.some(p =>
+    x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings));
+  // The same optional assets are used on both device tiers and in the exact scene pack.
+  // No cars on a known disconnected site, curb crossings, or a footprint without paved support.
+  const nearby = real && !data.vehicleAccessBreak ? foregroundVehicles(data.cars.flatMap((c, i) => {
     const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${i}`));
-    if (!spot) return;
-    owner = `car:${i}`;
-    const datum = groundAt(spot.x, spot.y);
-    if (laid) seat.set(owner, datum);
-    for (const part of carParts(spot)) put(carKey(part.key), part.geometry, part.color);
-    foreground.push([spot.x, spot.y, Math.hypot(spot.length, spot.width) / 2]);
-    if (detailedCars) parked.push({ ...spot, z: spot.z + datum });
-  });
+    if (!spot || !vehicleWheelPoints(spot).every(([x, y]) => supported(x, y))) return [];
+    const fit = seatVehicle(spot, groundAt);
+    return Math.max(Math.abs(fit.pitch), Math.abs(fit.roll)) <= 0.14 ? [fit] : [];
+  }), 0, 0, opts.light ? 12 : 36) : [];
 
   lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
   for (const [key, list] of bins) {
-    const [kind, mode, batch] = key.split('|');
+    const [kind, mode] = key.split('|');
     const merged = mergeGeometries(list, false);
     list.forEach(g => g.dispose());
     if (!merged) continue;
@@ -872,31 +895,33 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (kind === 'glassrail') mesh.renderOrder = 2;
     mesh.receiveShadow = true;
     mesh.name = key;
-    (batch === 'car' ? carFallback : root).add(mesh);
+    root.add(mesh);
   }
-  if (carFallback.children.length) root.add(carFallback);
 
   lap('parts merged');
   // planting: a few grown trees (ez-tree), each placed many times, turned and
   // sized to the canopy the scene gives it. If none can be grown, the lobed
   // crown stands in.
   const opacity = opts.canopyOpacity ?? 1;
-  const kinds = ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
+  const kinds = opts.review ? [] : ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
   const plantBudget = opts.light ? 48 : Infinity;
   const bushes = opts.review ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
   // the leaves and bark are pictures that arrive after the trees are grown
   const waits: Array<Promise<unknown>> = [...kinds, ...bushes].flatMap(t => [arrived((t.leaf as THREE.MeshStandardMaterial).map), arrived((t.bark as THREE.MeshStandardMaterial).map)]);
   let disposed = false;
-  if (parked.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(parked)).then(group => {
+  if (nearby.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(nearby)).then(group => {
     if (disposed) {
       group.children.forEach(child => (child as THREE.InstancedMesh).geometry.dispose());
       return;
     }
-    root.remove(carFallback);
-    carFallback.children.forEach(child => (child as THREE.Mesh).geometry.dispose());
+    if (!group.children.length) return;
     root.add(group);
+    for (const car of nearby) {
+      // Only placed vehicles are foreground obstacles (not omitted/crowded slots).
+      if (group.userData.occupancy?.has(car.seed)) foreground.push([car.x, car.y, Math.hypot(car.length, car.width) / 2]);
+    }
     root.updateMatrixWorld(true);
-  }).catch(err => { console.warn('[render] detailed vehicles could not load.', err); }));
+  }).catch(err => { console.warn('[render] decorative vehicles omitted.', err); }));
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
   const place = (forms: TreeForm[], items: Array<{ x: number; y: number; r: number; tint?: readonly number[] }>, z: number, kind = 'tree') => {
     forms.forEach((form, k) => {
@@ -960,7 +985,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
     const ranked = standing.length > plantBudget && sitters().length ? [...standing].sort((a, b) => distance(a) - distance(b)) : standing;
     const detail = ranked === standing ? standing : ranked.slice(0, plantBudget);
-    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
+    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * CROWN_DRAWN, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
     if (ranked !== standing) plant(ranked.slice(plantBudget).map(([x, y, r]) => [x, y, r * 1.12]), 'site-trees', true);
     if (bushes.length) {
       const shrubs = opts.light && data.shrubs.length > 144 ? [...data.shrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : data.shrubs;
@@ -1128,7 +1153,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       ...data.roads.map(r => r.path),
       ...data.polygons.flatMap(p => p.kind && ['street', 'drive', 'circulation', 'parking-aisle'].includes(p.kind) ? p.polygon.slice(0, 1) : []),
     ],
-    trees: opts.review ? [] : standing,
+    // each crown as large as it is drawn: a camera's line of sight is judged against what it will see
+    trees: opts.review ? [] : standing.map(([x, y, r]) => [x, y, r * CROWN_DRAWN] as [number, number, number]),
     foreground,
     approaches,
   };

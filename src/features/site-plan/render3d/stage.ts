@@ -64,7 +64,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   renderer.setSize(opts.width, opts.height, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = opts.studio ? THREE.ACESFilmicToneMapping : THREE.NeutralToneMapping;
-  renderer.toneMappingExposure = opts.studio ? 0.8 : 0.74;
+  renderer.toneMappingExposure = opts.studio ? 0.8 : 0.99;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.shadowMap.autoUpdate = false;
@@ -122,7 +122,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
   else scene.background = new THREE.Color(0xe9ebe2);
   if (!opts.studio) scene.fog = new THREE.Fog(new THREE.Color().setRGB(0.66, 0.76, 0.84), E * 3.5, E * 22);
 
-  const hemi = new THREE.HemisphereLight(0xdbe8f7, 0x9a9c86, opts.studio ? 1.0 : 0.85);
+  const hemi = new THREE.HemisphereLight(0xdbe8f7, opts.studio ? 0x9a9c86 : 0xb3a896, opts.studio ? 1.0 : 0.85);
   const sun = new THREE.DirectionalLight(0xfff1dd, opts.studio ? 4.2 : 4.6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(opts.light ? 2048 : 4096, opts.light ? 2048 : 4096);
@@ -148,9 +148,9 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
     const lift = Math.min(1, direction.y / 0.6);
     sun.color.setRGB(1, 0.86 + 0.1 * lift, 0.7 + 0.22 * lift);
     sun.intensity = (opts.studio ? 4.2 : daylight ? 3.25 : 4.6) * (0.6 + 0.4 * lift);
-    hemi.intensity = opts.studio ? 1 : daylight ? 0.32 : 0.85;
-    scene.environmentIntensity = opts.studio ? 0.55 : daylight ? 0.88 : 0.7;
-    renderer.toneMappingExposure = opts.studio ? 0.8 : daylight ? 1.05 : 0.74;
+    hemi.intensity = opts.studio ? 1 : daylight ? 0.50 : 0.85;
+    scene.environmentIntensity = opts.studio ? 0.55 : daylight ? 0.88 : 0.76;
+    renderer.toneMappingExposure = opts.studio ? 0.8 : daylight ? 1.13 : 0.99;
     if (!daylight) return;
     // The sky probe has its solar hotspot capped. The one directional light
     // drives shadows at the study time. A low sun dims the sky.
@@ -216,8 +216,8 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
       composer.addPass(ao);
       composer.addPass(new OutputPass());
       const grade = new ShaderPass(GRADE);
-      (grade.uniforms.vignette as { value: number }).value = opts.studio ? 0 : 0.07;
-      (grade.uniforms.amount as { value: number }).value = opts.studio ? 0.7 : 0.48;
+      (grade.uniforms.vignette as { value: number }).value = opts.studio ? 0 : 0.035;
+      (grade.uniforms.amount as { value: number }).value = opts.studio ? 0.7 : 0.21;
       composer.addPass(grade);
     } catch (err) {
       console.warn('[render] ambient occlusion is not available here; rendering without it.', err);

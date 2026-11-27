@@ -41,3 +41,40 @@ describe('SitePlannerErrorBoundary — a scoped failure with the way back (the s
     spy.mockRestore();
   });
 });
+
+describe('SitePlannerErrorBoundary — files replaced by a newer release (audit cf4f0e8, R3)', () => {
+  it('says a newer release is live and offers to keep the plan, not a retry that cannot work', async () => {
+    const { ChunkLoadError } = await import('../lib/staleBuild');
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const move = vi.fn();
+    const back = vi.fn();
+    function Gone(): React.ReactElement { throw new ChunkLoadError('3D view', new Error('404'), true, 'https://app/assets/Massing3D-old.js'); }
+    render(
+      <SitePlannerErrorBoundary title="The 3D view failed" onBackTo2D={back} onMoveToNewRelease={move}>
+        <Gone />
+      </SitePlannerErrorBoundary>
+    );
+    expect(screen.getByTestId('planner-stale-release').textContent).toContain('A newer release of the app is live');
+    expect(screen.queryByTestId('planner-error-retry')).toBeNull();
+    fireEvent.click(screen.getByTestId('planner-move-release'));
+    expect(move).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('planner-error-back-2d'));
+    expect(back).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('asks the lazy part for its file afresh on Retry', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const onRetry = vi.fn();
+    let broken = true;
+    render(
+      <SitePlannerErrorBoundary retryLabel="Retry 3D" onRetry={() => { onRetry(); broken = false; }}>
+        <Boom when={() => broken} />
+      </SitePlannerErrorBoundary>
+    );
+    fireEvent.click(screen.getByTestId('planner-error-retry'));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('three-d')).toBeTruthy();
+    spy.mockRestore();
+  });
+});

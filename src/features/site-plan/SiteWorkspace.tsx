@@ -8,6 +8,7 @@ import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import type { HomePlacement } from './housing/placement';
 import { residentialHomes } from './housing/placement';
 import { HOME_DESIGNS } from './housing/originalDesigns';
+import { projectPlansFor } from './housing/projectPlans';
 import {
   HOME_DESIGNS_NONE_FIT_TITLE,
   schemeAllowsHomeDesigns,
@@ -29,6 +30,7 @@ import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
 import KpiStrip from './ui/KpiStrip';
+import { parkingStallsUntraced } from './ui/parkingCounts';
 import ContextPanel from './ui/ContextPanel';
 import { CensusBanner } from './ui/CensusBanner';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, permittedUsesStatus, pickDefaultUse, isNonResidentialOnly, defaultUseFromZoningBase, NON_RESIDENTIAL_USES, type DesignContext, type PermittedUsesStatus } from './api/designContext';
@@ -56,6 +58,7 @@ import { assignmentFor, assignmentsFromElements, carryAssignments, commitConcept
 import { parentLotOf } from './housing/eligibility';
 import { homeDesignsDiagnosis } from './housing/diagnosis';
 import { homesSchedule, homesScheduleRows } from './housing/schedule';
+import { imperviousAreaSf, imperviousNowPct } from './api/impervious';
 import { mark, markOnce } from '../../lib/timeline';
 import {
   applyStockDesignToHouse,
@@ -77,7 +80,7 @@ import HbuStrip from './ui/HbuStrip';
 import BuiltHeadline from './ui/BuiltHeadline';
 import ExportReport from './ui/ExportReport';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
-import { fetchMaxBuildout, captureBasis, captureBasisParts, type MaxBuildout } from './api/maxBuildout';
+import { fetchMaxBuildout, captureBasis, captureBasisParts, parksInStructure, upperBoundFinding, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
 import { fetchParcelTopo, topoView, TopoGrid, type ParcelTopo } from './api/parcelTopo';
 import { buildSheetAnnotations, buildSheetTitleBlock } from './api/sheetAnnotations';
@@ -110,7 +113,7 @@ import AuthChip from '../../components/AuthChip';
 import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
 import AccessCard from './ui/AccessCard';
-import { accessFinding, NO_DRIVE_TO_STREET, PARKING_NOT_REACHABLE } from './api/accessFinding';
+import { accessFinding, NO_DRIVE_TO_STREET, PARKING_NOT_REACHABLE, reconcileBasisAccess } from './api/accessFinding';
 import { layoutDecisionFacts, resolveExhibitProduct } from './api/exhibitSchedule';
 import { createRequestGeneration } from './api/requestGeneration';
 import { loadSchemeDrawing } from './api/schemeDrawing';
@@ -120,7 +123,11 @@ import { buildDrawingScene, sceneEvidence, sceneRevision, selectionFor, type Sel
 import { ExhibitSheets } from './ui/ExhibitSheets';
 import { useArchStyle } from './ui/archStyle';
 import { DOCK_KEY, INSPECTOR_KEY } from './ui/workspaceLayout';
-const Massing3D = React.lazy(() => import('./ui/Massing3D'));
+import { currentEntry, loadChunk } from '../../lib/staleBuild';
+import { clearRecovery, loadRecovery, openOnNextLoad, saveRecovery, type PlanRecovery } from '../../lib/planRecovery';
+// The 3D view is fetched late. Each Retry asks for its file afresh: React keeps a failed lazy
+// import for good, so the same lazy component could never recover (audit cf4f0e8, R3).
+const lazyMassing3D = () => React.lazy(() => loadChunk('3D view', () => import('./ui/Massing3D')));
 
 /**
  * Diagnostics-only escape hatch: when '1', context-free solves render as
@@ -146,7 +153,7 @@ type SiteWorkspaceProps = {
   parcel: SelectedParcel;
 };
 
-const HomeStudio = React.lazy(() => import('./housing/HomeStudio'));
+const HomeStudio = React.lazy(() => loadChunk('home studio', () => import('./housing/HomeStudio')));
 
 const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const {
@@ -362,10 +369,24 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // House choices made on this parcel, remembered by the ground they stand on so a re-solve can
   // put them back where they still fit (housing/carry.ts), and what the last re-solve did with them.
   const homeAssignmentsRef = useRef<{ parcel: string; list: HomeAssignment[] }>({ parcel: '', list: [] });
+  const [massing3dTry, setMassing3dTry] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const Massing3D = useMemo(lazyMassing3D, [massing3dTry]);
   const homeSetbacksRef = useRef<{ front: number; side: number; rear: number }>({ front: 20, side: 5, rear: 20 });
   const homeStudioBoundaryRef = useRef<Element['geometry'] | null>(null);
   // the home-change history as the top bar and Ctrl+Z see it
   const homeStepRef = useRef<{ canUndo: boolean; canRedo: boolean; step: (dir: 'undo' | 'redo') => void } | null>(null);
+  // the plan's roofed and paved area when the by-right answer landed (api/impervious): the
+  // baseline the panel's impervious figure is moved from after home changes (audit 9379472 F1)
+  const [sfImperviousBaseSf, setSfImperviousBaseSf] = useState<number | null>(null);
+  // the by-right plan as it stood before a re-solve, kept while a locked home conflicts with the new one
+  type SfSnapshot = { elements: Element[]; metrics: typeof metrics; summary: SfV1Summary | null; impBase: number | null; override: SfV1Options };
+  const sfSnapshotRef = useRef<SfSnapshot | null>(null);
+  // the plan as it stood when a re-solve began: what "Return to the previous plan" restores. Taken before
+  // the solve renders anything, so it still carries the previous override (the override control sets the
+  // new one, then asks for the solve).
+  const solveFromRef = useRef<SfSnapshot | null>(null);
+  const [homeLockConflict, setHomeLockConflict] = useState<{ before: SfSnapshot; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   const [homeCarry, setHomeCarry] = useState<{ kept: number; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   // The competition's best on the sheet in place of the default answer, and why
   // (the default drew no lots, the same lots on a worse plan, or fewer lots).
@@ -1838,6 +1859,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       optimizationStatus: answer.generatorVersion ?? 'sf_v1',
     } as NonNullable<typeof metrics>;
     setHousingDesignId(null);
+    setSfImperviousBaseSf(imperviousAreaSf(drawn));
     // house choices made on the last plan go back where they still fit; the rest are reported by lot
     let planElements = [...base, ...drawn];
     // a reopened saved plan carries its choices on its houses; remember them before the plan is replaced
@@ -1847,10 +1869,14 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     const remembered = homeAssignmentsRef.current;
     if (remembered.parcel === parcelIdStr && remembered.list.length > 0) {
-      const carried = carryAssignments(remembered.list, planElements, homeSetbacksRef.current);
+      const carried = carryAssignments(remembered.list, planElements, homeSetbacksRef.current, plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft);
       planElements = carried.elements;
       homeAssignmentsRef.current = { parcel: parcelIdStr, list: carried.next };
       setHomeCarry({ kept: carried.kept.length, lost: carried.lost });
+      // a locked home the new plan cannot keep: keep the previous plan to go back to, and ask
+      const lockedLost = carried.lost.filter(l => l.locked);
+      const before = solveFromRef.current ?? sfSnapshotRef.current;
+      setHomeLockConflict(lockedLost.length && before ? { before, lost: lockedLost } : null);
     } else {
       setHomeCarry(null);
     }
@@ -2008,6 +2034,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setLotFitSummary('Lot fit needs a numeric parcel id.');
       return;
     }
+    solveFromRef.current = sfSnapshotRef.current;
     setIsGeneratingLots(true);
     try {
       const pattern = await fetchPlanPattern(contextOgcFid).catch(() => null);
@@ -2180,14 +2207,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
   }, [rpcMetrics, plannerCtx]);
   homeSetbacksRef.current = homeSetbacks;
+  sfSnapshotRef.current = sfV1Summary ? { elements, metrics, summary: sfV1Summary, impBase: sfImperviousBaseSf, override: sfV1OverrideRef.current } : null;
 
   /** One home change as a history step: the plan and the remembered choices before it, then the new plan. */
-  const commitHomeStep = useCallback((next: Element[], houseIds: string | string[], designId: string, kind: 'stock' | 'concept', message: string) => {
+  const commitHomeStep = useCallback((next: Element[], houseIds: string | string[], designId: string, kind: 'stock' | 'concept', message: string, lock = false) => {
     const assignmentsBefore = homeAssignmentsRef.current.parcel === parcelIdStr ? homeAssignmentsRef.current.list : [];
     let list = assignmentsBefore;
     for (const houseId of Array.isArray(houseIds) ? houseIds : [houseIds]) {
-      const a = assignmentFor(houseId, next, designId, kind);
-      if (!a) continue;
+      const found = assignmentFor(houseId, next, designId, kind);
+      if (!found) continue;
+      const a = lock ? { ...found, lock: true } : found;
       list = [...list.filter(x => !(Math.hypot(x.lotCentre[0] - a.lotCentre[0], x.lotCentre[1] - a.lotCentre[1]) < 0.5)), a];
     }
     homeAssignmentsRef.current = { parcel: parcelIdStr, list };
@@ -2219,7 +2248,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   /** Change the home on one lot: only that house changes; the design is
    *  re-checked against that lot first, and a stale choice is refused. */
-  const handleHousingDesignSelect = useCallback((designId: string, houseId: string) => {
+  const handleHousingDesignSelect = useCallback((designId: string, houseId: string, lock = false) => {
     const schemeKey = `${parcelIdStr}|${sfV1Shown}`;
     const applied = applyStockDesignToHouse({ designId, houseId, elements, setbacks: homeSetbacks, schemeKey });
     if (!applied.ok) {
@@ -2228,7 +2257,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     setViolations(v => v.filter(x => x.code !== 'home-change'));
     setHousingDesignId(applied.design.id);
-    commitHomeStep(applied.elements, applied.houseId, applied.design.id, 'stock', `${applied.lotLabel} now carries ${applied.design.name}. The other houses are unchanged.`);
+    commitHomeStep(applied.elements, applied.houseId, applied.design.id, 'stock', `${applied.lotLabel} now carries ${applied.design.name}${lock ? ' (locked through re-solves)' : ''}. The other houses are unchanged.`, lock);
   }, [parcelIdStr, sfV1Shown, elements, homeSetbacks, commitHomeStep]);
 
   /** One stock plan on several lots, as one change; lots it no longer fits are named, not dropped silently. */
@@ -2248,7 +2277,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   /** Commit a concept study on one lot: it becomes the plan (not a preview). */
   const handleConceptApply = useCallback((designId: string, houseId: string) => {
-    const res = commitConcept(designId, houseId, elements, homeStudioBoundaryRef.current);
+    const res = commitConcept(designId, houseId, elements, homeStudioBoundaryRef.current, plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft);
     if (!res.ok) {
       setViolations(v => [...v.filter(x => x.code !== 'home-change'), { code: 'home-change', message: `Home not changed: ${res.reason}. The plan is unchanged.`, severity: 'warning' }]);
       return;
@@ -2748,6 +2777,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setHousingDesignId(null);
       homeAssignmentsRef.current = { parcel: '', list: [] };
       setHomeCarry(null);
+      setHomeLockConflict(null);
         hasAutoGeneratedRef.current = false;
       setSolverReady(false);
       planModeRef.current = null;
@@ -3532,6 +3562,41 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
   }, [scene]);
   homeStudioBoundaryRef.current = homeStudioBoundary;
+  // A newer release replaced this tab's files (audit cf4f0e8, R3): keep a copy of the plan in this
+  // browser, then open the new release on the same parcel, where the copy is offered back.
+  const moveToNewRelease = useCallback(() => {
+    const kept = saveRecovery({
+      ogcFid: parcelIdStr,
+      address: parcel.address ?? null,
+      elements,
+      metrics: metrics ?? null,
+      assignments: homeAssignmentsRef.current.parcel === parcelIdStr ? homeAssignmentsRef.current.list : [],
+      revision: scene?.identity.revision ?? null,
+      release: currentEntry(),
+    });
+    if (!kept && !window.confirm('A copy of this plan could not be kept in this browser. Open the new release anyway? Unsaved changes on this tab will be lost.')) return;
+    if (kept) openOnNextLoad(parcelIdStr);
+    window.location.reload();
+  }, [parcelIdStr, parcel.address, elements, metrics, scene]);
+  // the copy kept before a move to a new release, offered when its parcel opens again
+  const [recovery, setRecovery] = useState<PlanRecovery<Element, NonNullable<typeof metrics>, HomeAssignment> | null>(null);
+  useEffect(() => { setRecovery(loadRecovery<Element, NonNullable<typeof metrics>, HomeAssignment>(parcelIdStr)); }, [parcelIdStr]);
+  const restoreRecovery = useCallback(() => {
+    if (!recovery) return;
+    homeAssignmentsRef.current = { parcel: parcelIdStr, list: recovery.assignments ?? [] };
+    setPlanOutput(recovery.elements, recovery.metrics);
+    clearRecovery();
+    setRecovery(null);
+  }, [recovery, parcelIdStr, setPlanOutput]);
+  // Impervious as the plan stands: the solver's figure moved by the roofed and paved area the
+  // home changes added or removed since the solve (audit 9379472 F1)
+  const sfImperviousNow = useMemo(() => {
+    if (sfImperviousBaseSf == null || !sfV1Summary) return null;
+    const nowSf = imperviousAreaSf(displayElements.filter(e => isSfPlanElement(e)));
+    const pct = imperviousNowPct({ solverPct: sfV1Summary.imperviousPct, siteSf: sfV1Summary.siteAcres != null ? sfV1Summary.siteAcres * 43560 : null, baseSf: sfImperviousBaseSf, nowSf });
+    return pct == null ? null : { pct, deltaSf: Math.round(nowSf - sfImperviousBaseSf) };
+  }, [sfImperviousBaseSf, sfV1Summary, displayElements]);
+  const homeHeightLimitFt = plannerCtx?.solver_brief.hard_constraints.max_height_ft ?? null;
   // One eligibility result per detached house, shared by the sidebar summary,
   // the studio list and apply (housing/eligibility.ts).
   const stockRows = useMemo(
@@ -3551,14 +3616,16 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
     const eligible = typed.length
-      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
+      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary, homeHeightLimitFt)
       : ([] as typeof HOME_DESIGNS);
     // Scheme allows homes: keep the control visible; enable it only when a
     // concept study or a stock plan actually places on some lot.
     const stockOk = stockRows.some(r => r.eligible.length > 0);
     return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
-  }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows]);
+  }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows, homeHeightLimitFt]);
   // The reasons nothing fits, read only when asked (a 79-lot plan is checked on a sample of 40 lots).
+  // designs linked to this parcel's project ("My plans"); none until the project's parcels are mapped
+  const projectPlans = useMemo(() => projectPlansFor(parcelIdStr), [parcelIdStr]);
   const [homesWhyOpen, setHomesWhyOpen] = useState(false);
   const homesWhy = useMemo(
     () => (homesWhyOpen && homeDesignsUi.show && !homeDesignsUi.enabled
@@ -3759,6 +3826,19 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     () => mfAccessSummary(displayElements, parcelRing3857, 3, streetEdgeForAccess),
     [displayElements, parcelRing3857, streetEdgeForAccess],
   );
+  // The engine's basis line stands beside the drawn plan's measured access: where the drawn drives
+  // reach no bay from the street, a "connected" claim in the basis is corrected in place (audit
+  // 9379472 F2: 2611 W Heiman read "access connected" beside 0 reachable stalls).
+  const basisShown = useMemo(() => {
+    if (!displayBasis) return displayBasis;
+    // a use the district permits but no engine draws is not a legal no (audit 9379472 F3, 2405 12th
+    // Ave S: "not permitted as-of-right" stood beside "commercial is permitted here")
+    if (unsupportedUse && /not permitted as-of-right/i.test(displayBasis)) {
+      const label = unsupportedUse.replace(/_/g, ' ');
+      return `${label.charAt(0).toUpperCase() + label.slice(1)} is permitted here, but no engine draws ${label} geometry yet — capacity shown, no plan`;
+    }
+    return displayElements.some(e => e.id.startsWith('mfgen-')) ? reconcileBasisAccess(displayBasis, mfAccess) : displayBasis;
+  }, [displayBasis, displayElements, mfAccess, unsupportedUse]);
   // Street access as a finding with a next step: the reason, the frontage it concerns, what clears it.
   const access = useMemo(
     () => accessFinding({
@@ -3795,20 +3875,34 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [displayElements, mfAccess]);
   // Display metrics: stallsProvided stands on curb-reachable supply when known.
   const accessAwareMetrics = useMemo(() => {
-    if (!metrics || stallsUsable == null) return metrics;
+    if (!metrics) return metrics;
+    if (stallsUsable == null) {
+      // every drawn bay traced to the street: the reachable count is verified, not merely unknown. A
+      // structured garage is not: touching the frontage says nothing of its ramps and aisles (audit
+      // 9379472: Main's 252 stalls cannot read verified until routes prove them)
+      const structured = displayElements.some(e => e.type === 'parking' && e.properties?.structured === true);
+      const traced = !structured && displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated && mfAccess.stallsServed != null && mfAccess.served >= mfAccess.bays;
+      return traced ? { ...metrics, stallsReachable: mfAccess.stallsServed as number } : metrics;
+    }
     // adequacy stands on the reachable supply; the count keeps its own name
     return { ...metrics, stallsProvided: stallsUsable, stallsReachable: stallsUsable };
-  }, [metrics, stallsUsable]);
+  }, [metrics, stallsUsable, displayElements, mfAccess]);
   // What the plan's own checks do not cover, stated beside their pass (audit 11-26: Ocala read
   // "checks passed" at 65,481 GSF over a 65,100 upper bound, Holt with a drive short of the street).
   const planOpenItems = useMemo(() => {
     const out: string[] = [];
     const gsf = metrics?.totalBuiltSF ?? 0;
-    const cap = maxBuildout && !draftMode ? maxBuildout.max_gsf : 0;
-    if (cap > 0 && gsf > cap + 0.5) out.push(`${Math.round(gsf - cap).toLocaleString()} GSF over the ${Math.round(cap).toLocaleString()} GSF upper bound`);
+    // which bound, named: an ordinance cap, the surface-parking estimate, or the structured ceiling (audit cf4f0e8)
+    const structuredParking = parksInStructure(metrics?.parkingStrategy) || displayElements.some(e => e.type === 'parking' && e.properties?.structured === true);
+    const over = !draftMode ? upperBoundFinding(gsf, maxBuildout, structuredParking) : null;
+    if (over) out.push(over);
     if (routeBreak) out.push('the drive does not reach the street');
+    // stalls counted that no route was traced to (a structured garage, a lot without drawn drives):
+    // the supply is a count, not a verified one (audit 9379472: Main's 252 against 240 required)
+    const stalls = parkingStallsUntraced(displayElements, accessAwareMetrics);
+    if (!routeBreak && stalls != null) out.push(`routes to the ${stalls.toLocaleString()} stalls not checked`);
     return out;
-  }, [metrics?.totalBuiltSF, maxBuildout, draftMode, routeBreak]);
+  }, [metrics?.totalBuiltSF, metrics?.parkingStrategy, maxBuildout, draftMode, routeBreak, displayElements, accessAwareMetrics]);
   const routeBreakLabel = routeBreak
     ? routeBreak.gapFt != null
       ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
@@ -3968,6 +4062,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     (window as unknown as { __planEvidence?: object }).__planEvidence = {
       solvedBy: planLineage?.solvedBy ?? null,
       basis: planBasis,
+      basisShown,
       violationCodes: violations.map(v => v.code),
       envelopeSource: rpcMetrics?.envelopeSource ?? null,
       buildabilityVerdict: buildability?.verdict ?? null,
@@ -4139,7 +4234,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           }
         : null,
     };
-  }, [stockRows, routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, detachedSfOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
+  }, [basisShown, stockRows, routeBreak, planLineage, planBasis, violations, metrics, maxBuildout, draftMode, rpcMetrics, buildability, neighbors, seedPlan, quickMassingAvailable, seedViewOn, spOrdinance, unsupportedUse, taskTimingsVersion, plannerLoading, compileBlocked, plannerCtx, isGenerating, isGeneratingLots, sfPlanOnSheet, detachedSfOnSheet, serverPlanError, subdivisionSummary, subdivisionScheme, sfV1Summary, bfeContour, sfV1Shown, sfV1Competition, sfV1AutoBest, sfV1HoleOverlap, layoutChoice, layoutShown, layoutShownRequested, layoutAuto, thV3OnSheet, thV3Summary, thV3Error, displayElements, topo, topoCanvas, sheetAnnotations, streetProfiles, sheetTitle, mfAccess, scene, sceneSelectedIds]);
 
   const plannerParcel = isValidParcel(parcel)
     ? parcel
@@ -4156,7 +4251,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const canRedo = homeCanRedo || (historyVersion >= 0 && futureRef.current.length > 0);
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-gray-100">
+    // with the studio docked beside it (wide screens) the workspace gives up that width, so the drawing
+    // reflows beside the studio instead of lying under it (handoff 11-27)
+    <div className={`h-full min-h-0 flex flex-col bg-gray-100${homesOpen && homeDesignsUi.show && homeDesignsUi.enabled ? ' pp-studio-docked' : ''}`} data-testid="site-workspace">
       <CensusBanner />
       {/* Order-8: on a commercial-only lot the multifamily refusal (and its
           "draw the house" switch) is the wrong conversation — no residential
@@ -4277,7 +4374,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
-          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); }}
+          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); if (viewMode === '3d') window.dispatchEvent(new Event('pp:look-review')); }}
           unverified={contextState === 'unavailable' || contextState === 'stale' ? contextStateLabel(contextState) : contextState === 'compiling' ? 'context still compiling' : null}
           empty={
             isGenerating || isGeneratingLots
@@ -4431,15 +4528,18 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
         <HomeStudio
           siteBoundary={homeStudioBoundary}
+          maxHeightFt={homeHeightLimitFt}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
-          designs={homeDesignsUi.eligible}
+          designs={HOME_DESIGNS}
+          projectDesignIds={projectPlans?.designIds ?? []}
+          projectName={projectPlans?.project.name ?? null}
           stockPlans={sfStockDesigns}
           stockSetbacks={homeSetbacks}
           stockEligibilityRows={stockRows}
           onApplyConcept={(designId, houseId) => { handleConceptApply(designId, houseId); handleSceneSelection([houseId]); }}
           onApplyStockMany={sfStockDesigns.length > 0 ? (designId, houseIds) => { handleHousingDesignMany(designId, houseIds); handleSceneSelection(houseIds); } : undefined}
-          onApplyStock={sfStockDesigns.length > 0 ? (designId, houseId) => { handleHousingDesignSelect(designId, houseId); handleSceneSelection([houseId]); } : undefined}
+          onApplyStock={sfStockDesigns.length > 0 ? (designId, houseId, lock) => { handleHousingDesignSelect(designId, houseId, lock); handleSceneSelection([houseId]); } : undefined}
           onClose={closeHomes}
           onPreview={study => {
             setHouseStudy({ parcel: parcelIdStr, base: baseElements, study });
@@ -4466,6 +4566,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <button type="button" className="underline disabled:opacity-40 disabled:no-underline" disabled={!homeHistory.past.length} onClick={() => stepHomeHistory('undo')}>Undo home change</button>
           <button type="button" className="underline disabled:opacity-40 disabled:no-underline" disabled={!homeHistory.future.length} onClick={() => stepHomeHistory('redo')}>Redo</button>
         </span></div>}
+      {recovery && !isGenerating && !isGeneratingLots && <div role="status" data-testid="plan-recovery" className="flex flex-wrap items-center justify-between gap-2 border-y border-sky-200 bg-sky-50 px-4 py-1.5 text-xs text-sky-950">
+        <span><strong>A copy of this plan from before the update is kept in this browser</strong> (taken {new Date(recovery.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{recovery.revision ? `, revision ${recovery.revision.slice(0, 8)}` : ''}). The plan on screen is a fresh solve.</span>
+        <span className="flex gap-3">
+          <button type="button" className="underline" data-testid="plan-recovery-restore" onClick={restoreRecovery}>Restore the copy</button>
+          <button type="button" className="underline" data-testid="plan-recovery-discard" onClick={() => { clearRecovery(); setRecovery(null); }}>Discard it</button>
+        </span></div>}
+      {homeLockConflict && <div role="alert" data-testid="home-lock-conflict" className="flex flex-wrap items-center justify-between gap-2 border-y border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-900">
+        <span><strong>Locked homes this plan cannot keep:</strong> {homeLockConflict.lost.map(l => `${l.designId.replace(/^abhp:/, '')} on ${l.lotLabel} — ${l.reason}`).join('; ')}.</span>
+        <span className="flex gap-3">
+          <button type="button" className="underline" data-testid="home-lock-return" onClick={() => {
+            const b = homeLockConflict.before;
+            setHomeLockConflict(null);
+            setSfV1Summary(b.summary);
+            setSfImperviousBaseSf(b.impBase);
+            sfV1OverrideRef.current = b.override;
+            setSfV1Override(b.override);
+            setHomeCarry(null);
+            homeAssignmentsRef.current = { parcel: parcelIdStr, list: assignmentsFromElements(b.elements).map(a => ({ ...a, lock: homeAssignmentsRef.current.list.some(x => x.lock && Math.hypot(x.lotCentre[0] - a.lotCentre[0], x.lotCentre[1] - a.lotCentre[1]) < 0.5) })) };
+            setPlanOutput(b.elements, b.metrics);
+          }}>Return to the previous plan</button>
+          <button type="button" className="underline" data-testid="home-lock-accept" onClick={() => setHomeLockConflict(null)}>Keep the new plan</button>
+        </span></div>}
       {homeCarry && !homeHistory && !activeHome && (homeCarry.kept > 0 || homeCarry.lost.length > 0) && <div role="status" data-testid="home-carry-status" className={`border-y px-4 py-1 text-xs ${homeCarry.lost.length ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-sky-200 bg-sky-50 text-sky-950'}`}>
         {homeCarry.kept > 0 && <span>Kept {homeCarry.kept} home choice{homeCarry.kept === 1 ? '' : 's'} on the new plan. </span>}
         {homeCarry.lost.map(l => <span key={l.lotLabel + l.designId} className="block">Not kept on this plan: {l.designId.replace(/^abhp:/, '')} on {l.lotLabel} — {l.reason}. It comes back on a plan where it fits.</span>)}
@@ -4487,7 +4609,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         >
           {displayBasis && (
             <div className="text-xs text-gray-600">
-              <span className="font-medium text-gray-700">{seedViewOn ? 'Quick massing basis:' : 'Plan basis:'}</span> {displayBasis}
+              <span className="font-medium text-gray-700">{seedViewOn ? 'Quick massing basis:' : 'Plan basis:'}</span> {basisShown}
             </div>
           )}
           <ContextLineage
@@ -4551,7 +4673,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 ? {
                     label: `${thV3Summary.homes} townhomes${thV3Summary.pattern ? ` (${thV3Summary.pattern})` : ''}`,
                     source: 'the townhome engine (th_v3): the neighborhood layout, attached homes by right',
-                    chip: 'drawn by right',
+                    // a failing check is not rolled up into a reassuring chip (handoff 11-27)
+                    chip: thV3Summary.requiredFails.length ? `drawn · ${thV3Summary.requiredFails.length} check${thV3Summary.requiredFails.length === 1 ? '' : 's'} fail` : 'drawn by right',
                   }
                 : sfV1Summary && displayElements.some(e => e.id.startsWith('sfseed-'))
                 ? { label: 'One house on the lot', source: 'the single-family seed (sf_seed_v1) on a parcel the by-right generator gives no new lots' }
@@ -4563,7 +4686,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                         ? 'No new lots by right — the parcel is one lot'
                         : `${sfV1Summary.lots} lot${sfV1Summary.lots === 1 ? '' : 's'}${patternPhrase(sfV1Summary.pattern)}`,
                     source: 'the by-right subdivision generator (sf_v1), from the district\'s own standards',
-                    chip: sfV1Summary.basis === 'override' ? 'drawn as an override' : 'drawn by right',
+                    chip: `${sfV1Summary.basis === 'override' ? 'drawn as an override' : 'drawn by right'}${sfV1Summary.fails.length ? ` · ${sfV1Summary.fails.length} check${sfV1Summary.fails.length === 1 ? '' : 's'} fail` : ''}`,
                   }
                 : null}
             />
@@ -4579,6 +4702,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           {sfV1Summary && (
             <SfV1Panel
               summary={sfV1Summary}
+              imperviousNow={sfImperviousNow}
               override={sfV1Override}
               // on multifamily land the lot fit routes to the townhome engine: no override re-runs here
               onOverride={isRmLayout ? undefined : handleSfV1Override}
@@ -4742,6 +4866,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               description="The 2D plan, its schedule, your selection and edits are intact."
               retryLabel="Retry 3D"
               onBackTo2D={() => setViewMode('2d')}
+              onRetry={() => setMassing3dTry(n => n + 1)}
+              onMoveToNewRelease={moveToNewRelease}
             >
               <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-gray-500">Loading 3D…</div>}>
               <Massing3D

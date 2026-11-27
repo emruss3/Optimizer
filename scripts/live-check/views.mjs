@@ -29,6 +29,9 @@ for (const p of PARCELS) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)));
+  // the tree grower (about 4 MB) is fetched only once the model is planted, never for Review
+  const treeFetches = [];
+  page.on('request', r => { if (/ez-tree/.test(r.url())) treeFetches.push(r.url()); });
   try {
     await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 60000 });
     const box = page.locator('[data-testid="start-search"]').first();
@@ -52,7 +55,25 @@ for (const p of PARCELS) {
     row.dockIn3d = await page.locator('[data-testid="dock"]').getAttribute('data-open').catch(() => null);
     const vp = await page.locator('[data-testid="massing-3d"]').boundingBox();
     row.viewport3d = vp ? `${Math.round(vp.width)}×${Math.round(vp.height)}` : null;
+    await page.waitForTimeout(1500);
+    row.treeFetchesInReview = treeFetches.length;
+    // a street camera placed in Review is placed again when Rendering stands up its trees (audit cf4f0e8)
+    await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
+      .catch(() => page.locator('[data-testid="camera-street"]').first().click({ force: true }));
+    await page.waitForTimeout(1500);
+    const shotOf = () => page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null'); } catch { return null; } }).catch(() => null);
+    const before = await shotOf();
+    row.reviewShot = before?.shot ?? null;
     await page.locator('[data-testid="look-rendering"]').first().click().catch(() => {});
+    await page.locator('[data-testid="massing-3d"][data-ready="true"][data-look="rendering"]').first().waitFor({ timeout: 60000 }).catch(() => {});
+    row.treeFetchesInRendering = treeFetches.length;
+    await page.waitForTimeout(1500);
+    // handoff 11-27: a look change keeps the camera where the user left it and restates what it sees
+    const after = await shotOf();
+    const moved = before?.position && after?.position ? Math.hypot(...before.position.map((v, i) => v - after.position[i])) : null;
+    row.cameraKept = moved != null ? moved < 0.05 : null;
+    row.streetBasisInRendering = after?.basis ?? null;
+    row.sightNote = await page.locator('[data-testid="sight-note"]').innerText({ timeout: 1500 }).catch(() => null);
     await page.waitForTimeout(1500);
     // the 3D toolbar can re-render while the scene settles: retry the click, then force it
     await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
@@ -63,6 +84,30 @@ for (const p of PARCELS) {
     row.shotNote = await page.locator('[data-testid="shot-note"]').innerText().catch(() => null);
     row.fourK = await page.locator('[data-testid="render-4k"]').innerText().catch(() => null);
     await page.screenshot({ path: path.join(out, `${p.id}-street.png`) });
+    // Fit site is the rescue (navigation audit 11-27): from the street it rises to the whole parcel, and says so
+    await page.locator('[data-testid="camera-fit"]').first().click({ timeout: 15000 }).catch(() => page.locator('[data-testid="camera-fit"]').first().click({ force: true }));
+    await page.waitForTimeout(1500);
+    const fitShot = await page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null'); } catch { return null; } }).catch(() => null);
+    row.fit = { label: (await page.locator('[data-testid="camera-label"]').innerText().catch(() => '')).slice(0, 120), heightFt: fitShot?.position?.[2] ?? null, shot: fitShot?.shot ?? null };
+    await page.screenshot({ path: path.join(out, `${p.id}-fit.png`) });
+    // Previous view steps back to the street camera
+    await page.locator('[data-testid="camera-previous"]').first().click().catch(() => {});
+    await page.waitForTimeout(800);
+    row.previousLabel = (await page.locator('[data-testid="camera-label"]').innerText().catch(() => '')).slice(0, 120);
+    // Present (audit 9379472 F8): the look label follows what is on screen, never Review over an illustration
+    await page.locator('[data-testid="look-review"]').first().click().catch(() => {});
+    await page.waitForTimeout(800);
+    await page.locator('[data-testid="render-present"]').first().click();
+    await page.waitForTimeout(2000);
+    row.present = {
+      on: await page.locator('[data-testid="massing-3d"]').getAttribute('data-present').catch(() => null),
+      reviewPressed: await page.locator('[data-testid="look-review"]').getAttribute('aria-pressed').catch(() => null),
+      renderingPressed: await page.locator('[data-testid="look-rendering"]').getAttribute('aria-pressed').catch(() => null),
+      label: await page.locator('[data-testid="look-illustration"]').innerText().catch(() => null),
+    };
+    await page.screenshot({ path: path.join(out, `${p.id}-present.png`) });
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
     await page.getByText('2D Plan', { exact: false }).first().click().catch(() => {});
     await page.waitForTimeout(1000);
     row.dockBack2d = await page.locator('[data-testid="dock"]').getAttribute('data-open').catch(() => null);
@@ -70,11 +115,16 @@ for (const p of PARCELS) {
     const at = n => tl.find(m => m.name === n)?.atMs ?? null;
     row.timeline = {
       search: at('search-results'), shell: at('planner-shell'), context: at('context-compiled'),
-      revision: at('plan-revision'), interactive3d: at('3d-interactive'),
+      revision: at('plan-revision'), interactive3d: at('3d-interactive'), renderingFrame: at('rendering-frame'),
       cameras: tl.filter(m => m.name === 'camera').map(m => `${m.detail?.requested}→${m.detail?.shown}`),
     };
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
+    if (row.present?.on !== 'true' || row.present.reviewPressed !== 'false' || row.present.renderingPressed !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong look label: ${JSON.stringify(row.present)}`);
+    if (!/Fit site/.test(row.fit?.label ?? '') || !(row.fit?.heightFt > 60)) throw new Error(`Fit site did not rise to the whole site: ${JSON.stringify(row.fit)}`);
+    if (row.reviewShot === 'street' && row.cameraKept === false) throw new Error('a look change moved the camera');
+    if (row.reviewShot === 'street' && !/kept from Review: \d+ trees? in the line of sight/.test(row.streetBasisInRendering ?? '')) throw new Error(`the kept camera's basis was not restated for Rendering: ${row.streetBasisInRendering}`);
+    if (row.treeFetchesInReview !== 0 || !(row.treeFetchesInRendering > 0)) throw new Error(`tree grower fetched ${row.treeFetchesInReview} times in Review and ${row.treeFetchesInRendering} by Rendering`);
     if (row.timeline.revision == null || row.timeline.interactive3d == null) throw new Error('timeline missing the plan revision or 3D milestone');
   } catch (e) {
     row.problem = String(e.message ?? e).slice(0, 240);
@@ -84,10 +134,78 @@ for (const p of PARCELS) {
   results.push(row);
   await context.close();
 }
+// The audit's small laptop (F5): at 1280×720, how much of the window the drawing gets, what stands above
+// it, and how much of it the overlays (toolbar, legend, title) cover. Measured, not judged.
+const layout = [];
+for (const p of PARCELS) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); } catch { /* private */ } });
+  const page = await context.newPage();
+  const row = { parcel: p.name };
+  try {
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const box = page.locator('[data-testid="start-search"]').first();
+    await box.waitFor({ state: 'visible', timeout: 30000 });
+    await box.fill(p.apn ?? p.address);
+    await page.locator('[data-testid="start-results"] li button').first().click({ timeout: 20000 });
+    await page.getByText('Site Planner', { exact: true }).first().click({ timeout: 20000 });
+    const t0 = Date.now();
+    while (Date.now() - t0 < 150000) {
+      const tl = await page.evaluate(() => window.__ppTimeline ?? []);
+      if (tl.some(m => m.name === 'plan-revision')) break;
+      await page.waitForTimeout(1500);
+    }
+    await page.waitForTimeout(4000);
+    Object.assign(row, await page.evaluate(() => {
+      const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
+      const drawings = [...document.querySelectorAll('svg, canvas')].filter(vis).map(el => ({ el, r: el.getBoundingClientRect() }))
+        .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
+      const d = drawings[0];
+      if (!d) return { drawing: null };
+      const R = d.r;
+      // bands above the drawing that span most of its width
+      const bands = [...document.body.querySelectorAll('div, header, nav, section')].filter(vis).map(el => ({ el, r: el.getBoundingClientRect() }))
+        .filter(({ r }) => r.bottom <= R.top + 1 && r.width >= R.width * 0.6 && r.height >= 14 && r.height < 300)
+        .map(({ el, r }) => ({ id: el.getAttribute('data-testid') ?? el.className.toString().slice(0, 40), top: Math.round(r.top), h: Math.round(r.height) }));
+      // overlays standing over the drawing
+      let covered = 0;
+      const overlays = [];
+      for (const el of document.querySelectorAll('div, button, aside')) {
+        if (!vis(el) || el.contains(d.el)) continue;
+        const cs = getComputedStyle(el);
+        if (cs.position !== 'absolute' && cs.position !== 'fixed') continue;
+        const r = el.getBoundingClientRect();
+        const w = Math.max(0, Math.min(r.right, R.right) - Math.max(r.left, R.left)), h = Math.max(0, Math.min(r.bottom, R.bottom) - Math.max(r.top, R.top));
+        if (w * h < 400) continue;
+        // only what is actually on top: a panel stacked behind the planner covers nothing
+        const cx = Math.max(r.left, R.left) + w / 2, cy = Math.max(r.top, R.top) + h / 2;
+        const top = document.elementFromPoint(cx, cy);
+        if (!top || !(el === top || el.contains(top))) continue;
+        // document order: an overlay's own children come after it and are not counted again
+        if (overlays.some(o => o.el.contains(el))) continue;
+        overlays.push({ el, id: el.getAttribute('data-testid') ?? el.className.toString().slice(0, 40), area: Math.round(w * h) });
+        covered += w * h;
+      }
+      return {
+        drawing: { left: Math.round(R.left), top: Math.round(R.top), w: Math.round(R.width), h: Math.round(R.height), shareOfWindow: Math.round((R.width * R.height) / (innerWidth * innerHeight) * 100) },
+        bandsAbove: bands.sort((a, b) => a.top - b.top).slice(0, 12),
+        overlaysCoverPct: Math.round(Math.min(1, covered / (R.width * R.height)) * 100),
+        overlays: overlays.sort((a, b) => b.area - a.area).slice(0, 8).map(({ id, area }) => ({ id, area })),
+      };
+    }));
+    await page.screenshot({ path: path.join(out, `${p.id}-1280x720.png`) });
+  } catch (e) {
+    row.problem = String(e.message ?? e).slice(0, 200);
+  }
+  layout.push(row);
+  await context.close();
+}
+for (const l of layout) console.log(`LAYOUT 1280×720 ${l.parcel} | ${JSON.stringify(l)}`);
+
 await browser.close();
-fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results }, null, 2) + '\n');
+fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, layout }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
+  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | fit ${JSON.stringify(r.fit ?? null)} previous "${r.previousLabel ?? ''}" | camera kept ${r.cameraKept} "${r.streetBasisInRendering ?? ''}" note "${r.sightNote ?? ''}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
 const failed = results.filter(r => r.problem);
 if (failed.length) { console.log(`${failed.length} of ${results.length} parcels failed`); process.exit(1); }

@@ -1,5 +1,6 @@
 import { METERS_PER_FOOT as FT } from '../../../engine/units';
 import { Frame, Kit, inRing, CONCRETE, mat, tone, type Mat, type Wall, type V2 } from '../ui/architecture/kit';
+import { drawWindowRoom, type WindowRoom } from '../ui/architecture/windowRooms';
 import type { Surface } from '../ui/renderModel';
 import { type HomeDesign, type Point, type Rect, type Face, type Finish } from './originalDesigns';
 import { floorBase, normal, pointOn, wallsFor, type WallRun } from './drawings';
@@ -45,6 +46,8 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
           ? mat(175, 162, 141, 'concrete')
           : color(body, surface[finish]);
   const ring = ([x, y, w, d]: Rect) => f.ring(x * FT, (x + w) * FT, y * FT, (y + d) * FT);
+  let roomViews = 0;
+  const dressed = new Set<string>();
   for (let floor = 0; floor < home.levels.length; floor++) {
     const base = floorBase(home, floor) * FT,
       top = base + home.heights[floor]! * FT;
@@ -59,7 +62,11 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
         'base',
       );
     }
-    for (const w of wallsFor(home, floor, exposedEnds).filter((e) => !e.other)) {
+    const deck = home.balconyScreen?.level === floor
+      ? home.levels[floor]!.rooms.find(r => r.name === 'Covered balcony') : undefined;
+    for (const w of wallsFor(home, floor, exposedEnds).filter(e =>
+      deck ? (e.other === deck.name || (e.room === deck.name ? !!e.other : !e.other)) : !e.other,
+    )) {
       const wall = face(f, w),
         mid = pointOn(w, (w.lo + w.hi) / 2);
       const n = normal[w.face],
@@ -84,12 +91,26 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
         bodySegment(a, b, head, top);
         low = b;
         if (c.kind === 'window') {
+          const room = home.levels[floor]!.rooms.find(r => r.name === w.room);
+          const kind = /^bedroom \d+$/i.test(w.room) ? 'bedroom' : /living room|family room|great room|sitting|study/i.test(w.room) ? 'living' : null;
+          const depth = room ? (w.face === 'front' || w.face === 'back' ? room.rect[3] : room.rect[2]) * FT : 0;
+          const key = `${floor}|${w.room}`;
+          const view: WindowRoom | null = !kit.lite && kind && (w.face === 'front' || w.face === 'back') &&
+            width >= 0.74 && head - sill >= 0.42 && depth >= 1.06 && roomViews < 5 && !dressed.has(key)
+            ? {
+                left: Math.max(s - width / 2 - 0.58, ((room?.rect[0] ?? w.lo) - w.lo) * FT + 0.025),
+                right: Math.min(s + width / 2 + 0.58, ((room ? room.rect[0] + room.rect[2] : w.hi) - w.lo) * FT - 0.025),
+                depth: Math.min(depth - 0.18, 1.95), floor: z, ceiling: top, kind,
+              }
+            : null;
+          if (view) { drawWindowRoom(kit, wall, view); dressed.add(key); roomViews++; }
           kit.window(wall, s, width, sill, head, {
             frame: FRAME,
             sill: trim,
             grid: c.width >= 4 ? [2, 2] : [1, 2],
             glazed: true,
             interiorDepth: 0.31,
+            roomBehindGlass: !!view,
           });
         } else if (c.kind === 'garage') {
           kit.garage(wall, s - width / 2, s + width / 2, z, head - z, {
@@ -99,12 +120,37 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
             rows: 4,
           });
           kit.lamp(wall, s + width / 2 + 0.22, head - 0.3);
+        } else if (c.kind === 'garden' && deck && (w.room === deck.name || w.other === deck.name)) {
+          const side = w.room === deck.name ? { ...wall, n: [-wall.n[0], -wall.n[1]] as V2 } : wall;
+          kit.window(side, s, width, z + 0.025, head, { frame: FRAME, grid: [2, 1], glazed: true });
         } else {
           kit.door(wall, s, width, z, head - z, { frame: trim, leaf: accent, lite: true });
           if (c.kind === 'entry') kit.lamp(wall, s + width / 2 + 0.18, head - 0.22);
         }
       }
       bodySegment(low, w.hi, z, top);
+    }
+    if (deck && home.balconyScreen) {
+      const [x, y, w, d] = deck.rect.map(c => c * FT) as Rect;
+      const edges = f.faces(x, x + w, y, y + d);
+      const front = edges.front;
+      const { width, openingAt, openingWidth } = home.balconyScreen;
+      const screen = width * FT, a = (openingAt - openingWidth / 2) * FT, b = (openingAt + openingWidth / 2) * FT;
+      const sill = base + 2.8 * FT, head = base + 6.9 * FT, batten = wallMat('board');
+      kit.box(front, 0, screen, -0.12, 0, base, sill - base, batten);
+      kit.box(front, 0, screen, -0.12, 0, head, top - head, batten);
+      kit.box(front, 0, a, -0.12, 0, sill, head - sill, batten);
+      kit.box(front, b, screen, -0.12, 0, sill, head - sill, batten);
+      kit.box(front, a, b, -0.13, 0.04, sill, 0.05, trim);
+      kit.box(front, a, b, -0.13, 0.04, head - 0.05, 0.05, trim);
+      kit.rail(front, screen + 0.04, front.len - 0.06, -0.14, base, 'bars', FRAME);
+      for (const edge of [edges.left, edges.right]) {
+        kit.rail(edge, 0.09, edge.len - 0.09, -0.14, base, 'bars', FRAME);
+        kit.post(edge, edge.len / 2, -0.13, base, top - base, 0.15, trim);
+      }
+      kit.post(front, front.len - 0.12, -0.1, base, top - base, 0.19, trim);
+      kit.gable(f, x, x + screen, y - 0.12, y + 0.9, top, 4 / 12, 'd',
+        { over: [0.08, 0.09], roof: ROOF, fascia: trim, wall: batten, ends: [true, false] });
     }
   }
   for (const wing of home.volumes) {
@@ -139,11 +185,17 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
       z,
       wing.pitch / 12,
       wing.ridge === 'depth' ? 'd' : 's',
-      { over: 0.33, roof: ROOF, wall: material, fascia: trim },
+      { over: 0.33, roof: ROOF, wall: material, fascia: trim,
+        ...(home.balconyScreen?.level === end - 1 ? { ends: [false, true] } : {}) },
     );
     const faces = f.faces(x * FT, (x + w) * FT, y * FT, (y + d) * FT);
     const gutterWall = wing.ridge === 'depth' ? faces.left : faces.front;
     if (!home.attached) kit.downspout(gutterWall, 0.24, 0.12, z - 0.15, trim);
+  }
+  if (home.roofBulkhead) {
+    const base = floorBase(home, home.levels.length) * FT, rise = home.roofBulkhead.heightFt * FT;
+    kit.prism(ring(home.roofBulkhead.rect), base, rise, wallMat('lap'), 'body');
+    kit.prism(ring(home.roofBulkhead.rect), base + rise, 0.08, METAL, 'detail');
   }
   for (const porch of home.porches) {
     const [x, y, w, d] = porch.rect,

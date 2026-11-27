@@ -1,9 +1,11 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home, Bug } from 'lucide-react';
+import { ChunkLoadError, isChunkLoadError } from '../lib/staleBuild';
 
 interface Props {
   children: ReactNode;
-  fallback?: ReactNode;
+  /** What stands in for the failed subtree; a function is handed the error. */
+  fallback?: ReactNode | ((error: Error | null) => ReactNode);
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
@@ -40,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
-        return this.props.fallback;
+        return typeof this.props.fallback === 'function' ? this.props.fallback(this.state.error) : this.props.fallback;
       }
 
       return (
@@ -123,6 +125,8 @@ export function SitePlannerErrorBoundary({
   description = 'The site planner encountered an error.',
   retryLabel = 'Retry',
   onBackTo2D,
+  onRetry,
+  onMoveToNewRelease,
 }: {
   children: ReactNode;
   title?: string;
@@ -130,12 +134,45 @@ export function SitePlannerErrorBoundary({
   retryLabel?: string;
   /** offered when the failed subtree is the 3D view: the 2D plan is intact */
   onBackTo2D?: () => void;
+  /** called before the subtree is mounted again: a lazily loaded part asks for its file afresh */
+  onRetry?: () => void;
+  /** a newer release replaced this tab's files: keep a copy of the plan and open the new release */
+  onMoveToNewRelease?: () => void;
 }) {
   const [attempt, setAttempt] = React.useState(0);
+  const retry = () => { onRetry?.(); setAttempt(a => a + 1); };
   return (
     <ErrorBoundary
       key={attempt}
-      fallback={
+      fallback={(error) => isChunkLoadError(error) && (error as ChunkLoadError).missing ? (
+        // the files are gone, not broken: retrying the same address cannot work (audit cf4f0e8, R3)
+        <div data-testid="planner-stale-release" className="flex items-center justify-center h-64 bg-amber-50 rounded-lg border-2 border-dashed border-amber-300">
+          <div className="text-center px-4 max-w-lg">
+            <AlertTriangle className="mx-auto h-10 w-10 text-amber-500" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">A newer release of the app is live</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              This tab was opened on the previous release, and the files for the {(error as ChunkLoadError).chunk} are no longer on the server.
+              The 2D plan, its schedule, your selection and edits are intact in this tab.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {onBackTo2D && (
+                <button type="button" data-testid="planner-error-back-2d" onClick={onBackTo2D}
+                  className="inline-flex items-center px-3 py-2 text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                  Back to 2D plan
+                </button>
+              )}
+              {onMoveToNewRelease && (
+                <button type="button" data-testid="planner-move-release" onClick={onMoveToNewRelease}
+                  title="Keeps a copy of this plan in this browser, opens the new release, and offers the copy back on this parcel"
+                  className="inline-flex items-center px-3 py-2 text-sm leading-4 font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200">
+                  <RefreshCw className="w-4 h-4 mr-1" />
+                  Keep a copy of this plan and open the new release
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
         <div data-testid="planner-error" className="flex items-center justify-center h-64 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
           <div className="text-center px-4">
             <AlertTriangle className="mx-auto h-12 w-12 text-gray-400" />
@@ -155,7 +192,7 @@ export function SitePlannerErrorBoundary({
               <button
                 type="button"
                 data-testid="planner-error-retry"
-                onClick={() => setAttempt(a => a + 1)}
+                onClick={retry}
                 className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200"
               >
                 <RefreshCw className="w-4 h-4 mr-1" />
@@ -171,7 +208,7 @@ export function SitePlannerErrorBoundary({
             </div>
           </div>
         </div>
-      }
+      )}
     >
       {children}
     </ErrorBoundary>

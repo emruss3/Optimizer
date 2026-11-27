@@ -35,6 +35,7 @@ async function waitFor(page, pred, ms) {
 }
 
 const browser = await chromium.launch();
+let lotsBeforeGlobal = null;
 const results = [];
 for (const p of PARCELS) {
   const row = { parcel: p.name, id: p.id };
@@ -83,7 +84,22 @@ for (const p of PARCELS) {
       const homesBtn = page.locator('[data-testid="home-designs"]').first();
       row.homesButton = { visible: await homesBtn.isVisible().catch(() => false), disabled: await homesBtn.isDisabled().catch(() => null), title: await homesBtn.getAttribute('title').catch(() => null) };
       await homesBtn.click();
-      const lotSel = page.locator('[data-testid="home-stock-lot"]').first();
+      // the studio opens on the authored catalogue (handoff 11-27); stock is its own tab, with the shared target lot
+      row.studioOpensOn = await page.locator('[role="tab"][aria-selected="true"]').first().innerText().catch(() => null);
+      // docked at this width, the studio must not lie over the drawing (handoff 11-27): the drawing reflows beside it
+      await page.waitForTimeout(600);
+      row.studioOverlapPx = await page.evaluate(() => {
+        const studio = document.querySelector('.home-studio')?.getBoundingClientRect();
+        const ws = document.querySelector('[data-testid="site-workspace"]');
+        if (!studio || !ws) return null;
+        const drawings = [...ws.querySelectorAll('svg, canvas')].map(el => el.getBoundingClientRect()).filter(r => r.width > 200 && r.height > 200)
+          .sort((a, b) => b.width * b.height - a.width * a.height);
+        const d = drawings[0];
+        return d ? Math.max(0, Math.round(d.right - studio.left)) : null;
+      });
+      if (row.studioOverlapPx != null && row.studioOverlapPx > 4) throw new Error(`the docked studio covers ${row.studioOverlapPx} px of the drawing`);
+      await page.locator('[data-testid="home-tab-stock"]').first().click();
+      const lotSel = page.locator('[data-testid="home-target-lot"]').first();
       await lotSel.waitFor({ state: 'visible', timeout: 30000 }).catch(async (e) => {
         row.dialog = (await page.locator('[role="dialog"]').first().innerText().catch(() => 'no dialog')).replace(/\s+/g, ' ').slice(0, 300);
         throw e;
@@ -117,8 +133,9 @@ for (const p of PARCELS) {
       // a mixed masterplan: three different plans on three lots of the same scheme
       // pick, on each lot, a plan no other lot of the mix carries (by plan number, not list position)
       const used = new Set();
-      const applyOn = async (house) => {
+      const applyOn = async (house, lock = false) => {
         await homesBtn.click();
+        await page.locator('[data-testid="home-tab-stock"]').first().click();
         await lotSel.waitFor({ state: 'visible', timeout: 30000 });
         await lotSel.selectOption(house);
         const names = await page.locator('nav[aria-label="Buildable stock plans"] button strong').allInnerTexts();
@@ -126,6 +143,7 @@ for (const p of PARCELS) {
         if (k < 0) { await page.keyboard.press('Escape'); return null; }
         used.add(names[k]);
         await page.locator('nav[aria-label="Buildable stock plans"] button').nth(k).click();
+        if (lock) await page.locator('[data-testid="home-stock-lock"] input').check().catch(() => {});
         const before = JSON.stringify((await evidence(page))?.homes?.pads?.find(x => x.id === house) ?? null);
         await page.locator('[data-testid="home-stock-apply"]').click();
         return (await waitFor(page, e => JSON.stringify(e.homes?.pads?.find(x => x.id === house) ?? null) !== before, 15000))?.homes?.pads?.find(x => x.id === house)?.design ?? null;
@@ -137,7 +155,8 @@ for (const p of PARCELS) {
           const current = (await evidence(page))?.homes?.pads?.find(x => x.id === r.house)?.design;
           const plan = current ? current.replace(/^abhp:/, '') : null;
           if (plan && !used.has(plan) && r.house === target.house) { used.add(plan); mix[r.house] = current; continue; }
-          mix[r.house] = await applyOn(r.house);
+          // the second lot's home is locked through re-solves
+          mix[r.house] = await applyOn(r.house, r === lots3[1]);
         }
         const pads = (await evidence(page))?.homes?.pads ?? [];
         row.mix = Object.fromEntries(Object.keys(mix).map(h => [h, pads.find(x => x.id === h)?.design ?? null]));
@@ -149,6 +168,7 @@ for (const p of PARCELS) {
       if (row.mix) {
         const before = (await evidence(page))?.homes?.pads ?? [];
         await homesBtn.click();
+        await page.locator('[data-testid="home-tab-stock"]').first().click();
         await lotSel.waitFor({ state: 'visible', timeout: 30000 });
         const first = row.rows.find(r => r.eligible.length >= 2);
         await lotSel.selectOption(first.house);
@@ -175,6 +195,7 @@ for (const p of PARCELS) {
       // re-solve: draw the plan again under a lot-width override, then by right again; every choice
       // must be reported or kept on the override plan, and all of them back on the by-right plan
       const shownBefore = (await evidence(page))?.sfV1?.shown ?? null;
+      lotsBeforeGlobal = (await evidence(page))?.sfV1?.lots ?? null;
       const lotsBefore = (await evidence(page))?.sfV1?.lots ?? null;
       const lotW = page.locator('[data-testid="sfv1-override-lot-w"]').first();
       if (row.mix && await lotW.count()) {
@@ -185,8 +206,18 @@ for (const p of PARCELS) {
         row.resolve = { overrideLots: over?.sfV1?.lots ?? null };
         await page.waitForTimeout(1500);
         row.resolve.overrideStatus = (await page.locator('[data-testid="home-carry-status"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300) || null;
-        await page.locator('[data-testid="sfv1-override-reset"]').first().click();
-        let back = await waitFor(page, e => e.sfV1?.basis !== 'override' && e.sfV1?.lots === lotsBefore, 90000);
+        // the locked home cannot stay on the override plan: the conflict is shown and the previous plan offered
+        row.resolve.lockConflict = (await page.locator('[data-testid="home-lock-conflict"]').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 240) || null;
+        let back;
+        if (row.resolve.lockConflict) {
+          await page.locator('[data-testid="home-lock-return"]').click();
+          back = await waitFor(page, e => e.sfV1?.basis !== 'override' && e.sfV1?.lots === lotsBefore, 30000);
+          row.resolve.via = 'return to the previous plan';
+        } else {
+          await page.locator('[data-testid="sfv1-override-reset"]').first().click();
+          back = await waitFor(page, e => e.sfV1?.basis !== 'override' && e.sfV1?.lots === lotsBefore, 90000);
+          row.resolve.via = 'by-right reset';
+        }
         // the competition's best may need drawing again to return to the plan the mix was made on
         if (back?.sfV1?.shown !== shownBefore && shownBefore) {
           const view = page.locator(`[data-testid="sfv1-cand-view-${shownBefore}"]`);
@@ -205,6 +236,7 @@ for (const p of PARCELS) {
       if (row.redo === false) throw new Error('Redo did not put the change back');
       if (row.many && !row.many.skipped && !(row.many.changed.length === 2 && row.many.sameDesign && row.many.undone)) throw new Error(`apply to two lots: ${JSON.stringify(row.many)}`);
       if (row.mix && !row.mixDistinct) throw new Error(`three lots did not carry three different plans: ${JSON.stringify(row.mix)}`);
+      if (row.resolve && row.resolve.overrideLots != null && row.resolve.overrideLots !== lotsBeforeGlobal && !row.resolve.lockConflict) throw new Error('a locked home was lost on the override plan without a conflict');
       if (row.resolve && row.resolve.restored === false) throw new Error(`after a re-solve and back, the three choices did not all return: ${JSON.stringify(row.mix)}`);
     }
   } catch (e) {

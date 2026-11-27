@@ -116,3 +116,21 @@ describe('streetShot', () => {
     expect(streetShot([], [], street)).toBeNull();
   });
 });
+
+describe('a kept camera restates what it sees (handoff 11-27)', () => {
+  const house = { id: 'h1', points: [[0, 0], [10, 0], [10, 8], [0, 8]] as Array<[number, number]>, height: 6 };
+  it('counts the crowns its sight lines cross and the share that pass clear', async () => {
+    const { sightReport, aimedSubject } = await import('./shots');
+    expect(sightReport([5, -20], house, [])).toEqual({ trees: 0, clearShare: 1 });
+    // one large crown straight between the eye and the house
+    const blocked = sightReport([5, -20], house, [[5, -8, 4]]);
+    expect(blocked.trees).toBe(1);
+    expect(blocked.clearShare).toBeLessThan(0.5);
+    expect(aimedSubject([5, 4], [house])?.id).toBe('h1');
+  });
+
+  it('names the garage camera\'s limitation instead of counting an aerial as success', async () => {
+    const { shotUnavailableReason } = await import('./shots');
+    expect(shotUnavailableReason('garage', [house], [], [])).toContain('no drive is drawn to a garage');
+  });
+});

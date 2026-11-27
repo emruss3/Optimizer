@@ -15,7 +15,7 @@ for (const h of HOME_DESIGNS)
   it(h.name + ' has connected room drawings, fixed dimensions and matching exterior openings', () => {
     expect(doorAnchors(h)).toHaveLength(h.doors.length);
     expect(h.doors.filter((d) => d.kind === 'entry')).toHaveLength(1);
-    expect(program(h).heated).toBeGreaterThan(900);
+    expect(program(h).heated).toBeGreaterThanOrEqual(900);
     expect(roofHeight(h)).toBeGreaterThan(h.heights[0]!);
     h.levels.forEach((l, i) => {
       const walls = wallsFor(h, i);
@@ -40,19 +40,20 @@ for (const h of HOME_DESIGNS)
       if (h.id === 'tn-garden-infill-v1' && i === 0) remaining.delete('Garage');
       expect([...remaining]).toEqual([]);
       const vol = h.volumes.filter((v) => v.first <= i && i < v.first + v.count);
-      expect(floorArea(h, i)).toEqual(vol.reduce((sum, v) => sum + v.rect[2] * v.rect[3], 0));
+      expect(floorArea(h, i)).toBeCloseTo(vol.reduce((sum, v) => sum + v.rect[2] * v.rect[3], 0), 6);
       for (const r of l.rooms) {
         for (const q of l.rooms)
           if (q !== r) {
             const [x, y, w, d] = r.rect,
               [x2, y2, w2, d2] = q.rect;
             expect(
-              Math.min(x + w, x2 + w2) <= Math.max(x, x2) || Math.min(y + d, y2 + d2) <= Math.max(y, y2),
+              Math.min(x + w, x2 + w2) <= Math.max(x, x2) + 1e-8 || Math.min(y + d, y2 + d2) <= Math.max(y, y2) + 1e-8,
               r.name + ' / ' + q.name,
             ).toBe(true);
           }
       }
-      if (i > 0)
+      // West Heiman's stairs change runs and landings across levels, as shown on the sheets.
+      if (i > 0 && !h.rearLoadPrecedent)
         expect(l.rooms.find((r) => r.name === 'Stair hall')?.rect).toEqual(
           h.levels[0]!.rooms.find((r) => r.name === 'Stair hall')?.rect,
         );

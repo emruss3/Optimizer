@@ -40,6 +40,18 @@ describe('buildingHeightM', () => {
 });
 
 describe('buildMassingData', () => {
+  it('keeps drawn stalls while hiding decorative vehicles at a known access break', () => {
+    const bay = el('verified-bay', 'parking-bay', [[X, Y], [X + 46, Y], [X + 46, Y + 7], [X, Y + 7]]);
+    bay.properties.parkingSpaces = 13;
+    const normal = buildMassingData([bay]);
+    const blocked = buildMassingData([bay], { accessBreak: { from: [X, Y], to: [X - 3, Y] } });
+    expect(normal.stripes.length).toBeGreaterThan(0);
+    expect(normal.cars.length).toBeGreaterThan(0);
+    expect(blocked.cars).toHaveLength(0);
+    expect(blocked.stripes).toEqual(normal.stripes);
+    expect(bay.properties.parkingSpaces).toBe(13);
+  });
+
   it('centres geometry on the plan bbox and scales to ground metres', () => {
     const { polygons, extent } = buildMassingData([
       el('b1', 'building', square(X, Y, 40), 3),
