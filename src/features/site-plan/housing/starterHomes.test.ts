@@ -51,3 +51,15 @@ describe('starter homes on the captured Delk five-lot layout', () => {
     expect(homesSchedule(base).rows.every(row => row.design === PROVISIONAL_PAD && row.beds === null)).toBe(true);
   });
 });
+
+describe('boundary and reason for automatic placement', () => {
+  it('preserves holes on a wrapped parcel and does not flatten a true multipart parcel', async () => {
+    const { starterSiteBoundary, starterHomeBlock } = await import('./starterHomes');
+    const outer = [[2000,2000],[2050,2000],[2050,2050],[2000,2000]];
+    const hole = [[2005,2005],[2010,2005],[2010,2010],[2005,2005]];
+    const boundary = starterSiteBoundary({type:'MultiPolygon',coordinates:[[outer,hole]]});
+    expect(boundary?.coordinates).toEqual([outer,hole]);
+    expect(starterSiteBoundary({type:'MultiPolygon',coordinates:[[outer],[hole]]})).toBeNull();
+    expect(starterHomeBlock([], boundary, null)).toMatch(/height limit/);
+  });
+});

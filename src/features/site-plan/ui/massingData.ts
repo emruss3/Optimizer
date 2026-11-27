@@ -40,6 +40,7 @@ export interface MassingPolygon {
   /** True for a plan building: the only solids that can be selected. */
   building?: boolean;
   detached?: boolean;
+  siteSurface?: boolean;
   /** The plan element's type, for a view that chooses its own materials. */
   kind?: string;
   hazard?: 'wetland' | 'floodplain' | 'floodway' | 'slope';
@@ -219,6 +220,7 @@ export function buildMassingData(
     return {
       id: el.id,
       building: el.type === 'building',
+      ...(isProvisionalPad(el) || (el.type === 'building' && buildingUse(el) === 'amenity' && propertiesOutdoor(el)) ? { siteSurface: true } : {}),
       ...(el.type === 'building' && buildingUse(el) === 'house' ? { detached: true } : {}),
       kind: el.type === 'circulation' && el.name === 'Walk' ? 'walk' : el.properties?.kind === 'pond' ? 'pond' : pavementKind(el) ?? el.type,
       ...(isMappedAlley(el) ? { mappedAlley: true } : {}),

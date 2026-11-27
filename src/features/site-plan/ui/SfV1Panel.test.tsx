@@ -362,9 +362,9 @@ describe('SfV1Panel — explainable status (the scope\'s P0.2, 2026-11-09)', () 
 });
 
 describe('SfV1Panel — the engine\'s house plans (2026-11-09)', () => {
-  it('says how many lots carry a catalogue plan', () => {
+  it('distinguishes engine footprints from design assignment', () => {
     render(<SfV1Panel summary={{ ...SUMMARY, lots: 5, housesPlaced: 3 }} override={{}} onOverride={() => undefined} />);
-    expect(screen.getByTestId('sfv1-houses').textContent).toBe('3 of 5 lots carry a catalogue plan · the rest keep a generic pad');
+    expect(screen.getByTestId('sfv1-houses').textContent).toBe('3 of 5 lots have engine footprints · design assignment not reported');
   });
   it('stays silent when the engine did not say', () => {
     render(<SfV1Panel summary={{ ...SUMMARY, housesPlaced: null }} override={{}} onOverride={() => undefined} />);
