@@ -63,7 +63,7 @@ import {
   designsForParcel,
   stockEligibility,
 } from './housing';
-import { fetchThV3Plan, guestParkingLine, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
+import { fetchThV3Plan, forgetThV3Plan, guestParkingLine, thV3ToElements, type ThV3Summary } from './api/thV3Plan';
 import { chooseLayout, isFloodSkip, type LayoutKind } from './api/layoutChoice';
 import { LayoutChoicePanel } from './ui/LayoutChoicePanel';
 import { line2274To3857 } from './api/parcelTopo';
@@ -2354,6 +2354,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
    * when nothing was drawn: the reason goes to the layout panel and the plan
    * on the sheet stays.
    */
+  const thAiAskedRef = useRef<Set<number>>(new Set());
+  const thAiPickedRef = useRef<Set<number>>(new Set());
+  const renderThV3PlanRef = useRef<(() => Promise<boolean>) | null>(null);
   const renderThV3Plan = useCallback(async (): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     const ticket = planRequests.begin(contextOgcFid);
@@ -2408,11 +2411,28 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     });
     setPlanStale(false);
     setServerPlanError(null);
-    setPlanBasis(summary.basisLine);
+    const TH_AI_NOTE = ' · layout from the design model (the engine ranked it above its rule search)';
+    const fid = contextOgcFid;
+    setPlanBasis(summary.basisLine + (thAiPickedRef.current.has(fid) ? TH_AI_NOTE : ''));
     sfV1ShownRef.current = 'townhome';
     setSfV1Shown('townhome');
+    // Owner 2026-11-27: townhome layouts also come from the generative model. Once per parcel per session the model's
+    // proposals are run through the townhome engine in the background (fn_th_ai_design); the engine's own ranking
+    // decides. A new model pick redraws the plan; one already on file only labels it.
+    if (!thAiAskedRef.current.has(fid)) {
+      thAiAskedRef.current.add(fid);
+      void engineLong<{ picked?: string; cached?: boolean }>('fn_th_ai_design', { p_ogc_fid: fid }).then(res => {
+        if (res.data?.picked !== 'model') return;
+        thAiPickedRef.current.add(fid);
+        if (!planRequests.isCurrent(ticket, fid) || sfV1ShownRef.current !== 'townhome') return;
+        if (res.data.cached) { setPlanBasis(summary.basisLine + TH_AI_NOTE); return; }
+        forgetThV3Plan(fid);
+        void renderThV3PlanRef.current?.();
+      });
+    }
     return true;
   }, [contextOgcFid, gateNonGesturePlan, setPlanOutput]);
+  renderThV3PlanRef.current = renderThV3Plan;
 
   /** One neighborhood plan of the competition on the sheet: the townhome
    *  engine's, or a street pattern's house lots (still by right). */

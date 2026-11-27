@@ -437,6 +437,11 @@ export function fetchThV3Plan(ogcFid: number, budgetMs = 12000): Promise<ThV3Res
   return p;
 }
 
+/** Drops one parcel's drawing so the next fetch asks the engine again (its chosen plan changed). */
+export function forgetThV3Plan(ogcFid: number): void {
+  thCache.delete(ogcFid);
+}
+
 /** Tests and a new session start clean. */
 export function clearThV3Cache(): void {
   thCache.clear();
