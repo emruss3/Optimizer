@@ -28,6 +28,7 @@
     "check:planner-imports": "node scripts/check-planner-imports.cjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
     "@deck.gl/aggregation-layers": "^9.2.0",
     "@deck.gl/core": "^9.2.0",
     "@deck.gl/layers": "^9.2.0",
