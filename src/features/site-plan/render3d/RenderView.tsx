@@ -13,7 +13,8 @@ import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
 import { recall3D, remember3D } from '../../../lib/viewMemory';
 import { isProvisionalPad } from '../housing/starterHomes';
-import { aerialShot, aimedSubject, approachShot, prominentSubject, shotUnavailableReason, sightReport, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
+import { aerialShot, aimedSubject, approachShots, prominentSubject, shotUnavailableReason, sightReport, streetShots, AERIAL_FOV, DEFAULT_RENDER_SUN, FT, type Shot as Place } from './shots';
+import { choosePlace, CLOSE_BARS, measureSeen, seenOk, seenWords, unseenReason, WHOLE_BARS, type Seen } from './visibility';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 import { Render4kPanel } from './Render4kPanel';
@@ -165,7 +166,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const aerial = useRef(-38);
   aerial.current = data.aerialAzimuth;
   // the last preset the camera was put on, so a capture can be regenerated from it
-  const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number; lift?: number } | null>(null);
+  const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number; lift?: number; subject?: string; seen?: Seen & { tried: number; quality: string } } | null>(null);
   // the label follows the camera: once it is moved by hand it is a custom view, named from the preset it left
   const adjusted = useCallback((how: string) => {
     const r = rig.current, was = lastShot.current;
@@ -224,6 +225,54 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     }
     camera.updateProjectionMatrix();
   }, []);
+  /** A building as a reader knows it: its label, or the first part of its name ("House 3"). */
+  const buildingLabel = (id?: string): string => {
+    const b = id ? scene.buildings.find(x => x.id === id) : undefined;
+    return (b && (b.label || b.name?.split(' · ')[0] || b.display.title)) || 'the building';
+  };
+  /** Stand the camera at each place in turn, measure what it shows of its building, and pick one
+   *  (render3d/visibility). The camera is left for the caller to place. */
+  const checkPlaces = (r: Rig, places: Place[], cv: HTMLCanvasElement | null, close: boolean): { shot: Place | null; seen: Seen | null; quality: 'good' | 'partial' | 'none'; tried: number; why: string | null; unchecked?: boolean } => {
+    const label = buildingLabel;
+    const bars = close ? CLOSE_BARS : WHOLE_BARS;
+    const t0 = performance.now();
+    const tried: Array<{ shot: Place; seen: Seen | null }> = [];
+    const keep = { position: r.camera.position.clone(), quaternion: r.camera.quaternion.clone(), fov: r.camera.fov, lift: lift.current };
+    try {
+      for (const place of places.slice(0, 8)) {
+        const subject = r.model.ground.subjects.find(s => s.id === place.subject);
+        if (!subject) { tried.push({ shot: place, seen: null }); continue; }
+        lift.current = place.lift;
+        r.camera.fov = (2 * Math.atan(Math.tan((place.fovDeg * Math.PI) / 360) * place.lift) * 180) / Math.PI;
+        if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+        r.camera.position.set(place.position[0], place.position[2], -place.position[1]);
+        r.camera.lookAt(place.target[0], place.target[2], -place.target[1]);
+        r.camera.updateMatrixWorld(true);
+        const seen = measureSeen(r.stage.renderer, r.model.root, r.camera, { id: subject.id!, outline: subject.points, base: subject.base ?? 0 });
+        tried.push({ shot: place, seen });
+        if (seen && seenOk(seen, bars.good)) break;
+      }
+    } catch (err) {
+      // a device that cannot draw the check: the places are used as found, and the receipt says so
+      console.warn('[render] the camera check could not draw; using the place as found.', err);
+      return { shot: places[0] ?? null, seen: null, quality: 'good', tried: 0, why: null, unchecked: true };
+    } finally {
+      r.camera.position.copy(keep.position);
+      r.camera.quaternion.copy(keep.quaternion);
+      r.camera.fov = keep.fov;
+      lift.current = keep.lift;
+      if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+    }
+    const chosen = choosePlace(tried, bars);
+    mark('camera-check', {
+      tried: tried.map(t => ({ subject: t.shot.subject ?? null, ...(t.seen ? { visible: +t.seen.visible.toFixed(3), framed: +t.seen.framed.toFixed(3), coverage: +t.seen.coverage.toFixed(4), hiddenBy: t.seen.hiddenBy } : { seen: null }) })),
+      quality: chosen.quality, ms: Math.round(performance.now() - t0),
+    });
+    return {
+      shot: chosen.pick?.shot ?? null, seen: chosen.pick?.seen ?? chosen.best, quality: chosen.quality, tried: tried.length,
+      why: chosen.pick ? null : unseenReason(chosen.best, tried.length, label(tried[0]?.shot.subject), bars.floor),
+    };
+  };
   const frame = useCallback((shot: Shot | 'fit', opts: { record?: boolean } = {}) => {
     const r = rig.current;
     if (!r) return;
@@ -259,17 +308,24 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       const chosen = selectedRef.current;
       const house = chosen && subjects.some(s => s.id === chosen) ? chosen : previewHouse.current;
       const entranceWalks = house ? approaches.filter(a => a.building === house) : approaches;
-      const arrival = shot === 'approach' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
-        : shot === 'garage' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron', garagePavementAt)
-        : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : null;
+      const candidates = shot === 'approach' ? approachShots(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
+        : shot === 'garage' ? approachShots(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron', garagePavementAt)
+        : shot === 'street' ? streetShots(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : [];
+      // Each place is checked against the picture it would actually draw (audit eb378b1): how much of
+      // the building is in frame and in view, and what hides the rest. The first that shows it is used.
+      const checked = candidates.length ? checkPlaces(r, candidates, cv, shot === 'approach' || shot === 'garage') : null;
+      const arrival = checked ? checked.shot : null;
       const close = shot === 'approach' || shot === 'garage';
       r.controls.minDistance = arrival && close ? 0.55 : 8;
       r.controls.maxPolarAngle = arrival && close ? 2.05 : Math.PI / 2;
       const asked = shot === 'street' ? 'Street view' : shot === 'garage' ? 'Garage view' : 'Front entry view';
       setSightNote(null);
+      const subjectLabel = buildingLabel;
       setShotNote((shot === 'street' || close) && !arrival
-        ? `${asked} requested · showing the aerial instead: ${shotUnavailableReason(shot, subjects, roads, entranceWalks)}.`
-        : null);
+        ? `${asked} requested · showing the aerial instead: ${candidates.length && checked?.why ? checked.why : shotUnavailableReason(shot, subjects, roads, entranceWalks)}.`
+        : checked?.quality === 'partial' && checked.seen
+          ? `${asked}: the best eye-level place found still has ${subjectLabel(checked.shot?.subject)} partly hidden (${Math.round(checked.seen.visible * 100)}% visible).`
+          : null);
       if (arrival) {
         // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
         lift.current = arrival.lift;
@@ -277,7 +333,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
         t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
         r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
-        lastShot.current = { shot, ...arrival, ...(padOnly.current ? { basis: `Site context at eye level: the houses here are provisional pads (engine footprints), not home designs. ${arrival.basis}` } : {}) };
+        const seenLine = checked?.seen ? `; ${seenWords(checked.seen, subjectLabel(arrival.subject))} (${checked.tried} place${checked.tried === 1 ? '' : 's'} checked)` : checked?.unchecked ? '; not checked against the drawn picture' : '';
+        lastShot.current = {
+          shot, ...arrival,
+          basis: `${padOnly.current ? 'Site context at eye level: the houses here are provisional pads (engine footprints), not home designs. ' : ''}${arrival.subject ? arrival.basis.replace(arrival.subject, subjectLabel(arrival.subject)) : arrival.basis}${seenLine}`,
+          ...(checked?.seen ? { seen: { ...checked.seen, tried: checked.tried, quality: checked.quality } } : {}),
+        };
       } else {
         lift.current = 1;
         r.camera.fov = AERIAL_FOV;
@@ -323,11 +384,38 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     if (dir.y < 0.35) { dir.y = 0.35; dir.normalize(); }
     const distance = (radius * 1.25) / Math.sin((r.camera.fov * Math.PI) / 360 * Math.min(1, r.camera.aspect));
     r.controls.target.copy(centre);
-    r.camera.position.copy(centre).addScaledVector(dir, distance);
+    // From the direction the camera faces now, unless planting or a neighbour hides the building from
+    // there (audit eb378b1: trees in front of the porch in Focus): then the nearest turn round it that
+    // shows it, measured on the drawn picture (render3d/visibility).
+    const subject = r.model.ground.subjects.find(s => s.id === id);
+    let seen: Seen | null = null, turnedDeg = 0;
+    const tryTurn = (deg: number): Seen | null => {
+      r.camera.position.copy(centre).addScaledVector(dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), (deg * Math.PI) / 180), distance);
+      r.camera.lookAt(centre);
+      r.camera.updateMatrixWorld(true);
+      return subject ? measureSeen(r.stage.renderer, r.model.root, r.camera, { id: subject.id!, outline: subject.points, base: subject.base ?? 0 }) : null;
+    };
+    try {
+      let best: { deg: number; seen: Seen } | null = null;
+      for (const deg of subject ? [0, 30, -30, 60, -60, 90, -90, 135, -135, 180] : []) {
+        const s = tryTurn(deg);
+        if (s && (!best || s.visible > best.seen.visible)) best = { deg, seen: s };
+        if (s && s.visible >= 0.75) break;
+      }
+      if (best) { seen = best.seen; turnedDeg = best.deg; }
+    } catch (err) {
+      console.warn('[render] the focus check could not draw; keeping the current direction.', err);
+    }
+    r.camera.position.copy(centre).addScaledVector(dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), (turnedDeg * Math.PI) / 180), distance);
     r.controls.minDistance = 2;
     r.controls.update();
-    const label = scene.buildings.find(b => b.id === id)?.label ?? 'the selected building';
-    lastShot.current = { shot: 'focus', basis: `Focused on ${label}: the orbit turns around it`, position: [r.camera.position.x, -r.camera.position.z, r.camera.position.y], target: [centre.x, -centre.z, centre.y], fovDeg: r.camera.fov };
+    const label = buildingLabel(id ?? undefined);
+    const how = turnedDeg ? `; moved ${Math.abs(turnedDeg)}° round it from the current direction, where it was hidden` : '';
+    lastShot.current = {
+      shot: 'focus', basis: `Focused on ${label}: the orbit turns around it${how}${seen ? `; ${seenWords(seen, label)}` : ''}`,
+      position: [r.camera.position.x, -r.camera.position.z, r.camera.position.y], target: [centre.x, -centre.z, centre.y], fovDeg: r.camera.fov,
+      ...(seen ? { subject: seen.subject, seen: { ...seen, tried: 1, quality: seen.visible >= 0.6 ? 'good' : 'partial' } } : {}),
+    };
     setShotNote(null);
     setSightNote(null);
     setShotStamp(n => n + 1);
@@ -676,8 +764,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       )}
       {lastShot.current && scene.buildings.length > 0 && shotStamp > 0 && (
         // the camera as it stands, named, with any fallback kept beside it (PR 221 audit)
-        <div className="absolute bottom-8 left-2 max-w-[60%] rounded bg-white/90 border border-gray-300 px-2 py-0.5 text-[10.5px] text-gray-700 shadow-sm" data-testid="camera-label" data-camera={lastShot.current.shot} data-fallback={shotNote ? 'true' : 'false'}>
-          Camera: {lastShot.current.basis}{shotNote ? ' · fallback' : ''}
+        <div className="absolute bottom-8 left-2 max-w-[60%] rounded bg-white/90 border border-gray-300 px-2 py-0.5 text-[10.5px] text-gray-700 shadow-sm" data-testid="camera-label" data-camera={lastShot.current.shot} data-fallback={shotNote?.includes('showing the aerial instead') ? 'true' : 'false'}>
+          Camera: {lastShot.current.basis}{shotNote?.includes('showing the aerial instead') ? ' · fallback' : ''}
         </div>
       )}
       {!painted && (

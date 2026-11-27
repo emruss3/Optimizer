@@ -83,6 +83,9 @@ for (const p of PARCELS) {
     row.camera = await page.locator('[data-testid="camera-label"]').innerText().catch(() => null);
     row.cameraFallback = await page.locator('[data-testid="camera-label"]').getAttribute('data-fallback').catch(() => null);
     row.shotNote = await page.locator('[data-testid="shot-note"]').innerText().catch(() => null);
+    // what the street camera actually shows of its building, measured on the drawn picture (audit eb378b1)
+    { const st = await shotOf(); row.streetSeen = st?.seen ? { subject: st.seen.subject, visible: st.seen.visible, framed: st.seen.framed, hiddenBy: st.seen.hiddenBy, tried: st.seen.tried, quality: st.seen.quality } : null; row.streetBasis = st?.basis ?? null; }
+    row.cameraChecks = await page.evaluate(() => (window.__ppTimeline ?? []).filter(m => m.name === 'camera-check').map(m => m.detail)).catch(() => null);
     row.fourK = await page.locator('[data-testid="render-4k"]').innerText().catch(() => null);
     await page.screenshot({ path: path.join(out, `${p.id}-street.png`) });
     // Fit site is the rescue (navigation audit 11-27): from the street it rises to the whole parcel, and says so
@@ -117,6 +120,11 @@ for (const p of PARCELS) {
     };
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
+    // an eye-level street camera is accepted only with its measured view of the building, and never one that mostly hides it
+    if (row.cameraFallback !== 'true') {
+      if (!row.streetSeen) throw new Error(`street camera without a measured view of its building: ${row.streetBasis}`);
+      if (row.streetSeen.visible < 0.3) throw new Error(`street camera shows ${Math.round(row.streetSeen.visible * 100)}% of ${row.streetSeen.subject}`);
+    }
     if (row.present?.on !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong label: ${JSON.stringify(row.present)}`);
     if (!/Fit site/.test(row.fit?.label ?? '') || !(row.fit?.heightFt > 60)) throw new Error(`Fit site did not rise to the whole site: ${JSON.stringify(row.fit)}`);
     if (row.look !== 'rendering' || row.lookToggle !== 0) throw new Error(`3D is not the single rendered view: look ${row.look}, review toggle ${row.lookToggle}`);
