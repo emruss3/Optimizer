@@ -53,6 +53,10 @@ interface MfGreen extends MfGeom {
 }
 
 export interface MfPlanResponse {
+  /** The design-model pick (fn_mf_ai_design): which plan won between the engine's own plan and the model's
+   *  plans, by the rule in training.ai_config 'mf_ai_default'. Absent when no pick has run for this parcel yet. */
+  ai_pick?: MfAiPick;
+  design_source?: string;
   parcel_ogc_fid?: number;
   typology?: string;
   seed?: number;
@@ -1057,6 +1061,20 @@ export async function generateThSitePlan(
     console.warn('[generateThPlan] RPC threw:', err);
     return null;
   }
+}
+
+export interface MfAiPickSide { units?: number | null; n_fail?: number | null; fails?: string[] | null; regime?: string | null }
+export interface MfAiPick {
+  picked?: 'model' | 'engine';
+  model_version?: string | null;
+  rule?: string;
+  engine?: MfAiPickSide;
+  winner?: MfAiPickSide;
+  n_model_designs?: number;
+  cached?: boolean;
+  reason?: string | null;
+  message?: string | null;
+  seconds?: number;
 }
 
 /** A3: the money block — local-sales revenue vs cost, with provenance. */
