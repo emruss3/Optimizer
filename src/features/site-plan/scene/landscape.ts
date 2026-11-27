@@ -5,7 +5,8 @@
 //  - one or two yard trees on each lot, clear of the house and the driveway
 //  - on a site with no lots, trees along the property line
 //
-// Nothing is planted on pavement, on a building, or outside the parcel.
+// Nothing is planted on pavement, on a building, or outside the parcel, and no crown (as the
+// model draws it) hangs over a building.
 import { pointInPolygon, ringArea, type Pt } from './frame';
 import type { SceneFeature, ScenePolygons } from './types';
 
@@ -17,6 +18,10 @@ export interface SceneTree {
 }
 
 export const MAX_TREES = 420;
+/** The model draws a crown this many times the canopy radius (render3d/siteScene). */
+export const CROWN_DRAWN = 1.4;
+/** A tree squeezed smaller than this beside a building is left out instead. */
+const MIN_RADIUS_FT = 6;
 
 /** A small deterministic generator: the same plan grows the same trees. */
 export function seeded(seed: number): () => number {
@@ -72,10 +77,27 @@ export function plantTrees(features: SceneFeature[], parcel: ScenePolygons | nul
   const hard = features.filter(f => f.role === 'building' || f.role === 'parking' || f.role === 'drive' || f.role === 'street');
   const onHard = (p: Pt, clear: number) =>
     hard.some(f => f.polygons.some(poly => pointInPolygon(p[0], p[1], poly) || (clear > 0 && poly.some(r => distToRing(p, r) < clear))));
+  const buildings = features.filter(f => f.role === 'building');
+  // how far a crown may spread before it hangs over a roof: 0 when the point is on a building
+  const roomFromBuildings = (p: Pt): number => {
+    let best = Infinity;
+    for (const f of buildings) for (const poly of f.polygons) {
+      if (pointInPolygon(p[0], p[1], poly)) return 0;
+      for (const r of poly) best = Math.min(best, distToRing(p, r));
+    }
+    return best;
+  };
   const inParcel = (p: Pt) => !parcel || parcel.some(poly => pointInPolygon(p[0], p[1], poly));
   const trees: SceneTree[] = [];
   const apart = (p: Pt, d: number) => !trees.some(t => Math.hypot(t.at[0] - p[0], t.at[1] - p[1]) < d);
-  const add = (p: Pt, radiusFt: number, kind: SceneTree['kind']) => { if (trees.length < MAX_TREES) trees.push({ at: p, radiusFt, kind }); };
+  // a tree beside a house is grown smaller, so the crown the model draws never covers the roof
+  const add = (p: Pt, radiusFt: number, kind: SceneTree['kind']): boolean => {
+    if (trees.length >= MAX_TREES) return false;
+    const r = Math.min(radiusFt, roomFromBuildings(p) / CROWN_DRAWN);
+    if (r < MIN_RADIUS_FT) return false;
+    trees.push({ at: p, radiusFt: r, kind });
+    return true;
+  };
 
   // street trees: in the strip between the curb and the walk, both sides
   for (const f of features) {
@@ -106,8 +128,7 @@ export function plantTrees(features: SceneFeature[], parcel: ScenePolygons | nul
         const p: Pt = [minX + rnd() * (maxX - minX), minY + rnd() * (maxY - minY)];
         if (!pointInPolygon(p[0], p[1], lot.polygons[0] ?? []) || distToRing(p, ring) < 9) continue;
         if (onHard(p, 11) || !apart(p, 22)) continue;
-        add(p, 10 + rnd() * 5, 'yard');
-        placed++;
+        if (add(p, 10 + rnd() * 5, 'yard')) placed++;
       }
     }
   } else if (parcel) {

@@ -16,7 +16,7 @@ on:
         required: true
         default: map
         type: choice
-        options: [map, search, homes, views]
+        options: [map, search, homes, views, decision]
       app_ref:
         description: optional - build this git ref on the runner and check it against the live database instead of app_url (for a branch whose preview is login-protected)
         required: false
@@ -74,6 +74,12 @@ jobs:
           APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
           OUT: live-check
         run: node scripts/live-check/views.mjs
+      - name: Check one decision state (search, impervious, product word, access basis)
+        if: inputs.check == 'decision'
+        env:
+          APP_URL: ${{ env.APP_URL_OVERRIDE || inputs.app_url }}
+          OUT: live-check
+        run: node scripts/live-check/decision.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:

@@ -239,6 +239,13 @@ describe('KpiStrip: a plan whose basis is not established (1710 Meharry Blvd, 20
     expect(screen.queryByTestId('kpi-needs-verification')).toBeNull();
   });
 
+  it('keeps what the checks do not cover beside Needs verification (audit 9379472: 535 Main)', () => {
+    render(<KpiStrip metrics={base} investment={null} unverified="context not verified" openItems={['routes to the 252 stalls not checked']} />);
+    const chip = screen.getByTestId('kpi-needs-verification');
+    expect(chip.textContent).toContain('open: routes to the 252 stalls not checked');
+    expect(chip.getAttribute('title')).toContain('They do not cover: routes to the 252 stalls not checked.');
+  });
+
   it('does not soften a failing plan or a parking shortfall into Needs verification', () => {
     const { rerender } = render(<KpiStrip metrics={{ ...base, zoningCompliant: false, violations: ['height'] } as SiteMetrics} investment={null} unverified="context not verified" />);
     expect(screen.getByText('1 issue')).toBeTruthy();
