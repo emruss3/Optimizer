@@ -1827,7 +1827,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     const remembered = homeAssignmentsRef.current;
     if (remembered.parcel === parcelIdStr && remembered.list.length > 0) {
-      const carried = carryAssignments(remembered.list, planElements, homeSetbacksRef.current);
+      const carried = carryAssignments(remembered.list, planElements, homeSetbacksRef.current, plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft);
       planElements = carried.elements;
       homeAssignmentsRef.current = { parcel: parcelIdStr, list: carried.next };
       setHomeCarry({ kept: carried.kept.length, lost: carried.lost });
@@ -2209,7 +2209,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   /** Commit a concept study on one lot: it becomes the plan (not a preview). */
   const handleConceptApply = useCallback((designId: string, houseId: string) => {
-    const res = commitConcept(designId, houseId, elements, homeStudioBoundaryRef.current);
+    const res = commitConcept(designId, houseId, elements, homeStudioBoundaryRef.current, plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft);
     if (!res.ok) {
       setViolations(v => [...v.filter(x => x.code !== 'home-change'), { code: 'home-change', message: `Home not changed: ${res.reason}. The plan is unchanged.`, severity: 'warning' }]);
       return;
@@ -3492,6 +3492,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
   }, [scene]);
   homeStudioBoundaryRef.current = homeStudioBoundary;
+  const homeHeightLimitFt = plannerCtx?.solver_brief.hard_constraints.max_height_ft ?? null;
   // One eligibility result per detached house, shared by the sidebar summary,
   // the studio list and apply (housing/eligibility.ts).
   const stockRows = useMemo(
@@ -3511,13 +3512,13 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
     const typed = typologyEligibleHomeDesigns(HOME_DESIGNS, houses);
     const eligible = typed.length
-      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary)
+      ? eligibleHomeDesigns(typed, baseElements, homeStudioBoundary, homeHeightLimitFt)
       : ([] as typeof HOME_DESIGNS);
     // Scheme allows homes: keep the control visible; enable it only when a
     // concept study or a stock plan actually places on some lot.
     const stockOk = stockRows.some(r => r.eligible.length > 0);
     return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
-  }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows]);
+  }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows, homeHeightLimitFt]);
   // The reasons nothing fits, read only when asked (a 79-lot plan is checked on a sample of 40 lots).
   const [homesWhyOpen, setHomesWhyOpen] = useState(false);
   const homesWhy = useMemo(
@@ -4389,6 +4390,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       {homesOpen && homeDesignsUi.show && homeDesignsUi.enabled && <React.Suspense fallback={<div className="fixed inset-0 z-50 grid place-items-center bg-white/90">Opening buildable plans…</div>}>
         <HomeStudio
           siteBoundary={homeStudioBoundary}
+          maxHeightFt={homeHeightLimitFt}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
           designs={homeDesignsUi.eligible}

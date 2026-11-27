@@ -1,3 +1,5 @@
+import { WEST_HEIMAN_DESIGNS } from './westHeimanDesigns';
+
 // Original Middle Tennessee feasibility designs. Coordinates are outside-to-outside feet.
 // The front is y=0, x increases to the right and y runs towards the rear yard.
 export type Point = [number, number];
@@ -33,6 +35,14 @@ export interface Porch {
   level?: number;
   finish: 'metal' | 'shingle';
 }
+export interface SideWindow {
+  level: number;
+  face: 'left' | 'right';
+  at: number;
+  width: number;
+  sill: number;
+  head: number;
+}
 export interface HomeDesign {
   id: string;
   name: string;
@@ -48,6 +58,11 @@ export interface HomeDesign {
   parking: 'pad' | 'front' | 'rear' | 'side';
   cars: number;
   attached?: boolean;
+  /** This drawn detached rear-load study needs separate mapped front and rear approaches. */
+  rearLoadPrecedent?: { source: string };
+  sideWindows?: SideWindow[];
+  balconyScreen?: { level: number; width: number; openingAt: number; openingWidth: number };
+  roofBulkhead?: { rect: Rect; heightFt: number };
 }
 const room = (name: string, x: number, y: number, w: number, d: number): Room => ({ name, rect: [x, y, w, d] });
 const level = (name: string, rooms: Room[], links: string): Level => ({ name, rooms, links: links.split(';') });
@@ -505,6 +520,7 @@ export const HOME_DESIGNS: HomeDesign[] = [
       ),
     ],
   },
+  ...WEST_HEIMAN_DESIGNS,
 ];
 
 export const findHome = (id: unknown) => HOME_DESIGNS.find((h) => h.id === id);
