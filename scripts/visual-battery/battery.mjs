@@ -457,7 +457,8 @@ for (const p of (ONLY ? PARCELS.filter(q => ONLY.includes(String(q.ogc_fid))) : 
   });
   page.on('requestfailed', r => { if (callStart.has(r)) calls.push({ fn: r.url().split('/v1/')[1]?.split('?')[0], status: 0, failure: r.failure()?.errorText, ms: Date.now() - callStart.get(r) }); });
   try {
-    await page.goto('http://localhost:5199/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // ?debug=seed keeps the engine's Quick massing view reachable for the seed shot (it is off the toolbar otherwise)
+    await page.goto('http://localhost:5199/?debug=seed', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2500);
     // Past the landing page into the app shell.
     const trial = page.locator('[data-testid="landing-start"]').first();
