@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { HOME_DESIGNS } from './originalDesigns';
+import { WEST_HEIMAN_IDS } from './westHeimanDesigns';
 import {
   PHOTOREAL_ELEVATION_IDS,
   hasPhotorealElevation,
+  interiorRenderings,
   photorealElevationSrc,
 } from './elevationAssets';
 
@@ -11,8 +14,8 @@ const faces = ['front', 'right', 'back', 'left'] as const;
 const publicDir = resolve(process.cwd(), 'public/home-designs');
 
 describe('photoreal elevation assets', () => {
-  it('lists the eight tn-* concept ids that ship elevation WebPs', () => {
-    expect(PHOTOREAL_ELEVATION_IDS).toHaveLength(8);
+  it('lists the concept ids that ship elevation WebPs', () => {
+    expect(PHOTOREAL_ELEVATION_IDS).toEqual(HOME_DESIGNS.map(h => h.id));
     for (const id of PHOTOREAL_ELEVATION_IDS) {
       expect(hasPhotorealElevation(id)).toBe(true);
       for (const side of faces) {
@@ -21,6 +24,12 @@ describe('photoreal elevation assets', () => {
         expect(existsSync(resolve(publicDir, `${id}-elevation-${side}-v2.webp`))).toBe(true);
       }
     }
+  });
+
+  it.each(WEST_HEIMAN_IDS)('ships both interior views for %s', id => {
+    const views = interiorRenderings(id);
+    expect(views).toHaveLength(2);
+    for (const { src } of views) expect(existsSync(resolve(publicDir, src.split('/').pop()!))).toBe(true);
   });
 
   it('treats stock / unknown ids as missing photoreal assets (Diagram fallback)', () => {
