@@ -32,12 +32,13 @@ export function bounds(rects: Rect[]): Rect {
     y = Math.min(...rects.map((r) => r[1]));
   return [x, y, Math.max(...rects.map((r) => r[0] + r[2])) - x, Math.max(...rects.map((r) => r[1] + r[3])) - y];
 }
-export const designBounds = (h: HomeDesign) => bounds([...h.volumes, ...h.porches].map((v) => v.rect));
+export const designBounds = (h: HomeDesign) =>
+  bounds([...h.volumes, ...h.porches, ...(h.roofBulkhead ? [h.roofBulkhead] : [])].map((v) => v.rect));
 export const floorBase = (h: HomeDesign, index: number) =>
   1 + h.heights.slice(0, index).reduce((sum, n) => sum + n, 0);
 export function floorArea(h: HomeDesign, floor: number, heated = false) {
   return h.levels[floor]!.rooms.reduce(
-    (n, r) => n + (heated && r.name === 'Garage' ? 0 : r.rect[2] * r.rect[3]),
+    (n, r) => n + (heated && (r.name === 'Garage' || r.name === 'Covered balcony') ? 0 : r.rect[2] * r.rect[3]),
     0,
   );
 }
@@ -56,9 +57,12 @@ function edges({ name, rect: [x, y, w, d] }: Room): WallRun[] {
   ].map((e) => ({ ...e, face: e.face as Face, room: name, cuts: [] }));
 }
 const reverse: Record<Face, Face> = { front: 'back', back: 'front', left: 'right', right: 'left' };
+const snapFt = (n: number) => Math.round(n * 1e7) / 1e7;
 export function wallsFor(h: HomeDesign, index: number, exposedEnds: Face[] = []): WallRun[] {
   const level = h.levels[index]!,
-    edgesAtLevel = level.rooms.flatMap(edges),
+    edgesAtLevel = level.rooms.flatMap(edges).map(e => ({
+      ...e, fixed: snapFt(e.fixed), lo: snapFt(e.lo), hi: snapFt(e.hi),
+    })),
     walls: WallRun[] = [];
   for (const edge of edgesAtLevel) {
     const neighbours = edgesAtLevel.filter(
@@ -85,11 +89,12 @@ export function wallsFor(h: HomeDesign, index: number, exposedEnds: Face[] = [])
     const w = walls
       .filter((w) => (w.room === a && w.other === b) || (w.room === b && w.other === a))
       .sort((x, y) => y.hi - y.lo - (x.hi - x.lo))[0];
+    const balconyDoor = h.balconyScreen?.level === index && [a, b].includes('Covered balcony');
     if (w && w.hi - w.lo >= 3)
       w.cuts.push({
-        kind: passage ? 'passage' : 'door',
+        kind: balconyDoor ? 'garden' : passage ? 'passage' : 'door',
         at: (w.lo + w.hi) / 2,
-        width: Math.min(passage ? 8 : 3, w.hi - w.lo - 0.35),
+        width: Math.min(balconyDoor ? 6 : passage ? 8 : 3, w.hi - w.lo - 0.35),
         sill: 0,
         head: 7,
       });
@@ -108,6 +113,14 @@ export function wallsFor(h: HomeDesign, index: number, exposedEnds: Face[] = [])
         });
       }
     if (h.attached && !horizontal(w.face) && !exposedEnds.includes(w.face)) continue;
+    if (w.room === 'Covered balcony') continue;
+    if (h.sideWindows && !horizontal(w.face)) {
+      for (const cut of h.sideWindows)
+        if (cut.level === index && cut.face === w.face
+          && cut.at - cut.width / 2 >= w.lo && cut.at + cut.width / 2 <= w.hi)
+          w.cuts.push({ kind: 'window', at: cut.at, width: cut.width, sill: cut.sill, head: cut.head });
+      continue;
+    }
     if (/Garage|Closet|Pantry|Dressing|Storage|Linen|Coats/.test(w.room)) continue;
     const privacy = /Bath|bath|Powder|Laundry/.test(w.room),
       stair = /Stair|hall|Landing|Foyer|Entry|Gallery/i.test(w.room);
@@ -161,6 +174,7 @@ export function wallSegments(w: WallRun): Point[] {
 /** The authored ridge/parapet elevation and actual floor lines share the design's datum. */
 export function roofHeight(h: HomeDesign) {
   return Math.max(
+    ...(h.roofBulkhead ? [floorBase(h, h.levels.length) + h.roofBulkhead.heightFt + 0.08 / 0.3048] : []),
     ...h.volumes.map((v) => {
       const span = v.ridge === 'depth' ? v.rect[2] : v.rect[3];
       const rise = v.ridge === 'flat' ? 1.05 : ((v.ridge === 'shed' ? span : span / 2) * v.pitch) / 12;
