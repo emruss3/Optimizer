@@ -2374,10 +2374,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const thAiAskedRef = useRef<Set<number>>(new Set());
   const thAiPickedRef = useRef<Set<number>>(new Set());
   const renderThV3PlanRef = useRef<(() => Promise<boolean>) | null>(null);
+  /** Townhome engine settings from plan feedback (owner, 11-27): checked by the engine's own ranges. Empty: the default plan. */
+  const thParamsRef = useRef<Record<string, number | boolean>>({});
   const renderThV3Plan = useCallback(async (): Promise<boolean> => {
     if (contextOgcFid == null) return false;
     const ticket = planRequests.begin(contextOgcFid);
-    const r = await fetchThV3Plan(contextOgcFid);
+    const r = await fetchThV3Plan(contextOgcFid, 12000, thParamsRef.current);
     // answered after a newer choice, or for a parcel no longer open: the sheet is left as it is
     if (!planRequests.isCurrent(ticket, contextOgcFid)) return false;
     if (r.error || !r.data) {
@@ -2944,6 +2946,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     setSfV1Summary(null);
     setSfV1Override({});
     sfV1OverrideRef.current = {};
+    thParamsRef.current = {};
     setBfeContour(null);
     setSfV1Site(null);
     competitionSeqRef.current += 1;
@@ -3709,8 +3712,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
   // ── Plan feedback (owner, 11-27): a note to Claude, its reading stored with its scope, its settings tried or kept
   const feedbackZoning = typeof parcel.zoning === 'string' ? parcel.zoning : null;
-  const feedbackProduct = sfV1Summary ? 'single_family' : productOf(planLineage?.generatorVersion ?? null);
-  const feedbackCanApply = !!sfV1Summary && sfV1Route(feedbackZoning) === 'sf_v1';
+  // which engine on screen takes settings from feedback: the by-right subdivision, or the townhome engine
+  const feedbackEngine: 'sf' | 'th' | null = sfV1Summary && sfV1Route(feedbackZoning) === 'sf_v1' ? 'sf' : !sfV1Summary && thV3Summary ? 'th' : null;
+  const feedbackEngineRef = useRef(feedbackEngine);
+  feedbackEngineRef.current = feedbackEngine;
+  const feedbackProduct = feedbackEngine === 'sf' ? 'single_family' : feedbackEngine === 'th' ? 'townhome' : productOf(planLineage?.generatorVersion ?? null);
+  const feedbackCanApply = feedbackEngine !== null;
   const feedbackSelection = useMemo(() => {
     const id = sceneSelectedIds.length === 1 ? sceneSelectedIds[0]! : null;
     if (!id || !scene) return null;
@@ -3736,55 +3743,78 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     }
   }, [viewMode]);
   /** Claude's changes take effect at once (owner, 11-27): the plan is redrawn with them; returns what Undo goes back to. */
-  const applyFeedbackChanges = useCallback((changes: FeedbackChanges): SfV1Options => {
-    const before = sfV1OverrideRef.current;
-    handleSfV1Override(mergeChanges(before, changes));
+  type FeedbackBefore = { engine: 'sf'; opt: SfV1Options } | { engine: 'th'; params: Record<string, number | boolean> };
+  const applySettings = useCallback((engine: 'sf' | 'th', changes: FeedbackChanges): FeedbackBefore => {
+    if (engine === 'th') {
+      const before: FeedbackBefore = { engine: 'th', params: thParamsRef.current };
+      thParamsRef.current = { ...thParamsRef.current, ...changes.params };
+      void renderThV3Plan();
+      return before;
+    }
+    const before: FeedbackBefore = { engine: 'sf', opt: sfV1OverrideRef.current };
+    handleSfV1Override(mergeChanges(before.opt, changes));
     return before;
-  }, [handleSfV1Override]);
-  const revertFeedbackChanges = useCallback((before: unknown) => {
-    handleSfV1Override((before as SfV1Options | null) ?? {});
-  }, [handleSfV1Override]);
-  // The generative loop (owner, 11-27: "use that guidance on future sites"): a site's first by-right plan is redrawn
-  // from the settings accepted on earlier sites whose note reaches it (its district, single-family, every site) and
-  // from its own kept settings. The guided plan stays only when it keeps every home and fails no more checks
-  // (maximize units, by right); otherwise the site goes back to its default plan and says why.
+  }, [handleSfV1Override, renderThV3Plan]);
+  const restoreSettings = useCallback((before: FeedbackBefore | null | undefined) => {
+    if (before?.engine === 'th') { thParamsRef.current = before.params; void renderThV3Plan(); return; }
+    handleSfV1Override(before?.engine === 'sf' ? before.opt : {});
+  }, [handleSfV1Override, renderThV3Plan]);
+  const applyFeedbackChanges = useCallback((changes: FeedbackChanges) => applySettings(feedbackEngineRef.current === 'th' ? 'th' : 'sf', changes), [applySettings]);
+  const revertFeedbackChanges = useCallback((before: unknown) => restoreSettings(before as FeedbackBefore | null), [restoreSettings]);
+  // The generative loop (owner, 11-27: "use that guidance on future sites"): a site's first plan (by-right subdivision
+  // or townhomes) is redrawn from the settings accepted on earlier sites whose note reaches it (its district, its
+  // product, every site) and from its own kept settings. The guided plan stays only when it keeps every home and fails
+  // no more checks (maximize units, by right); otherwise the site goes back to its default plan and says why.
+  const guideSummary = feedbackEngine === 'sf' ? sfV1Summary : feedbackEngine === 'th' ? thV3Summary : null;
+  const guideKey = `${parcelIdStr}|${feedbackEngine ?? ''}`;
   const guidedForRef = useRef<string | null>(null);
-  const guidedCheckRef = useRef<{ parcel: string; base: { lots: number; fails: string[] }; baseSummary: SfV1Summary; before: SfV1Options; asked: SfV1Options; count: number; lines: string[]; lessons: string[] } | null>(null);
-  const [guided, setGuided] = useState<{ parcel: string; state: 'on' | 'skipped'; why: string; count: number; lines: string[]; lessons: string[]; before: SfV1Options } | null>(null);
+  const guidedCheckRef = useRef<{ key: string; engine: 'sf' | 'th'; base: { lots: number; fails: string[] }; baseSummary: unknown; before: FeedbackBefore; asked: unknown; count: number; lines: string[]; lessons: string[] } | null>(null);
+  const [guided, setGuided] = useState<{ key: string; state: 'on' | 'skipped'; why: string; count: number; lines: string[]; lessons: string[]; before: FeedbackBefore } | null>(null);
   useEffect(() => {
-    if (!feedbackCanApply || contextOgcFid == null || !sfV1Summary || guidedForRef.current === parcelIdStr) return;
-    guidedForRef.current = parcelIdStr;
-    // a plan the user asked for (an override, a pattern) is theirs: guidance starts only the default plan
-    if (isOverride(sfV1OverrideRef.current) || sfV1OverrideRef.current.pattern) return;
-    const at = parcelIdStr, baseSummary = sfV1Summary, before = sfV1OverrideRef.current;
+    const engine = feedbackEngine;
+    if (!engine || contextOgcFid == null || !guideSummary || guidedForRef.current === guideKey) return;
+    guidedForRef.current = guideKey;
+    // a plan the user asked for (an override, a pattern, settings) is theirs: guidance starts only the default plan
+    if (engine === 'sf' && (isOverride(sfV1OverrideRef.current) || sfV1OverrideRef.current.pattern)) return;
+    if (engine === 'th' && Object.keys(thParamsRef.current).length) return;
+    const at = guideKey, baseSummary = guideSummary;
+    const base = engine === 'sf' && sfV1Summary ? { lots: sfV1Summary.lots, fails: sfV1Summary.fails } : thV3Summary ? { lots: thV3Summary.homes, fails: thV3Summary.requiredFails } : null;
+    if (!base) return;
+    const product = engine === 'sf' ? 'single_family' : 'townhome';
     void (async () => {
       if (!(await feedbackSession())) return;
-      const ctx = await fetchFeedbackContext(contextOgcFid, feedbackZoning, 'single_family');
+      const ctx = await fetchFeedbackContext(contextOgcFid, feedbackZoning, product);
       const start = startingChanges(ctx);
-      if (!start.changes || guidedForRef.current !== at) return;
-      const asked = mergeChanges(before, start.changes);
+      // the townhome engine chooses its own layout: only its settings carry over, not a street pattern
+      const changes = start.changes && engine === 'th' ? { pattern: null, params: start.changes.params } : start.changes;
+      if (!changes || (!changes.pattern && !Object.keys(changes.params).length) || guidedForRef.current !== at) return;
+      const before = applySettings(engine, changes);
       guidedCheckRef.current = {
-        parcel: at, base: { lots: baseSummary.lots, fails: baseSummary.fails }, baseSummary, before, asked,
-        count: start.ids.length, lessons: start.lessons, lines: describeChanges(start.changes, { product: 'single_family', patterns: [], settings: [] }),
+        key: at, engine, base, baseSummary, before, asked: engine === 'sf' ? sfV1OverrideRef.current : thParamsRef.current,
+        count: start.ids.length, lessons: start.lessons, lines: describeChanges(changes, { product, patterns: [], settings: [] }),
       };
-      handleSfV1Override(asked);
     })();
-  }, [feedbackCanApply, contextOgcFid, sfV1Summary, parcelIdStr, feedbackZoning, handleSfV1Override]);
+  }, [feedbackEngine, contextOgcFid, guideSummary, guideKey, sfV1Summary, thV3Summary, feedbackZoning, applySettings]);
   useEffect(() => {
     const c = guidedCheckRef.current;
-    if (!c || !sfV1Summary || sfV1Summary === c.baseSummary) return;
+    if (!c) return;
+    const now = c.engine === 'sf' ? sfV1Summary : thV3Summary;
+    if (!now || now === c.baseSummary) return;
     // only the answer to the guided request counts: another parcel, or another request since, drops the check
-    if (c.parcel !== parcelIdStr || sfV1OverrideRef.current !== c.asked) { guidedCheckRef.current = null; return; }
+    const current = c.engine === 'sf' ? sfV1OverrideRef.current : thParamsRef.current;
+    if (c.key !== guideKey || current !== c.asked) { guidedCheckRef.current = null; return; }
     guidedCheckRef.current = null;
-    const verdict = guidedVerdict(c.base, { lots: sfV1Summary.lots, fails: sfV1Summary.fails, status: sfV1Summary.status });
-    setGuided({ parcel: c.parcel, state: verdict.keep ? 'on' : 'skipped', why: verdict.why, count: c.count, lines: c.lines, lessons: c.lessons, before: c.before });
-    if (!verdict.keep) handleSfV1Override(c.before);
-  }, [sfV1Summary, parcelIdStr, handleSfV1Override]);
+    const guidedPlan = c.engine === 'sf' && sfV1Summary ? { lots: sfV1Summary.lots, fails: sfV1Summary.fails, status: sfV1Summary.status }
+      : thV3Summary ? { lots: thV3Summary.homes, fails: thV3Summary.requiredFails, status: thV3Summary.status } : null;
+    const verdict = guidedVerdict(c.base, guidedPlan);
+    setGuided({ key: c.key, state: verdict.keep ? 'on' : 'skipped', why: verdict.why, count: c.count, lines: c.lines, lessons: c.lessons, before: c.before });
+    if (!verdict.keep) restoreSettings(c.before);
+  }, [sfV1Summary, thV3Summary, guideKey, restoreSettings]);
   const dropGuidance = useCallback(() => {
     const g = guided;
     setGuided(null);
-    if (g?.state === 'on') handleSfV1Override(g.before);
-  }, [guided, handleSfV1Override]);
+    if (g?.state === 'on') restoreSettings(g.before);
+  }, [guided, restoreSettings]);
   const sceneKey = scene?.identity.key ?? null;
   const handleSceneSelection = useCallback((ids: string[]) => {
     if (!sceneKey) return;
@@ -4614,7 +4644,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             </button>
           )}
         </div>
-        {guided?.parcel === parcelIdStr && (
+        {guided?.key === guideKey && (
           <span
             className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11.5px] ${guided.state === 'on' ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}
             data-testid="feedback-guidance" data-state={guided.state}
