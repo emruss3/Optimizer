@@ -3800,8 +3800,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const accessAwareMetrics = useMemo(() => {
     if (!metrics) return metrics;
     if (stallsUsable == null) {
-      // every drawn bay traced to the street: the reachable count is verified, not merely unknown
-      const traced = displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated && mfAccess.stallsServed != null && mfAccess.served >= mfAccess.bays;
+      // every drawn bay traced to the street: the reachable count is verified, not merely unknown. A
+      // structured garage is not: touching the frontage says nothing of its ramps and aisles (audit
+      // 9379472: Main's 252 stalls cannot read verified until routes prove them)
+      const structured = displayElements.some(e => e.type === 'parking' && e.properties?.structured === true);
+      const traced = !structured && displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated && mfAccess.stallsServed != null && mfAccess.served >= mfAccess.bays;
       return traced ? { ...metrics, stallsReachable: mfAccess.stallsServed } : metrics;
     }
     // adequacy stands on the reachable supply; the count keeps its own name
