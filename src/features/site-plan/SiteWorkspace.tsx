@@ -4534,6 +4534,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <span><strong>Locked homes this plan cannot keep:</strong> {homeLockConflict.lost.map(l => `${l.designId.replace(/^abhp:/, '')} on ${l.lotLabel} — ${l.reason}`).join('; ')}.</span>
         <span className="flex gap-3">
           <button type="button" className="underline" data-testid="home-lock-return" onClick={() => {
+            // a solve still on its way would land on top of the plan returned to: it no longer counts
+            planRequests.invalidate();
             const b = homeLockConflict.before;
             setHomeLockConflict(null);
             setSfV1Summary(b.summary);
