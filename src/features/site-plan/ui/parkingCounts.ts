@@ -11,7 +11,7 @@
  *
  * Unknown is not zero: a count nobody checked is left out, never printed as 0.
  */
-import type { SiteMetrics } from '../../../engine/types';
+import type { Element, SiteMetrics } from '../../../engine/types';
 
 export interface ParkingCounts {
   drawn: number | null;
@@ -63,4 +63,18 @@ export function parkingCountsLine(c: ParkingCounts): string | null {
 /** The supply that meets the requirement: reachable when checked, else drawn, else the engine's. */
 export function parkingSupplyForAdequacy(c: ParkingCounts): number | null {
   return c.reachable ?? c.drawn ?? c.reported;
+}
+
+/**
+ * The stalls a plan counts on parking bays or garages that no route was traced to, or null when
+ * there are none or the reachable count is known. Houses' own drives are not counted: a lot fronts
+ * its street by construction.
+ */
+export function parkingStallsUntraced(elements: Element[], m: SiteMetrics | null | undefined): number | null {
+  if (!m || num(m.stallsReachable) != null) return null;
+  const bays = elements.filter(e => e.type === 'parking');
+  if (!bays.length) return null;
+  const c = parkingCounts(m);
+  const supply = c.drawn ?? c.reported;
+  return supply != null && supply > 0 ? supply : null;
 }

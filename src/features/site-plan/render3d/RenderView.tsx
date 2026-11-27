@@ -7,7 +7,7 @@ import type { DrawingScene } from '../scene/types';
 import { buildMassingData } from '../ui/massingData';
 import { sunPosition, SUN_DATES } from '../ui/sunPosition';
 import { SceneInspector } from '../ui/SceneInspector';
-import { buildSiteModel, type SiteModel } from './siteScene';
+import { buildSiteModel, loadTreeKit, treeKitLoaded, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
@@ -97,6 +97,15 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // counts the models built: a new one needs its sun and its selection set again
   const [built, setBuilt] = useState(0);
   const [present, setPresent] = useState(false);
+  // the tree grower is fetched the first time the model is planted (Rendering or Present), not before
+  const [treesHere, setTreesHere] = useState(treeKitLoaded());
+  const planted = look === 'rendering' || present;
+  useEffect(() => {
+    if (!planted || treesHere) return;
+    let live = true;
+    loadTreeKit().then(() => { if (live) setTreesHere(true); });
+    return () => { live = false; };
+  }, [planted, treesHere]);
   useEffect(() => {
     if (!present) return;
     // on the way down, and stopped there: Escape leaves Present, not the workspace
@@ -212,6 +221,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   useEffect(() => {
     const el = host.current, cv = canvas.current;
     if (!el || !cv) return;
+    // a planted model waits the moment it takes for the tree grower to arrive
+    if (planted && !treesHere) return;
     let model: SiteModel, stage: Stage;
     const light = quality === 'light';
     try {
@@ -305,6 +316,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       if (!active) return;
       stage.invalidateShadows();
       request();
+      // the planted model with its pictures arrived: the first full Rendering frame (Review is marked above)
+      if (look !== 'review' || present) markOnce(`render|${scene.identity.revision}|${quality}`, 'rendering-frame', { revision: scene.identity.revision, quality, present });
     });
     void stage.ready.then(refresh);
     return () => {
@@ -321,7 +334,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, lens, quality, look, present]);
+  }, [data, frame, lens, quality, look, present, planted, treesHere]);
 
   // Home designs → 3D: frame the previewed house once per token after the model includes it.
   // Do not re-frame on later rebuilds of the same token (avoids fighting the user).
@@ -416,6 +429,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
   // light, style and photoreal are for showing the plan, not for reading it
   const showy = look === 'rendering' || present;
+  // the look on screen: Present always shows the rendering, whatever the toggle was left on
+  const shownLook: 'review' | 'rendering' = showy ? 'rendering' : 'review';
   const hazards = new Set(data.polygons.map(p => p.hazard));
 
   return (
@@ -429,7 +444,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       )}
       {showy && (
       <div className="absolute top-2 left-2 flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1.5 text-[11px] text-gray-700 shadow-sm">
-        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium" data-testid="look-illustration" title="Materials, planting, light and the surroundings are illustration, not site data">Illustration</span>
+        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-medium" data-testid="look-illustration" title="Materials, planting, light and the surroundings are illustration, not site data">{present ? 'Illustration · Present' : 'Illustration'}</span>
         <select value={sunKey} onChange={e => setSunKey(e.target.value)} className="border border-gray-200 rounded px-1 py-0.5 bg-white" data-testid="sun-date" aria-label="Date of the sun study">
           {SUN_DATES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
         </select>
@@ -442,9 +457,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
         <div className="inline-flex rounded border border-gray-200 overflow-hidden mr-1" role="group" aria-label="View">
           {(['review', 'rendering'] as const).map(k => (
-            <button key={k} type="button" aria-pressed={look === k} onClick={() => setLook(k)} data-testid={`look-${k}`}
-              title={k === 'review' ? 'For reading the plan: the proposal stands out; the parcel, the envelope and the access are marked' : 'For showing the plan: materials, planting and the neighbourhood'}
-              className={`px-1.5 py-0.5 ${look === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+            <button key={k} type="button" aria-pressed={shownLook === k} onClick={() => { setLook(k); if (k === 'review') setPresent(false); }} data-testid={`look-${k}`}
+              title={k === 'review' ? (present ? 'Leave Present and read the plan: the proposal stands out; the parcel, the envelope and the access are marked' : 'For reading the plan: the proposal stands out; the parcel, the envelope and the access are marked') : 'For showing the plan: materials, planting and the neighbourhood'}
+              className={`px-1.5 py-0.5 ${shownLook === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
               {k === 'review' ? 'Review' : 'Rendering'}
             </button>
           ))}

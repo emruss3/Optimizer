@@ -70,3 +70,16 @@ describe('accessFinding', () => {
     expect(accessFinding({ frontage: null, engineAccess: null, flags: [], drives: null })).toBeNull();
   });
 });
+
+describe('reconcileBasisAccess (audit 9379472 F2: 2611 W Heiman)', () => {
+  it('corrects a connected claim when the drawn drives reach no bay', async () => {
+    const { reconcileBasisAccess } = await import('./accessFinding');
+    const out = reconcileBasisAccess('28 apartments · access connected · 47 stalls', { evaluated: true, bays: 4, served: 0 });
+    expect(out).toBe('28 apartments · access connected (engine summary — the drawn drives reach none of the 4 parking bays from the street) · 47 stalls');
+  });
+  it('leaves the line alone when some bay is reached or nothing was checked', async () => {
+    const { reconcileBasisAccess } = await import('./accessFinding');
+    expect(reconcileBasisAccess('access connected', { evaluated: true, bays: 4, served: 1 })).toBe('access connected');
+    expect(reconcileBasisAccess('access connected', { evaluated: false, bays: 4, served: 0 })).toBe('access connected');
+  });
+});

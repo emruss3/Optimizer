@@ -12,13 +12,28 @@ import type { ForegroundObstacle, Subject } from './shots';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
+import { CROWN_DRAWN } from '../scene/landscape';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
 import { carParts, carSpot, type CarSpot } from './cars';
 import { drape, gradeMassingSite, latticeHeight, lift, type Grade } from './terrain';
 import { approachCut, approachGeometry, cutGround, planCurb, streetDetails, type ApproachAnchor } from './streetDetails';
-import { Tree } from '@dgreenheck/ez-tree';
+import type { Tree as EzTree } from '@dgreenheck/ez-tree';
+
+// ez-tree carries its bark and leaf pictures inside it (about 4 MB): it is fetched only when a model
+// is planted (the Rendering look, the stills, the 4K pack), never for Review, which plants nothing.
+let TreeKit: typeof EzTree | null = null;
+let treeKitLoad: Promise<boolean> | null = null;
+/** Whether the tree grower is here; until it is, a model is planted with the lobed crowns. */
+export const treeKitLoaded = (): boolean => !!TreeKit;
+/** Fetch the tree grower once; resolves false (lobed crowns) if it cannot be fetched. */
+export function loadTreeKit(): Promise<boolean> {
+  if (TreeKit) return Promise.resolve(true);
+  return (treeKitLoad ??= import('@dgreenheck/ez-tree')
+    .then(m => { TreeKit = m.Tree; return true; })
+    .catch(err => { console.warn('[render] the tree grower could not load; lobed crowns stand in.', err); treeKitLoad = null; return false; }));
+}
 
 /** One part of the model as it is handed to an exporter: local metres, z up. */
 export interface ModelPart { owner: string; slot: string; geometry: THREE.BufferGeometry }
@@ -83,8 +98,9 @@ interface TreeForm {
  * is grown with few limbs: it is seen small, and there are many of them.
  */
 function grow(preset: string, seed: number, opacity: number, shrub = false): TreeForm | null {
+  if (!TreeKit) return null;
   try {
-    const tree = new Tree();
+    const tree = new TreeKit();
     tree.loadPreset(preset);
     tree.options.seed = seed;
     const o = tree.options;
@@ -881,7 +897,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // sized to the canopy the scene gives it. If none can be grown, the lobed
   // crown stands in.
   const opacity = opts.canopyOpacity ?? 1;
-  const kinds = ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
+  const kinds = opts.review ? [] : ['Ash Medium', 'Oak Medium', 'Ash Large', 'Oak Small', 'Ash Small'].map((p, i) => grow(p, 1200 + i * 37, opacity)).filter((t): t is TreeForm => !!t);
   const plantBudget = opts.light ? 48 : Infinity;
   const bushes = opts.review ? [] : ['Bush 1', 'Bush 3', 'Bush 1'].map((p, i) => grow(p, 400 + i * 11, 1, true)).filter((t): t is TreeForm => !!t);
   // the leaves and bark are pictures that arrive after the trees are grown
@@ -960,7 +976,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const GREENS: Array<readonly number[]> = [[255, 255, 255], [226, 242, 214], [246, 240, 212], [212, 234, 208], [238, 246, 224]];
     const ranked = standing.length > plantBudget && sitters().length ? [...standing].sort((a, b) => distance(a) - distance(b)) : standing;
     const detail = ranked === standing ? standing : ranked.slice(0, plantBudget);
-    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * 1.4, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
+    place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * CROWN_DRAWN, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
     if (ranked !== standing) plant(ranked.slice(plantBudget).map(([x, y, r]) => [x, y, r * 1.12]), 'site-trees', true);
     if (bushes.length) {
       const shrubs = opts.light && data.shrubs.length > 144 ? [...data.shrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : data.shrubs;

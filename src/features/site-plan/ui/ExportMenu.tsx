@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, FileText, Image as ImageIcon, Layers, ClipboardList, ChevronDown } from 'lucide-react';
+import { mark } from '../../../lib/timeline';
 
 export interface ExportChoice {
   key: 'site-plan' | '3d-image' | 'set' | 'report';
@@ -72,7 +73,7 @@ const ExportMenu: React.FC<{
                 data-testid={copy.testid}
                 disabled={!!c.blocked}
                 title={c.blocked ?? undefined}
-                onClick={() => { setOpen(false); c.run(); }}
+                onClick={() => { setOpen(false); mark('export-requested', { key: c.key, scheme: schemeName, revision }); c.run(); }}
                 className="w-full text-left px-3 py-2.5 flex items-start gap-3 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed border-b border-gray-100 last:border-0"
               >
                 <span className="mt-0.5 text-gray-500">{copy.icon}</span>
