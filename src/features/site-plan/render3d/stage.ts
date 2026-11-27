@@ -204,6 +204,8 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
       const px = sized();
       const target = new THREE.WebGLRenderTarget(px.x, px.y, { samples: 4, type: THREE.HalfFloatType });
       composer = new EffectComposer(renderer, target);
+      // The custom target and all subsequent sizes are already in physical pixels.
+      composer.setPixelRatio(1);
       renderPass = new RenderPass(scene, camera);
       ao = new GTAOPass(scene, camera, px.x, px.y);
       ao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.4, thickness: 1.6, scale: 1.5, samples: 16, distanceFallOff: 1, screenSpaceRadius: false });
@@ -234,7 +236,7 @@ export function createStage(canvas: HTMLCanvasElement | undefined, model: SiteMo
     setSize(width, height) {
       renderer.setSize(width, height, false);
       const px = sized();
-      composer?.setSize(px.x / renderer.getPixelRatio(), px.y / renderer.getPixelRatio());
+      composer?.setSize(px.x, px.y);
     },
     render(camera, moving = false) {
       if (!moving && !composer && opts.occlusion !== false && !opts.light && !renderPass) build(camera);
