@@ -300,6 +300,11 @@ export function buildDrawingScene(input: SceneInput): DrawingScene | null {
       housing,
     };
     const full: SceneBuilding = { ...b, display: describe(b) };
+    // the engine's clubhouse on this building's ground floor (amenity_program_ground_floor_v1) is part of the building
+    if (p.groundFloorUse === 'amenity') {
+      const sf = num(p.groundFloorAmenitySqFt);
+      full.display = { ...full.display, use: `${full.display.use} · ${typeof p.groundFloorAmenityName === 'string' ? p.groundFloorAmenityName : 'Clubhouse'} on the ground floor${sf ? ` (${fmt(sf)} sf)` : ''}` };
+    }
     features.push(full);
     buildings.push(full);
   }

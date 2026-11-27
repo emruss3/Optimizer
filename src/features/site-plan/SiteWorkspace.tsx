@@ -1046,8 +1046,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       return ` · ${label}: ${cleaned.join(', ')}`;
     })();
     const pick = resp.ai_pick;
-    const aiNote = pick?.picked === 'model' && pick.engine && pick.winner
-      ? ` · design model layout (${pick.model_version ?? 'model'}): ${pick.winner.n_fail ?? '?'} design flags vs ${pick.engine.n_fail ?? '?'} for the engine's layout, ${pick.winner.units ?? '?'} vs ${pick.engine.units ?? '?'} homes`
+    const aiNote = (pick?.picked === 'model' || pick?.picked === 'podium') && pick.engine && pick.winner
+      ? ` · ${pick.picked === 'podium' ? 'podium layout (parking in a garage under the building)' : `design model layout (${pick.model_version ?? 'model'})`}: ${pick.winner.n_fail ?? '?'} design flags vs ${pick.engine.n_fail ?? '?'} for the engine's layout, ${pick.winner.units ?? '?'} vs ${pick.engine.units ?? '?'} homes`
       : '';
     setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}${relaxNote}${aiNote}`);
     // A3: value the scheme against local sales — the margin ticks live
@@ -1068,8 +1068,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (freshDefault) {
       void engineLong<{ ai_pick?: MfAiPick }>('fn_mf_ai_design', { p_ogc_fid: contextOgcFid }).then(r => {
         if (stale()) return;
-        if (r.data?.ai_pick?.picked === 'model') {
-          void runServerMfPlan({ seed: 1, pins: [], action: 'The design model found a better layout' });
+        const won = r.data?.ai_pick?.picked;
+        if (won === 'model' || won === 'podium') {
+          void runServerMfPlan({ seed: 1, pins: [], action: won === 'podium' ? 'A podium layout (parking in a garage) fits more homes' : 'The design model found a better layout' });
         }
       });
     }
