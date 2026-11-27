@@ -107,8 +107,72 @@ for (const p of PARCELS) {
   results.push(row);
   await context.close();
 }
+// The audit's small laptop (F5): at 1280×720, how much of the window the drawing gets, what stands above
+// it, and how much of it the overlays (toolbar, legend, title) cover. Measured, not judged.
+const layout = [];
+for (const p of PARCELS) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); } catch { /* private */ } });
+  const page = await context.newPage();
+  const row = { parcel: p.name };
+  try {
+    await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const box = page.locator('[data-testid="start-search"]').first();
+    await box.waitFor({ state: 'visible', timeout: 30000 });
+    await box.fill(p.apn ?? p.address);
+    await page.locator('[data-testid="start-results"] li button').first().click({ timeout: 20000 });
+    await page.getByText('Site Planner', { exact: true }).first().click({ timeout: 20000 });
+    const t0 = Date.now();
+    while (Date.now() - t0 < 150000) {
+      const tl = await page.evaluate(() => window.__ppTimeline ?? []);
+      if (tl.some(m => m.name === 'plan-revision')) break;
+      await page.waitForTimeout(1500);
+    }
+    await page.waitForTimeout(4000);
+    Object.assign(row, await page.evaluate(() => {
+      const vis = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
+      const drawings = [...document.querySelectorAll('svg, canvas')].filter(vis).map(el => ({ el, r: el.getBoundingClientRect() }))
+        .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
+      const d = drawings[0];
+      if (!d) return { drawing: null };
+      const R = d.r;
+      // bands above the drawing that span most of its width
+      const bands = [...document.body.querySelectorAll('div, header, nav, section')].filter(vis).map(el => ({ el, r: el.getBoundingClientRect() }))
+        .filter(({ r }) => r.bottom <= R.top + 1 && r.width >= R.width * 0.6 && r.height >= 14 && r.height < 300)
+        .map(({ el, r }) => ({ id: el.getAttribute('data-testid') ?? el.className.toString().slice(0, 40), top: Math.round(r.top), h: Math.round(r.height) }));
+      // overlays standing over the drawing
+      let covered = 0;
+      const overlays = [];
+      for (const el of document.querySelectorAll('div, button, aside')) {
+        if (!vis(el) || el.contains(d.el)) continue;
+        const cs = getComputedStyle(el);
+        if (cs.position !== 'absolute' && cs.position !== 'fixed') continue;
+        const r = el.getBoundingClientRect();
+        const w = Math.max(0, Math.min(r.right, R.right) - Math.max(r.left, R.left)), h = Math.max(0, Math.min(r.bottom, R.bottom) - Math.max(r.top, R.top));
+        if (w * h < 400) continue;
+        // document order: an overlay's own children come after it and are not counted again
+        if (overlays.some(o => o.el.contains(el))) continue;
+        overlays.push({ el, id: el.getAttribute('data-testid') ?? el.className.toString().slice(0, 40), area: Math.round(w * h) });
+        covered += w * h;
+      }
+      return {
+        drawing: { left: Math.round(R.left), top: Math.round(R.top), w: Math.round(R.width), h: Math.round(R.height), shareOfWindow: Math.round((R.width * R.height) / (innerWidth * innerHeight) * 100) },
+        bandsAbove: bands.sort((a, b) => a.top - b.top).slice(0, 12),
+        overlaysCoverPct: Math.round(Math.min(1, covered / (R.width * R.height)) * 100),
+        overlays: overlays.sort((a, b) => b.area - a.area).slice(0, 8).map(({ id, area }) => ({ id, area })),
+      };
+    }));
+    await page.screenshot({ path: path.join(out, `${p.id}-1280x720.png`) });
+  } catch (e) {
+    row.problem = String(e.message ?? e).slice(0, 200);
+  }
+  layout.push(row);
+  await context.close();
+}
+for (const l of layout) console.log(`LAYOUT 1280×720 ${l.parcel} | ${JSON.stringify(l)}`);
+
 await browser.close();
-fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results }, null, 2) + '\n');
+fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, layout }, null, 2) + '\n');
 for (const r of results) {
   console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
