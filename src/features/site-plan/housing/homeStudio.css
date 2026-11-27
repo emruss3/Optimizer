@@ -447,3 +447,56 @@
   line-height: 1.4;
   color: #5d6a60;
 }
+
+/* one target lot for every tab (handoff 11-27) */
+.home-target-lot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 20px;
+  border-bottom: 1px solid #dfe3dc;
+  background: #fbfbf7;
+  font-size: 13px;
+}
+.home-target-lot select {
+  margin-left: 4px;
+  padding: 3px 6px;
+}
+.home-target-count {
+  color: #56695d;
+  font-size: 12px;
+}
+.home-fit-badge {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+.home-fit-fits { background: #e3f1e6; color: #1f5c33; }
+.home-fit-no-fit { background: #fbeee2; color: #8a4513; }
+.home-fit-other-typology { background: #eceef0; color: #4a5560; }
+.home-fit-no-lot { background: #eceef0; color: #4a5560; }
+.home-target-name {
+  font-weight: 600;
+  margin-right: 8px;
+}
+.home-compatible {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 6px 0;
+  font-size: 12.5px;
+}
+.home-link {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  color: #1f4f8a;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.home-mine-none p { margin: 0 0 10px; }

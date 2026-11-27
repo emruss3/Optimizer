@@ -49,7 +49,8 @@ export function imperviousAreaSf(elements: Element[]): number {
   const first = polys[0]![0]![0]!;
   const f = createGroundFrame(first[0]!, first[1]!);
   try {
-    const u = polygonClipping.union(...(polys as [Poly, ...Poly[]]) as never) as unknown as Poly[];
+    const [head, ...rest] = polys as [Poly, ...Poly[]];
+    const u = polygonClipping.union(head as never, ...(rest as never[])) as unknown as Poly[];
     return areaSf(u, f);
   } catch {
     return areaSf(polys, f); // a degenerate ring: sum without the union rather than nothing

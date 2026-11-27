@@ -8,6 +8,7 @@ import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import type { HomePlacement } from './housing/placement';
 import { residentialHomes } from './housing/placement';
 import { HOME_DESIGNS } from './housing/originalDesigns';
+import { projectPlansFor } from './housing/projectPlans';
 import {
   HOME_DESIGNS_NONE_FIT_TITLE,
   schemeAllowsHomeDesigns,
@@ -3583,6 +3584,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
   }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows, homeHeightLimitFt]);
   // The reasons nothing fits, read only when asked (a 79-lot plan is checked on a sample of 40 lots).
+  // designs linked to this parcel's project ("My plans"); none until the project's parcels are mapped
+  const projectPlans = useMemo(() => projectPlansFor(parcelIdStr), [parcelIdStr]);
   const [homesWhyOpen, setHomesWhyOpen] = useState(false);
   const homesWhy = useMemo(
     () => (homesWhyOpen && homeDesignsUi.show && !homeDesignsUi.enabled
@@ -3839,7 +3842,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // 9379472: Main's 252 stalls cannot read verified until routes prove them)
       const structured = displayElements.some(e => e.type === 'parking' && e.properties?.structured === true);
       const traced = !structured && displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated && mfAccess.stallsServed != null && mfAccess.served >= mfAccess.bays;
-      return traced ? { ...metrics, stallsReachable: mfAccess.stallsServed } : metrics;
+      return traced ? { ...metrics, stallsReachable: mfAccess.stallsServed as number } : metrics;
     }
     // adequacy stands on the reachable supply; the count keeps its own name
     return { ...metrics, stallsProvided: stallsUsable, stallsReachable: stallsUsable };
@@ -4484,7 +4487,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           maxHeightFt={homeHeightLimitFt}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
-          designs={homeDesignsUi.eligible}
+          designs={HOME_DESIGNS}
+          projectDesignIds={projectPlans?.designIds ?? []}
+          projectName={projectPlans?.project.name ?? null}
           stockPlans={sfStockDesigns}
           stockSetbacks={homeSetbacks}
           stockEligibilityRows={stockRows}

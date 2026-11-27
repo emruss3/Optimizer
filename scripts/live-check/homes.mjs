@@ -84,7 +84,10 @@ for (const p of PARCELS) {
       const homesBtn = page.locator('[data-testid="home-designs"]').first();
       row.homesButton = { visible: await homesBtn.isVisible().catch(() => false), disabled: await homesBtn.isDisabled().catch(() => null), title: await homesBtn.getAttribute('title').catch(() => null) };
       await homesBtn.click();
-      const lotSel = page.locator('[data-testid="home-stock-lot"]').first();
+      // the studio opens on the authored catalogue (handoff 11-27); stock is its own tab, with the shared target lot
+      row.studioOpensOn = await page.locator('[role="tab"][aria-selected="true"]').first().innerText().catch(() => null);
+      await page.locator('[data-testid="home-tab-stock"]').first().click();
+      const lotSel = page.locator('[data-testid="home-target-lot"]').first();
       await lotSel.waitFor({ state: 'visible', timeout: 30000 }).catch(async (e) => {
         row.dialog = (await page.locator('[role="dialog"]').first().innerText().catch(() => 'no dialog')).replace(/\s+/g, ' ').slice(0, 300);
         throw e;
@@ -120,6 +123,7 @@ for (const p of PARCELS) {
       const used = new Set();
       const applyOn = async (house, lock = false) => {
         await homesBtn.click();
+        await page.locator('[data-testid="home-tab-stock"]').first().click();
         await lotSel.waitFor({ state: 'visible', timeout: 30000 });
         await lotSel.selectOption(house);
         const names = await page.locator('nav[aria-label="Buildable stock plans"] button strong').allInnerTexts();
@@ -152,6 +156,7 @@ for (const p of PARCELS) {
       if (row.mix) {
         const before = (await evidence(page))?.homes?.pads ?? [];
         await homesBtn.click();
+        await page.locator('[data-testid="home-tab-stock"]').first().click();
         await lotSel.waitFor({ state: 'visible', timeout: 30000 });
         const first = row.rows.find(r => r.eligible.length >= 2);
         await lotSel.selectOption(first.house);

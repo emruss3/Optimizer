@@ -13,7 +13,7 @@ const stockWithoutElevations: HomeDesign = {
 
 /** Studio opens on Buildable stock; Elevations live under Concept studies. */
 function openConceptElevations() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Concept studies' }));
+  fireEvent.click(screen.getByRole('tab', { name: /Authored catalog/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Elevations' }));
 }
 
