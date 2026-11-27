@@ -106,6 +106,9 @@ import { accessBreak, formatGapFt, mfAccessSummary } from './api/mfAccess';
 import SchemesRail, { schemeNames } from './ui/SchemesRail';
 import SchemeCompare from './ui/SchemeCompare';
 import ExportMenu from './ui/ExportMenu';
+import PlanFeedback from './ui/PlanFeedback';
+import { canvasToJpeg } from './render3d/photoreal';
+import { fetchFeedbackContext, feedbackSession, guidedVerdict, mergeChanges, planForFeedback, productOf, describeChanges, startingChanges, type FeedbackChanges } from './api/planFeedback';
 import AuthChip from '../../components/AuthChip';
 import { SIGN_IN_REQUIRED_MSG } from '../../lib/sitePlanStorage';
 import PlanActions, { type PlanChange, type PlanSummary } from './ui/PlanActions';
@@ -3704,6 +3707,84 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
 
   // One selection for the plan and the 3D view, remembered for this parcel and scheme.
   const sceneSelectedIds = useMemo(() => selectionFor(scene, sceneSelection), [scene, sceneSelection]);
+  // ── Plan feedback (owner, 11-27): a note to Claude, its reading stored with its scope, its settings tried or kept
+  const feedbackZoning = typeof parcel.zoning === 'string' ? parcel.zoning : null;
+  const feedbackProduct = sfV1Summary ? 'single_family' : productOf(planLineage?.generatorVersion ?? null);
+  const feedbackCanApply = !!sfV1Summary && sfV1Route(feedbackZoning) === 'sf_v1';
+  const feedbackSelection = useMemo(() => {
+    const id = sceneSelectedIds.length === 1 ? sceneSelectedIds[0]! : null;
+    if (!id || !scene) return null;
+    const f = scene.buildings.find(b => b.id === id) ?? scene.features.find(x => x.id === id);
+    return f ? { id, label: f.label ?? f.name?.split(' · ')[0] ?? null, type: f.role } : { id, label: null, type: 'feature' };
+  }, [sceneSelectedIds, scene]);
+  const feedbackPlan = useCallback(() => planForFeedback({
+    address: parcel.address ?? null, zoning: feedbackZoning, generator: planLineage?.generatorVersion ?? null,
+    revision: scene?.identity.revision ?? null, view: viewMode, summary: sfV1Summary, options: sfV1OverrideRef.current,
+    buildings: (scene?.buildings ?? []).map(b => ({ use: String(b.use), label: b.label ?? null, floors: b.floors?.value ?? null })),
+    selected: feedbackSelection,
+    cameraBasis: viewMode === '3d' ? (() => { try { return JSON.parse(document.querySelector('[data-testid="massing-3d"]')?.getAttribute('data-shot') ?? 'null')?.basis ?? null; } catch { return null; } })() : null,
+  }), [parcel.address, feedbackZoning, planLineage, scene, viewMode, sfV1Summary, feedbackSelection]);
+  const feedbackCapture = useCallback((): string | null => {
+    const cv = (viewMode === '3d' ? document.querySelector('[data-testid="massing-3d"] canvas') : document.querySelector('canvas[data-export="site-plan"]')) as HTMLCanvasElement | null;
+    if (!cv || !cv.width || !cv.height) return null;
+    try {
+      const url = canvasToJpeg(cv, 1280, 0.82);
+      // a 3D canvas read between frames comes back blank: send no picture rather than an empty one
+      return url.length > 20000 ? url : null;
+    } catch {
+      return null;
+    }
+  }, [viewMode]);
+  /** Claude's changes take effect at once (owner, 11-27): the plan is redrawn with them; returns what Undo goes back to. */
+  const applyFeedbackChanges = useCallback((changes: FeedbackChanges): SfV1Options => {
+    const before = sfV1OverrideRef.current;
+    handleSfV1Override(mergeChanges(before, changes));
+    return before;
+  }, [handleSfV1Override]);
+  const revertFeedbackChanges = useCallback((before: unknown) => {
+    handleSfV1Override((before as SfV1Options | null) ?? {});
+  }, [handleSfV1Override]);
+  // The generative loop (owner, 11-27: "use that guidance on future sites"): a site's first by-right plan is redrawn
+  // from the settings accepted on earlier sites whose note reaches it (its district, single-family, every site) and
+  // from its own kept settings. The guided plan stays only when it keeps every home and fails no more checks
+  // (maximize units, by right); otherwise the site goes back to its default plan and says why.
+  const guidedForRef = useRef<string | null>(null);
+  const guidedCheckRef = useRef<{ parcel: string; base: { lots: number; fails: string[] }; baseSummary: SfV1Summary; before: SfV1Options; asked: SfV1Options; count: number; lines: string[]; lessons: string[] } | null>(null);
+  const [guided, setGuided] = useState<{ parcel: string; state: 'on' | 'skipped'; why: string; count: number; lines: string[]; lessons: string[]; before: SfV1Options } | null>(null);
+  useEffect(() => {
+    if (!feedbackCanApply || contextOgcFid == null || !sfV1Summary || guidedForRef.current === parcelIdStr) return;
+    guidedForRef.current = parcelIdStr;
+    // a plan the user asked for (an override, a pattern) is theirs: guidance starts only the default plan
+    if (isOverride(sfV1OverrideRef.current) || sfV1OverrideRef.current.pattern) return;
+    const at = parcelIdStr, baseSummary = sfV1Summary, before = sfV1OverrideRef.current;
+    void (async () => {
+      if (!(await feedbackSession())) return;
+      const ctx = await fetchFeedbackContext(contextOgcFid, feedbackZoning, 'single_family');
+      const start = startingChanges(ctx);
+      if (!start.changes || guidedForRef.current !== at) return;
+      const asked = mergeChanges(before, start.changes);
+      guidedCheckRef.current = {
+        parcel: at, base: { lots: baseSummary.lots, fails: baseSummary.fails }, baseSummary, before, asked,
+        count: start.ids.length, lessons: start.lessons, lines: describeChanges(start.changes, { product: 'single_family', patterns: [], settings: [] }),
+      };
+      handleSfV1Override(asked);
+    })();
+  }, [feedbackCanApply, contextOgcFid, sfV1Summary, parcelIdStr, feedbackZoning, handleSfV1Override]);
+  useEffect(() => {
+    const c = guidedCheckRef.current;
+    if (!c || !sfV1Summary || sfV1Summary === c.baseSummary) return;
+    // only the answer to the guided request counts: another parcel, or another request since, drops the check
+    if (c.parcel !== parcelIdStr || sfV1OverrideRef.current !== c.asked) { guidedCheckRef.current = null; return; }
+    guidedCheckRef.current = null;
+    const verdict = guidedVerdict(c.base, { lots: sfV1Summary.lots, fails: sfV1Summary.fails, status: sfV1Summary.status });
+    setGuided({ parcel: c.parcel, state: verdict.keep ? 'on' : 'skipped', why: verdict.why, count: c.count, lines: c.lines, lessons: c.lessons, before: c.before });
+    if (!verdict.keep) handleSfV1Override(c.before);
+  }, [sfV1Summary, parcelIdStr, handleSfV1Override]);
+  const dropGuidance = useCallback(() => {
+    const g = guided;
+    setGuided(null);
+    if (g?.state === 'on') handleSfV1Override(g.before);
+  }, [guided, handleSfV1Override]);
   const sceneKey = scene?.identity.key ?? null;
   const handleSceneSelection = useCallback((ids: string[]) => {
     if (!sceneKey) return;
@@ -4533,6 +4614,30 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             </button>
           )}
         </div>
+        {guided?.parcel === parcelIdStr && (
+          <span
+            className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11.5px] ${guided.state === 'on' ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-amber-300 bg-amber-50 text-amber-900'}`}
+            data-testid="feedback-guidance" data-state={guided.state}
+            title={[`From ${guided.count} earlier note${guided.count === 1 ? '' : 's'}: ${guided.lines.join('; ')}`, ...guided.lessons.map(l => `• ${l}`)].join('\n')}
+          >
+            {guided.state === 'on' ? `Guided by ${guided.count} earlier note${guided.count === 1 ? '' : 's'} · ${guided.why}` : `Earlier guidance not used here: ${guided.why}`}
+            <button type="button" className="underline" onClick={dropGuidance}>{guided.state === 'on' ? 'Use the default plan' : 'OK'}</button>
+          </span>
+        )}
+        <PlanFeedback
+          ogcFid={contextOgcFid}
+          zoning={typeof parcel.zoning === 'string' ? parcel.zoning : null}
+          product={feedbackProduct}
+          generator={planLineage?.generatorVersion ?? null}
+          revision={scene?.identity.revision ?? null}
+          view={viewMode}
+          selection={feedbackSelection}
+          plan={feedbackPlan}
+          capture={feedbackCapture}
+          canApply={feedbackCanApply}
+          onApply={applyFeedbackChanges}
+          onRevert={revertFeedbackChanges}
+        />
         <ExportMenu
           address={parcel.address ?? parcelIdStr}
           schemeName={exportSchemeName}

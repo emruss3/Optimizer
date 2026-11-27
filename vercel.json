@@ -3,6 +3,9 @@
   "functions": {
     "api/photoreal.js": {
       "maxDuration": 60
+    },
+    "api/plan-feedback.js": {
+      "maxDuration": 60
     }
   }
 }
