@@ -12,7 +12,7 @@ import { HOME_DESIGNS } from './originalDesigns';
 export interface HomeRow {
   houseId: string; lot: string; design: string; kind: 'stock' | 'concept' | 'engine';
   beds: number | null; footprintSf: number | null;
-  /** heated area the design states (stock listing, concept gross); null when not known (an engine pad) */
+  /** Conditioned area stated by the design, not gross area that includes the garage. */
   heatedSf: number | null;
 }
 export interface DesignTotal { design: string; kind: HomeRow['kind']; homes: number; lots: string[]; footprintSf: number; heatedSf: number | null }
@@ -43,7 +43,7 @@ export function homesSchedule(elements: Element[]): { rows: HomeRow[]; totals: D
     const design = concept ? `${concept.name} (concept)` : stock ? stock.planNumber : typeof p.housePlan === 'string' ? `${p.housePlan} (engine)` : 'generic pad (engine)';
     const kind: HomeRow['kind'] = concept ? 'concept' : stock ? 'stock' : 'engine';
     const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null);
-    const heatedSf = concept ? num(p.homeGrossSf) : stock ? num(p.housingHeatedSf) ?? stock.heatedSf : null;
+    const heatedSf = concept ? num(p.housingHeatedSf) : stock ? num(p.housingHeatedSf) ?? stock.heatedSf : null;
     return { houseId: h.id, lot: parentLotOf(h, elements)?.name ?? h.name ?? h.id, design, kind, beds: num(p.houseBeds), footprintSf: num(p.houseFootprintSf) ?? num(p.areaSqFt), heatedSf };
   });
   const order = (s: string) => Number(/(\d+)/.exec(s)?.[1] ?? 0);

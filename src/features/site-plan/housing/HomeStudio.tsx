@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Element } from '../../../engine/types';
 import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
-import { hasPhotorealElevation, photorealElevationSrc } from './elevationAssets';
+import { exteriorRendering, hasPhotorealElevation, interiorRenderings, photorealElevationSrc } from './elevationAssets';
 import { HomePlan, Elevation } from './PlanIllustrations';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
@@ -16,6 +16,7 @@ type StudioMode = 'stock' | 'concept';
 
 interface Props {
   siteBoundary?: Element['geometry'] | null;
+  maxHeightFt?: number | null;
   elements: Element[];
   selected?: string | null;
   /** Scheme-eligible concept studies (#194). Defaults to the full concept catalogue. */
@@ -78,6 +79,7 @@ export default function HomeStudio({
   onClose,
   onPreview,
   siteBoundary,
+  maxHeightFt,
   designs = HOME_DESIGNS,
   stockPlans,
   stockSetbacks = DEFAULT_HOME_SETBACKS,
@@ -97,7 +99,7 @@ export default function HomeStudio({
   const [stockIndex, setStockIndex] = useState(0);
   const [index, setIndex] = useState(0),
     [level, setLevel] = useState(0),
-    [view, setView] = useState<'Exterior' | 'Plans' | 'Elevations'>('Exterior');
+    [view, setView] = useState<'Exterior' | 'Plans' | 'Elevations' | 'Interiors'>('Exterior');
   const [side, setSide] = useState<Face>('front'),
     // Diagram is the plan-derived default; Photoreal is an opt-in character view.
     [elevationMode, setElevationMode] = useState<'photo' | 'diagram'>('diagram'),
@@ -133,8 +135,8 @@ export default function HomeStudio({
   const catalogue = useMemo(() => {
     if (!designs.length) return [] as HomeDesign[];
     if (!selectedHouse) return [...designs];
-    return designsFittingHouse(designs, selectedHouse, conceptBase, siteBoundary);
-  }, [designs, selectedHouse, conceptBase, siteBoundary]);
+    return designsFittingHouse(designs, selectedHouse, conceptBase, siteBoundary, maxHeightFt);
+  }, [designs, selectedHouse, conceptBase, siteBoundary, maxHeightFt]);
   const emptyEligible = catalogue.length === 0;
 
   // Buildable stock for the selected lot: the shared eligibility result, so
@@ -185,6 +187,9 @@ export default function HomeStudio({
 
   const plan = stock[Math.min(stockIndex, Math.max(stock.length - 1, 0))];
   const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))];
+  const interiors = home ? interiorRenderings(home.id) : [];
+  const views = ['Exterior', 'Plans', 'Elevations', ...(interiors.length ? ['Interiors'] as const : [])] as const;
+  const shownView = view === 'Interiors' && !interiors.length ? 'Exterior' : view;
   const key = (home?.id ?? '') + '|' + houseId;
   const canShowPhotoreal = !!home && hasPhotorealElevation(home.id);
   const showPhotoreal = elevationMode === 'photo' && canShowPhotoreal;
@@ -202,8 +207,8 @@ export default function HomeStudio({
       setFit(null);
       return;
     }
-    setFit({ key, result: placeHome(home, selectedHouse, conceptBase, siteBoundary) });
-  }, [mode, key, home, selectedHouse, conceptBase, siteBoundary]);
+    setFit({ key, result: placeHome(home, selectedHouse, conceptBase, siteBoundary, maxHeightFt) });
+  }, [mode, key, home, selectedHouse, conceptBase, siteBoundary, maxHeightFt]);
 
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
@@ -554,16 +559,26 @@ export default function HomeStudio({
                       </span>
                     </div>
                     <div className="home-tabs">
-                      {(['Exterior', 'Plans', 'Elevations'] as const).map((v) => (
-                        <button key={v} type="button" aria-pressed={v === view} onClick={() => setView(v)}>
+                      {views.map((v) => (
+                        <button key={v} type="button" aria-pressed={v === shownView} onClick={() => setView(v)}>
                           {v}
                         </button>
                       ))}
                     </div>
-                    {view === 'Exterior' ? (
+                    {shownView === 'Interiors' ? (
+                      <div>
+                        <p className="home-exterior-note">Level 2 is 19′-9¼″ across the outside walls. Clear room widths are smaller. These are illustrative studies, not dimensional or construction drawings.</p>
+                        {interiors.map(({ name, src }) => (
+                          <figure key={src}>
+                            <img src={src} alt={home.name + ', illustrative ' + name.toLowerCase()} loading="lazy" />
+                            <figcaption className="home-exterior-note">{name} · photoreal character study</figcaption>
+                          </figure>
+                        ))}
+                      </div>
+                    ) : shownView === 'Exterior' ? (
                       <figure>
                         <img
-                          src={'/home-designs/' + home.id + '.webp'}
+                          src={exteriorRendering(home.id)}
                           alt={home.name + ', illustrative character exterior (not generated from this plan)'}
                         />
                         <figcaption className="home-exterior-note">
@@ -571,7 +586,7 @@ export default function HomeStudio({
                           photo of a built home.
                         </figcaption>
                       </figure>
-                    ) : view === 'Plans' ? (
+                    ) : shownView === 'Plans' ? (
                       <>
                         <div className="home-options">
                           {home.levels.map((l, i) => (

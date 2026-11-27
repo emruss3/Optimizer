@@ -33,14 +33,14 @@ export function withoutHomeParts(elements: Element[], houseId: string): Element[
  * Commit a concept placement on one house: the placement's plan, with any parts an earlier
  * concept left on that house removed first (placeHome was asked on the plan without them).
  */
-export function commitConcept(designId: string, houseId: string, elements: Element[], siteBoundary?: Element['geometry'] | null):
+export function commitConcept(designId: string, houseId: string, elements: Element[], siteBoundary?: Element['geometry'] | null, maxHeightFt?: number | null):
   { ok: true; elements: Element[]; name: string } | { ok: false; reason: string } {
   const design = HOME_DESIGNS.find(d => d.id === designId);
   if (!design) return { ok: false, reason: 'that concept study is not in the catalogue' };
   const base = withoutHomeParts(elements, houseId);
   const house = base.find(e => e.id === houseId);
   if (!house) return { ok: false, reason: 'that house is no longer on the plan — the scheme was redrawn' };
-  const fit = placeHome(design, house, base, siteBoundary);
+  const fit = placeHome(design, house, base, siteBoundary, maxHeightFt);
   if (!fit.placement) return { ok: false, reason: fit.reason ?? `${design.name} does not fit this lot` };
   return { ok: true, elements: fit.placement.elements, name: design.name };
 }
@@ -104,7 +104,7 @@ export function assignmentsFromElements(elements: Element[]): HomeAssignment[] {
 }
 
 /** Put the remembered choices back onto a new plan where they still fit. */
-export function carryAssignments(assignments: HomeAssignment[], elements: Element[], setbacks: Setbacks): CarryResult {
+export function carryAssignments(assignments: HomeAssignment[], elements: Element[], setbacks: Setbacks, maxHeightFt?: number | null): CarryResult {
   let els = elements;
   const kept: CarryResult['kept'] = [];
   const lost: CarryResult['lost'] = [];
@@ -124,7 +124,7 @@ export function carryAssignments(assignments: HomeAssignment[], elements: Elemen
       continue;
     }
     const res = a.kind === 'concept'
-      ? (() => { const c = commitConcept(a.designId, house.id, els); return c.ok ? { ok: true as const, elements: c.elements, lotLabel: parentLotOf(house, els)?.name ?? a.lotLabel } : c; })()
+      ? (() => { const c = commitConcept(a.designId, house.id, els, undefined, maxHeightFt); return c.ok ? { ok: true as const, elements: c.elements, lotLabel: parentLotOf(house, els)?.name ?? a.lotLabel } : c; })()
       : applyStockDesignToHouse({ designId: a.designId, houseId: house.id, elements: els, setbacks });
     if (!res.ok) {
       lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: res.reason, locked: !!a.lock });
