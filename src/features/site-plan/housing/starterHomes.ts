@@ -8,7 +8,8 @@ import { placeHome, residentialHomes } from './placement';
 // architect-issued plans. Keep the automatic solver independent of stock listings,
 // the project's proposed studies and any geometry that hasn't cleared the same fit as Apply.
 const STARTERS = ['tn-waverly-lane-v1', 'tn-lockeland-cottage-v1', 'tn-court-cottage-v1', 'tn-harpeth-ranch-v1'];
-const MAX_PILOT_LOTS = 12;
+// about 50 ms a lot on a laptop: up to 24 lots stays near a second at solve time; larger plans keep their pads (drawn as houses)
+const MAX_PILOT_LOTS = 24;
 
 export const PROVISIONAL_PAD = 'Provisional building pad';
 
