@@ -1,0 +1,5 @@
+# The Lanes photo-informed frontage study
+
+Run Vite locally and open project-relative `/qa/lanes-live/`. The harness mounts the product's RenderView. The same path is included in Vercel Preview, but not in production builds. Six schematic lots use the normal B2/E2/F2 placement path and distinct front and rear access. The controlled ground is flat and the widths and phase do not describe the photographed block.
+
+Compare the front fascia, window relief, light under the upper-floor projections and the difference between balcony, contrasting-trim and quieter fronts. Use Focus on each home, then inspect Street, Garage, and a side orbit. The target reference is the owner's DJI_0314 raised front street view and DJI_0310 court image. Photos stay outside the repo. Door and garage coordinates, roof crest, plan bounds and quantities must not change. Do not assign a photo-visible dormer or change roof proportions until lot-to-elevation records identify its house and revision.

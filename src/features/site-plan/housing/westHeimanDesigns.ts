@@ -124,6 +124,9 @@ function westHeiman(variant: 'B2' | 'E2' | 'F2'): HomeDesign {
       { room: 'Garage', face: 'back', at: w / 2, width: 16, kind: 'garage' },
     ],
     porches: [], parking: 'rear', cars: 2,
+    // Reference intent from The Lanes street footage. The installed elevations
+    // have not been crosswalked to lot numbers; do not infer dormers from this.
+    frontFinishStudy: e ? 'contrasting-trim' : f ? 'quiet-trim' : 'recessed-balcony',
     rearLoadPrecedent: { source: 'The Bradley Projects · West Heiman · ' + sheet + ' · Revision 14 (2026-09-22)' },
     ...(e ? { sideWindows: e2Windows, garageDoor: 'solid-sectional' as const } : {}),
     ...(f ? { roofBulkhead: { rect: [w - 5.75, 6, 5, 14], heightFt: 7 } as NonNullable<HomeDesign['roofBulkhead']> } : {}),

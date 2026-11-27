@@ -190,3 +190,20 @@ describe('project plan links', () => {
     expect(projectPlansFor('1', [{ projectId: 'p', name: 'P', parcels: ['1'], designIds: ['x'], missing: null }])?.designIds).toEqual(['x']);
   });
 });
+
+it('applies photo-informed frontage detail without changing glazing, door anchors or roof height', async () => {
+  const { drawHome } = await import('./architecture');
+  const { Kit } = await import('../ui/architecture/kit');
+  for (const design of WEST_HEIMAN_DESIGNS) {
+    const before = { ...design };
+    delete before.frontFinishStudy;
+    const prior = drawHome(new Kit('same', 'before'), before);
+    const updated = drawHome(new Kit('same', 'before'), design);
+    expect(updated.glass).toEqual(prior.glass);
+    expect(updated.slabs.filter(s => s.approach)).toEqual(prior.slabs.filter(s => s.approach));
+    expect(updated.slabs.length).toBeGreaterThan(prior.slabs.length);
+    expect(updated.flats.length).toBeGreaterThan(prior.flats.length);
+    expect(roofHeight(design)).toBe(roofHeight(before));
+    expect(designBounds(design)).toEqual(designBounds(before));
+  }
+});

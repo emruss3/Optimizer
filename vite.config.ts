@@ -30,6 +30,12 @@ export default defineConfig({
     minify: 'esbuild',
     target: 'es2020',
     rollupOptions: {
+      // The photo-matching test runs the real renderer on a labelled fixture.
+      // Keep that page out of the production bundle and navigation.
+      ...(process.env.VERCEL_ENV === 'preview' ? { input: {
+        app: path.resolve(__dirname, './index.html'),
+        lanesStudy: path.resolve(__dirname, './qa/lanes-live/index.html'),
+      } } : {}),
       output: {
         manualChunks(id) {
           // Dynamic imports should be separate chunks

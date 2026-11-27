@@ -45,6 +45,8 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
         : finish === 'stone'
           ? mat(175, 162, 141, 'concrete')
           : color(body, surface[finish]);
+  const streetFinish = home.frontFinishStudy;
+  const streetFascia = streetFinish === 'recessed-balcony' ? FRAME : streetFinish === 'quiet-trim' ? tone(trim, 0.76) : trim;
   const ring = ([x, y, w, d]: Rect) => f.ring(x * FT, (x + w) * FT, y * FT, (y + d) * FT);
   let roomViews = 0;
   const dressed = new Set<string>();
@@ -81,7 +83,8 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
       const wing = home.volumes.find(
         (v) => floor >= v.first && floor < v.first + v.count && inside(inner, v.rect),
       );
-      const material = wallMat(wing?.finish ?? 'lap'),
+      const streetFace = w.face === 'front' && !w.other && !!streetFinish;
+      const material = wallMat(streetFace && floor > 0 && streetFinish === 'recessed-balcony' ? 'board' : wing?.finish ?? 'lap'),
         z = w.room === 'Garage' ? 0.1 : base;
       const bodySegment = (a: number, b: number, bottom: number, end: number) =>
         kit.box(wall, (a - w.lo) * FT, (b - w.lo) * FT, -0.15, 0, bottom, end - bottom, material, 'body');
@@ -111,6 +114,16 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
               }
             : null;
           if (view) { drawWindowRoom(kit, wall, view); dressed.add(key); roomViews++; }
+          // The supplied streetscape is readable in shade because these
+          // profiles make real highlights. Keep all metal and sill blocks
+          // outside the existing glazing aperture, not painted on the pane.
+          if (streetFace && !kit.lite && floor > 0 && head - sill > 0.42) {
+            const left = Math.max(0, s - width / 2 - 0.09);
+            const right = Math.min(wall.len, s + width / 2 + 0.09);
+            const casing = streetFinish === 'contrasting-trim' ? trim : tone(trim, 0.82);
+            kit.box(wall, left, right, 0.02, 0.23, sill - 0.105, 0.086, casing);
+            kit.box(wall, left, right, 0.025, 0.185, head + 0.028, 0.024, streetFascia);
+          }
           kit.window(wall, s, width, sill, head, {
             frame: FRAME,
             sill: trim,
@@ -137,6 +150,22 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
       }
       bodySegment(low, w.hi, z, top);
     }
+    if (streetFinish && floor > 0) {
+      const current = home.volumes.find(v => v.first === floor);
+      const below = home.volumes.find(v => v.first + v.count === floor);
+      if (current && below) {
+        const [x, y, width, depth] = current.rect;
+        const start = Math.max(x, below.rect[0]), end = Math.min(x + width, below.rect[0] + below.rect[2]);
+        const back = Math.min(y + depth, below.rect[1]);
+        if (end > start + 0.3 && back > y + 0.3) {
+          // Offset from the slab's underside to avoid coplanar flicker, and
+          // stop at the modeled supporting wall.
+          const under = base - 0.113;
+          const [a, b, c, d] = f.ring(start * FT, end * FT, y * FT, back * FT);
+          kit.flat([a, d, c, b].map(p => [p![0], p![1], under]), tone(streetFascia, 0.85));
+        }
+      }
+    }
     if (deck && home.balconyScreen) {
       const [x, y, w, d] = deck.rect.map(c => c * FT) as Rect;
       const edges = f.faces(x, x + w, y, y + d);
@@ -157,7 +186,7 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
       }
       kit.post(front, front.len - 0.12, -0.1, base, top - base, 0.19, trim);
       kit.gable(f, x, x + screen, y - 0.12, y + 0.9, top, 4 / 12, 'd',
-        { over: [0.08, 0.09], roof: ROOF, fascia: trim, wall: batten, ends: [true, false] });
+        { over: [0.08, 0.09], roof: ROOF, fascia: streetFinish ? streetFascia : trim, wall: batten, ends: [true, false] });
     }
   }
   for (const wing of home.volumes) {
@@ -192,7 +221,7 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
       z,
       wing.pitch / 12,
       wing.ridge === 'depth' ? 'd' : 's',
-      { over: 0.33, roof: ROOF, wall: material, fascia: trim,
+      { over: 0.33, roof: ROOF, wall: material, fascia: streetFinish ? streetFascia : trim,
         ...(home.balconyScreen?.level === end - 1 ? { ends: [false, true] } : {}) },
     );
     const faces = f.faces(x * FT, (x + w) * FT, y * FT, (y + d) * FT);

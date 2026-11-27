@@ -63,6 +63,9 @@ export interface HomeDesign {
   rearLoadPrecedent?: { source: string };
   /** Exterior garage treatment when verified by the model's elevation. */
   garageDoor?: 'solid-sectional';
+  /** Photo-informed finish study for the known front wall. Does not assign an
+   * as-built elevation or change the source roof, openings, or plan. */
+  frontFinishStudy?: 'recessed-balcony' | 'contrasting-trim' | 'quiet-trim';
   sideWindows?: SideWindow[];
   balconyScreen?: { level: number; width: number; openingAt: number; openingWidth: number };
   roofBulkhead?: { rect: Rect; heightFt: number };
