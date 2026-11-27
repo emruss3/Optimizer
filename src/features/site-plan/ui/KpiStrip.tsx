@@ -277,7 +277,7 @@ const KpiStrip: React.FC<{
         // "Code compliant" on a house that assumes an easement across a neighbour).
         <div
           data-testid="kpi-conditional"
-          title={`Conditional: ${metrics.conditional}. Zoning eligibility is separate from site feasibility.`}
+          title={`Conditional: ${metrics.conditional}. Zoning eligibility is separate from site feasibility.${openItems.length ? ` The plan's checks do not cover: ${openItems.join('; ')}.` : ''}`}
           className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800 whitespace-nowrap min-w-0 max-w-[26rem]"
         >
           <XCircle className="w-3.5 h-3.5" />
@@ -286,11 +286,11 @@ const KpiStrip: React.FC<{
       ) : unverified && compliant && !parkingShort ? (
         <div
           data-testid="kpi-needs-verification"
-          title={`The plan's own checks pass${constrained ? ` (constrained: ${clampReasons.join(', ')})` : ''}, and its basis is not established: ${unverified}. Not a finding of code compliance.`}
+          title={`The plan's own checks pass${constrained ? ` (constrained: ${clampReasons.join(', ')})` : ''}, and its basis is not established: ${unverified}.${openItems.length ? ` They do not cover: ${openItems.join('; ')}.` : ''} Not a finding of code compliance.`}
           className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800 whitespace-nowrap min-w-0 max-w-[26rem]"
         >
           <AlertTriangle className="w-3.5 h-3.5" />
-          <span className="truncate">Needs verification · {unverified}</span>
+          <span className="truncate">Needs verification · {unverified}{openItems.length ? ` · open: ${openItems[0]}${openItems.length > 1 ? ` +${openItems.length - 1}` : ''}` : ''}</span>
         </div>
       ) : (
       <div
