@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SiteMetrics } from '../../../engine/types';
-import { parkingCounts, parkingCountsDisagree, parkingCountsLine, parkingSupplyForAdequacy } from './parkingCounts';
+import { parkingCounts, parkingCountsDisagree, parkingCountsLine, parkingStallsUntraced, parkingSupplyForAdequacy } from './parkingCounts';
 import { builtSummary } from './BuiltHeadline';
 import type { Element } from '../../../engine/types';
 
@@ -29,5 +29,21 @@ describe('one parking reading, named the same everywhere (audit 2026-11-26)', ()
     expect(parkingCountsDisagree(c)).toBe(false);
     expect(parkingCountsLine(c)).toBe('64 drawn · 64 required');
     expect(c.reachable).toBeNull();
+  });
+});
+
+describe('stalls nobody traced a route to (audit 9379472: Main 252 against 240)', () => {
+  const garage = { id: 'wrap-garage', type: 'parking', geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }, properties: { structured: true } } as unknown as Element;
+  const house = { id: 'sfv1-pad-1', type: 'building', geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }, properties: {} } as unknown as Element;
+  it('counts the supply as untraced when no reachable count was taken', () => {
+    expect(parkingStallsUntraced([garage], { stallsDrawn: 252, stallsRequired: 240 } as unknown as SiteMetrics)).toBe(252);
+  });
+  it('says nothing once the routes were traced, even to zero', () => {
+    expect(parkingStallsUntraced([garage], { stallsDrawn: 252, stallsReachable: 252, stallsRequired: 240 } as unknown as SiteMetrics)).toBeNull();
+    expect(parkingStallsUntraced([garage], { stallsDrawn: 47, stallsReachable: 0, stallsRequired: 49 } as unknown as SiteMetrics)).toBeNull();
+  });
+  it('leaves houses on their own lots alone, and a plan with no stalls', () => {
+    expect(parkingStallsUntraced([house], { stallsDrawn: 10, stallsRequired: 10 } as unknown as SiteMetrics)).toBeNull();
+    expect(parkingStallsUntraced([garage], { stallsDrawn: 0 } as unknown as SiteMetrics)).toBeNull();
   });
 });

@@ -3,7 +3,7 @@
 // the right, with no perspective. The sheet lays its linework over it.
 import * as THREE from 'three';
 import type { MassingData } from '../ui/massingData';
-import { buildSiteModel } from './siteScene';
+import { buildSiteModel, loadTreeKit } from './siteScene';
 import { createStage } from './stage';
 import { sunPosition } from '../ui/sunPosition';
 import { renderQuality } from './quality';
@@ -22,6 +22,7 @@ export async function renderPlanImage(req: PlanImageRequest): Promise<string> {
   const widthPx = Math.round(Math.min(4096, req.widthPx));
   const heightPx = Math.round((widthPx * h) / w);
   const light = renderQuality() === 'light';
+  await loadTreeKit();
   const model = buildSiteModel(data, { canopyOpacity: 0.9, clayContext: true, light });
   const stage = createStage(undefined, model, { width: widthPx, height: heightPx, pixelRatio: 1, preserve: true, studio: true, light });
   try {
@@ -53,6 +54,7 @@ export async function renderAerialImage(req: { data: MassingData; widthPx: numbe
   const { data } = req;
   const widthPx = Math.round(Math.min(4096, req.widthPx)), heightPx = Math.round(Math.min(4096, req.heightPx));
   const light = renderQuality() === 'light';
+  await loadTreeKit();
   const model = buildSiteModel(data, { light, markSite: true });
   // whether this picture stands on ground that was graded for it: the sheet says so only then
   req.onGraded?.(!!model.grade?.grading);

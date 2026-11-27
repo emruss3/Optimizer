@@ -9,7 +9,7 @@ import { parkingCounts, parkingCountsDisagree, parkingCountsLine } from './parki
 const SHOW_YIELD_CHIP = false;
 
 const Stat: React.FC<{ label: string; value: string; alert?: boolean }> = ({ label, value, alert }) => (
-  <div className="flex flex-col items-start min-w-[64px]">
+  <div className="flex flex-col items-start min-w-[64px] flex-shrink-0 whitespace-nowrap">
     <span className="text-[10px] uppercase tracking-wide text-gray-500">{label}</span>
     <span className={`text-sm font-semibold tabular-nums ${alert ? 'text-red-600' : 'text-gray-900'}`}>
       {value}
@@ -256,7 +256,7 @@ const KpiStrip: React.FC<{
           role: 'button', tabIndex: 0, title: 'Open the checks behind this status',
           onClick: onOpenChecks,
           onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChecks(); } },
-          className: 'cursor-pointer rounded-full focus-ring',
+          className: 'cursor-pointer rounded-full focus-ring min-w-0',
         } : {})}
       >
       {parkingUnverified && !metrics.conditional ? (
@@ -266,10 +266,10 @@ const KpiStrip: React.FC<{
         <div
           data-testid="kpi-parking-verify"
           title={`Parking needs verification: ${metrics.parkingStatusReason ?? ''}`}
-          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800 whitespace-nowrap min-w-0 max-w-[26rem]"
         >
           <XCircle className="w-3.5 h-3.5" />
-          Parking needs verification · {parkingCountsLine(parkingCounts(metrics)) ?? `${stallsProvided} provided · ${stallsRequired} required`}
+          <span className="truncate">Parking needs verification · {parkingCountsLine(parkingCounts(metrics)) ?? `${stallsProvided} provided · ${stallsRequired} required`}</span>
         </div>
       ) : metrics.conditional ? (
         // A sketch that depends on an assumed easement or a flood scenario is
@@ -277,20 +277,20 @@ const KpiStrip: React.FC<{
         // "Code compliant" on a house that assumes an easement across a neighbour).
         <div
           data-testid="kpi-conditional"
-          title={`Conditional: ${metrics.conditional}. Zoning eligibility is separate from site feasibility.`}
-          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
+          title={`Conditional: ${metrics.conditional}. Zoning eligibility is separate from site feasibility.${openItems.length ? ` The plan's checks do not cover: ${openItems.join('; ')}.` : ''}`}
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800 whitespace-nowrap min-w-0 max-w-[26rem]"
         >
           <XCircle className="w-3.5 h-3.5" />
-          Conditional · {metrics.conditional}
+          <span className="truncate">Conditional · {metrics.conditional}</span>
         </div>
       ) : unverified && compliant && !parkingShort ? (
         <div
           data-testid="kpi-needs-verification"
-          title={`The plan's own checks pass${constrained ? ` (constrained: ${clampReasons.join(', ')})` : ''}, and its basis is not established: ${unverified}. Not a finding of code compliance.`}
-          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800"
+          title={`The plan's own checks pass${constrained ? ` (constrained: ${clampReasons.join(', ')})` : ''}, and its basis is not established: ${unverified}.${openItems.length ? ` They do not cover: ${openItems.join('; ')}.` : ''} Not a finding of code compliance.`}
+          className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-800 whitespace-nowrap min-w-0 max-w-[26rem]"
         >
           <AlertTriangle className="w-3.5 h-3.5" />
-          Needs verification · {unverified}
+          <span className="truncate">Needs verification · {unverified}{openItems.length ? ` · open: ${openItems[0]}${openItems.length > 1 ? ` +${openItems.length - 1}` : ''}` : ''}</span>
         </div>
       ) : (
       <div
@@ -298,7 +298,7 @@ const KpiStrip: React.FC<{
         title={openItems.length > 0
           ? `The plan's own checks pass. They do not cover: ${openItems.join('; ')}.`
           : constrained ? `Constrained: ${clampReasons.join(', ')}` : undefined}
-        className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+        className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap min-w-0 max-w-[26rem] ${
           !compliant
             ? 'bg-red-50 text-red-700'
             : constrained || openItems.length > 0
@@ -310,7 +310,7 @@ const KpiStrip: React.FC<{
         {/* A parking shortfall leads the badge: "Code compliant · constrained:
             coverage-capped +1" hid 85 of 92 stalls behind the "+1" on 0 Whites
             Creek Pike (2026-11-09). */}
-        {!compliant
+        <span className="truncate">{!compliant
           ? `${violations.length} issue${violations.length === 1 ? '' : 's'}`
           : parkingShort
             ? `Parking shortfall · ${stallsProvided} of ${stallsRequired} stalls${clampReasons.filter(r => r !== 'parking short').length > 0 ? ` · ${clampReasons.filter(r => r !== 'parking short')[0]}` : ''}`
@@ -320,7 +320,7 @@ const KpiStrip: React.FC<{
               ? `Checks passed · constrained: ${clampReasons[0]}${clampReasons.length > 1 ? ` +${clampReasons.length - 1}` : ''}`
               : parkingNotEvaluated
                 ? 'Checks passed · parking not evaluated'
-                : 'Checks passed'}
+                : 'Checks passed'}</span>
       </div>
       )}
       </div>

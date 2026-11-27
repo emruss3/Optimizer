@@ -13,7 +13,7 @@ import polygonClipping from 'polygon-clipping';
 import type { MassingData } from '../ui/massingData';
 import type { DrawingScene } from '../scene/types';
 import { sunPosition, SUN_DATES } from '../ui/sunPosition';
-import { buildSiteModel, plantId } from './siteScene';
+import { buildSiteModel, loadTreeKit, plantId } from './siteScene';
 import { aerialShot, approachShot, prominentSubject, streetShot, DEFAULT_RENDER_SUN, FT, type Shot } from './shots';
 import { BUILD_SHA } from '../../../lib/buildInfo';
 import siteAssets from './siteAssets.json';
@@ -114,6 +114,7 @@ export async function buildRenderJob(
   scene: DrawingScene,
   opts: { style: string; sunKey?: string; sunHour?: number; glbFile?: string; grossSf?: number | null | undefined; preset?: 'gray-pass' | 'daylight' },
 ): Promise<{ glb: ArrayBuffer; job: RenderJob }> {
+  await loadTreeKit();
   const model = buildSiteModel(data, { keepParts: true });
   try {
     await model.ready;

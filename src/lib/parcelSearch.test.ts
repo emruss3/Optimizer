@@ -73,3 +73,32 @@ describe('searchParcels', () => {
     expect(from).not.toHaveBeenCalled();
   });
 });
+
+describe('searchParcels: app parcel ID and assessor-style street words (audit 9379472 F7)', () => {
+  beforeEach(() => {
+    abortSignal.mockReset().mockResolvedValue({ data: [], error: null });
+    rpc.mockReset().mockReturnValue({ abortSignal });
+  });
+
+  it('finds the parcel by its app ID and puts it first', async () => {
+    const eqLimit = vi.fn().mockReturnValue({ abortSignal: vi.fn().mockResolvedValue({ data: [{ ogc_fid: 675423, address: '0 DELK AVE', parcelnumb: '08110007300', zoning: 'RS5' }], error: null }) });
+    from.mockReset().mockReturnValue({ select: () => ({ eq: () => ({ limit: eqLimit }) }) });
+    const hits = await searchParcels('675423', 10, new AbortController().signal);
+    expect(hits[0]).toMatchObject({ ogcFid: 675423, address: '0 DELK AVE', parcelNumber: '08110007300' });
+  });
+
+  it('retries once with street words abbreviated when the words as typed find nothing', async () => {
+    abortSignal.mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [{ ogc_fid: 1, address: '2500 W HEIMAN ST', parcelnumb: 'x', zoning: 'RM40' }], error: null });
+    const hits = await searchParcels('2500 West Heiman Street');
+    expect(rpc).toHaveBeenNthCalledWith(1, 'find_planner_parcels', { p_query: '2500 West Heiman Street', p_limit: 10 });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'find_planner_parcels', { p_query: '2500 W HEIMAN ST', p_limit: 10 });
+    expect(hits[0]?.address).toBe('2500 W HEIMAN ST');
+  });
+
+  it('does not retry when the words as typed already find the parcel (West End Ave stays West End)', async () => {
+    abortSignal.mockResolvedValueOnce({ data: [{ ogc_fid: 2, address: '2100 WEST END AVE', parcelnumb: 'y', zoning: 'MUI' }], error: null });
+    await searchParcels('2100 West End Avenue');
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+});
