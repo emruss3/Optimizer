@@ -29,6 +29,9 @@ for (const p of PARCELS) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)));
+  // the tree grower (about 4 MB) is fetched only once the model is planted, never for Review
+  const treeFetches = [];
+  page.on('request', r => { if (/ez-tree/.test(r.url())) treeFetches.push(r.url()); });
   try {
     await page.goto(base + '/', { waitUntil: 'domcontentloaded', timeout: 60000 });
     const box = page.locator('[data-testid="start-search"]').first();
@@ -52,7 +55,11 @@ for (const p of PARCELS) {
     row.dockIn3d = await page.locator('[data-testid="dock"]').getAttribute('data-open').catch(() => null);
     const vp = await page.locator('[data-testid="massing-3d"]').boundingBox();
     row.viewport3d = vp ? `${Math.round(vp.width)}×${Math.round(vp.height)}` : null;
+    await page.waitForTimeout(1500);
+    row.treeFetchesInReview = treeFetches.length;
     await page.locator('[data-testid="look-rendering"]').first().click().catch(() => {});
+    await page.locator('[data-testid="massing-3d"][data-ready="true"][data-look="rendering"]').first().waitFor({ timeout: 60000 }).catch(() => {});
+    row.treeFetchesInRendering = treeFetches.length;
     await page.waitForTimeout(1500);
     // the 3D toolbar can re-render while the scene settles: retry the click, then force it
     await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
@@ -90,6 +97,7 @@ for (const p of PARCELS) {
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
     if (row.present?.on !== 'true' || row.present.reviewPressed !== 'false' || row.present.renderingPressed !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong look label: ${JSON.stringify(row.present)}`);
+    if (row.treeFetchesInReview !== 0 || !(row.treeFetchesInRendering > 0)) throw new Error(`tree grower fetched ${row.treeFetchesInReview} times in Review and ${row.treeFetchesInRendering} by Rendering`);
     if (row.timeline.revision == null || row.timeline.interactive3d == null) throw new Error('timeline missing the plan revision or 3D milestone');
   } catch (e) {
     row.problem = String(e.message ?? e).slice(0, 240);
@@ -102,7 +110,7 @@ for (const p of PARCELS) {
 await browser.close();
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
+  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
 const failed = results.filter(r => r.problem);
 if (failed.length) { console.log(`${failed.length} of ${results.length} parcels failed`); process.exit(1); }
