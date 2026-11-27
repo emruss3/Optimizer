@@ -17,7 +17,7 @@ export interface UseViewportReturn {
   zoomBy: (factor: number, centerX?: number, centerY?: number) => void;
   zoomTo: (zoom: number, centerX?: number, centerY?: number) => void;
   pan: (deltaX: number, deltaY: number) => void;
-  fitToBounds: (bounds: { minX: number; minY: number; maxX: number; maxY: number }, canvasWidth: number, canvasHeight: number) => void;
+  fitToBounds: (bounds: { minX: number; minY: number; maxX: number; maxY: number }, canvasWidth: number, canvasHeight: number, insets?: { top: number; right: number; bottom: number; left: number }) => void;
   reset: () => void;
 }
 
@@ -81,16 +81,18 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
     }));
   }, []);
 
-  const fitToBounds = useCallback((bounds: { minX: number; minY: number; maxX: number; maxY: number }, canvasWidth: number, canvasHeight: number) => {
+  const fitToBounds = useCallback((bounds: { minX: number; minY: number; maxX: number; maxY: number }, canvasWidth: number, canvasHeight: number, insets?: { top: number; right: number; bottom: number; left: number }) => {
     const width = bounds.maxX - bounds.minX;
     const height = bounds.maxY - bounds.minY;
     
     if (width === 0 || height === 0) return;
 
+    // the fit uses the canvas less the panels standing over its edges (lib/safeInsets), centred in what is left
+    const ins = insets ?? { top: 0, right: 0, bottom: 0, left: 0 };
     const padding = 40;
-    const scaleX = (canvasWidth - padding * 2) / width;
-    const scaleY = (canvasHeight - padding * 2) / height;
-    const zoom = Math.min(scaleX, scaleY);
+    const scaleX = (canvasWidth - ins.left - ins.right - padding * 2) / width;
+    const scaleY = (canvasHeight - ins.top - ins.bottom - padding * 2) / height;
+    const zoom = Math.max(0.0001, Math.min(scaleX, scaleY));
 
     const centerX = bounds.minX + width / 2;
     const centerY = bounds.minY + height / 2;
@@ -99,8 +101,9 @@ export function useViewport(initialZoom = 1, initialPanX = 0, initialPanY = 0): 
     // To center world point (centerX, centerY) at screen (canvasWidth/2, canvasHeight/2):
     // canvasWidth/2 = centerX * zoom + panX
     // Therefore: panX = canvasWidth/2 - centerX * zoom
-    const panX = canvasWidth / 2 - centerX * zoom;
-    const panY = canvasHeight / 2 + centerY * zoom;
+    const sx = ins.left + (canvasWidth - ins.left - ins.right) / 2, sy = ins.top + (canvasHeight - ins.top - ins.bottom) / 2;
+    const panX = sx - centerX * zoom;
+    const panY = sy + centerY * zoom;
 
     setViewport({ zoom, panX, panY });
   }, []);
