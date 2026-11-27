@@ -316,6 +316,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       if (!active) return;
       stage.invalidateShadows();
       request();
+      // the planted model with its pictures arrived: the first full Rendering frame (Review is marked above)
+      if (look !== 'review' || present) markOnce(`render|${scene.identity.revision}|${quality}`, 'rendering-frame', { revision: scene.identity.revision, quality, present });
     });
     void stage.ready.then(refresh);
     return () => {

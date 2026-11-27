@@ -91,7 +91,7 @@ for (const p of PARCELS) {
     const at = n => tl.find(m => m.name === n)?.atMs ?? null;
     row.timeline = {
       search: at('search-results'), shell: at('planner-shell'), context: at('context-compiled'),
-      revision: at('plan-revision'), interactive3d: at('3d-interactive'),
+      revision: at('plan-revision'), interactive3d: at('3d-interactive'), renderingFrame: at('rendering-frame'),
       cameras: tl.filter(m => m.name === 'camera').map(m => `${m.detail?.requested}→${m.detail?.shown}`),
     };
     if (!row.camera) throw new Error('no camera label after asking for the street view');
