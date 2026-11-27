@@ -123,6 +123,16 @@ describe('LayoutChoicePanel (multifamily by default where it places more homes; 
     expect(screen.getByTestId('layout-option-neighborhood').textContent).toContain('no pattern places a home');
   });
 
+  it('211 N 7th: a timeout is not "no pattern places a home" (audit cf4f0e8)', () => {
+    render(
+      <LayoutChoicePanel choice={chooseLayout({ multifamilyHomes: 418, competition: null })} competition={{ state: 'error', data: null, error: 'the server took longer than 20 s' }}
+        shown="multifamily" shownRequested={null} auto={false} onChoose={() => undefined} onViewCandidate={() => undefined} />,
+    );
+    const nb = screen.getByTestId('layout-option-neighborhood').textContent ?? '';
+    expect(nb).not.toContain('no pattern places a home');
+    expect(nb).toContain('not compared · the server did not answer');
+  });
+
   it('marks the multifamily plan where the engine finds no public street (engine g21)', () => {
     const none = 'no boundary on a mapped street, no unparcelled right-of-way beside it and no mapped lane reaching it';
     const skipped = summarizeCandidates({ status: 'skipped', reason: `landlocked: ${none}`, access: { type: 'none', message: none } } as never)!;

@@ -27,6 +27,7 @@ import AppGrid from './layout/AppGrid';
 import DrawerOverlay from './components/DrawerOverlay';
 import RealtimeComments from './components/RealtimeComments';
 import MapPanel from './components/MapPanel';
+import { takeOpenOnLoad } from './lib/planRecovery';
 
 // Shell-first performance (order-5 item 1): the landing page and header
 // paint from the light shell; mapbox+deck (~650 KB gz) and every workflow
@@ -173,6 +174,9 @@ function App() {
     };
     const listener = (event: Event) => { void handleOpenParcelDrawer(event as CustomEvent); };
     document.addEventListener('openParcelDrawer', listener);
+    // the tab moved to a new release with a copy of its plan kept: open that plan again at once
+    const reopen = takeOpenOnLoad();
+    if (reopen) document.dispatchEvent(new CustomEvent('openParcelDrawer', { detail: { ogc_fid: reopen, openPlanner: true } }));
     return () => document.removeEventListener('openParcelDrawer', listener);
   }, []);
 
