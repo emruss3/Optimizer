@@ -7,7 +7,7 @@ import type { DrawingScene } from '../scene/types';
 import { buildMassingData } from '../ui/massingData';
 import { sunPosition, SUN_DATES } from '../ui/sunPosition';
 import { SceneInspector } from '../ui/SceneInspector';
-import { buildSiteModel, type SiteModel } from './siteScene';
+import { buildSiteModel, loadTreeKit, treeKitLoaded, type SiteModel } from './siteScene';
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
@@ -97,6 +97,15 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // counts the models built: a new one needs its sun and its selection set again
   const [built, setBuilt] = useState(0);
   const [present, setPresent] = useState(false);
+  // the tree grower is fetched the first time the model is planted (Rendering or Present), not before
+  const [treesHere, setTreesHere] = useState(treeKitLoaded());
+  const planted = look === 'rendering' || present;
+  useEffect(() => {
+    if (!planted || treesHere) return;
+    let live = true;
+    loadTreeKit().then(() => { if (live) setTreesHere(true); });
+    return () => { live = false; };
+  }, [planted, treesHere]);
   useEffect(() => {
     if (!present) return;
     // on the way down, and stopped there: Escape leaves Present, not the workspace
@@ -212,6 +221,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   useEffect(() => {
     const el = host.current, cv = canvas.current;
     if (!el || !cv) return;
+    // a planted model waits the moment it takes for the tree grower to arrive
+    if (planted && !treesHere) return;
     let model: SiteModel, stage: Stage;
     const light = quality === 'light';
     try {
@@ -321,7 +332,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, lens, quality, look, present]);
+  }, [data, frame, lens, quality, look, present, planted, treesHere]);
 
   // Home designs → 3D: frame the previewed house once per token after the model includes it.
   // Do not re-frame on later rebuilds of the same token (avoids fighting the user).
