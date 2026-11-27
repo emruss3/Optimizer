@@ -55,6 +55,7 @@ export function eligibleHomeDesigns(
   designs: readonly HomeDesign[],
   elements: Element[],
   siteBoundary?: Element['geometry'] | null,
+  maxHeightFt?: number | null,
 ): HomeDesign[] {
   const houses = residentialHomes(elements);
   if (!houses.length) return [];
@@ -63,7 +64,7 @@ export function eligibleHomeDesigns(
     houses.some(
       (house) =>
         designMatchesHouseTypology(design, house) &&
-        Boolean(placeHome(design, house, elements, siteBoundary).placement),
+        Boolean(placeHome(design, house, elements, siteBoundary, maxHeightFt).placement),
     ),
   );
 }
@@ -77,11 +78,12 @@ export function designsFittingHouse(
   house: Element,
   elements: Element[],
   siteBoundary?: Element['geometry'] | null,
+  maxHeightFt?: number | null,
 ): HomeDesign[] {
   return designs.filter(
     (design) =>
       designMatchesHouseTypology(design, house) &&
-      Boolean(placeHome(design, house, elements, siteBoundary).placement),
+      Boolean(placeHome(design, house, elements, siteBoundary, maxHeightFt).placement),
   );
 }
 
