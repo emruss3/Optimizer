@@ -67,7 +67,8 @@ import { fetchThV3Plan, guestParkingLine, thV3ToElements, type ThV3Summary } fro
 import { chooseLayout, isFloodSkip, type LayoutKind } from './api/layoutChoice';
 import { LayoutChoicePanel } from './ui/LayoutChoicePanel';
 import { line2274To3857 } from './api/parcelTopo';
-import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney } from './api/generateMfPlan';
+import { engineLong } from './api/engineLong';
+import { generateMfSitePlan, generateMfSitePlanV2, generateThSitePlan, mfPlanToElements, seedFamilyPlanToElements, isSeedFamilyResponse, isMfPlanElement, isContextContractError, listMfCandidates, fetchMfMoney, enrichCandidatesWithMoney, type MfCandidate, type MfPin, type MfMoney, type MfAiPick } from './api/generateMfPlan';
 import { fetchSfSeed } from './api/sfSeed';
 import { validatePlanElements } from '../../engine/validatePlan';
 import TabulationPanel from './ui/TabulationPanel';
@@ -1027,7 +1028,11 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       const label = cleaned.some(c => c.includes('free pack')) ? 'relaxed' : 'in-family';
       return ` · ${label}: ${cleaned.join(', ')}`;
     })();
-    setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}${relaxNote}`);
+    const pick = resp.ai_pick;
+    const aiNote = pick?.picked === 'model' && pick.engine && pick.winner
+      ? ` · design model layout (${pick.model_version ?? 'model'}): ${pick.winner.n_fail ?? '?'} design flags vs ${pick.engine.n_fail ?? '?'} for the engine's layout, ${pick.winner.units ?? '?'} vs ${pick.engine.units ?? '?'} homes`
+      : '';
+    setPlanBasis(`${basis ?? 'Server-generated site plan'}${scoreNote}${clampNote}${parkingNote}${relaxNote}${aiNote}`);
     // A3: value the scheme against local sales — the margin ticks live
     loadMoney(serverMetrics?.totalBuiltSF, serverMetrics?.totalUnits);
     if (opts.persist !== false) {
@@ -1035,6 +1040,21 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (resp.candidate_id) {
         void recordPlannerFeedback(resp.context_id ?? plannerCtxRef.current?.context_id, 'candidate_generated', resp.candidate_id, { seed: opts.seed, pins: opts.pins?.length ?? 0 });
       }
+    }
+    // Owner 2026-11-27: the default apartment plan is the better of the engine's plan and the design model's
+    // plans (fn_mf_ai_design; pick rule in training.ai_config 'mf_ai_default'). The engine's plan shows at once;
+    // the pick runs in the background (about 5-25 s, longer when the model has to start). If the model's layout
+    // wins, the default is drawn again: the server then returns the saved pick, as an undoable step.
+    const freshDefault = !opts.preview && !opts.fromHistory && opts.contextId === undefined && !degraded
+      && effectiveProduct !== 'townhomes' && opts.seed === 1 && !(opts.pins?.length) && !opts.parentId
+      && opts.persist !== false && !resp.ai_pick && !!effectiveContextId;
+    if (freshDefault) {
+      void engineLong<{ ai_pick?: MfAiPick }>('fn_mf_ai_design', { p_ogc_fid: contextOgcFid }).then(r => {
+        if (stale()) return;
+        if (r.data?.ai_pick?.picked === 'model') {
+          void runServerMfPlan({ seed: 1, pins: [], action: 'The design model found a better layout' });
+        }
+      });
     }
     return true;
   }, [contextOgcFid, elements, metrics, setPlanOutput, refreshCandidates, loadMoney, markCompileBlocked]);
