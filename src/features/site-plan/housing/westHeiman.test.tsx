@@ -190,3 +190,15 @@ describe('project plan links', () => {
     expect(projectPlansFor('1', [{ projectId: 'p', name: 'P', parcels: ['1'], designIds: ['x'], missing: null }])?.designIds).toEqual(['x']);
   });
 });
+
+describe('feet in the studio read to two decimals at most (owner, 11-27)', () => {
+  it('shows 19.77 × 44.45-style sizes, never a long float', () => {
+    const elements = plan();
+    render(<HomeStudio elements={elements} selected="test-pad-1" designs={[WEST_HEIMAN_DESIGNS[0]!]} stockPlans={[]} onPreview={() => undefined} onClose={() => undefined} />);
+    const text = document.body.textContent ?? '';
+    const size = /(\d+(?:\.\d+)?) × (\d+(?:\.\d+)?) ft incl\. porches/.exec(text);
+    expect(size).not.toBeNull();
+    for (const n of [size![1]!, size![2]!]) expect(n).toMatch(/^\d+(\.\d{1,2})?$/);
+    expect(text.match(/.{0,60}\d\.\d{3,}.{0,20}/g) ?? []).toEqual([]);
+  });
+});

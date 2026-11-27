@@ -47,6 +47,9 @@ interface Props {
   onTargetLot?: (houseId: string) => void;
 }
 
+/** Feet for a label: at most two decimals (34.1666… → 34.17, 40 → 40). */
+const ft2 = (v: number): string => (Number.isFinite(v) ? Number(v.toFixed(2)).toString() : String(v));
+
 const TITLES: Record<StudioMode, string> = { mine: 'My plans', catalog: 'Authored catalog', stock: 'Stock plans' };
 
 function bathsLabel(baths: number | null): string {
@@ -599,7 +602,7 @@ export default function HomeStudio({
                       <span>
                         {info.beds} beds · {info.baths} baths
                         <br />
-                        {info.heated.toLocaleString()} sf conditioned*
+                        {Math.round(info.heated).toLocaleString()} sf conditioned*
                       </span>
                     </div>
                     <div className="home-tabs">
@@ -657,7 +660,7 @@ export default function HomeStudio({
                               <div key={r.name}>
                                 <dt>{r.name}</dt>
                                 <dd>
-                                  {r.rect[2]} × {r.rect[3]} ft
+                                  {ft2(r.rect[2])} × {ft2(r.rect[3])} ft
                                 </dd>
                               </div>
                             ))}
@@ -723,7 +726,7 @@ export default function HomeStudio({
                     <p>{home.access}</p>
                     <div className="home-measures">
                       <span>
-                        {width} × {depth} ft incl. porches
+                        {ft2(width)} × {ft2(depth)} ft incl. porches
                       </span>
                       <span>
                         {home.levels.length} {home.levels.length === 1 ? 'story' : 'stories'}

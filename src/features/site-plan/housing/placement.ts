@@ -149,7 +149,7 @@ export function placeHome(
   maxHeightFt?: number | null,
 ): FitResult {
   if (h.rearLoadPrecedent && maxHeightFt != null && maxHeightFt > 0 && roofHeight(h) > maxHeightFt)
-    return { reason: `The roof height exceeds the recorded ${maxHeightFt} ft limit.` };
+    return { reason: `The roof height exceeds the recorded ${Number(maxHeightFt.toFixed(2))} ft limit.` };
   try {
     return fitHome(h, selected, elements, siteBoundary);
   } catch {
