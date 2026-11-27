@@ -27,6 +27,8 @@ export interface Shot {
   lift: number;
   /** Why this place: what the reader of a stored shot needs to regenerate or question it. */
   basis: string;
+  /** The building it is meant to show (plan element id), when it frames one. */
+  subject?: string;
 }
 
 export type ForegroundObstacle = [x: number, y: number, radius: number];
@@ -131,12 +133,26 @@ export function approachShot(
   kind: 'walk' | 'apron' = 'walk',
   garagePavementAt?: (x: number, y: number) => boolean,
 ): Shot | null {
+  return approachShots(approaches, subjects, obstacles, trees, groundAt, foreground, aspect, kind, garagePavementAt, 1)[0] ?? null;
+}
+
+/** Every eye-level place along the entrance walks (or drives), best first: those with a clear
+ *  foreground before those without. The view checks each against what it actually draws. */
+export function approachShots(
+  approaches: ApproachAnchor[], subjects: Subject[], obstacles: number[][][],
+  trees: Array<[number, number, number]>, groundAt: (x: number, y: number) => number,
+  foreground: readonly ForegroundObstacle[] = [], aspect = 16 / 9,
+  kind: 'walk' | 'apron' = 'walk',
+  garagePavementAt?: (x: number, y: number) => boolean,
+  limit = 8,
+): Shot[] {
   const main = prominentSubject(subjects);
   const ranked = approaches.filter(a => a.kind === kind).sort((a, b) =>
     Number(b.building === main?.id) - Number(a.building === main?.id));
   const blockers = [...obstacles, ...subjects.map(s => s.points)];
-  let fallback: Shot | null = null;
+  const clear: Shot[] = [], crowded: Shot[] = [];
   for (const a of ranked) {
+    if (clear.length >= limit) break;
     const [x, y, z] = a.threshold;
     const dx = a.connection[0] - x, dy = a.connection[1] - y;
     const distance = Math.hypot(dx, dy);
@@ -165,12 +181,12 @@ export function approachShot(
       const shot: Shot = {
         position: [...point, eye], target: [x - tx * 0.65, y - ty * 0.65, targetHeight],
         fovDeg: 46, lift: 1, basis: kind === 'apron' ? `Eye level on the drive at the garage of ${a.building}` : `Eye level at the entrance walk of ${a.building}`,
+        subject: a.building,
       };
-      if (!foregroundBlocks(point, [x, y], aspect, 46, foreground)) return shot;
-      fallback ??= shot;
+      (foregroundBlocks(point, [x, y], aspect, 46, foreground) ? crowded : clear).push(shot);
     }
   }
-  return fallback;
+  return [...clear, ...crowded].slice(0, limit);
 }
 
 /**
@@ -182,6 +198,17 @@ export function streetShot(
   trees: Array<[number, number, number]> = [], groundAt: (x: number, y: number) => number = () => 0,
   foreground: readonly ForegroundObstacle[] = [], preferredHouse?: string,
 ): Shot | null {
+  return streetShots(subjects, obstacles, roads, aspect, trees, groundAt, foreground, preferredHouse, 1)[0] ?? null;
+}
+
+/** Street-arrival places, best first: for the first building that has any, its best few places
+ *  (at least 25 degrees apart round it), then the next buildings' best. The view checks each
+ *  against what it actually draws (audit eb378b1: a camera is judged by what the user sees). */
+export function streetShots(
+  subjects: Subject[], obstacles: number[][][], roads: number[][][], aspect = 16 / 9,
+  trees: Array<[number, number, number]> = [], groundAt: (x: number, y: number) => number = () => 0,
+  foreground: readonly ForegroundObstacle[] = [], preferredHouse?: string, limit = 8,
+): Shot[] {
   const ordered = subjects.filter(s => s.points.length >= 3 && (!preferredHouse || s.id === preferredHouse)).map(subject => ({
     subject, size: extent(subject.points), road: nearestRoad(centre(subject.points), roads),
   })).sort((a, b) => b.size - a.size);
@@ -191,21 +218,24 @@ export function streetShot(
     ordered.sort((a, b) => priority(a) - priority(b));
   }
   const [main, ...rest] = ordered;
-  if (!main) return null;
+  if (!main) return [];
   rest.sort((a, b) => a.road === b.road ? b.size - a.size : a.road - b.road);
+  const out: Shot[] = [];
   for (const { subject } of [main, ...rest.slice(0, 7)]) {
+    if (out.length >= limit) break;
     const blockers = [...obstacles, ...subjects.filter(s => s !== subject).map(s => s.points)];
-    const shot = frameStreetSubject(subject, blockers, roads, aspect, trees, groundAt, foreground);
-    if (shot) return shot;
+    // the first building that can be framed gives several places; later ones their best two
+    out.push(...frameStreetSubject(subject, blockers, roads, aspect, trees, groundAt, foreground, out.length ? 2 : 4));
   }
-  return null;
+  return out.slice(0, limit);
 }
 
 function frameStreetSubject(
   main: Subject, blockers: number[][][], roads: number[][][], aspect: number,
   trees: Array<[number, number, number]>, groundAt: (x: number, y: number) => number,
   foreground: readonly ForegroundObstacle[],
-): Shot | null {
+  count = 1,
+): Shot[] {
   const [cx, cy] = centre(main.points);
   const reach = Math.max(6, ...main.points.map(p => Math.hypot(p[0] - cx, p[1] - cy)));
   // the long side of the building: an oblique view stands off its corner
@@ -220,7 +250,7 @@ function frameStreetSubject(
   const full = (reach * 1.15) / Math.sin(halfH);
   const own = main.points;
   const sights: Array<[number, number]> = [[cx, cy], ...main.points.filter((_, i) => i % Math.max(1, Math.floor(main.points.length / 6)) === 0)];
-  let pick: { p: [number, number]; eye: number; lift: number; score: number; why: string } | null = null;
+  const picks: Array<{ p: [number, number]; az: number; eye: number; lift: number; score: number; why: string }> = [];
   const base = main.base ?? 0, roof = base + (main.roofHeight ?? main.height);
   const sideMargin = 0.9;
   // Leave room for the viewport controls above the roof, as well as the foreground.
@@ -264,18 +294,27 @@ function frameStreetSubject(
       const beside = roads.length ? Math.abs(road - 23 * FT) : 0;
       const crowded = foregroundBlocks(p, [cx, cy], aspect, STREET_FOV, foreground);
       const score = -beside / Math.max(10, reach) + off * 0.6 - k * 0.25 - inTheWay * 1.25 + frontage * 0.75 - (crowded ? 4 : 0);
-      if (!pick || score > pick.score) pick = { p, eye, lift, score, why: `${roads.length ? `${Math.round(road / FT)} ft from the nearest street line` : 'no street lines in the record'}; ${inTheWay} tree${inTheWay === 1 ? '' : 's'} in the line of sight` };
+      picks.push({ p, az, eye, lift, score, why: `${roads.length ? `${Math.round(road / FT)} ft from the nearest street line` : 'no street lines in the record'}; ${inTheWay} tree${inTheWay === 1 ? '' : 's'} crossing the planned sight lines` });
     }
   }
-  if (!pick) return null;
-  return {
+  picks.sort((a, b) => b.score - a.score);
+  // distinct places: at least 25 degrees apart round the building
+  const kept: typeof picks = [];
+  const apart = (25 * Math.PI) / 180;
+  for (const pk of picks) {
+    if (kept.length >= count) break;
+    if (kept.some(k => Math.abs(Math.atan2(Math.sin(k.az - pk.az), Math.cos(k.az - pk.az))) < apart)) continue;
+    kept.push(pk);
+  }
+  return kept.map(pick => ({
     position: [pick.p[0], pick.p[1], pick.eye],
     // level with the eye: walls stay upright, and the lens shift brings the roof into the picture
     target: [cx, cy, pick.eye],
     fovDeg: STREET_FOV,
     lift: pick.lift,
-    basis: `Street arrival at eye level (${(EYE / FT).toFixed(1)} ft), clear line of sight; ${pick.why}`,
-  };
+    basis: `Street arrival at eye level (${(EYE / FT).toFixed(1)} ft); ${pick.why}`,
+    ...(main.id ? { subject: main.id } : {}),
+  }));
 }
 
 function extent(pts: Array<[number, number]>): number {

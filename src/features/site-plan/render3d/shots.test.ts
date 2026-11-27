@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { streetShot } from './shots';
+import { streetShot, streetShots } from './shots';
 
 const rect = (x: number, y: number, w: number, h: number): Array<[number, number]> => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
 // a 60 by 18 m building, a street running east to west 30 m south of it
@@ -88,7 +88,7 @@ describe('streetShot', () => {
     const tree: [number, number, number] = [open.position[0] / 2, open.position[1] / 2, 6];
     const moved = streetShot([building], [], street, 16 / 9, [tree])!;
     expect(Math.hypot(moved.position[0] - open.position[0], moved.position[1] - open.position[1])).toBeGreaterThan(1);
-    expect(moved.basis).toMatch(/0 trees in the line of sight/);
+    expect(moved.basis).toMatch(/0 trees crossing the planned sight lines/);
   });
 
   it('keeps the camera outside a crown at the original view point', () => {
@@ -146,5 +146,23 @@ describe('a kept camera restates what it sees (handoff 11-27)', () => {
   it('names the garage camera\'s limitation instead of counting an aerial as success', async () => {
     const { shotUnavailableReason } = await import('./shots');
     expect(shotUnavailableReason('garage', [house], [], [])).toContain('no drive is drawn to a garage');
+  });
+});
+
+describe('streetShots', () => {
+  it('offers several distinct places for the building, the first being streetShot\'s', () => {
+    const subject = { ...building, id: 'b1' };
+    const all = streetShots([subject], [], street);
+    expect(all.length).toBeGreaterThan(1);
+    expect(all[0]).toEqual(streetShot([subject], [], street));
+    expect(all.every(s => s.subject === 'b1')).toBe(true);
+    // at least 25 degrees apart round the building
+    const az = all.map(s => Math.atan2(s.position[1], s.position[0]));
+    for (let i = 0; i < az.length; i++) for (let j = i + 1; j < az.length; j++) {
+      expect(Math.abs(Math.atan2(Math.sin(az[i]! - az[j]!), Math.cos(az[i]! - az[j]!)))).toBeGreaterThanOrEqual((25 * Math.PI) / 180 - 1e-9);
+    }
+  });
+  it('no longer calls a line of sight clear before the picture is checked', () => {
+    expect(streetShot([building], [], street)!.basis).not.toMatch(/clear line of sight/);
   });
 });
