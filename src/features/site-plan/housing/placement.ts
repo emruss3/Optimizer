@@ -181,34 +181,35 @@ function fitHome(
   const drives = local
     .filter(({ el }) => el.name === 'Driveway' || el.properties.kind === 'driveway')
     .map((o) => o.poly);
-  const pavedWays = local
-    .filter(
-      ({ el }) =>
-        el.type === 'road' ||
-        (el.type === 'circulation' && !/walk|sidewalk|driveway/i.test(el.name)) ||
-        el.type === 'parking-aisle',
-    );
-  const streets = pavedWays.map(o => o.poly);
-  const frontStreets = h.rearLoadPrecedent
-    ? pavedWays.filter(({ el }) => !isAlley(el) && (el.type === 'road' || /street|mews|private lane/i.test(el.name))).map(o => o.poly)
-    : streets;
+  const pavedWays = local.filter(
+    ({ el }) =>
+      el.type === 'road' ||
+      (el.type === 'circulation' && !/walk|sidewalk|driveway/i.test(el.name)) ||
+      el.type === 'parking-aisle',
+  );
+  const mappedStreets = pavedWays.map((o) => o.poly);
   let rearLanes: Poly[] = [];
+  let rearLoadFrontStreets: Poly[] = [];
   if (h.rearLoadPrecedent) {
-    if (!frontStreets.length) return { reason: 'A separate mapped front street is needed for this rear-load study.' };
-    const alleys = pavedWays.filter(({ el }) => isAlley(el)).map(o => o.poly);
+    rearLoadFrontStreets = pavedWays
+      .filter(({ el }) => !isAlley(el) && (el.type === 'road' || /street|mews|private lane/i.test(el.name)))
+      .map((o) => o.poly);
+    if (!rearLoadFrontStreets.length) return { reason: 'A separate mapped front street is needed for this rear-load study.' };
+    const alleys = pavedWays.filter(({ el }) => isAlley(el)).map((o) => o.poly);
     if (!alleys.length) return { reason: 'The rear garage needs a separately mapped alley.' };
     // Check connected pavement in the drawn scheme, not legal access, turning radius or grade.
-    const reaches = (a: Poly, b: Poly) => area(polygonClipping.intersection(a, b)) > 0.01
-      || a[0]!.some(p => closest(p, [b]).distance <= 0.06)
-      || b[0]!.some(p => closest(p, [a]).distance <= 0.06);
-    const connectedWays = new Set(frontStreets);
-    for (const pavement of connectedWays) for (const other of streets)
-      if (!connectedWays.has(other) && reaches(pavement, other)) connectedWays.add(other);
-    rearLanes = alleys.filter(lane => connectedWays.has(lane));
+    const reaches = (a: Poly, b: Poly) =>
+      area(polygonClipping.intersection(a, b)) > 0.01 ||
+      a[0]!.some((p) => closest(p, [b]).distance <= 0.06) ||
+      b[0]!.some((p) => closest(p, [a]).distance <= 0.06);
+    const connectedWays = new Set(rearLoadFrontStreets);
+    for (const pavement of connectedWays)
+      for (const other of mappedStreets)
+        if (!connectedWays.has(other) && reaches(pavement, other)) connectedWays.add(other);
+    rearLanes = alleys.filter((lane) => connectedWays.has(lane));
     if (!rearLanes.length) return { reason: 'No drawn alley connects to the street for this rear-load study.' };
   }
   const walks = local.filter(({ el }) => /^(walk|sidewalk|footpath)/i.test(el.name)).map((o) => o.poly);
-  if (!streets.length) return { reason: 'The scheme has no mapped vehicle approach for a driveway check.' };
   const accessBands = local
     .filter(
       ({ el }) => el.properties.kind === 'row' || el.name === 'Access easement' || el.name === 'Right-of-way',
@@ -216,6 +217,17 @@ function fitHome(
     .map((o) => o.poly);
   const site = siteBoundary?.coordinates.map((r) => r.map((p) => frame.toFeet(p))) ?? null;
   if (!lot && !site) return { reason: 'A parcel or lot boundary is needed to check the porch and approaches.' };
+  // Frontage lots with no new street (Brittany Park, Nashboro): pave/street geometry is empty,
+  // but each lot still has a driveway that meets the parcel edge at the public street. Treat
+  // those edge-meeting drives as the mapped vehicle approach so fit is not blocked wholesale.
+  const FRONTAGE_TOUCH_FT = 1.25;
+  const frontageApproaches =
+    !mappedStreets.length && site
+      ? drives.filter((d) => d[0]!.some((p) => closest(p, [site]).distance < FRONTAGE_TOUCH_FT))
+      : [];
+  const streets = mappedStreets.length ? mappedStreets : frontageApproaches;
+  if (!streets.length) return { reason: 'The scheme has no mapped vehicle approach for a driveway check.' };
+  const frontStreets = h.rearLoadPrecedent ? rearLoadFrontStreets : streets;
   const routeLimit = lot ? polygonClipping.union(snap(lot.poly), ...accessBands.map(snap)) : site ? [site] : null;
   const allParts = local
     .filter(
