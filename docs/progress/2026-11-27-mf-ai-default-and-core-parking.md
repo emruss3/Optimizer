@@ -70,3 +70,45 @@ New core sites since 2010:
 - parameters in `ai_config` with sources;
 - compete under the same pick rule;
 - show before and after first.
+
+## 4. Podium drafter v1 (built, not yet wired into the default)
+
+`public.fn_generate_podium_site_plan(fid, typ, seed, ctx)` draws residential bars over a one-level concrete podium that holds the garage, with courtyards on the podium deck.
+
+Inputs from the planner solver brief:
+- envelope, front setback, building coverage, FAR, density, stories, construction type (e.g. 5 over 1);
+- bar depth, average unit size, market parking ratio.
+
+Drafter parameters are in `training.ai_config 'mf_podium'`, each with its source. Three are assumptions to confirm: ground-floor garage share 0.75, at most 1 level below grade, 45-ft minimum courtyard.
+
+Inside the UZO there is no legal parking minimum. Parking goes toward the market ratio and the shortfall is flagged, but it does not cap homes. Outside the UZO, garage capacity caps homes.
+
+Results on the 16 core test parcels (`training.mf_core_wrap_test`):
+
+| Parcel | Zoning | Today: homes / failed checks | Podium: homes / failed checks |
+|---|---|---|---|
+| 411573 | MUG | 22 / 1 | 57 / 0 |
+| 696187 | MUG | 59 / 2 | 134 / 0 |
+| 408219 | MUG-A | 50 / 2 | 77 / 1 (fire reach) |
+| 664082 | MUG-A | 23 / 1 | 49 / 0 |
+| 409518 | MUI-A | 37 / 1 | 120 / 0 (parking 108 of a 167 market target) |
+| 676755 | MUI-A | 34 / 1 | 105 / 0 (99 of 146) |
+| 668663 | ORI | 39 / 3 | 72 / 0 |
+| 598004 | RM40 | 17 / 1 | 25 / 0 |
+| 660290 | RM40 | 28 / 4 | 45 / 0 |
+| 428668 | MUL-A | 11 / 1 | 21 / 1 |
+| 689145 | MUL-A | 14 / 1 | 25 / 1 |
+| 410796 | ORI | 29 / 1 | 31 / 2 |
+| 487796 | RM20 | 13 / 1 | 13 / 0 |
+| 665592 | RM20 | 13 / 1 | 13 / 0 |
+| 408061 | CS | 60 / 2 | 43 / 3 |
+| 686982 | CS | 22 / 2 | 14 / 1 |
+
+Before and after drawings: `2026-11-27-podium-before-after.png`.
+
+**Known limits of v1**
+- Bars around widened courtyards can drop below double-loaded depth. Homes are counted by floor area, so those bars overstate efficiency somewhat.
+- Fire reach fails where rear corners sit more than 150 ft from the street. No rear fire lane is drawn.
+- The podium deck counts as green.
+- No retail or lobby program is drawn.
+- Garage ramps are not drawn; they are inside the 370 sf/stall allowance.
