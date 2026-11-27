@@ -1,3 +1,4 @@
+import polygonClipping from 'polygon-clipping';
 import { isProvisionalPad, PROVISIONAL_PAD } from '../housing/starterHomes';
 import { Kit, mat } from './architecture/kit';
 import { findHome } from '../housing/originalDesigns';
@@ -8,7 +9,7 @@ import type { Element } from '../../../engine/types';
 import { isConstraintSource, type ConstraintSource } from '../api/sfV1Plan';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { pointsAlongSegment, type Segment } from '../../../components/site-planner/planRendering';
-import { createGroundFrame, pointInPolygon } from '../scene/frame';
+import { createGroundFrame, pointInPolygon, polygonArea } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
 import { isMappedAlley } from '../scene/mappedAlley';
@@ -529,7 +530,13 @@ export function buildMassingData(
     // leaves the site leaves it across the line, and the mouth nearest the line is the way out.
     ground?.parcelRing && ground.parcelRing.length >= 3 ? [[...ground.parcelRing, ground.parcelRing[0]!].map(q => { const v = m(q); return [v[0] ?? 0, v[1] ?? 0] as [number, number]; })] : [],
   );
-  if (mouth) polygons.push({ id: 'illustration:street-connection', kind: 'drive', polygon: [mouth], elevation: 0.15, color: TYPE_COLORS.circulation ?? [150, 150, 150, 255], label: 'Drive apron (illustration)' });
+  if (mouth) {
+    const drawn = polygons.filter(p => !p.building && PAVED.has(p.kind ?? '')).map(p => p.polygon);
+    for (const [i, polygon] of exposedApron(mouth, drawn).entries()) {
+      polygons.push({ id: i ? `illustration:street-connection:${i}` : 'illustration:street-connection', kind: 'drive', polygon,
+        elevation: 0.15, color: TYPE_COLORS.circulation ?? [150, 150, 150, 255], label: 'Drive apron (illustration)' });
+    }
+  }
   for (const el of buildings) {
     const top = heightOf(el).aboveGradeFt * METERS_PER_FOOT + 0.05;
     for (const ring of el.geometry.coordinates) roofLines.push({ id: el.id, path: ring.map(p => [...m(p), top]) });
@@ -575,6 +582,24 @@ function densify(ring: number[][]): Array<[number, number]> {
 
 /** The plan's paved kinds: what a car drives or parks on. */
 const PAVED = new Set(['drive', 'parking-aisle', 'circulation', 'parking', 'parking-bay', 'driveway', 'street', 'alley', 'road']);
+/** An illustrative tie-in can fill missing display area, never cover drawn pavement.
+ * A same-height duplicate face appears black in Cycles, even when web raster depth hides it. */
+export function exposedApron(apron: Array<[number, number]>, drawn: number[][][][]): polygonClipping.MultiPolygon {
+  const xs = apron.map(p => p[0]), ys = apron.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const nearby = drawn.filter(p => {
+    const xs = (p[0] ?? []).map(q => q[0]!), ys = (p[0] ?? []).map(q => q[1]!);
+    return Math.max(...xs) > x0 && Math.min(...xs) < x1 && Math.max(...ys) > y0 && Math.min(...ys) < y1;
+  }).map(p => p.map(r => r.map(q => [q[0]!, q[1]!] as [number, number])));
+  try {
+    return polygonClipping.difference([apron], ...nearby)
+      .filter(p => polygonArea(p) > 0.01);
+  } catch {
+    // Invalid imports cannot justify adding a new pavement surface.
+    return [];
+  }
+}
+
 /** Half the width the street's pavement is drawn at, metres (render3d/siteScene lays a 7.3 m ribbon). */
 const STREET_HALF_M = 3.65;
 

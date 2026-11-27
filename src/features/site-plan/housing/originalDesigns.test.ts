@@ -1,4 +1,6 @@
 import { it, expect, vi } from 'vitest';
+import polygonClipping from 'polygon-clipping';
+import { polygonArea } from '../scene/frame';
 import { readFileSync } from 'node:fs';
 import { HOME_DESIGNS } from './originalDesigns';
 import { wallsFor, doorAnchors, floorArea, program, roofHeight } from './drawings';
@@ -21,6 +23,25 @@ it('draws the E2 rear garage with the solid recessed sectional leaf from its ele
   expect((end - start) / 0.3048).toBeCloseTo(16, 4);
   expect(finish).toMatchObject({ lites: false, rows: 4 });
   expect(recess).toBeLessThan(0);
+});
+
+it('keeps West Heiman exterior wall volumes disjoint at facade corners', () => {
+  for (const home of HOME_DESIGNS.filter(h => h.id.startsWith('tn-west-heiman-'))) {
+    const { slabs } = drawHome(new Kit(home.id, home.name), home);
+    const walls = slabs.filter(s => s.part === 'body' && (s.surface === 'brick' || s.surface === 'siding'));
+    expect(walls.length).toBeGreaterThan(10);
+    for (let i = 0; i < walls.length; i++) {
+      const a = walls[i]!;
+      const z = a.polygon[0]![0]![2]!;
+      const ring = (s: typeof a) => s.polygon.map(r => r.map(q => [q[0]!, q[1]!] as [number, number]));
+      for (const b of walls.slice(i + 1)) {
+        const other = b.polygon[0]![0]![2]!;
+        if (Math.min(z + a.elevation, other + b.elevation) - Math.max(z, other) < 1e-6) continue;
+        const area = polygonClipping.intersection(ring(a), ring(b)).reduce((sum, p) => sum + polygonArea(p), 0);
+        expect(area, home.name).toBeLessThan(1e-7);
+      }
+    }
+  }
 });
 
 for (const h of HOME_DESIGNS)

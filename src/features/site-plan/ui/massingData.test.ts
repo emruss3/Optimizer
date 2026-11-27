@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { Element } from '../../../engine/types';
 import type { ArchStyle } from './architecture';
-import { buildMassingData, buildingHeightM } from './massingData';
+import { polygonArea } from '../scene/frame';
+import { buildMassingData, buildingHeightM, exposedApron } from './massingData';
 import { buildSiteModel } from '../render3d/siteScene';
 
 const el = (
@@ -186,6 +187,18 @@ describe('what the rendered view is given', () => {
 });
 
 import { streetConnection } from './massingData';
+
+describe('exposedApron', () => {
+  it('keeps only the part of an illustrative apron not covered by a mapped lane', () => {
+    const apron = [[0, 0], [6, 0], [6, 6], [0, 6], [0, 0]] as Array<[number, number]>;
+    const lane = [[-2, 3], [8, 3], [8, 7], [-2, 7], [-2, 3]];
+    const parts = exposedApron(apron, [[lane]]);
+    expect(parts).toHaveLength(1);
+    expect(polygonArea(parts[0]!)).toBeCloseTo(18);
+    expect(parts[0]![0]!.every(p => p[1] <= 3)).toBe(true);
+    expect(exposedApron(apron, [[apron]])).toEqual([]);
+  });
+});
 
 describe('streetConnection', () => {
   const street: Array<[number, number]> = [[-50, 0], [50, 0]];

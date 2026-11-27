@@ -92,3 +92,29 @@ A separate Smith Springs multifamily fixture still exported 42 units and 113
 stalls, with no alley material or paver asset requests. The Cycles preview
 passed model and camera checks. Maximum browser-to-Blender camera projection
 error was 0.006 px at the worker's 1920 × 1080 check size.
+
+## Cycles surface-join follow-up
+
+[Cycles_Surface_Join_Proof.jpg](Cycles_Surface_Join_Proof.jpg) is a
+same-camera comparison at 960 × 540 with 12 samples in both images. A ray
+through each vertical black band hit two exterior wall triangles at the
+same distance. At the pavement patch it hit the illustrated street
+connection and the mapped alley at the same distance. The latter occupied
+the same surface as drawn pavement. WebGL masked most of both overlaps,
+while the still renderer visibly darkened them.
+
+The authored-house exterior solids now miter at convex corners without
+moving the exterior wall lines or openings. The illustrative driveway
+connection is clipped against drawn pavement. No near-zero sliver is made
+into a separate rendered surface. On the three-lot fixture the illustrative
+connection was completely covered. The re-export retained identical accepted
+scheme hash, quantities, terrain, overall bounds, camera settings, door and
+approach coordinates. The new GLB has a different mesh hash as expected.
+Smith Springs still exported 42 units and 113 stalls without alley pavers.
+
+The worker now records actual denoising availability instead of silently
+falling back. The proof above intentionally uses matched unfiltered samples.
+The local Blender build does not provide the built-in OpenImageDenoise
+integration. Delivery-quality stills need the pinned worker, validated
+denoising, and higher samples. The current fixture also lacks photographed
+rear context from Edith Circle and does not prove as-built conditions.

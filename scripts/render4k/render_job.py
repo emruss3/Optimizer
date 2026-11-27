@@ -863,10 +863,13 @@ def setup_cycles(job, args):
     c.adaptive_threshold = args.adaptive_threshold
     c.adaptive_min_samples = min(32, args.samples)
     c.use_denoising = True
+    denoiser_unavailable = None
     try:
         c.denoiser = "OPENIMAGEDENOISE"
-    except TypeError:
+    except TypeError as exc:
         c.use_denoising = False
+        denoiser_unavailable = str(exc)
+        print("render4k: OpenImageDenoise is unavailable; output will be unfiltered", file=sys.stderr)
     c.seed = int(job["lighting"].get("seed", 1))
     scene.view_settings.view_transform = "AgX"
     try:
@@ -877,7 +880,9 @@ def setup_cycles(job, args):
     scene.render.film_transparent = False
     c.transparent_max_bounces = 24
     c.max_bounces = 6
-    return {"backend": args.device, "devices": names, "threads": scene.render.threads, "adaptive_threshold": args.adaptive_threshold}
+    return {"backend": args.device, "devices": names, "threads": scene.render.threads, "adaptive_threshold": args.adaptive_threshold,
+            "denoising": {"enabled": bool(c.use_denoising), "implementation": c.denoiser if c.use_denoising else None,
+                          "unavailable_reason": denoiser_unavailable}}
 
 
 def render(job, cams, job_dir, args, report):

@@ -1,5 +1,5 @@
 import { METERS_PER_FOOT as FT } from '../../../engine/units';
-import { Frame, Kit, inRing, CONCRETE, mat, tone, type Mat, type Wall, type V2 } from '../ui/architecture/kit';
+import { Frame, Kit, inRing, on, CONCRETE, mat, tone, type Mat, type Wall, type V2 } from '../ui/architecture/kit';
 import { drawWindowRoom, type WindowRoom } from '../ui/architecture/windowRooms';
 import type { Surface } from '../ui/renderModel';
 import { type HomeDesign, type Point, type Rect, type Face, type Finish } from './originalDesigns';
@@ -32,6 +32,23 @@ function face(frame: Frame, w: WallRun): Wall {
     outer: V2 = [nx * frame.w.t[0] - ny * frame.w.n[0], nx * frame.w.t[1] - ny * frame.w.n[1]];
   return { a, len, t: [(b[0] - a[0]) / len, (b[1] - a[1]) / len], n: outer };
 }
+/** At a convex corner the adjacent wall must take half of the inner joint, not cover the other wall's face. */
+function cornersOf(w: WallRun, walls: WallRun[]): [boolean, boolean] {
+  const axis: Point = w.face === 'front' || w.face === 'back' ? [1, 0] : [0, 1];
+  return ([w.lo, w.hi] as const).map((at, end) => {
+    const point = pointOn(w, at);
+    const sign = end === 0 ? -1 : 1;
+    return walls.some(other => {
+      const n = normal[other.face];
+      if ((n[0] * axis[0] + n[1] * axis[1]) * sign !== 1) return false;
+      const a = pointOn(other, other.lo), b = pointOn(other, other.hi);
+      const joined = (p: Point) => Math.hypot(p[0] - point[0], p[1] - point[1]) < 1e-6;
+      const into = (p: Point) => (p[0] - point[0]) * normal[w.face][0] + (p[1] - point[1]) * normal[w.face][1] < 0;
+      return (joined(a) && into(b)) || (joined(b) && into(a));
+    });
+  }) as [boolean, boolean];
+}
+
 export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFront, exposedEnds: Face[] = []) {
   const f = new Frame(front),
     [body, trimColor, accentColor] = home.palette;
@@ -71,9 +88,10 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
     }
     const deck = home.balconyScreen?.level === floor
       ? home.levels[floor]!.rooms.find(r => r.name === 'Covered balcony') : undefined;
-    for (const w of wallsFor(home, floor, exposedEnds).filter(e =>
+    const walls = wallsFor(home, floor, exposedEnds).filter(e =>
       deck ? (e.other === deck.name || (e.room === deck.name ? !!e.other : !e.other)) : !e.other,
-    )) {
+    );
+    for (const w of walls) {
       const wall = face(f, w),
         mid = pointOn(w, (w.lo + w.hi) / 2);
       const n = normal[w.face],
@@ -83,8 +101,17 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
       );
       const material = wallMat(wing?.finish ?? 'lap'),
         z = w.room === 'Garage' ? 0.1 : base;
-      const bodySegment = (a: number, b: number, bottom: number, end: number) =>
-        kit.box(wall, (a - w.lo) * FT, (b - w.lo) * FT, -0.15, 0, bottom, end - bottom, material, 'body');
+      const [miterStart, miterEnd] = cornersOf(w, walls);
+      const bodySegment = (a: number, b: number, bottom: number, end: number) => {
+        const s0 = (a - w.lo) * FT, s1 = (b - w.lo) * FT, depth = 0.15;
+        if (s1 - s0 < 0.01) return;
+        const first = a === w.lo && miterStart, last = b === w.hi && miterEnd;
+        const cut = Math.min(depth, (s1 - s0) / (first && last ? 2.01 : 1.01));
+        kit.prism([
+          on(wall, s0), on(wall, s1),
+          on(wall, s1 - (last ? cut : 0), -depth), on(wall, s0 + (first ? cut : 0), -depth),
+        ], bottom, end - bottom, material, 'body');
+      };
       let low = w.lo;
       for (const c of w.cuts.slice().sort((a, b) => a.at - b.at)) {
         const a = c.at - c.width / 2,
