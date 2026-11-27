@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const rpcMock = vi.fn();
 vi.mock('../../../lib/supabase', () => ({ supabase: { rpc: (...a: unknown[]) => rpcMock(...a) } }));
 
-import { thV3ToElements, thV3Status, guestParkingLine, fetchThV3Plan, clearThV3Cache, canvasPolygons, type ThV3Response } from './thV3Plan';
+import { thV3ToElements, thV3Status, guestParkingLine, fetchThV3Plan, clearThV3Cache, forgetThV3Plan, canvasPolygons, type ThV3Response } from './thV3Plan';
 import { validatePlanElements } from '../../../engine/validatePlan';
 
 // EPSG:4326 boxes near Nashville: 20 x 40-ft homes ~ 0.0000678 deg of lon x 0.00011 deg of lat
@@ -147,6 +147,20 @@ describe('fetchThV3Plan (the drawing of the competition\'s townhome candidate)',
     await new Promise(res => setTimeout(res, 0));
     const again = await fetchThV3Plan(660125);
     expect(again.data?.pattern).toBe('mews');
+  });
+  it('with settings from feedback, runs the settings function and keeps that plan apart from the default', async () => {
+    rpcMock.mockResolvedValue({ data: PLAN, error: null });
+    await fetchThV3Plan(660125);
+    await fetchThV3Plan(660125, 12000, { unit_w_ft: 24, max_row_homes: 6 });
+    expect(rpcMock).toHaveBeenLastCalledWith('fn_generate_th_site_plan_v3_app_opt', { p_ogc_fid: 660125, p_budget_ms: 12000, p_params: { unit_w_ft: 24, max_row_homes: 6 } });
+    // the same settings in another order are the same plan; the default is still kept
+    await fetchThV3Plan(660125, 12000, { max_row_homes: 6, unit_w_ft: 24 });
+    await fetchThV3Plan(660125);
+    expect(rpcMock).toHaveBeenCalledTimes(2);
+    // forgetting a parcel forgets every drawing of it
+    forgetThV3Plan(660125);
+    await fetchThV3Plan(660125, 12000, { unit_w_ft: 24, max_row_homes: 6 });
+    expect(rpcMock).toHaveBeenCalledTimes(3);
   });
 });
 

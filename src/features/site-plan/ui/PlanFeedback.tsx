@@ -176,7 +176,7 @@ export function PlanFeedback(props: PlanFeedbackProps) {
                 </button>
               </div>
               {!canApply && !(phase.kind === 'read' && phase.before !== null) && (
-                <p className="mt-1.5 text-[11px] text-gray-500">This plan&rsquo;s engine takes no settings from feedback yet: the note is recorded for the engine and carried into later notes, and Claude says what would need to change.</p>
+                <p className="mt-1.5 text-[11px] text-gray-500">Apartment plans take no settings from feedback yet: the note is recorded for the engine and carried into later notes, and Claude says what would need to change.</p>
               )}
               {phase.kind === 'error' && <p className="mt-2 text-red-700" data-testid="plan-feedback-error">{phase.message}</p>}
               {reading && phase.kind === 'read' && (

@@ -410,18 +410,25 @@ export type ThV3Result = { data: ThV3Response | null; error: string | null };
 
 // One drawing per parcel per session: the competition has usually just run
 // the search, so this is ~1 s; a failure or an unfinished search is not kept.
-const thCache = new Map<number, Promise<ThV3Result>>();
+const thCache = new Map<string, Promise<ThV3Result>>();
+const thKey = (ogcFid: number, params: Record<string, number | boolean>) =>
+  `${ogcFid}|${JSON.stringify(Object.keys(params).sort().map(k => [k, params[k]]))}`;
 
-/** The townhome plan for a parcel. A search still running is asked again (up to three calls). */
-export function fetchThV3Plan(ogcFid: number, budgetMs = 12000): Promise<ThV3Result> {
-  const hit = thCache.get(ogcFid);
+/** The townhome plan for a parcel. A search still running is asked again (up to three calls). With settings (from plan
+ *  feedback, owner 11-27) it runs fn_generate_th_site_plan_v3_app_opt, which checks them against the engine's ranges. */
+export function fetchThV3Plan(ogcFid: number, budgetMs = 12000, params: Record<string, number | boolean> = {}): Promise<ThV3Result> {
+  const key = thKey(ogcFid, params);
+  const withSettings = Object.keys(params).length > 0;
+  const hit = thCache.get(key);
   if (hit) return hit;
   const p: Promise<ThV3Result> = (async () => {
     try {
       if (!supabase) return { data: null, error: 'the plan service is not configured' };
       let last: ThV3Response | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
-        const { data, error } = await supabase.rpc('fn_generate_th_site_plan_v3_app', { p_ogc_fid: ogcFid, p_budget_ms: budgetMs });
+        const { data, error } = withSettings
+          ? await supabase.rpc('fn_generate_th_site_plan_v3_app_opt', { p_ogc_fid: ogcFid, p_budget_ms: budgetMs, p_params: params })
+          : await supabase.rpc('fn_generate_th_site_plan_v3_app', { p_ogc_fid: ogcFid, p_budget_ms: budgetMs });
         if (error) return { data: null, error: String((error as { message?: string }).message ?? error) };
         if (!data || typeof data !== 'object') return { data: null, error: 'the townhome engine returned nothing' };
         last = data as ThV3Response;
@@ -432,14 +439,14 @@ export function fetchThV3Plan(ogcFid: number, budgetMs = 12000): Promise<ThV3Res
       return { data: null, error: String(err) };
     }
   })();
-  thCache.set(ogcFid, p);
-  void p.then(r => { if (r.error || !r.data || thV3Status(r.data) !== 'done') thCache.delete(ogcFid); });
+  thCache.set(key, p);
+  void p.then(r => { if (r.error || !r.data || thV3Status(r.data) !== 'done') thCache.delete(key); });
   return p;
 }
 
-/** Drops one parcel's drawing so the next fetch asks the engine again (its chosen plan changed). */
+/** Drops one parcel's drawings so the next fetch asks the engine again (its chosen plan changed). */
 export function forgetThV3Plan(ogcFid: number): void {
-  thCache.delete(ogcFid);
+  for (const k of [...thCache.keys()]) if (k.startsWith(`${ogcFid}|`)) thCache.delete(k);
 }
 
 /** Tests and a new session start clean. */

@@ -169,6 +169,18 @@ const SETTING_WORDS: Record<string, string> = {
   ring_depth_adaptive: 'Fit loop depth to the site',
   walk_straighten_tol_ft: 'Street straightening tolerance',
   walk_turn_weight: 'Penalty for street turns',
+  // townhomes
+  max_row_homes: 'Most homes in a row',
+  min_row_homes: 'Fewest homes in a row',
+  unit_w_ft: 'Home width',
+  unit_d_ft: 'Home depth',
+  front_yard_ft: 'Front yard',
+  street_setback_ft: 'Setback from the street',
+  row_break_ft: 'Gap between rows',
+  courtyard_min_depth_ft: 'Least courtyard depth',
+  green_sf_per_home: 'Green space per home (sf)',
+  guest_stalls_per_home_target: 'Guest parking per home',
+  amenity_pad_sf: 'Amenity area (sf)',
 };
 const PATTERN_WORDS: Record<string, string> = { loop: 'loop streets', single: 'a single street', grid: 'a street grid' };
 

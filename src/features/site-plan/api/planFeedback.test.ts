@@ -136,6 +136,11 @@ describe('the app side of plan feedback', () => {
     expect(keptChanges([])).toBeNull();
   });
 
+  it('names townhome settings in a developer\'s words too', () => {
+    const th: FeedbackLevers = { product: 'townhome', patterns: [], settings: [{ key: 'unit_w_ft', kind: 'num', min: 18, max: 28, step: 2, current: 20 }] };
+    expect(describeChanges({ pattern: null, params: { unit_w_ft: 24, max_row_homes: 6 } }, th)).toEqual(['Home width: 24 ft (was 20 ft)', 'Most homes in a row: 6']);
+  });
+
   it('says the changes in a developer\'s words, with the engine\'s value before', () => {
     expect(describeChanges({ pattern: 'grid', params: { block_len_max_ft: 900, ring_depth_adaptive: true } }, LEVERS))
       .toEqual(['Street pattern: a street grid', 'Longest block: 900 ft (was 1,200 ft)', 'Fit loop depth to the site: on']);
