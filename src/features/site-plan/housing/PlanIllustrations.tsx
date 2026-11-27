@@ -33,10 +33,18 @@ export function planRoomLabel(name: string, w: number, d: number): string {
   if (/stair|landing|entry|foyer|hall|mud/i.test(name)) return name.split(/\s+/)[0]!;
   return name.length > 9 ? name.slice(0, 8) + '…' : name;
 }
+/** Display schematic zone dimensions without spurious decimal precision. */
+export function displayFeet(value: number): string {
+  const q = Math.round(value * 48);
+  const feet = Math.floor(q / 48), inches = Math.floor((q % 48) / 4);
+  const fraction = ['', '¼', '½', '¾'][q % 4] ?? '';
+  return inches || fraction ? `${feet}′-${inches || ''}${fraction}″` : `${feet}′`;
+}
 const textStyle = { fontFamily: 'Arial, sans-serif', fill: '#344339' };
 export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number }) {
   const rooms = home.levels[level]!.rooms,
-    walls = wallsFor(home, level);
+    walls = wallsFor(home, level, home.attached ? ['left'] : []);
+  const roofOrUpper = level + 1 < home.levels.length;
   const porches = home.porches.filter((p) => (p.level ?? 0) === level);
   const [x, y, width, depth] = bounds([...rooms, ...porches].map((r) => r.rect));
   // Front of the house is at the bottom of the sheet.
@@ -85,6 +93,9 @@ export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number
             />
           ))}
           <line x1={rx + w / 2} y1={yy + 2.3} x2={rx + w / 2} y2={yy + d - 0.55} />
+          <text x={rx + w / 2} y={yy + 1.85} textAnchor="middle" fontSize=".68" fill="#344339" stroke="none">
+            {level === 0 ? 'UP' : roofOrUpper ? 'UP / DN' : 'DN'}
+          </text>
         </g>
       );
     if (/kitchen/i.test(r.name))
@@ -98,7 +109,9 @@ export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number
     if (/bath|powder/i.test(r.name))
       return (
         <g fill="none" stroke="#6f8f88" strokeWidth=".11">
-          <rect x={rx + 0.45} y={yy + 0.45} width={Math.min(2.6, w - 0.9)} height={Math.min(5, d - 0.9)} rx="0.35" />
+          {!/powder/i.test(r.name) && (
+            <rect x={rx + 0.45} y={yy + 0.45} width={Math.min(2.6, w - 0.9)} height={Math.min(5, d - 0.9)} rx="0.35" />
+          )}
           <circle cx={rx + w - 1.1} cy={yy + 1.15} r="0.55" />
           <rect x={rx + w - 2.1} y={yy + d - 1.55} width={1.55} height={0.95} />
         </g>
@@ -115,7 +128,7 @@ export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number
           />
         </g>
       );
-    if (/mech|hvac|utility/i.test(r.name))
+    if (/mech|hvac|utility|furnace/i.test(r.name))
       return (
         <g fill="none" stroke="#6a7388" strokeWidth=".11">
           <rect x={rx + 0.5} y={yy + 0.5} width={w - 1} height={d - 1} />
@@ -233,8 +246,8 @@ export function HomePlan({ home, level = 0 }: { home: HomeDesign; level?: number
           </text>
         );
       })}
-      {dimension([x, y + depth + 2.5], [x + width, y + depth + 2.5], width + ' ft')}
-      {dimension([x - 2.6, y], [x - 2.6, y + depth], depth + ' ft', true)}
+      {dimension([x, y + depth + 2.5], [x + width, y + depth + 2.5], displayFeet(width))}
+      {dimension([x - 2.6, y], [x - 2.6, y + depth], displayFeet(depth), true)}
       <text
         x={x + width / 2}
         y={sy(y) + 3.8}

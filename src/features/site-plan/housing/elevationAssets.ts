@@ -1,3 +1,4 @@
+import { findHome } from './originalDesigns';
 import type { Face } from './originalDesigns';
 import { WEST_HEIMAN_IDS } from './westHeimanDesigns';
 import { MIDDLE_TENNESSEE_IDS } from './middleTennesseeDesigns';
@@ -42,6 +43,11 @@ export function photorealElevationSrc(id: string, side: Face): string {
 
 export function exteriorRendering(id: string): string {
   return scenes.has(id) ? photorealElevationSrc(id, 'front') : '/home-designs/' + id + '.webp';
+}
+
+/** Each authored plan now has a front and rear capture from the placement renderer. */
+export function modelExterior(id: string, side: 'front' | 'rear'): string | null {
+  return findHome(id) ? `/home-designs/model-v1/${id}-${side}.webp` : null;
 }
 
 export function interiorRenderings(id: string): { name: string; src: string }[] {

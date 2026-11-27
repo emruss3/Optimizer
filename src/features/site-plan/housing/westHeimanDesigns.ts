@@ -117,7 +117,7 @@ function westHeiman(variant: 'B2' | 'E2' | 'F2'): HomeDesign {
     volumes: [
       volume([0, 0, w, depth], 0, 'brick'),
       volume([0, middleFront, w, middleDepth], 1, 'lap'),
-      volume([0, upperFront, w, upperDepth], 2, 'lap', f ? 'flat' : 'depth', f ? 0 : 4),
+      { ...volume([0, upperFront, w, upperDepth], 2, 'lap', f ? 'flat' : 'depth', f ? 0 : 4), ...(e ? { rearHipRunFt: 11.1 } : {}) },
     ],
     doors: [
       { room: 'Entry', face: 'front', at: e ? 6.75 : w - 6.75, width: 3, kind: 'entry' },
@@ -125,7 +125,15 @@ function westHeiman(variant: 'B2' | 'E2' | 'F2'): HomeDesign {
     ],
     porches: [], parking: 'rear', cars: 2,
     rearLoadPrecedent: { source: 'The Bradley Projects · West Heiman · ' + sheet + ' · Revision 14 (2026-09-22)' },
-    ...(e ? { sideWindows: e2Windows, garageDoor: 'solid-sectional' as const } : {}),
+    ...(e ? {
+      sideWindows: e2Windows, garageDoor: 'solid-sectional' as const, garageOpeningHeightFt: 7,
+      // A2.47 rear elevation: (2) 3050 windows at Level 3, none at Level 2.
+      // Their stations and sills are approximate sheet reads, not survey coordinates.
+      rearWindows: [
+        { level: 2, at: 3.66, width: 3, sill: 1.39, head: 6.39 },
+        { level: 2, at: 10.15, width: 3, sill: 1.39, head: 6.39 },
+      ],
+    } : {}),
     ...(f ? { roofBulkhead: { rect: [w - 5.75, 6, 5, 14], heightFt: 7 } as NonNullable<HomeDesign['roofBulkhead']> } : {}),
     ...(variant === 'B2' ? {
       sideWindows: b2Windows,

@@ -517,8 +517,11 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const r = rig.current;
     if (!r?.model.ground.subjects.some((s) => s.id === focusHomeId)) return;
     frame('street');
+    // Some valid lots don't have a defensible street camera. Keep the preview
+    // tied to the selected house instead of jumping out to the full site.
+    if (lastShot.current?.shot !== 'street') focusSelected();
     framedHomeToken.current = focusHomeToken;
-  }, [ready, built, focusHomeToken, focusHomeId, frame]);
+  }, [ready, built, focusHomeToken, focusHomeId, frame, focusSelected]);
 
   useEffect(() => {
     const r = rig.current;
@@ -540,7 +543,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       r.highlight = null;
     }
     const target = selectedId ? r.model.pick.find(m => m.userData.id === selectedId) : undefined;
-    if (target) {
+    if (target && !homeCompare) {
       const mesh = new THREE.Mesh(target.geometry, new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       mesh.scale.setScalar(1.003);
       mesh.position.copy(target.position);
@@ -548,7 +551,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       r.highlight = mesh;
     }
     r.request();
-  }, [selectedId, ready, built]);
+  }, [selectedId, ready, built, homeCompare]);
 
   const snapshot = useCallback((fileName?: string) => {
     const r = rig.current, cv = canvas.current;

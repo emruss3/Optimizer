@@ -1,0 +1,13 @@
+# Authored-home packages and placement audit
+
+Baseline was main `eb378b1`, following the November 27 Buildable Plans production audit. The follow-up uses the authored catalog, a controlled three-lot rear-load plan in the browser, the stored Delk fixture, and the exact home geometry used by site massing. It does not assert tenant data or saved-plan changes in production.
+
+| Gap | Verified and addressed in this revision | Remaining |
+| --- | --- | --- |
+| Exterior renders | All 15 authored plans now have front and rear model-derived WebPs, including Pocket Cottage. Each uses the live authored placement geometry path. The model is the default; unrelated character imagery is separate. | Site-specific planting, real neighborhoods and photo quality remain separate work. |
+| Actual layouts | Perimeter and room dimensions display in feet/inches. Stair paths are identified, powder rooms no longer show tubs, and the Motor Court primary suite has direct access rather than an entry through the dressing room. Tests audit reachable, non-overlapping room zones for all 15 designs. | These are feasibility layouts. Code, clear widths, stair sections/headroom, doors and hardware, structural spans, and MEP are not approved. B2 and F2 stair transitions still need a section-based redline. |
+| E2 facade | A2.47 documents the rear hip, 16 × 7 ft solid garage opening and two upper rear windows, with a blank second floor at the rear. The plan-derived drawings, live geometry and fresh pictures carry these corrections. Window stations and rear hip run are approximate reads from the sheet. | Complete source verification of all elevations, offsets, finish specifications and floor transitions. |
+| Interiors | The collection explicitly reports missing interior assets instead of removing the tab. The existing 7 interiors packs remain labeled as inspiration. | Eight catalog plans have no interior imagery. None of the seven inspiration packs verifies actual room geometry. |
+| Placement | A selected 2D lot resolves to its unique house, or users select the house directly. The assigned authored home opens by default. An explicit 3D preview frames the candidate without tinting its exterior or applying it. The fit check governs Apply, including the actual modeled roof-height check for all authored types where a height limit is available. | Stock packages still expose listing data and publisher links. The Lanes B2/E2/F2 remain authored studies, not auto-assigned to 2500 W Heiman phases before ID and lot mapping. |
+
+For asset regeneration start Vite, run `node scripts/housing-preview/write-renders.mjs`, and review the two captures for each edited design. Set `BASE_URL` or `CHROMIUM_PATH` if using a custom local server or browser.

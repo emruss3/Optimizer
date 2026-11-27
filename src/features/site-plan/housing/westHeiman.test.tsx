@@ -9,6 +9,7 @@ import { assignmentsFromElements, carryAssignments, commitConcept } from './carr
 import { designBounds, doorAnchors, floorArea, roofHeight, wallsFor } from './drawings';
 import { designsFittingHouse } from './homeDesignsGate';
 import { placeHome } from './placement';
+import { findHome } from './originalDesigns';
 import { homesSchedule } from './schedule';
 import { WEST_HEIMAN_DESIGNS, WEST_HEIMAN_IDS } from './westHeimanDesigns';
 
@@ -111,6 +112,18 @@ describe('West Heiman per-lot placement', () => {
       .filter(w => w.face === side && !w.other).flatMap(w => w.cuts.filter(c => c.kind === 'window')).length);
     expect(counts('right')).toEqual([0, 3, 2]);
     expect(counts('left')).toEqual([0, 2, 2]);
+    const rear = e!.levels.map((_, i) => wallsFor(e!, i).filter(w => w.face === 'back' && !w.other).flatMap(w => w.cuts));
+    expect(rear[0]).toMatchObject([{ kind: 'garage', width: 16, head: 7 }]);
+    expect(rear[1]).toEqual([]);
+    expect(rear[2]?.filter(c => c.kind === 'window').map(c => c.width)).toEqual([3, 3]);
+  });
+
+  it('screens the modeled roof height for standard authored plans too', () => {
+    const elements = plan();
+    const pad = elements.find(e => e.id === 'test-pad-2')!;
+    const lantern = findHome('tn-lantern-narrow-v1')!;
+    expect(roofHeight(lantern)).toBeGreaterThan(35);
+    expect(placeHome(lantern, pad, elements, undefined, 35).reason).toMatch(/roof height.*35 ft/);
   });
 
   it('routes the selected lot and authored design through Home Studio Apply, with interior views', async () => {
@@ -118,13 +131,15 @@ describe('West Heiman per-lot placement', () => {
     const onApply = vi.fn((id: string, lot: string) => commitConcept(id, lot, elements));
     const onPreview = vi.fn();
     const onClose = vi.fn();
-    render(<HomeStudio elements={elements} selected="test-pad-2" designs={[WEST_HEIMAN_DESIGNS[1]!]} stockPlans={[]}
+    render(<HomeStudio elements={elements} selected="test-lot-2" designs={[WEST_HEIMAN_DESIGNS[1]!]} stockPlans={[]}
       onPreview={onPreview} onClose={onClose} onApplyConcept={onApply} />);
     fireEvent.click(screen.getByRole('tab', { name: /Authored catalog/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Interiors' }));
     expect(screen.getAllByRole('img', { name: /West Heiman E2, illustrative/i })).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Preview on site' }));
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ house: 'test-pad-2', name: 'West Heiman E2' }));
+    fireEvent.click(screen.getByTestId('home-concept-preview-3d'));
+    expect(onPreview).toHaveBeenLastCalledWith(expect.objectContaining({ house: 'test-pad-2', name: 'West Heiman E2' }), '3d');
     expect(onApply).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole('button', { name: 'Apply to Lot 2' }));
     expect(onClose).not.toHaveBeenCalled();

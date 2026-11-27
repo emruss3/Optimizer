@@ -90,3 +90,16 @@ describe('HomeStudio Elevations — photoreal vs diagram', () => {
     expect(screen.queryByTestId('home-elevation-photo')).toBeNull();
   });
 });
+
+it('defaults to the placement model, offers both faces, and reports missing interiors', () => {
+  const cottage = HOME_DESIGNS.find(h => h.id === 'tn-pocket-cottage-v1')!;
+  render(<HomeStudio elements={[]} designs={[cottage]} stockPlans={[]} onClose={() => undefined} onPreview={() => undefined} />);
+  const src = () => screen.getByTestId('home-exterior-model').querySelector('img')?.getAttribute('src');
+  expect(src()).toContain('model-v1/tn-pocket-cottage-v1-front.webp');
+  fireEvent.click(screen.getByRole('button', { name: 'Rear' }));
+  expect(src()).toContain('model-v1/tn-pocket-cottage-v1-rear.webp');
+  fireEvent.error(screen.getByTestId('home-exterior-model').querySelector('img')!);
+  expect(screen.getByText(/Model render unavailable/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Interiors' }));
+  expect(screen.getByTestId('home-interiors-missing')).toBeTruthy();
+});

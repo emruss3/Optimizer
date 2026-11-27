@@ -148,7 +148,7 @@ export function placeHome(
   siteBoundary?: Element['geometry'] | null,
   maxHeightFt?: number | null,
 ): FitResult {
-  if (h.rearLoadPrecedent && maxHeightFt != null && maxHeightFt > 0 && roofHeight(h) > maxHeightFt)
+  if (maxHeightFt != null && maxHeightFt > 0 && roofHeight(h) > maxHeightFt)
     return { reason: `The roof height exceeds the recorded ${maxHeightFt} ft limit.` };
   try {
     return fitHome(h, selected, elements, siteBoundary);
@@ -175,7 +175,9 @@ function fitHome(
     pad = groundPoly(selected, frame),
     centre = mean(pad[0]!);
   const local = elements.map((el) => ({ el, poly: groundPoly(el, frame) }));
-  const lot = local.find(({ el, poly }) => /^Lot \d+$/.test(el.name) && inside(centre, poly));
+  const isLot = (el: Element) => el.type !== 'building' && (/(^|[-:])lot-\d+$/.test(el.id) || /^Lot\s+\d+$/i.test(el.name));
+  const lot = local.find(({ el }) => isLot(el) && el.id === selected.properties.lotId) ??
+    local.find(({ el, poly }) => isLot(el) && inside(centre, poly));
   const setbacks = setbackValues(lot?.el.properties.homeSetbacksFt);
   const drives = local
     .filter(({ el }) => el.name === 'Driveway' || el.properties.kind === 'driveway')
@@ -453,7 +455,7 @@ function fitHome(
           floors: h.levels.length,
           stories: h.levels.length,
           storiesAssumed: false,
-          heightFt: h.rearLoadPrecedent ? roofHeight(h) : floorBase(h, h.levels.length),
+          heightFt: roofHeight(h),
           housePlan: h.name,
           floorplanId: undefined,
           houseSource: h.rearLoadPrecedent?.source ?? 'Parcel Proforma original design',

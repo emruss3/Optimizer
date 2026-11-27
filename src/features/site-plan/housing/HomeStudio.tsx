@@ -2,16 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Element } from '../../../engine/types';
 import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
-import { exteriorRendering, hasPhotorealElevation, interiorRenderings, photorealElevationSrc } from './elevationAssets';
-import { HomePlan, Elevation } from './PlanIllustrations';
+import { exteriorRendering, hasPhotorealElevation, interiorRenderings, modelExterior, photorealElevationSrc } from './elevationAssets';
+import { HomePlan, Elevation, displayFeet } from './PlanIllustrations';
 import { StockDrawings } from './StockDrawings';
 import { PROVISIONAL_PAD } from './starterHomes';
-import { parentLotOf } from './eligibility';
 import { residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
 import { stepHomeDesignIndex } from './homeDesignsGate';
 import { authoredSource, catalogFitRows, compatibleLots, SOURCE_LABEL } from './catalogFit';
-import { DEFAULT_HOME_SETBACKS, detachedHouses, houseEligibility, stockEligibility, type HouseLotEligibility } from './eligibility';
+import { DEFAULT_HOME_SETBACKS, detachedHouses, houseEligibility, houseForSelection, parentLotOf, stockEligibility, type HouseLotEligibility } from './eligibility';
 import type { HousingDesignRecord } from './types';
 import './homeStudio.css';
 
@@ -41,7 +40,7 @@ interface Props {
   /** Commit a concept study on one house's lot (not a preview: it becomes the plan). */
   onApplyConcept?: ((designId: string, houseId: string) => void) | undefined;
   onClose: () => void;
-  onPreview: (placement: HomePlacement) => void;
+  onPreview: (placement: HomePlacement, view?: '3d') => void;
   preview?: HomePlacement | null;
   onCancelPreview?: () => void;
   onTargetLot?: (houseId: string) => void;
@@ -121,7 +120,11 @@ export default function HomeStudio({
   const [side, setSide] = useState<Face>('front'),
     // Diagram is the plan-derived default; Photoreal is an opt-in character view.
     [elevationMode, setElevationMode] = useState<'photo' | 'diagram'>('diagram'),
-    [houseId, setHouseId] = useState(() => houses.find((e) => e.id === selected)?.id ?? houses[0]?.id ?? '');
+    [houseId, setHouseId] = useState(() => houseForSelection(selected, houses, elements)?.id ?? houses[0]?.id ?? '');
+  const [exteriorSide, setExteriorSide] = useState<'front' | 'rear'>('front');
+  const [exteriorMode, setExteriorMode] = useState<'model' | 'inspiration'>('model');
+  const [missingModel, setMissingModel] = useState<string | null>(null);
+  const selectionHouseId = useMemo(() => houseForSelection(selected, houses, elements)?.id, [selected, houses, elements]);
   const root = useRef<HTMLElement>(null);
   // the lots a design fits, found when asked ("Find compatible lots")
   const [compatible, setCompatible] = useState<{ designId: string; lots: Array<{ id: string; name: string }> } | null>(null);
@@ -133,14 +136,23 @@ export default function HomeStudio({
       return;
     }
     if (!houses.some((h) => h.id === houseId)) {
-      setHouseId(houses.find((e) => e.id === selected)?.id ?? houses[0]!.id);
+      setHouseId(selectionHouseId ?? houses[0]!.id);
     }
-  }, [houses, houseId, selected]);
+  }, [houses, houseId, selectionHouseId]);
 
   // the studio follows the house selected on the plan (2D or 3D) while it is open
   useEffect(() => {
-    if (selected && houses.some((h) => h.id === selected)) setHouseId(selected);
-  }, [selected, houses]);
+    if (selectionHouseId) setHouseId(selectionHouseId);
+  }, [selectionHouseId]);
+
+  useEffect(() => {
+    setChoiceId(null);
+    setLevel(0);
+    setStockIndex(0);
+    setAlsoLots([]);
+    setLockHome(false);
+    setCompatible(null);
+  }, [houseId]);
 
   const selectedHouse = houses.find((e) => e.id === houseId);
   const currentDesignId = selectedHouse?.properties.housingDesignId;
@@ -188,7 +200,7 @@ export default function HomeStudio({
   }, [stock, stockIndex]);
 
   // Track by identity: a fit or lot change may re-sort the list.
-  const index = Math.max(0, catalogue.findIndex(d => d.id === choiceId));
+  const index = Math.max(0, catalogue.findIndex(d => d.id === (choiceId ?? currentAuthored?.id)));
   const stepConcept = (delta: number) => {
     if (!catalogue.length) return;
     setChoiceId(catalogue[stepHomeDesignIndex(index, catalogue.length, delta)]!.id);
@@ -211,9 +223,11 @@ export default function HomeStudio({
   const plan = stock[Math.min(stockIndex, Math.max(stock.length - 1, 0))];
   const home = catalogue[Math.min(index, Math.max(catalogue.length - 1, 0))];
   const interiors = home ? interiorRenderings(home.id) : [];
-  const views = ['Exterior', 'Plans', 'Elevations', ...(interiors.length ? ['Interiors'] as const : [])] as const;
-  const shownView = view === 'Interiors' && !interiors.length ? 'Exterior' : view;
-    const canShowPhotoreal = !!home && hasPhotorealElevation(home.id);
+  const views = ['Exterior', 'Plans', 'Elevations', 'Interiors'] as const;
+  const shownView = view;
+  const activeLevel = Math.max(0, Math.min(level, (home?.levels.length ?? 1) - 1));
+  const renderSource = home ? modelExterior(home.id, exteriorSide) : null;
+  const canShowPhotoreal = !!home && hasPhotorealElevation(home.id);
   const showPhotoreal = elevationMode === 'photo' && canShowPhotoreal;
   useEffect(() => {
     if (elevationMode === 'photo' && home && !hasPhotorealElevation(home.id)) setElevationMode('diagram');
@@ -615,6 +629,9 @@ export default function HomeStudio({
                           {home.id.startsWith('tn-west-heiman-') && 'Level 2 is 19′-9¼″ across the outside walls. Clear room widths are smaller. '}
                           These are illustrative studies, not dimensional or construction drawings.
                         </p>
+                        {interiors.length === 0 && (
+                          <p role="status" data-testid="home-interiors-missing">Interior renders aren’t available for this plan. Use Plans to review the room layout.</p>
+                        )}
                         {interiors.map(({ name, src }) => (
                           <figure key={src}>
                             <img src={src} alt={home.name + ', illustrative ' + name.toLowerCase()} loading="lazy" />
@@ -623,16 +640,43 @@ export default function HomeStudio({
                         ))}
                       </div>
                     ) : shownView === 'Exterior' ? (
-                      <figure>
-                        <img
-                          src={exteriorRendering(home.id)}
-                          alt={home.name + ', illustrative character exterior (not generated from this plan)'}
-                        />
-                        <figcaption className="home-exterior-note">
-                          Illustrative character image — not generated from this plan’s drawings, and not a
-                          photo of a built home.
-                        </figcaption>
-                      </figure>
+                      <>
+                        <div className="home-options" role="group" aria-label="Exterior presentation">
+                          <button type="button" aria-pressed={exteriorMode === 'model'} onClick={() => setExteriorMode('model')}>Plan model</button>
+                          {canShowPhotoreal && (
+                            <button type="button" aria-pressed={exteriorMode === 'inspiration'} onClick={() => setExteriorMode('inspiration')}>Inspiration</button>
+                          )}
+                        </div>
+                        {exteriorMode === 'inspiration' && canShowPhotoreal ? (
+                          <figure>
+                            <img src={exteriorRendering(home.id)} alt={home.name + ', illustrative exterior inspiration'} />
+                            <figcaption className="home-exterior-note">Inspiration only. This image is not the house model placed on the lot.</figcaption>
+                          </figure>
+                        ) : (
+                          <>
+                            <div className="home-options" role="group" aria-label="Exterior view">
+                              {(['front', 'rear'] as const).map(face => (
+                                <button type="button" key={face} aria-pressed={exteriorSide === face} onClick={() => setExteriorSide(face)}>
+                                  {face === 'front' ? 'Front' : 'Rear'}
+                                </button>
+                              ))}
+                            </div>
+                            <figure data-testid="home-exterior-model">
+                              {renderSource && renderSource !== missingModel ? (
+                                <img src={renderSource} alt={home.name + ' · ' + exteriorSide + ' render from the plan model'} width={1050} height={700}
+                                  onError={() => setMissingModel(renderSource)} />
+                              ) : (
+                                <><p role="status">Model render unavailable. Showing the plan-derived diagram.</p>
+                                  <Elevation home={home} side={exteriorSide === 'front' ? 'front' : 'back'} /></>
+                              )}
+                              <figcaption className="home-exterior-note">
+                                From the same plan model used in live placement. The setting is illustrative
+                                {home.attached ? ', and end walls may change with adjoining units' : ''}.
+                              </figcaption>
+                            </figure>
+                          </>
+                        )}
+                      </>
                     ) : shownView === 'Plans' ? (
                       <>
                         <div className="home-options">
@@ -640,7 +684,7 @@ export default function HomeStudio({
                             <button
                               key={l.name}
                               type="button"
-                              aria-pressed={level === i}
+                              aria-pressed={activeLevel === i}
                               onClick={() => setLevel(i)}
                             >
                               {l.name}
@@ -648,16 +692,16 @@ export default function HomeStudio({
                           ))}
                         </div>
                         <figure className="home-plan">
-                          <HomePlan home={home} level={level} />
+                          <HomePlan home={home} level={activeLevel} />
                         </figure>
                         <details>
                           <summary>Room dimensions</summary>
                           <dl className="home-rooms">
-                            {home.levels[level]!.rooms.map((r) => (
+                            {home.levels[activeLevel]!.rooms.map((r) => (
                               <div key={r.name}>
                                 <dt>{r.name}</dt>
                                 <dd>
-                                  {r.rect[2]} × {r.rect[3]} ft
+                                  {displayFeet(r.rect[2])} × {displayFeet(r.rect[3])}
                                 </dd>
                               </div>
                             ))}
@@ -688,7 +732,7 @@ export default function HomeStudio({
                               onClick={() => setElevationMode('photo')}
                               data-testid="home-elevation-photoreal"
                             >
-                              Photoreal
+                              Inspiration
                             </button>
                           ) : null}
                         </div>
@@ -723,7 +767,7 @@ export default function HomeStudio({
                     <p>{home.access}</p>
                     <div className="home-measures">
                       <span>
-                        {width} × {depth} ft incl. porches
+                        {displayFeet(width)} × {displayFeet(depth)} incl. porches
                       </span>
                       <span>
                         {home.levels.length} {home.levels.length === 1 ? 'story' : 'stories'}
@@ -759,6 +803,11 @@ export default function HomeStudio({
                                 onClick={() => onPreview(current.placement!)}
                               >
                                 Preview on site
+                              </button>
+                            )}
+                            {current?.placement && (
+                              <button type="button" data-testid="home-concept-preview-3d" onClick={() => onPreview(current.placement!, '3d')}>
+                                Preview in 3D
                               </button>
                             )}
                           </div>
@@ -800,11 +849,9 @@ export default function HomeStudio({
                       )}
                     </section>
                     <footer>
-                      * Approximate conditioned area from schematic room zones (kitchen, baths, HVAC/mech, laundry —
-                      not numbered placeholders). Dimensions include wall allowances. Exterior and elevation images are
-                      illustrative AI character studies — not licensed stock, not construction photos, and not derived
-                      from plan CAD. These are concept studies for site fit — not publisher construction sets or
-                      dimensioned project plans. For cited stock plans (e.g. America’s Best House Plans), use the Stock plans tab.
+                      * Areas and dimensions come from schematic room zones and include wall allowances.
+                      Model renders and diagrams follow the authored design. Inspiration and existing interior images are
+                      separate character studies. Neither a placement nor a drawing verifies code, structure, clearances, or permit readiness.
                     </footer>
                   </>
                 ) : null}

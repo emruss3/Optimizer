@@ -109,15 +109,16 @@ export function wallsFor(h: HomeDesign, index: number, exposedEnds: Face[] = [])
           at: door.at,
           width: door.width,
           sill: 0,
-          head: door.kind === 'garage' ? 7.5 : 7,
+          head: door.kind === 'garage' ? (h.garageOpeningHeightFt ?? 7.5) : 7,
         });
       }
     if (h.attached && !horizontal(w.face) && !exposedEnds.includes(w.face)) continue;
     if (w.room === 'Covered balcony') continue;
-    if (h.sideWindows && !horizontal(w.face)) {
-      for (const cut of h.sideWindows)
-        if (cut.level === index && cut.face === w.face
-          && cut.at - cut.width / 2 >= w.lo && cut.at + cut.width / 2 <= w.hi)
+    const documented = w.face === 'back' ? h.rearWindows :
+      w.face === 'left' || w.face === 'right' ? h.sideWindows?.filter(c => c.face === w.face) : undefined;
+    if (documented) {
+      for (const cut of documented)
+        if (cut.level === index && cut.at - cut.width / 2 >= w.lo && cut.at + cut.width / 2 <= w.hi)
           w.cuts.push({ kind: 'window', at: cut.at, width: cut.width, sill: cut.sill, head: cut.head });
       continue;
     }

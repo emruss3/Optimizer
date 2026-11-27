@@ -23,6 +23,8 @@ export interface Volume {
   ridge: 'depth' | 'width' | 'shed' | 'flat';
   pitch: number;
   finish: Finish;
+  /** Run from rear eave to the end of the ridge for a documented rear hip. */
+  rearHipRunFt?: number;
 }
 export interface Door {
   room: string;
@@ -63,6 +65,9 @@ export interface HomeDesign {
   rearLoadPrecedent?: { source: string };
   /** Exterior garage treatment when verified by the model's elevation. */
   garageDoor?: 'solid-sectional';
+  garageOpeningHeightFt?: number;
+  /** A documented face overrides inferred window positions on all stories. */
+  rearWindows?: Array<Omit<SideWindow, 'face'>>;
   sideWindows?: SideWindow[];
   balconyScreen?: { level: number; width: number; openingAt: number; openingWidth: number };
   roofBulkhead?: { rect: Rect; heightFt: number };
@@ -537,7 +542,7 @@ export const HOME_DESIGNS: HomeDesign[] = [
           room('Laundry', 52, 30, 12, 12),
           room('Garage', 64, 5, 24, 36),
         ],
-        'Foyer~Library;Foyer~Stair hall;Foyer~Dining;Dining~Kitchen;Dressing|Gallery;Primary bedroom|Primary bath;Primary bedroom|Dressing;Gallery~Great room;Gallery|Powder;Dining~Great room;Kitchen~Mudroom;Mudroom|Garage;Kitchen|Pantry;Pantry|Mech / HVAC;Great room|Laundry',
+        'Foyer~Library;Foyer~Stair hall;Foyer~Dining;Dining~Kitchen;Stair hall|Primary bedroom;Primary bedroom|Primary bath;Primary bedroom|Dressing;Gallery~Great room;Gallery|Powder;Dining~Great room;Kitchen~Mudroom;Mudroom|Garage;Kitchen|Pantry;Pantry|Mech / HVAC;Great room|Laundry',
       ),
       level(
         'Upper',

@@ -68,6 +68,17 @@ export function parentLotOf(house: Element, elements: Element[]): Element | null
   }) ?? null;
 }
 
+/** The 2D drawing can select a lot outline rather than the building on it. */
+export function houseForSelection(selected: string | null | undefined, houses: Element[], elements: Element[]): Element | undefined {
+  if (!selected) return undefined;
+  const direct = houses.find(h => h.id === selected);
+  if (direct) return direct;
+  if (!elements.some(e => e.id === selected && isLot(e))) return undefined;
+  const matches = houses.filter(h => parentLotOf(h, elements)?.id === selected);
+  // A shared townhome row can contain several homes. Don't arbitrarily target one.
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 /** Detached house pads the stock catalogue can be offered on. */
 export function detachedHouses(elements: Element[]): Element[] {
   return residentialHomes(elements).filter(h => !h.properties?.townhome);

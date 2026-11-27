@@ -1,5 +1,15 @@
 # Home Studio exterior & elevation images — provenance
 
+## Model renders
+
+The files under `model-v1/` are front and rear WebP captures from the same
+authored housing geometry and real-time renderer used for placement. The
+setting is illustrative. They are not photos, permit drawings, or a
+reconstruction of an installed home. The asset recipe is in
+`scripts/housing-preview/`. Regenerate both views when changing plan geometry.
+
+## Inspiration images
+
 These files are **AI-generated illustrative character images**, not photographs of
 built homes and **not** renders derived from the Parcel Proforma plan geometry
 (rooms, openings, or elevations). They must not be treated as construction

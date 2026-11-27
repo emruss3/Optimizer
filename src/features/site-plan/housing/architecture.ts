@@ -193,6 +193,7 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
       wing.pitch / 12,
       wing.ridge === 'depth' ? 'd' : 's',
       { over: 0.33, roof: ROOF, wall: material, fascia: trim,
+        ...(wing.rearHipRunFt ? { rearHipRun: wing.rearHipRunFt * FT } : {}),
         ...(home.balconyScreen?.level === end - 1 ? { ends: [false, true] } : {}) },
     );
     const faces = f.faces(x * FT, (x + w) * FT, y * FT, (y + d) * FT);

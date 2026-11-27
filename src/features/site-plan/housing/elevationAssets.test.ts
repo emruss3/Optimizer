@@ -8,6 +8,7 @@ import {
   PHOTOREAL_ELEVATION_IDS,
   hasPhotorealElevation,
   interiorRenderings,
+  modelExterior,
   photorealElevationSrc,
 } from './elevationAssets';
 
@@ -49,4 +50,13 @@ describe('photoreal elevation assets', () => {
     expect(hasPhotorealElevation('tn-unknown-v1')).toBe(false);
     expect(hasPhotorealElevation('')).toBe(false);
   });
+});
+
+it('ships two actual-model assets for every authored plan, including Pocket Cottage', () => {
+  for (const home of HOME_DESIGNS) for (const face of ['front', 'rear'] as const) {
+    const src = modelExterior(home.id, face);
+    expect(src, home.id).not.toBeNull();
+    expect(existsSync(resolve(process.cwd(), 'public', src!.slice(1))), src).toBe(true);
+  }
+  expect(modelExterior('abhp:1754-00010', 'front')).toBeNull();
 });

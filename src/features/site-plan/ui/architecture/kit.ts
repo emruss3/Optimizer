@@ -381,7 +381,7 @@ export class Kit {
    * Returns the height of the ridge above the eaves.
    */
   gable(f: Frame, s0: number, s1: number, d0: number, d1: number, zE: number, pitch: number, ridge: 's' | 'd',
-    o: { over: number | [number, number]; roof: Mat; wall?: Mat | null; fascia: Mat; ends?: [boolean, boolean] }): number {
+    o: { over: number | [number, number]; roof: Mat; wall?: Mat | null; fascia: Mat; ends?: [boolean, boolean]; rearHipRun?: number }): number {
     const [OE, OR] = typeof o.over === 'number' ? [o.over, o.over] : o.over;
     const drop = pitch * OE, F = 0.2;
     const ends = o.ends ?? [true, true];
@@ -401,10 +401,19 @@ export class Kit {
       return rise;
     }
     const sm = (s0 + s1) / 2, rise = (pitch * (s1 - s0)) / 2, zR = zE + rise, zL = zE - drop;
-    this.flat([f.p3(s0 - OE, d1 + OR, zL), f.p3(s0 - OE, d0 - OR, zL), f.p3(sm, d0 - OR, zR), f.p3(sm, d1 + OR, zR)], o.roof);
-    this.flat([f.p3(s1 + OE, d0 - OR, zL), f.p3(s1 + OE, d1 + OR, zL), f.p3(sm, d1 + OR, zR), f.p3(sm, d0 - OR, zR)], tone(o.roof, 0.93));
+    const hip = o.rearHipRun ? Math.min(o.rearHipRun, d1 - d0) : 0;
+    const ridgeRear = d1 + OR - hip;
+    this.flat([f.p3(s0 - OE, d1 + OR, zL), f.p3(s0 - OE, d0 - OR, zL), f.p3(sm, d0 - OR, zR), f.p3(sm, ridgeRear, zR)], o.roof);
+    this.flat([f.p3(s1 + OE, d0 - OR, zL), f.p3(s1 + OE, d1 + OR, zL), f.p3(sm, ridgeRear, zR), f.p3(sm, d0 - OR, zR)], tone(o.roof, 0.93));
     if (OE > 0) for (const s of [s0 - OE, s1 + OE]) this.flat([f.p3(s, d0 - OR, zL - F), f.p3(s, d1 + OR, zL - F), f.p3(s, d1 + OR, zL + 0.02), f.p3(s, d0 - OR, zL + 0.02)], o.fascia);
+    if (hip) {
+      const rear = d1 + OR;
+      this.flat([f.p3(s0 - OE, rear, zL), f.p3(s1 + OE, rear, zL), f.p3(sm, ridgeRear, zR)], o.roof);
+      this.flat([f.p3(s0 - OE, rear, zL - F), f.p3(s1 + OE, rear, zL - F),
+        f.p3(s1 + OE, rear, zL), f.p3(s0 - OE, rear, zL)], o.fascia);
+    }
     [d0, d1].forEach((d, i) => {
+      if (hip && i === 1) return;
       const dd = i === 0 ? d - OR : d + OR;
       if (OR > 0 && ends[i]) {
         this.flat([f.p3(s0 - OE, dd, zL - F), f.p3(s0 - OE, dd, zL), f.p3(sm, dd, zR), f.p3(sm, dd, zR - F)], o.fascia);

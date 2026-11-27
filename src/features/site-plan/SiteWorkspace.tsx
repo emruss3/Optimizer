@@ -224,8 +224,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, []);
   const [sheetsOpen, setSheetsOpen] = useState(false);
   const [homesOpen, setHomesOpen] = useState(false);
-  const [houseStudy, setHouseStudy] = useState<{ parcel: string; base: Element[]; study: HomePlacement } | null>(null);
-  /** Bumped when a home-design preview lands so 3D massing reframes on that house. */
+  const [houseStudy, setHouseStudy] = useState<{ parcel: string; base: Element[]; study: HomePlacement; focusToken?: number } | null>(null);
+  // Only a deliberate "Preview in 3D" request reframes the current camera.
+  const homeFocusRequest = useRef(0);
   const closeHomes = useCallback(() => { setHomesOpen(false); setHouseStudy(null); }, []);
   // which sheet the Export menu opened, and whether it asked for the whole set
   const [sheetsAsk, setSheetsAsk] = useState<{ initial: 'plan' | 'view' | 'section'; printSet: boolean }>({ initial: 'plan', printSet: false });
@@ -4523,8 +4524,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
             setHouseStudy(null);
             handleSceneSelection([id]);
           }}
-          onPreview={study => {
-            setHouseStudy({ parcel: parcelIdStr, base: baseElements, study });
+          onPreview={(study, targetView) => {
+            if (targetView === '3d') setViewMode('3d');
+            setHouseStudy({ parcel: parcelIdStr, base: baseElements, study,
+              ...(targetView === '3d' ? { focusToken: ++homeFocusRequest.current } : {}) });
             handleSceneSelection([study.house]);
           }}
         />
@@ -4856,6 +4859,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 topo={topo}
                 accessBreak={routeBreak}
                 homeCompare={!!activeHome}
+                {...(activeHome && houseStudy?.focusToken ? { focusHomeId: activeHome.house, focusHomeToken: houseStudy.focusToken } : {})}
                 grossSf={seedViewOn || activeHome ? null : metrics?.totalBuiltSF}
                 savedPlanId={scene && savedRenderPlan?.parcel === scene.identity.parcelId && savedRenderPlan.revision === scene.identity.revision
                   ? savedRenderPlan.id : undefined}
