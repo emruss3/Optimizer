@@ -1921,6 +1921,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (sheetLots > 0 || !def || def.error || def.status !== 'done' || (def.lots ?? 0) > 0) return;
     if (layoutUserChoseRef.current) return;
     if (elementsRef.current.some(e => e.id.startsWith('sfseed-'))) return;
+    // Flood hold (Martingale / 680719): leave the hatch and the "draw the house" offer alone.
+    // Auto-drawing the seed strips sfv1-hold-* (isSfPlanElement) and hides sfv1-draw-house.
+    if (def.flood_hold || elementsRef.current.some(e => e.id.startsWith('sfv1-hold-'))) return;
     void drawSfSeedRef.current?.();
   };
 
