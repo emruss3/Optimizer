@@ -60,10 +60,11 @@ const openPlanner = async (page, q) => {
   try {
     const id = await search(page, '675423');
     row.byId = id.rows[0] ?? null;
-    const words = await search(page, '2500 West Heiman Street');
+    // 2611 W HEIMAN ST exists; there is no 2500 W Heiman parcel (The Lanes is an assemblage name)
+    const words = await search(page, '2611 West Heiman Street');
     row.byWords = words.rows[0] ?? null;
     if (!/DELK/i.test(row.byId ?? '')) throw new Error(`app ID 675423 did not find 0 Delk Ave: ${row.byId}`);
-    if (!/HEIMAN/i.test(row.byWords ?? '')) throw new Error(`"2500 West Heiman Street" found nothing on Heiman: ${row.byWords}`);
+    if (!/HEIMAN/i.test(row.byWords ?? '')) throw new Error(`"2611 West Heiman Street" found nothing on Heiman: ${row.byWords}`);
   } catch (e) { row.problem = String(e.message ?? e).slice(0, 240); }
   results.push(row); await context.close();
 }
