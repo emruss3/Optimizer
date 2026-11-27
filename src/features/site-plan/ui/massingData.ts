@@ -133,6 +133,8 @@ export function buildMassingData(
   stripes: Array<{ path: number[][] }>;
   /** Parked cars in some of those stalls. Illustration. */
   cars: RenderSlab[];
+  /** The plan explicitly reports a disconnected approach to the street. */
+  vehicleAccessBreak?: boolean;
   /** Where to look from for an aerial view: degrees clockwise from south,
    *  the diagonal least blocked by the existing buildings. */
   aerialAzimuth: number;
@@ -507,7 +509,7 @@ export function buildMassingData(
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
   const terrain = ground?.topo ? makeTerrain(ground.topo, q => { const v = m(point2274To3857(q)); return [v[0] ?? 0, v[1] ?? 0]; }) : null;
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, toLocal: m, origin: { latDeg, lonDeg }, structures, terrain,
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, vehicleAccessBreak: !!ground?.accessBreak, toLocal: m, origin: { latDeg, lonDeg }, structures, terrain,
     aerialAzimuth: clearestAzimuth(
       contextPolygons.filter(c => c.elevation > 1).map(c => {
         const r = c.polygon[0] ?? [];
