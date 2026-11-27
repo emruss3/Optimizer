@@ -1120,7 +1120,8 @@ export async function generateThSitePlan(
 export interface MfAiPickSide { units?: number | null; n_fail?: number | null; fails?: string[] | null; regime?: string | null }
 export interface MfAiPick {
   /** model: a design-model plan won; podium: the podium drafter (structured parking) won; engine: the engine's own plan */
-  picked?: 'model' | 'podium' | 'engine';
+  /** engine_alternative: another engine layout won; it was tried from a model proposal the engine did not follow, so it is not the model's design */
+  picked?: 'model' | 'podium' | 'engine_alternative' | 'engine';
   model_version?: string | null;
   rule?: string;
   engine?: MfAiPickSide;
