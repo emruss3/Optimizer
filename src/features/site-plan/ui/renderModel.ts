@@ -21,6 +21,7 @@ export type Surface =
   | 'site-hatch'
   | 'railing'    // a balustrade of thin bars: see-through between them
   | 'glassrail'  // a glass balustrade
+  | 'interior-light' // a small practical fixture behind glazing
   | 'water'
   | 'plain';
 
