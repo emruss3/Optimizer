@@ -507,3 +507,18 @@
     transition: padding-right 120ms ease-out;
   }
 }
+
+/* The site stays the primary pane. Stack the list over the drawings in the
+   narrow inspector instead of shrinking the drawings into a second column. */
+.home-current { padding: 7px 20px; border-bottom: 1px solid #dfe3dc; font-size: 13px; }
+.home-studio-standby { position: fixed; z-index: 1800; top: 0; right: 0; width: min(480px, 100vw); }
+@media (min-width: 1000px) {
+  .home-studio-scrim, .pp-studio-docked { --home-dock: min(490px, 40vw); }
+  .home-studio-scrim { display: block; inset: 0 0 0 auto; width: var(--home-dock); padding: 0; background: transparent; }
+  .pp-studio-docked { padding-right: var(--home-dock); }
+  .home-studio { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .home-studio .home-body { flex: 1; flex-direction: column; }
+  .home-studio nav { width: 100%; max-height: 100px; display: flex; align-items: flex-start; overflow: auto; border-right: 0; }
+  .home-studio nav button { width: 145px; flex: 0 0 145px; }
+  .home-studio main { padding: 12px 16px; }
+}

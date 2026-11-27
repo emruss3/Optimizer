@@ -1,3 +1,4 @@
+import { isGeometryBackedHome } from '../housing/starterHomes';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -40,6 +41,7 @@ export interface RenderViewProps {
   /** Home-design study: frame this building when focusHomeToken changes. */
   focusHomeId?: string | null | undefined;
   focusHomeToken?: number | undefined;
+  homeCompare?: boolean | undefined;
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
@@ -67,11 +69,11 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, homeCompare, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   // The look 3D opens on: the user's explicit choice this session, else the default (handoff 11-27).
-  const [look, setLookState] = useState<'review' | 'rendering'>(initialLook);
+  const [look, setLookState] = useState<'review' | 'rendering'>(() => initialLook(elements.some(isGeometryBackedHome)));
   const setLook = useCallback((k: 'review' | 'rendering') => { rememberLook(k); setLookState(k); }, []);
   // the feasibility badge asks for Review: the finding is read there, with its object marked (handoff 11-27)
   useEffect(() => {
@@ -140,7 +142,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // the building selected on the plan: Street and Entry frame it first (handoff 11-27)
   const selectedRef = useRef<string | null | undefined>(selectedId);
   selectedRef.current = selectedId;
-  const stood = useRef<{ revision: string; review: boolean; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
+  const stood = useRef<{ revision: string; scheme?: string; compare?: boolean; review: boolean; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -435,7 +437,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const was = stood.current;
     const reviewNow = look === 'review' && !present;
     const placed = lastShot.current?.shot;
-    if (was && was.revision === modelRevision) {
+    if (was && (was.revision === modelRevision || (was.scheme === scene.identity.key && (was.compare || homeCompare)))) {
       if (lastShot.current?.shot === 'approach' || lastShot.current?.shot === 'garage') {
         controls.minDistance = 0.55;
         controls.maxPolarAngle = 2.05;
@@ -477,7 +479,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     return () => {
       active = false;
       clearTimeout(settle);
-      stood.current = { revision: modelRevision, review: look === 'review' && !present, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
+      stood.current = { revision: modelRevision, scheme: scene.identity.key, compare: homeCompare, review: look === 'review' && !present, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
       remember3D(scene.identity.parcelId, {
         revision: modelRevision, review: stood.current.review,
         position: camera.position.toArray() as [number, number, number], target: controls.target.toArray() as [number, number, number], fov: camera.fov,
@@ -756,16 +758,14 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
 export default RenderView;
 
 // ── the look 3D opens on ─────────────────────────────────────────────────────────────────────────
-// Rendering becomes the default once its release gates pass on real devices (handoff 11-27: framing,
-// obstruction, first usable frame ≤ 2 s warm, Review not slower by more than 10% at p95). Until then
-// Review stays the default; QA turns Rendering on with ?look=rendering or localStorage pp.lookDefault.
-// An explicit choice is remembered for the session either way.
+// A scene with an authored geometry-backed home opens in Rendering. For
+// feasibility-only scenes, Review is the fallback. Explicit choice wins.
 export const RENDERING_DEFAULT = false;
 /** Dispatched on window to bring the 3D view to Review (the feasibility badge). */
 export const LOOK_REVIEW_EVENT = 'pp:look-review';
 const LOOK_KEY = 'pp.look';
 
-export function initialLook(): 'review' | 'rendering' {
+export function initialLook(geometryBackedHome = false): 'review' | 'rendering' {
   try {
     const chosen = sessionStorage.getItem(LOOK_KEY);
     if (chosen === 'review' || chosen === 'rendering') return chosen;
@@ -774,7 +774,7 @@ export function initialLook(): 'review' | 'rendering' {
     const d = localStorage.getItem('pp.lookDefault');
     if (d === 'review' || d === 'rendering') return d;
   } catch { /* storage blocked: the default */ }
-  return RENDERING_DEFAULT ? 'rendering' : 'review';
+  return RENDERING_DEFAULT || geometryBackedHome ? 'rendering' : 'review';
 }
 
 function rememberLook(k: 'review' | 'rendering'): void {

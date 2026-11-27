@@ -8,6 +8,7 @@ import type { Element } from '../../../engine/types';
 import { housingDesignById } from './catalogue';
 import { detachedHouses, parentLotOf } from './eligibility';
 import { HOME_DESIGNS } from './originalDesigns';
+import { PROVISIONAL_PAD } from './starterHomes';
 
 export interface HomeRow {
   houseId: string; lot: string; design: string; kind: 'stock' | 'concept' | 'engine';
@@ -25,7 +26,7 @@ export function homesScheduleRows(elements: Element[]): Array<{ label: string; v
   const kindWords: Record<HomeRow['kind'], string> = {
     stock: 'publisher stock plan · listing footprint, schematic (construction drawings licensed separately)',
     concept: 'Parcel Proforma concept study · schematic',
-    engine: 'engine catalogue home',
+    engine: 'engine footprint · no home plan selected',
   };
   const out = [{ label: 'Homes', value: `${s.all.homes} homes · ${s.totals.length} design${s.totals.length === 1 ? '' : 's'}${s.all.heatedSf > 0 ? ` · ${s.all.heatedSf.toLocaleString()} heated sf stated` : ''}${s.all.heatedUnknown ? ` (${s.all.heatedUnknown} without a stated area)` : ''}` }];
   for (const t of s.totals) {
@@ -40,11 +41,11 @@ export function homesSchedule(elements: Element[]): { rows: HomeRow[]; totals: D
     const id = typeof p.housingDesignId === 'string' && p.housingPlacementStatus === 'placed' ? p.housingDesignId : null;
     const concept = id ? HOME_DESIGNS.find(d => d.id === id) : undefined;
     const stock = id && !concept ? housingDesignById(id) : undefined;
-    const design = concept ? `${concept.name} (concept)` : stock ? stock.planNumber : typeof p.housePlan === 'string' ? `${p.housePlan} (engine)` : 'generic pad (engine)';
+    const design = concept ? p.housingAssignmentSource === 'starter' ? `${concept.name} (starter concept)` : `${concept.name} (concept)` : stock ? stock.planNumber : PROVISIONAL_PAD;
     const kind: HomeRow['kind'] = concept ? 'concept' : stock ? 'stock' : 'engine';
     const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null);
     const heatedSf = concept ? num(p.housingHeatedSf) : stock ? num(p.housingHeatedSf) ?? stock.heatedSf : null;
-    return { houseId: h.id, lot: parentLotOf(h, elements)?.name ?? h.name ?? h.id, design, kind, beds: num(p.houseBeds), footprintSf: num(p.houseFootprintSf) ?? num(p.areaSqFt), heatedSf };
+    return { houseId: h.id, lot: parentLotOf(h, elements)?.name ?? h.name ?? h.id, design, kind, beds: kind === 'engine' ? null : num(p.houseBeds), footprintSf: num(p.houseFootprintSf) ?? num(p.areaSqFt), heatedSf };
   });
   const order = (s: string) => Number(/(\d+)/.exec(s)?.[1] ?? 0);
   rows.sort((a, b) => order(a.lot) - order(b.lot));
