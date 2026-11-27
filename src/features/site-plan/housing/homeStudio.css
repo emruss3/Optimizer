@@ -500,3 +500,10 @@
   cursor: pointer;
 }
 .home-mine-none p { margin: 0 0 10px; }
+@media (min-width: 1280px) {
+  /* the workspace reflows beside the docked studio: the drawing keeps the space it can be seen in */
+  .pp-studio-docked {
+    padding-right: min(760px, 52vw);
+    transition: padding-right 120ms ease-out;
+  }
+}

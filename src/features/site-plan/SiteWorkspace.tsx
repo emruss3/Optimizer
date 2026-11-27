@@ -4211,7 +4211,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const canRedo = homeCanRedo || (historyVersion >= 0 && futureRef.current.length > 0);
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-gray-100">
+    // with the studio docked beside it (wide screens) the workspace gives up that width, so the drawing
+    // reflows beside the studio instead of lying under it (handoff 11-27)
+    <div className={`h-full min-h-0 flex flex-col bg-gray-100${homesOpen && homeDesignsUi.show && homeDesignsUi.enabled ? ' pp-studio-docked' : ''}`} data-testid="site-workspace">
       <CensusBanner />
       {/* Order-8: on a commercial-only lot the multifamily refusal (and its
           "draw the house" switch) is the wrong conversation — no residential
