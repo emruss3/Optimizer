@@ -431,3 +431,26 @@ export function captureBasisParts(c: CaptureBasis): string[] {
   if (c.comparison) parts.push(`${c.comparison.label} ${n(c.comparison.gsf)} GSF (${Math.round(c.comparison.pct)}%: this plan parks in a structure)`);
   return parts;
 }
+
+/** Binding constraints that are ordinance caps; anything else (parking land, a unit band) is a design estimate. */
+const ORDINANCE_BINDINGS = /far|height|stor|density|units?_cap|max_units|isr|impervious|coverage/i;
+
+/**
+ * What a plan's floor area is over, named (audit cf4f0e8: Ocala and Main read "over the upper
+ * bound" without saying whether the bound is a hard limit or a comparator). A plan with structured
+ * parking is measured against the structured-parking ceiling, the surface figure's assumption not
+ * being its own. Null when the plan is within the bound, or there is no bound.
+ */
+export function upperBoundFinding(gsf: number, mb: Pick<MaxBuildout, 'max_gsf' | 'binding_constraint' | 'structured_parking_ceiling'> | null | undefined, structuredParking: boolean): string | null {
+  if (!mb || !(gsf > 0)) return null;
+  const ceiling = structuredParking ? mb.structured_parking_ceiling : undefined;
+  const cap = ceiling?.gsf ?? mb.max_gsf;
+  const binding = (ceiling ? ceiling.binding : mb.binding_constraint) ?? '';
+  if (!(cap > 0) || gsf <= cap + 0.5) return null;
+  const over = `${Math.round(gsf - cap).toLocaleString()} GSF over`;
+  const named = binding ? ` (binding: ${binding.replace(/_/g, ' ')})` : '';
+  if (ceiling) return `${over} the ${Math.round(cap).toLocaleString()} GSF ceiling with structured parking${named}`;
+  return ORDINANCE_BINDINGS.test(binding)
+    ? `${over} the ${Math.round(cap).toLocaleString()} GSF ordinance cap${named}`
+    : `${over} the ${Math.round(cap).toLocaleString()} GSF surface-parking estimate${named}, an estimate rather than an ordinance cap`;
+}

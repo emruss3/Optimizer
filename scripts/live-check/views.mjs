@@ -57,9 +57,19 @@ for (const p of PARCELS) {
     row.viewport3d = vp ? `${Math.round(vp.width)}×${Math.round(vp.height)}` : null;
     await page.waitForTimeout(1500);
     row.treeFetchesInReview = treeFetches.length;
+    // a street camera placed in Review is placed again when Rendering stands up its trees (audit cf4f0e8)
+    await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
+      .catch(() => page.locator('[data-testid="camera-street"]').first().click({ force: true }));
+    await page.waitForTimeout(1500);
+    const camsBefore = (await page.evaluate(() => window.__ppTimeline ?? [])).filter(m => m.name === 'camera').length;
+    row.reviewShot = await page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null')?.shot ?? null; } catch { return null; } }).catch(() => null);
     await page.locator('[data-testid="look-rendering"]').first().click().catch(() => {});
     await page.locator('[data-testid="massing-3d"][data-ready="true"][data-look="rendering"]').first().waitFor({ timeout: 60000 }).catch(() => {});
     row.treeFetchesInRendering = treeFetches.length;
+    await page.waitForTimeout(1500);
+    const camsAfter = (await page.evaluate(() => window.__ppTimeline ?? [])).filter(m => m.name === 'camera');
+    row.streetReplaced = camsAfter.length > camsBefore && camsAfter[camsAfter.length - 1]?.detail?.requested === 'street';
+    row.streetBasisInRendering = await page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null')?.basis ?? null; } catch { return null; } }).catch(() => null);
     await page.waitForTimeout(1500);
     // the 3D toolbar can re-render while the scene settles: retry the click, then force it
     await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
@@ -97,6 +107,7 @@ for (const p of PARCELS) {
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
     if (row.present?.on !== 'true' || row.present.reviewPressed !== 'false' || row.present.renderingPressed !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong look label: ${JSON.stringify(row.present)}`);
+    if (row.reviewShot === 'street' && row.streetReplaced === false) throw new Error(`the street camera from Review was kept in Rendering: ${row.streetBasisInRendering}`);
     if (row.treeFetchesInReview !== 0 || !(row.treeFetchesInRendering > 0)) throw new Error(`tree grower fetched ${row.treeFetchesInReview} times in Review and ${row.treeFetchesInRendering} by Rendering`);
     if (row.timeline.revision == null || row.timeline.interactive3d == null) throw new Error('timeline missing the plan revision or 3D milestone');
   } catch (e) {
@@ -178,7 +189,7 @@ for (const l of layout) console.log(`LAYOUT 1280×720 ${l.parcel} | ${JSON.strin
 await browser.close();
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, layout }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
+  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | street re-placed ${r.streetReplaced} "${r.streetBasisInRendering ?? ''}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
 const failed = results.filter(r => r.problem);
 if (failed.length) { console.log(`${failed.length} of ${results.length} parcels failed`); process.exit(1); }

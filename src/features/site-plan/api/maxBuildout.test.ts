@@ -3,6 +3,7 @@ import {
   fetchMaxBuildout,
   isMaxBuildout,
   normalizeMaxBuildout,
+  upperBoundFinding,
   bindingLabel,
   __clearMaxBuildoutCache,
   captureBasis,
@@ -200,5 +201,23 @@ describe('captureBasis: one claim, one denominator (535 Main St, audit 2026-11-2
     expect(parksInStructure('tuck_under')).toBe(true);
     expect(parksInStructure('surface')).toBe(false);
     expect(parksInStructure(undefined)).toBe(false);
+  });
+});
+
+describe('upperBoundFinding: which bound a plan is over, named (audit cf4f0e8)', () => {
+  const mb = { max_gsf: 65_100, binding_constraint: 'parking_land', structured_parking_ceiling: { gsf: 423_765, binding: 'height' } };
+  it('calls a surface-parking bound an estimate, not an ordinance cap (441 Ocala Dr)', () => {
+    expect(upperBoundFinding(65_481, mb, false)).toBe('381 GSF over the 65,100 GSF surface-parking estimate (binding: parking land), an estimate rather than an ordinance cap');
+  });
+  it('calls a FAR- or height-bound figure an ordinance cap', () => {
+    expect(upperBoundFinding(70_000, { ...mb, binding_constraint: 'far' }, false)).toContain('ordinance cap (binding: far)');
+  });
+  it('measures a structure-parked plan against the structured ceiling (535 Main St)', () => {
+    expect(upperBoundFinding(245_108, { ...mb, max_gsf: 199_950 }, true)).toBeNull();
+    expect(upperBoundFinding(430_000, { ...mb, max_gsf: 199_950 }, true)).toContain('ceiling with structured parking (binding: height)');
+  });
+  it('says nothing within the bound or without one', () => {
+    expect(upperBoundFinding(60_000, mb, false)).toBeNull();
+    expect(upperBoundFinding(60_000, null, false)).toBeNull();
   });
 });

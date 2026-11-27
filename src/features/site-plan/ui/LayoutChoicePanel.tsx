@@ -144,7 +144,8 @@ export function LayoutChoicePanel({
         >
           <span className="text-[11px] font-semibold text-slate-800">Neighborhood</span>
           <span className="text-base font-semibold leading-tight text-slate-900">{nb ? `${nb.homes} home${nb.homes === 1 ? '' : 's'}` : loading ? '…' : '—'}</span>
-          <span className="text-[10px] text-slate-500">{nb ? nb.label : loading ? 'comparing the patterns…' : 'no pattern places a home'}</span>
+          {/* a timeout or an error is not an answer: "no pattern places a home" only once the patterns were compared (audit cf4f0e8: 211 N 7th) */}
+          <span className="text-[10px] text-slate-500" data-testid="layout-neighborhood-state">{nb ? nb.label : loading ? 'comparing the patterns…' : competition?.state === 'error' ? 'not compared · the server did not answer' : competition?.state === 'done' ? 'no pattern places a home' : 'not compared yet'}</span>
           {choice && def === 'neighborhood' && badge('default', 'bg-emerald-100 text-emerald-800')}
           {nb && !nb.buildable && badge('fails a code test', 'bg-red-100 text-red-800')}
         </button>
