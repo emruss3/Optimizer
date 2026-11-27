@@ -12,6 +12,7 @@ import type { ForegroundObstacle, Subject } from './shots';
 import { buildArchitecture, hashId, type ArchStyle } from '../ui/architecture';
 import { buildingHeight } from '../scene/heights';
 import { pointInPolygon } from '../scene/frame';
+import { frontGarden } from './frontGarden';
 import { CROWN_DRAWN } from '../scene/landscape';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
@@ -873,7 +874,24 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       put('concrete|solid', prism([ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], 0.6), [150, 148, 142, 255]);
     }
   }
-  const foreground: ForegroundObstacle[] = opts.review ? [] : data.shrubs.map(([x, y, r]) => [x, y, r * 1.7]);
+  const garden = real && !opts.review && data.authoredHomes?.length ? frontGarden(
+    approaches, new Set(data.authoredHomes), data.lots,
+    [...data.polygons.filter(p => p.building || !!p.hazard || (!!p.kind && SITE[p.kind]?.surface !== 'grass')).map(p => p.polygon),
+      ...streetPavement.map(r => [r])],
+    [...data.walks, ...data.roads.map(r => ({ path: r.path, widthM: 7.3 })),
+      ...data.slabs.flatMap(s => s.approach ? [{ path: [s.approach.start, s.approach.end], widthM: s.approach.width }] : [])],
+  ) : [];
+  for (const [x, y, radius] of garden) {
+    owner = plantId(x, y, 'entry-bed');
+    const w = radius * 2;
+    const ring = Array.from({ length: 10 }, (_, i) => {
+      const t = i * Math.PI / 5;
+      return [x + Math.cos(t) * w, y + Math.sin(t) * w];
+    });
+    put('plain|flat', turfSheet(ring, 0.22), [87, 67, 49, 255]);
+  }
+  const plantedShrubs = [...data.shrubs, ...garden];
+  const foreground: ForegroundObstacle[] = opts.review ? [] : plantedShrubs.map(([x, y, r]) => [x, y, r * 1.7]);
   const parking = paved.filter(p => p.kind === 'parking' || p.kind === 'parking-bay' || p.kind === 'driveway');
   const supported = (x: number, y: number) => parking.some(p =>
     x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings));
@@ -1008,7 +1026,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     place(kinds, detail.map(([x, y, r], i) => ({ x, y, r: r * CROWN_DRAWN, tint: GREENS[(i * 7) % GREENS.length] ?? [255, 255, 255] })), 0.1);
     if (ranked !== standing) plant(ranked.slice(plantBudget).map(([x, y, r]) => [x, y, r * 1.12]), 'site-trees', true);
     if (bushes.length) {
-      const shrubs = opts.light && data.shrubs.length > 144 ? [...data.shrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : data.shrubs;
+      const shrubs = opts.light && plantedShrubs.length > 144 ? [...plantedShrubs].sort((a, b) => distance(a) - distance(b)).slice(0, 144) : plantedShrubs;
       place(bushes, shrubs.map(([x, y, r]) => ({ x, y, r: r * 1.7 })), 0.25, 'shrub');
     }
   } else {

@@ -128,6 +128,8 @@ export function buildMassingData(
   trees: Array<{ position: [number, number]; radiusM?: number }>;
   /** Foundation planting from the rendered buildings: x, y, radius. */
   shrubs: Array<[number, number, number]>;
+  /** Building IDs with a resolved authored, placed home. */
+  authoredHomes?: string[];
   /** Walks, as lines to be drawn wide under what they follow: the plan's own
    *  streets (with a planted strip inside the walk) and the larger buildings. */
   walks: Array<{ id?: string; path: number[][]; widthM: number; strip: boolean }>;
@@ -369,6 +371,7 @@ export function buildMassingData(
   const draw = (scale: number) => {
     const slabs: RenderSlab[] = [], windows: RenderWindow[] = [], roofs: RenderWindow[] = [];
     const shrubs: Array<[number, number, number]> = [];
+    const authoredHomes: string[] = [];
     buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
       if (isProvisionalPad(el)) {
@@ -387,6 +390,7 @@ export function buildMassingData(
       const design = findHome(properties.housingDesignId);
       const authored = design && Array.isArray(properties.homeOrigin) && Array.isArray(properties.homeAxis)
         ? placedArchitecture(design, el.id, label, m(properties.homeOrigin), m(properties.homeAxis), scale > 1.6, neighbours) : null;
+      if (authored) authoredHomes.push(el.id);
       const a = authored ?? buildArchitecture(el.id, label, rings, use, heightOf(el), pavement, scale, style, neighbours, frontage,
         use === 'house' ? houseAccessFor(el, driveways) : undefined,
         garage ? { ring: garage.ring, deckM: garage.deckM, over: properties?.overGarage === true } : null);
@@ -437,14 +441,14 @@ export function buildMassingData(
         part(quad(-half - 0.45, half + 0.45, -0.05, 0.4), high, 0.45, [150, 148, 142, 255], 'concrete');
       }
     }
-    return { slabs, windows, roofs, shrubs };
+    return { slabs, windows, roofs, shrubs, authoredHomes };
   };
   const debug = typeof window !== 'undefined' && !!(window as unknown as { __renderDebug?: boolean }).__renderDebug;
   const t0 = debug ? performance.now() : 0;
   let model = draw(1);
   if (debug) console.info(`[time] buildings drawn once in ${Math.round(performance.now() - t0)} ms: ${model.slabs.length} solids, ${model.roofs.length} flats, ${model.windows.length} panes, ${buildings.length} buildings`);
   for (let scale = 1.5; model.windows.length + model.roofs.length + model.slabs.length > MAX_WINDOWS * 4 && scale <= 6; scale *= 1.5) model = draw(scale);
-  const { slabs, windows, roofs, shrubs } = model;
+  const { slabs, windows, roofs, shrubs, authoredHomes } = model;
   if (debug) console.info(`[time] buildings settled at ${Math.round(performance.now() - t0)} ms: ${slabs.length} solids, ${roofs.length} flats, ${windows.length} panes`);
   // walks and curbs follow the plan's own shapes
   const walks: Array<{ id: string; path: number[][]; widthM: number; strip: boolean }> = [];
@@ -547,7 +551,7 @@ export function buildMassingData(
 
   const extent = Math.max((maxX - minX) * frame.kx, (maxY - minY) * frame.ky, 10);
   const terrain = ground?.topo ? makeTerrain(ground.topo, q => { const v = m(point2274To3857(q)); return [v[0] ?? 0, v[1] ?? 0]; }) : null;
-  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, walks, curbs, roads, stripes, cars, vehicleAccessBreak: !!ground?.accessBreak, toLocal: m, origin: { latDeg, lonDeg }, structures, terrain,
+  return { polygons, extent, groundPaths, contextPolygons, trees, floorLines, slabs, windows, roofs, lawn, roofLines, lots, shrubs, authoredHomes, walks, curbs, roads, stripes, cars, vehicleAccessBreak: !!ground?.accessBreak, toLocal: m, origin: { latDeg, lonDeg }, structures, terrain,
     aerialAzimuth: clearestAzimuth(
       contextPolygons.filter(c => c.elevation > 1).map(c => {
         const r = c.polygon[0] ?? [];

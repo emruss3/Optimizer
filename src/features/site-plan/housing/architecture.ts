@@ -111,9 +111,12 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
               }
             : null;
           if (view) { drawWindowRoom(kit, wall, view); dressed.add(key); roomViews++; }
+          const insetJoinery = !w.other && (w.face === 'front' || w.face === 'back');
+          const masonry = wing?.finish === 'brick' || wing?.finish === 'stone';
           kit.window(wall, s, width, sill, head, {
             frame: FRAME,
-            sill: trim,
+            sill: masonry ? mat(177, 161, 138, 'concrete') : trim,
+            ...(insetJoinery ? { insetJoinery: true, casing: masonry ? mat(162, 147, 126, 'concrete') : trim } : {}),
             grid: c.width >= 4 ? [2, 2] : [1, 2],
             glazed: true,
             interiorDepth: 0.31,
@@ -136,6 +139,23 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
         }
       }
       bodySegment(low, w.hi, z, top);
+    }
+    // Clad soffit and drip flashing only where an authored floor actually
+    // cantilevers beyond the wall below. No extra bay or overhang is invented.
+    if (floor > 0 && !kit.lite) {
+      for (const v of home.volumes.filter(wing => wing.first === floor)) {
+        const [x, y, width, depth] = v.rect;
+        const below = home.volumes.find(wing =>
+          wing.first + wing.count === floor && inside([x + width / 2, y + depth / 2], wing.rect));
+        if (!below) continue;
+        const [bx, by, bw] = below.rect;
+        const start = Math.max(x, bx) * FT, end = Math.min(x + width, bx + bw) * FT;
+        if (end - start < 0.6 || (by - y) * FT <= 0.12) continue;
+        const exposed = f.faces(start, end, y * FT, by * FT).front;
+        const [a, b, c, d] = f.ring(start, end, y * FT, by * FT);
+        kit.flat([a, d, c, b].map(p => [p![0], p![1], base - 0.113]), tone(trim, 0.72));
+        kit.box(exposed, 0, exposed.len, -0.025, 0.025, base - 0.119, 0.078, tone(trim, 0.88));
+      }
     }
     if (deck && home.balconyScreen) {
       const [x, y, w, d] = deck.rect.map(c => c * FT) as Rect;
