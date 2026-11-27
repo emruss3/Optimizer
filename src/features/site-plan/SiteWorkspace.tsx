@@ -1807,6 +1807,23 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   /** The pattern competition for the parcel and the option set (cached per
    *  parcel in the client). A newer ask — a new parcel, a new override —
    *  supersedes an older one still in flight. */
+  /**
+   * 303 E Palestine Ave (RS10, 9,973 sf against a 10,000 sf minimum, 2026-11-26): no new lot can be made, but
+   * the parcel is itself a lot of record and carries one house. The sheet showed "0 lots" and a refusal until
+   * the user clicked "Draw the house". When the by-right answer and the pattern comparison both draw no lots,
+   * the single-family seed (server-verified house and driveway) goes on the sheet unasked. A plan the user
+   * chose, a skipped run (landlocked, flood) and a drawn house are left alone; the deep search can still
+   * replace it with a subdivision that draws more.
+   */
+  const drawSfSeedRef = useRef<(() => Promise<void>) | null>(null);
+  const autoDrawLotOfRecordHouse = (sheetLots: number) => {
+    const def = sfV1DefaultRespRef.current;
+    if (sheetLots > 0 || !def || def.error || def.status !== 'done' || (def.lots ?? 0) > 0) return;
+    if (layoutUserChoseRef.current) return;
+    if (elementsRef.current.some(e => e.id.startsWith('sfseed-'))) return;
+    void drawSfSeedRef.current?.();
+  };
+
   const runCompetition = useCallback((fid: number, opt: SfV1Options) => {
     const seq = ++competitionSeqRef.current;
     setSfV1AutoBest(null);
@@ -1816,6 +1833,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       if (seq !== competitionSeqRef.current) return;
       if (r.error || !r.data) {
         setSfV1Competition({ state: 'error', data: null, error: competitionErrorText(r.error ?? 'the engine returned nothing') });
+        autoDrawLotOfRecordHouse(0);
         return;
       }
       sfV1CandidatesRef.current = r.data;
@@ -1841,6 +1859,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         void renderSfV1Ref.current(r.data.best, opt, auto.requested);
         sheetLots = Math.max(sheetLots, r.data.best.lots ?? 0);
       }
+      autoDrawLotOfRecordHouse(sheetLots);
       // under the fill scenario every run is the heavy one, so the search waits to be asked (as the comparison does)
       if (!opt.flood) void runDeepSearch(fid, opt, seq, sheetLots);
     });
@@ -2391,6 +2410,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       setIsGenerating(false);
     }
   }, [contextOgcFid, elements, metrics, setPlanOutput, gateNonGesturePlan, sfV1Summary]);
+  drawSfSeedRef.current = handleDrawSfSeed;
 
   const handleAddBuilding = useCallback(async () => {
     if (!envelopeMeters) {
@@ -3975,7 +3995,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           </div>
         );
       })()}
-      {!nonResidentialOnly && !unsupportedUse && isRefusal(buildability) && product === 'apartments' && buildability && layoutShown !== 'neighborhood' && (
+      {!nonResidentialOnly && !unsupportedUse && isRefusal(buildability) && product === 'apartments' && buildability && layoutShown !== 'neighborhood'
+        // the lot-of-record house is on the sheet: the apartment refusal is no longer the answer
+        && !displayElements.some(e => e.id.startsWith('sfseed-')) && (
         <RefusalCard
           buildability={buildability}
           onSwitchToTownhomes={() => handleProductChange('townhomes')}
