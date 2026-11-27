@@ -1144,7 +1144,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       ...data.roads.map(r => r.path),
       ...data.polygons.flatMap(p => p.kind && ['street', 'drive', 'circulation', 'parking-aisle'].includes(p.kind) ? p.polygon.slice(0, 1) : []),
     ],
-    trees: opts.review ? [] : standing,
+    // each crown as large as it is drawn: a camera's line of sight is judged against what it will see
+    trees: opts.review ? [] : standing.map(([x, y, r]) => [x, y, r * CROWN_DRAWN] as [number, number, number]),
     foreground,
     approaches,
   };

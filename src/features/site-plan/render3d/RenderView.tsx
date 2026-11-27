@@ -123,7 +123,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   revision.current = scene.identity.revision;
   const previewHouse = useRef<string | undefined>(undefined);
   previewHouse.current = useMemo(() => elements.find(el => Array.isArray(el.properties.homeOrigin))?.id, [elements]);
-  const stood = useRef<{ revision: string; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
+  const stood = useRef<{ revision: string; review: boolean; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -225,6 +225,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     if (planted && !treesHere) return;
     let model: SiteModel, stage: Stage;
     const light = quality === 'light';
+    const reviewLook = look === 'review' && !present;
     try {
       const review = look === 'review' && !present;
       model = buildSiteModel(data, { light, review });
@@ -253,6 +254,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       try {
         const t = performance.now();
         stage.render(camera, moving);
+        // the first frame actually painted, not the moment the model was handed over (audit cf4f0e8)
+        if (frames === 0) markOnce(`3d|${scene.identity.revision}`, '3d-interactive', { revision: scene.identity.revision, buildings: scene.buildings.length, look: reviewLook ? 'review' : 'rendering' });
         if (frames++ < 3 && (window as unknown as { __renderDebug?: boolean }).__renderDebug) console.info(`[time] frame ${frames}: ${Math.round(performance.now() - t)} ms`);
       } catch (err) {
         fail.current(err instanceof Error ? err : new Error(String(err)));
@@ -294,7 +297,15 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     setGround(model.grade ? { kind: model.grade.grading ? 'graded' : 'survey', ...(model.grade.grading ?? {}), pads: model.grade.padList.length } : { kind: 'flat' });
     const modelRevision = revision.current;
     const was = stood.current;
-    if (was && was.revision === modelRevision) {
+    const reviewNow = look === 'review' && !present;
+    const placed = lastShot.current?.shot;
+    if (was && was.revision === modelRevision && was.review !== reviewNow && (placed === 'street' || placed === 'approach')) {
+      // a street or entrance camera was placed against the other look's model: Review plants no trees,
+      // so its line of sight said nothing of the trees Rendering stands up. Place it again against
+      // this model, so the view and its stated basis are this scene's (audit cf4f0e8: "0 trees in the
+      // line of sight" over a house a crown covered)
+      frame(placed);
+    } else if (was && was.revision === modelRevision) {
       if (lastShot.current?.shot === 'approach') {
         controls.minDistance = 0.55;
         controls.maxPolarAngle = 2.05;
@@ -308,7 +319,6 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       frame('iso');
     }
     setReady(true);
-    markOnce(`3d|${scene.identity.revision}`, "3d-interactive", { revision: scene.identity.revision, buildings: scene.buildings.length });
     setBuilt(n => n + 1);
     let active = true;
     const refresh = () => { if (active) request(); };
@@ -323,7 +333,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     return () => {
       active = false;
       clearTimeout(settle);
-      stood.current = { revision: modelRevision, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
+      stood.current = { revision: modelRevision, review: look === 'review' && !present, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
       setReady(false);
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
