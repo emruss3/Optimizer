@@ -316,6 +316,8 @@ export class Surfaces {
       const map = finish(c, 2.7, 2.7, true);
       this.tiles.set(kind, { map, bump: map, bumpScale: 0, roughness: 1 });
       m = new THREE.MeshBasicMaterial({ vertexColors: true, map, transparent: true, opacity: 0.69, depthWrite: false });
+    } else if (kind === 'interior-light') {
+      m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.60, emissive: 0xffd8a8, emissiveIntensity: this.photographic ? 0.62 : 0 });
     } else if (kind === 'plain') {
       m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
     } else if (kind === 'metalwork') {
