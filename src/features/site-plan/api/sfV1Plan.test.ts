@@ -744,7 +744,7 @@ describe('the engine\'s house plans on the lots (2026-11-09)', () => {
     const pad1 = elements.find(e => e.id === 'sfv1-pad-1')!;
     const pad2 = elements.find(e => e.id === 'sfv1-pad-2')!;
     expect(pad1.name).toBe('House 1');
-    expect(pad2.name).toBe('House 2 · 4 bed · 2,069 sf');
+    expect(pad2.name).toBe('House 2 · provisional pad · 2,069 sf footprint');
     expect(pad2.properties?.floorplanId).toBe('fp-1');
     expect(pad2.properties?.areaSqFt).toBe(2069);
     expect(summary.housesPlaced).toBe(lots - 1);
@@ -781,7 +781,7 @@ describe('a flag lot is one member: body and pole (6404 Eatons Creek Rd, 4727 Po
     const ring = (e: (typeof lots)[number]) => e.geometry.coordinates[0]!;
     const span = (e: (typeof lots)[number]) => Math.max(...ring(e).map(p => p[0]!)) - Math.min(...ring(e).map(p => p[0]!));
     expect(span(lots[2]!)).toBeGreaterThan(span(strips[1]!) * 5);
-    expect(elements.filter(e => e.id.startsWith('sfv1-pad-')).map(e => e.name)).toEqual(['House 1 · 3 bed · 2,000 sf', 'House 2 · 4 bed · 3,184 sf', 'House 3 · 6 bed · 3,040 sf']);
+    expect(elements.filter(e => e.id.startsWith('sfv1-pad-')).map(e => e.name)).toEqual(['House 1 · provisional pad · 2,000 sf footprint', 'House 2 · provisional pad · 3,184 sf footprint', 'House 3 · provisional pad · 3,040 sf footprint']);
     expect(summary.lots).toBe(3);
   });
 

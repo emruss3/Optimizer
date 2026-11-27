@@ -168,6 +168,8 @@ export function SfV1Panel({
     rows: HouseLotEligibility[];
     onOpen: (() => void) | null;
     schedule?: { rows: HomeRow[]; totals: DesignTotal[]; all?: HomesTotals } | null;
+    /** why each lot did or did not get a suggested home on the last fresh solve */
+    starters?: { report: Array<{ houseId: string; lot: string; placed: string | null; reason: string | null }>; skipped: string | null } | null;
   } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
@@ -384,15 +386,29 @@ export function SfV1Panel({
                 <dd>{Object.entries(summary.lotKinds).map(([k, n]) => `${n} ${k}`).join(' · ')}</dd>
               </>
             )}
-            {summary.housesPlaced != null && summary.lots > 0 && (
-              <>
-                <dt className="text-slate-500">House plans</dt>
-                <dd data-testid="sfv1-houses">
-                  {summary.housesPlaced} of {summary.lots} lot{summary.lots === 1 ? '' : 's'} carr{summary.housesPlaced === 1 ? 'ies' : 'y'} a catalogue plan
-                  {summary.housesPlaced < summary.lots ? ' · the rest keep a generic pad' : ''}
-                </dd>
-              </>
-            )}
+            {(() => {
+              // One basis with the schedule (audit eb378b1): a lot carries a home plan only when a stock plan
+              // or a concept is placed on it; the engine's own footprint is a provisional pad, not a plan.
+              const rows = housing?.schedule?.rows;
+              if (!rows?.length) return null;
+              const withPlan = rows.filter(r => r.kind !== 'engine').length;
+              const unplaced = housing?.starters?.report.filter(r => !r.placed && r.reason) ?? [];
+              return (
+                <>
+                  <dt className="text-slate-500">House plans</dt>
+                  <dd data-testid="sfv1-houses">
+                    {withPlan} of {rows.length} lot{rows.length === 1 ? '' : 's'} carr{withPlan === 1 ? 'ies' : 'y'} a home plan
+                    {withPlan < rows.length ? ` · ${rows.length - withPlan} provisional pad${rows.length - withPlan === 1 ? '' : 's'} (engine footprint, no home plan)` : ''}
+                    {housing?.starters?.skipped && <span className="block text-slate-500" data-testid="sfv1-starters-skipped">No home was suggested: {housing.starters.skipped}.</span>}
+                    {unplaced.length > 0 && (
+                      <span className="block text-slate-500" data-testid="sfv1-starters-reasons">
+                        {unplaced.slice(0, 4).map(r => `${r.lot}: ${r.reason}`).join(' · ')}{unplaced.length > 4 ? ` · and ${unplaced.length - 4} more` : ''}
+                      </span>
+                    )}
+                  </dd>
+                </>
+              );
+            })()}
             {housing && housing.rows.length > 0 && (
               <div className="col-span-2">
                 <HousingDesignPicker

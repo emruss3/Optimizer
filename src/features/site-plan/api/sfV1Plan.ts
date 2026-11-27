@@ -838,8 +838,10 @@ export function sfV1ToElements(
     elements.push({
       id: `${SFV1_ID_PREFIX}pad-${i + 1}`,
       type: 'building',
-      // a placed catalogue plan is the real footprint; the generic pad says so by having no plan
-      name: label ? `House ${i + 1} · ${label}` : `House ${i + 1}`,
+      // The engine's house is a footprint it sized for the lot, not a home plan anyone chose (audit
+      // eb378b1: "stop calling a calculated pad a catalog house"): it is named a provisional pad, with
+      // its footprint; the engine's plan reference stays in the properties for traceability.
+      name: label ? `House ${i + 1} · provisional pad${typeof house?.footprint_sf === 'number' ? ` · ${Math.round(house.footprint_sf).toLocaleString()} sf footprint` : ''}` : `House ${i + 1}`,
       geometry: poly,
       properties: props({
         floors: house?.floors ?? 1,

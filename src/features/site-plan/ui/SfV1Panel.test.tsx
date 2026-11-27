@@ -362,11 +362,30 @@ describe('SfV1Panel — explainable status (the scope\'s P0.2, 2026-11-09)', () 
 });
 
 describe('SfV1Panel — the engine\'s house plans (2026-11-09)', () => {
-  it('says how many lots carry a catalogue plan', () => {
-    render(<SfV1Panel summary={{ ...SUMMARY, lots: 5, housesPlaced: 3 }} override={{}} onOverride={() => undefined} />);
-    expect(screen.getByTestId('sfv1-houses').textContent).toBe('3 of 5 lots carry a catalogue plan · the rest keep a generic pad');
+  // audit eb378b1: "5 of 5 lots carry a catalogue plan" sat beside a schedule of five provisional pads;
+  // the line now counts from the schedule's own basis, and says why a lot kept its pad
+  it('counts home plans from the schedule, calls engine footprints provisional pads, and gives the reasons', () => {
+    const row = (lot: string, kind: 'engine' | 'concept') => ({ houseId: lot, lot, design: kind === 'engine' ? 'Provisional building pad' : 'Lockeland Cottage (starter concept)', kind, beds: null, footprintSf: 900, heatedSf: null });
+    render(<SfV1Panel summary={{ ...SUMMARY, lots: 3, housesPlaced: 3 }} override={{}} onOverride={() => undefined}
+      housing={{ parcelId: '675423', rows: [], onOpen: null,
+        schedule: { rows: [row('Lot 1', 'concept'), row('Lot 2', 'engine'), row('Lot 3', 'engine')], totals: [] },
+        starters: { skipped: null, report: [
+          { houseId: 'Lot 1', lot: 'Lot 1', placed: 'Lockeland Cottage', reason: null },
+          { houseId: 'Lot 2', lot: 'Lot 2', placed: null, reason: 'no suggested home fits (Court Cottage: too deep)' },
+          { houseId: 'Lot 3', lot: 'Lot 3', placed: null, reason: 'the lot carries no recorded setbacks to screen against' },
+        ] } }} />);
+    const text = screen.getByTestId('sfv1-houses').textContent ?? '';
+    expect(text).toContain('1 of 3 lots carries a home plan · 2 provisional pads (engine footprint, no home plan)');
+    expect(text).not.toContain('catalogue plan');
+    expect(screen.getByTestId('sfv1-starters-reasons').textContent).toContain('Lot 2: no suggested home fits');
   });
-  it('stays silent when the engine did not say', () => {
+  it('says why no home was suggested at all', () => {
+    const row = { houseId: 'h', lot: 'Lot 1', design: 'Provisional building pad', kind: 'engine' as const, beds: null, footprintSf: 900, heatedSf: null };
+    render(<SfV1Panel summary={{ ...SUMMARY, lots: 1 }} override={{}} onOverride={() => undefined}
+      housing={{ parcelId: '1', rows: [], onOpen: null, schedule: { rows: [row], totals: [] }, starters: { skipped: 'no height limit is recorded for this parcel yet, so no home was suggested automatically', report: [] } }} />);
+    expect(screen.getByTestId('sfv1-starters-skipped').textContent).toContain('no height limit is recorded');
+  });
+  it('stays silent without a schedule', () => {
     render(<SfV1Panel summary={{ ...SUMMARY, housesPlaced: null }} override={{}} onOverride={() => undefined} />);
     expect(screen.queryByTestId('sfv1-houses')).toBeNull();
   });

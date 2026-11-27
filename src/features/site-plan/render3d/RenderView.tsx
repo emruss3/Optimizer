@@ -12,6 +12,7 @@ import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
 import { recall3D, remember3D } from '../../../lib/viewMemory';
+import { isProvisionalPad } from '../housing/starterHomes';
 import { aerialShot, aimedSubject, approachShot, prominentSubject, shotUnavailableReason, sightReport, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
@@ -145,6 +146,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   revision.current = scene.identity.revision;
   const previewHouse = useRef<string | undefined>(undefined);
   previewHouse.current = useMemo(() => elements.find(el => Array.isArray(el.properties.homeOrigin))?.id, [elements]);
+  // a scene whose houses are all engine pads (no home plan) is site context, never a home presentation (audit eb378b1)
+  const padOnly = useRef(false);
+  padOnly.current = useMemo(() => elements.some(isProvisionalPad) && !elements.some(e => e.type === 'building' && typeof e.properties.housingDesignId === 'string'), [elements]);
   // the building selected on the plan: Street and Entry frame it first (handoff 11-27)
   const selectedRef = useRef<string | null | undefined>(selectedId);
   selectedRef.current = selectedId;
@@ -273,7 +277,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
         t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
         r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
-        lastShot.current = { shot, ...arrival };
+        lastShot.current = { shot, ...arrival, ...(padOnly.current ? { basis: `Site context at eye level: the houses here are provisional pads (engine footprints), not home designs. ${arrival.basis}` } : {}) };
       } else {
         lift.current = 1;
         r.camera.fov = AERIAL_FOV;
