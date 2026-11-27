@@ -121,7 +121,11 @@ import { buildDrawingScene, sceneEvidence, sceneRevision, selectionFor, type Sel
 import { ExhibitSheets } from './ui/ExhibitSheets';
 import { useArchStyle } from './ui/archStyle';
 import { DOCK_KEY, INSPECTOR_KEY } from './ui/workspaceLayout';
-const Massing3D = React.lazy(() => import('./ui/Massing3D'));
+import { currentEntry, loadChunk } from '../../lib/staleBuild';
+import { clearRecovery, loadRecovery, openOnNextLoad, saveRecovery, type PlanRecovery } from '../../lib/planRecovery';
+// The 3D view is fetched late. Each Retry asks for its file afresh: React keeps a failed lazy
+// import for good, so the same lazy component could never recover (audit cf4f0e8, R3).
+const lazyMassing3D = () => React.lazy(() => loadChunk('3D view', () => import('./ui/Massing3D')));
 
 /**
  * Diagnostics-only escape hatch: when '1', context-free solves render as
@@ -147,7 +151,7 @@ type SiteWorkspaceProps = {
   parcel: SelectedParcel;
 };
 
-const HomeStudio = React.lazy(() => import('./housing/HomeStudio'));
+const HomeStudio = React.lazy(() => loadChunk('home studio', () => import('./housing/HomeStudio')));
 
 const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const {
@@ -363,6 +367,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // House choices made on this parcel, remembered by the ground they stand on so a re-solve can
   // put them back where they still fit (housing/carry.ts), and what the last re-solve did with them.
   const homeAssignmentsRef = useRef<{ parcel: string; list: HomeAssignment[] }>({ parcel: '', list: [] });
+  const [massing3dTry, setMassing3dTry] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const Massing3D = useMemo(lazyMassing3D, [massing3dTry]);
   const homeSetbacksRef = useRef<{ front: number; side: number; rear: number }>({ front: 20, side: 5, rear: 20 });
   const homeStudioBoundaryRef = useRef<Element['geometry'] | null>(null);
   // the home-change history as the top bar and Ctrl+Z see it
@@ -3514,6 +3521,32 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     };
   }, [scene]);
   homeStudioBoundaryRef.current = homeStudioBoundary;
+  // A newer release replaced this tab's files (audit cf4f0e8, R3): keep a copy of the plan in this
+  // browser, then open the new release on the same parcel, where the copy is offered back.
+  const moveToNewRelease = useCallback(() => {
+    const kept = saveRecovery({
+      ogcFid: parcelIdStr,
+      address: parcel.address ?? null,
+      elements,
+      metrics: metrics ?? null,
+      assignments: homeAssignmentsRef.current.parcel === parcelIdStr ? homeAssignmentsRef.current.list : [],
+      revision: scene?.identity.revision ?? null,
+      release: currentEntry(),
+    });
+    if (!kept && !window.confirm('A copy of this plan could not be kept in this browser. Open the new release anyway? Unsaved changes on this tab will be lost.')) return;
+    if (kept) openOnNextLoad(parcelIdStr);
+    window.location.reload();
+  }, [parcelIdStr, parcel.address, elements, metrics, scene]);
+  // the copy kept before a move to a new release, offered when its parcel opens again
+  const [recovery, setRecovery] = useState<PlanRecovery<Element, NonNullable<typeof metrics>, HomeAssignment> | null>(null);
+  useEffect(() => { setRecovery(loadRecovery<Element, NonNullable<typeof metrics>, HomeAssignment>(parcelIdStr)); }, [parcelIdStr]);
+  const restoreRecovery = useCallback(() => {
+    if (!recovery) return;
+    homeAssignmentsRef.current = { parcel: parcelIdStr, list: recovery.assignments ?? [] };
+    setPlanOutput(recovery.elements, recovery.metrics);
+    clearRecovery();
+    setRecovery(null);
+  }, [recovery, parcelIdStr, setPlanOutput]);
   // Impervious as the plan stands: the solver's figure moved by the roofed and paved area the
   // home changes added or removed since the solve (audit 9379472 F1)
   const sfImperviousNow = useMemo(() => {
@@ -4482,6 +4515,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           <button type="button" className="underline disabled:opacity-40 disabled:no-underline" disabled={!homeHistory.past.length} onClick={() => stepHomeHistory('undo')}>Undo home change</button>
           <button type="button" className="underline disabled:opacity-40 disabled:no-underline" disabled={!homeHistory.future.length} onClick={() => stepHomeHistory('redo')}>Redo</button>
         </span></div>}
+      {recovery && !isGenerating && !isGeneratingLots && <div role="status" data-testid="plan-recovery" className="flex flex-wrap items-center justify-between gap-2 border-y border-sky-200 bg-sky-50 px-4 py-1.5 text-xs text-sky-950">
+        <span><strong>A copy of this plan from before the update is kept in this browser</strong> (taken {new Date(recovery.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{recovery.revision ? `, revision ${recovery.revision.slice(0, 8)}` : ''}). The plan on screen is a fresh solve.</span>
+        <span className="flex gap-3">
+          <button type="button" className="underline" data-testid="plan-recovery-restore" onClick={restoreRecovery}>Restore the copy</button>
+          <button type="button" className="underline" data-testid="plan-recovery-discard" onClick={() => { clearRecovery(); setRecovery(null); }}>Discard it</button>
+        </span></div>}
       {homeLockConflict && <div role="alert" data-testid="home-lock-conflict" className="flex flex-wrap items-center justify-between gap-2 border-y border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-900">
         <span><strong>Locked homes this plan cannot keep:</strong> {homeLockConflict.lost.map(l => `${l.designId.replace(/^abhp:/, '')} on ${l.lotLabel} — ${l.reason}`).join('; ')}.</span>
         <span className="flex gap-3">
@@ -4775,6 +4814,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               description="The 2D plan, its schedule, your selection and edits are intact."
               retryLabel="Retry 3D"
               onBackTo2D={() => setViewMode('2d')}
+              onRetry={() => setMassing3dTry(n => n + 1)}
+              onMoveToNewRelease={moveToNewRelease}
             >
               <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-gray-500">Loading 3D…</div>}>
               <Massing3D
