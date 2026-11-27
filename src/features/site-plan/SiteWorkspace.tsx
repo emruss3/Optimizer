@@ -78,7 +78,7 @@ import HbuStrip from './ui/HbuStrip';
 import BuiltHeadline from './ui/BuiltHeadline';
 import ExportReport from './ui/ExportReport';
 import MaxBuildoutHeadline from './ui/MaxBuildoutHeadline';
-import { fetchMaxBuildout, captureBasis, captureBasisParts, type MaxBuildout } from './api/maxBuildout';
+import { fetchMaxBuildout, captureBasis, captureBasisParts, parksInStructure, upperBoundFinding, type MaxBuildout } from './api/maxBuildout';
 import { fetchPlannerNeighbors, type PlannerNeighbors } from './api/neighbors';
 import { fetchParcelTopo, topoView, TopoGrid, type ParcelTopo } from './api/parcelTopo';
 import { buildSheetAnnotations, buildSheetTitleBlock } from './api/sheetAnnotations';
@@ -3849,15 +3849,17 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const planOpenItems = useMemo(() => {
     const out: string[] = [];
     const gsf = metrics?.totalBuiltSF ?? 0;
-    const cap = maxBuildout && !draftMode ? maxBuildout.max_gsf : 0;
-    if (cap > 0 && gsf > cap + 0.5) out.push(`${Math.round(gsf - cap).toLocaleString()} GSF over the ${Math.round(cap).toLocaleString()} GSF upper bound`);
+    // which bound, named: an ordinance cap, the surface-parking estimate, or the structured ceiling (audit cf4f0e8)
+    const structuredParking = parksInStructure(metrics?.parkingStrategy) || displayElements.some(e => e.type === 'parking' && e.properties?.structured === true);
+    const over = !draftMode ? upperBoundFinding(gsf, maxBuildout, structuredParking) : null;
+    if (over) out.push(over);
     if (routeBreak) out.push('the drive does not reach the street');
     // stalls counted that no route was traced to (a structured garage, a lot without drawn drives):
     // the supply is a count, not a verified one (audit 9379472: Main's 252 against 240 required)
     const stalls = parkingStallsUntraced(displayElements, accessAwareMetrics);
     if (!routeBreak && stalls != null) out.push(`routes to the ${stalls.toLocaleString()} stalls not checked`);
     return out;
-  }, [metrics?.totalBuiltSF, maxBuildout, draftMode, routeBreak, displayElements, accessAwareMetrics]);
+  }, [metrics?.totalBuiltSF, metrics?.parkingStrategy, maxBuildout, draftMode, routeBreak, displayElements, accessAwareMetrics]);
   const routeBreakLabel = routeBreak
     ? routeBreak.gapFt != null
       ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
