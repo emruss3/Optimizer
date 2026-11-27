@@ -378,6 +378,11 @@ def slot_material(slot):
         link(_mix(nt, tint, fine.outputs["Fac"], 0.35), bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.9
         _bump(nt, bsdf, wave.outputs[0], 0.8, 0.01)
+    elif slot == "interior-light":
+        link(tint, bsdf.inputs["Base Color"])
+        bsdf.inputs["Emission Color"].default_value = (1.0, 0.69, 0.41, 1)
+        bsdf.inputs["Emission Strength"].default_value = 0.8
+        bsdf.inputs["Roughness"].default_value = 0.60
     elif slot == "paint":
         link(tint, bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.35

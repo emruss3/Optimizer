@@ -1,6 +1,7 @@
 import type { SceneHeight } from '../../scene/heights';
 import { levelsM, reachOf } from './house';
 import { frontOf, inRing, insetRing, mat, on, ringWalls, tone, type Kit, type Mat, type V2, type Wall } from './kit';
+import { drawWindowRoom, roomViewFits } from './windowRooms';
 import { blockPalette, MEMBRANE, type BlockPalette } from './styles';
 
 const WALL_DEPTH = 0.24;
@@ -81,9 +82,8 @@ export function infillBlock(
           section(first, last, base, bottom, finish);
           section(first, last, openingTop, head, finish);
           if (lobby) {
-            const lobbyCorners = [on(w, first, -2.1), on(w, last, -2.1)];
-            const fits = lobbyCorners.every(([x, y]) => inRing(x, y, outer) && !rings.slice(1).some(r => inRing(x, y, r)));
-            storefront(k, w, first, last, bottom, openingTop, p, fits ? 1.85 : 0.32, reachOf(w, access, s));
+            const fit = [2.8, 1.8].find(depth => roomViewFits(w, { left: first, right: last, depth }, rings));
+            storefront(k, w, first, last, bottom, openingTop, p, fit ?? 0.32, reachOf(w, access, s));
           } else {
             const rear = on(w, s, -0.95);
             const depth = inRing(rear[0], rear[1], outer) && !rings.slice(1).some(r => inRing(rear[0], rear[1], r)) ? 0.57 : 0.13;
@@ -147,7 +147,8 @@ function storefront(k: Kit, w: Wall, a: number, b: number, z0: number, z1: numbe
   const frame = FRAME_SETBACK;
   const transom = Math.min(z0 + 2.15, z1 - 0.26);
   const warm = mat(161, 139, 112);
-  k.recess(w, a, b, z0, z1, frame - 0.02, -depth, warm, p.slab);
+  if (depth >= 1.8) drawWindowRoom(k, w, { left: a, right: b, depth, floor: z0, ceiling: z1, kind: 'lobby' });
+  else k.recess(w, a, b, z0, z1, frame - 0.02, -depth, warm, p.slab);
   const door = Math.min(0.89, (b - a) * 0.29);
   const posts = [a, s - door, s, s + door, b];
   for (const x of posts) k.box(w, x - f / 2, x + f / 2, frame, frame + 0.08, z0, z1 - z0, p.frame);
@@ -158,10 +159,6 @@ function storefront(k: Kit, w: Wall, a: number, b: number, z0: number, z1: numbe
     k.pane(w, left, right, transom + f, z1 - f, frame + 0.045, true);
   });
   for (const offset of [-0.14, 0.14]) k.post(w, s + offset, frame + 0.11, z0 + 0.88, 0.46, 0.027, mat(189, 181, 166));
-  if (depth >= 1) {
-    k.box(w, a + 0.18, Math.min(b - 0.15, a + 1.25), -depth, -depth + 0.4, z0 + 0.28, 0.13, p.accent);
-    k.box(w, s - 0.37, s + 0.37, -depth + 0.05, -depth + 0.29, z1 - 0.11, 0.07, mat(218, 193, 150));
-  }
   k.box(w, a - 0.1, b + 0.1, 0, 0.69, 0.02, z0 - 0.02, p.slab);
   const pavedApproach = walkTo != null && walkTo > 1.9 && walkTo <= 14;
   k.approach(w, s, 0.69, pavedApproach ? walkTo : 1.93, Math.min(1.85, b - a), z0, 'walk', p.slab, pavedApproach ? 0.305 : 0.211);

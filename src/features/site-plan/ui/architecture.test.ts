@@ -229,7 +229,7 @@ describe('infill apartment elevations', () => {
     const doors = a.glass.filter(g => g.clear && g.polygon.some(p => (p[2] ?? 9) < 0.3));
     expect(doors).toHaveLength(4);
     expect(doors.every(g => g.polygon.every(p => (p[1] ?? 0) > 0.04 && (p[1] ?? 0) < 0.2))).toBe(true);
-    expect(a.flats.some(f => f.polygon.every(p => Math.abs((p[1] ?? 0) - 1.85) < 0.001))).toBe(true);
+    expect(a.flats.some(f => f.polygon.every(p => Math.abs((p[1] ?? 0) - 2.8) < 0.001))).toBe(true);
   });
 
   it('keeps the warm fiber-cement bays distinct from a brick-only apartment elevation', () => {
