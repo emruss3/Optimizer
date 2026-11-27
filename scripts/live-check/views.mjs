@@ -150,6 +150,10 @@ for (const p of PARCELS) {
         const r = el.getBoundingClientRect();
         const w = Math.max(0, Math.min(r.right, R.right) - Math.max(r.left, R.left)), h = Math.max(0, Math.min(r.bottom, R.bottom) - Math.max(r.top, R.top));
         if (w * h < 400) continue;
+        // only what is actually on top: a panel stacked behind the planner covers nothing
+        const cx = Math.max(r.left, R.left) + w / 2, cy = Math.max(r.top, R.top) + h / 2;
+        const top = document.elementFromPoint(cx, cy);
+        if (!top || !(el === top || el.contains(top))) continue;
         // document order: an overlay's own children come after it and are not counted again
         if (overlays.some(o => o.el.contains(el))) continue;
         overlays.push({ el, id: el.getAttribute('data-testid') ?? el.className.toString().slice(0, 40), area: Math.round(w * h) });
