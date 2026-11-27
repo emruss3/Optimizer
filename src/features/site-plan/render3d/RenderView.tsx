@@ -11,7 +11,7 @@ import { buildSiteModel, loadTreeKit, treeKitLoaded, type SiteModel } from './si
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
-import { aerialShot, approachShot, prominentSubject, shotUnavailableReason, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
+import { aerialShot, aimedSubject, approachShot, prominentSubject, shotUnavailableReason, sightReport, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
 import { Render4kPanel } from './Render4kPanel';
@@ -43,7 +43,7 @@ export interface RenderViewProps {
   onFail: (err: Error) => void;
 }
 
-type Shot = 'iso' | 'top' | 'street' | 'approach';
+type Shot = 'iso' | 'top' | 'street' | 'approach' | 'garage';
 
 interface Rig {
   /** Set once the sun has been placed for this model: nothing is drawn before it. */
@@ -67,7 +67,15 @@ interface Rig {
 export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
-  const [look, setLook] = useState<'review' | 'rendering'>('review');
+  // The look 3D opens on: the user's explicit choice this session, else the default (handoff 11-27).
+  const [look, setLookState] = useState<'review' | 'rendering'>(initialLook);
+  const setLook = useCallback((k: 'review' | 'rendering') => { rememberLook(k); setLookState(k); }, []);
+  // the feasibility badge asks for Review: the finding is read there, with its object marked (handoff 11-27)
+  useEffect(() => {
+    const toReview = () => { setLookState('review'); setPresent(false); };
+    window.addEventListener(LOOK_REVIEW_EVENT, toReview);
+    return () => window.removeEventListener(LOOK_REVIEW_EVENT, toReview);
+  }, []);
   const archStyle = useArchStyle();
   const quality = useMemo(() => renderQuality(), []);
   const data = useMemo(
@@ -123,6 +131,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   revision.current = scene.identity.revision;
   const previewHouse = useRef<string | undefined>(undefined);
   previewHouse.current = useMemo(() => elements.find(el => Array.isArray(el.properties.homeOrigin))?.id, [elements]);
+  // the building selected on the plan: Street and Entry frame it first (handoff 11-27)
+  const selectedRef = useRef<string | null | undefined>(selectedId);
+  selectedRef.current = selectedId;
   const stood = useRef<{ revision: string; review: boolean; position: THREE.Vector3; target: THREE.Vector3; fov: number } | null>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
@@ -138,6 +149,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // the last preset the camera was put on, so a capture can be regenerated from it
   const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number; lift?: number } | null>(null);
   const [shotNote, setShotNote] = useState<string | null>(null);
+  // the camera was kept across a look change and this look's planting stands in its way: say so, and offer a clear view
+  const [sightNote, setSightNote] = useState<{ trees: number; clearPct: number; shot: Shot } | null>(null);
   const [shotStamp, setShotStamp] = useState(0);
   // lens shift of the street view (render3d/shots): 1 is none
   const lift = useRef(1);
@@ -172,14 +185,18 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
       const { subjects, obstacles, roads, trees, approaches, foreground } = r.model.ground;
-      const house = previewHouse.current;
+      const chosen = selectedRef.current;
+      const house = chosen && subjects.some(s => s.id === chosen) ? chosen : previewHouse.current;
       const entranceWalks = house ? approaches.filter(a => a.building === house) : approaches;
       const arrival = shot === 'approach' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
+        : shot === 'garage' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron')
         : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : null;
-      r.controls.minDistance = arrival && shot === 'approach' ? 0.55 : 8;
-      r.controls.maxPolarAngle = arrival && shot === 'approach' ? 2.05 : Math.PI / 2;
-      const asked = shot === 'street' ? 'Street view' : 'Entrance view';
-      setShotNote((shot === 'street' || shot === 'approach') && !arrival
+      const close = shot === 'approach' || shot === 'garage';
+      r.controls.minDistance = arrival && close ? 0.55 : 8;
+      r.controls.maxPolarAngle = arrival && close ? 2.05 : Math.PI / 2;
+      const asked = shot === 'street' ? 'Street view' : shot === 'garage' ? 'Garage view' : 'Front entry view';
+      setSightNote(null);
+      setShotNote((shot === 'street' || close) && !arrival
         ? `${asked} requested · showing the aerial instead: ${shotUnavailableReason(shot, subjects, roads, entranceWalks)}.`
         : null);
       if (arrival) {
@@ -221,8 +238,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   useEffect(() => {
     const el = host.current, cv = canvas.current;
     if (!el || !cv) return;
-    // a planted model waits the moment it takes for the tree grower to arrive
-    if (planted && !treesHere) return;
+    // A planted model draws at once with the lobed crowns, and again with the grown trees once their
+    // grower arrives (the camera is kept): the first usable frame does not wait on optional assets.
     let model: SiteModel, stage: Stage;
     const light = quality === 'light';
     const reviewLook = look === 'review' && !present;
@@ -299,14 +316,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const was = stood.current;
     const reviewNow = look === 'review' && !present;
     const placed = lastShot.current?.shot;
-    if (was && was.revision === modelRevision && was.review !== reviewNow && (placed === 'street' || placed === 'approach')) {
-      // a street or entrance camera was placed against the other look's model: Review plants no trees,
-      // so its line of sight said nothing of the trees Rendering stands up. Place it again against
-      // this model, so the view and its stated basis are this scene's (audit cf4f0e8: "0 trees in the
-      // line of sight" over a house a crown covered)
-      frame(placed);
-    } else if (was && was.revision === modelRevision) {
-      if (lastShot.current?.shot === 'approach') {
+    if (was && was.revision === modelRevision) {
+      if (lastShot.current?.shot === 'approach' || lastShot.current?.shot === 'garage') {
         controls.minDistance = 0.55;
         controls.maxPolarAngle = 2.05;
       }
@@ -315,6 +326,18 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       camera.fov = was.fov;
       lens(camera, Math.max(2, el.clientWidth), Math.max(2, el.clientHeight));
       controls.update();
+      // A look change keeps the camera, as the user left it (handoff 11-27). What it now sees is
+      // measured against this model: Review plants no trees, Rendering does. The stated basis says
+      // so, and a clear view is offered rather than taken.
+      if (was.review !== reviewNow && (placed === 'street' || placed === 'approach' || placed === 'garage') && lastShot.current) {
+        const eye: [number, number] = [camera.position.x, -camera.position.z];
+        const aim = aimedSubject([controls.target.x, -controls.target.z], model.ground.subjects);
+        const seen = aim ? sightReport(eye, aim, model.ground.trees) : { trees: 0, clearShare: 1 };
+        const clearPct = Math.round(seen.clearShare * 100);
+        const kept = lastShot.current.basis.replace(/; \d+ trees? in the line of sight$/, '').replace(/, clear line of sight/, '');
+        lastShot.current = { ...lastShot.current, basis: `${kept}; kept from ${reviewNow ? 'Rendering' : 'Review'}: ${seen.trees} tree${seen.trees === 1 ? '' : 's'} in the line of sight in this look, ${clearPct}% of the building's sight lines clear` };
+        setSightNote(seen.trees > 0 ? { trees: seen.trees, clearPct, shot: placed } : null);
+      }
     } else {
       frame('iso');
     }
@@ -328,6 +351,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       request();
       // the planted model with its pictures arrived: the first full Rendering frame (Review is marked above)
       if (look !== 'review' || present) markOnce(`render|${scene.identity.revision}|${quality}`, 'rendering-frame', { revision: scene.identity.revision, quality, present });
+      // the grown trees and their pictures are in: the full Rendering, separate from its first frame
+      if ((look !== 'review' || present) && treesHere) markOnce(`render-full|${scene.identity.revision}|${quality}`, 'rendering-textures-ready', { revision: scene.identity.revision, quality });
     });
     void stage.ready.then(refresh);
     return () => {
@@ -477,7 +502,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <button className={btn} onClick={() => frame('iso')} data-testid="camera-iso">Aerial</button>
         <button className={btn} onClick={() => frame('top')} data-testid="camera-top">Top</button>
         <button className={btn} onClick={() => frame('street')} data-testid="camera-street">Street</button>
-        {showy && data.slabs.some(s => s.approach?.kind === 'walk') && <button className={btn} onClick={() => frame('approach')} data-testid="camera-approach">Entry</button>}
+        {showy && data.slabs.some(s => s.approach?.kind === 'walk') && <button className={btn} onClick={() => frame('approach')} data-testid="camera-approach" title="Eye level on the front walk, at the door">Front entry</button>}
+        {/* a rear-load home: the garage approach is its own camera, never stood in for by the front or the aerial */}
+        {showy && data.slabs.some(s => s.approach?.kind === 'apron') && <button className={btn} onClick={() => frame('garage')} data-testid="camera-garage" title="Eye level on the drive, at the garage">Garage</button>}
         <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="Bring the whole site back into view, keeping the angle">Fit site</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
@@ -509,6 +536,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         // the camera as it stands, named, with any fallback kept beside it (PR 221 audit)
         <div className="absolute bottom-8 left-2 max-w-[60%] rounded bg-white/90 border border-gray-300 px-2 py-0.5 text-[10.5px] text-gray-700 shadow-sm" data-testid="camera-label" data-camera={lastShot.current.shot} data-fallback={shotNote ? 'true' : 'false'}>
           Camera: {lastShot.current.basis}{shotNote ? ' · fallback' : ''}
+        </div>
+      )}
+      {sightNote && !shotNote && (
+        <div className="absolute top-11 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-3 py-1.5 text-[11px] shadow-sm max-w-md" data-testid="sight-note" role="status">
+          <span>{sightNote.trees} tree{sightNote.trees === 1 ? '' : 's'} in this look stand{sightNote.trees === 1 ? 's' : ''} in the line of sight · {sightNote.clearPct}% of the building&rsquo;s sight lines clear. The camera is where you left it.</span>
+          <button type="button" className="underline font-medium whitespace-nowrap" data-testid="find-clear-view" onClick={() => frame(sightNote.shot)}>Find clear view</button>
         </div>
       )}
       {shotNote && scene.buildings.length > 0 && (
@@ -586,3 +619,29 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
 };
 
 export default RenderView;
+
+// ── the look 3D opens on ─────────────────────────────────────────────────────────────────────────
+// Rendering becomes the default once its release gates pass on real devices (handoff 11-27: framing,
+// obstruction, first usable frame ≤ 2 s warm, Review not slower by more than 10% at p95). Until then
+// Review stays the default; QA turns Rendering on with ?look=rendering or localStorage pp.lookDefault.
+// An explicit choice is remembered for the session either way.
+export const RENDERING_DEFAULT = false;
+/** Dispatched on window to bring the 3D view to Review (the feasibility badge). */
+export const LOOK_REVIEW_EVENT = 'pp:look-review';
+const LOOK_KEY = 'pp.look';
+
+export function initialLook(): 'review' | 'rendering' {
+  try {
+    const chosen = sessionStorage.getItem(LOOK_KEY);
+    if (chosen === 'review' || chosen === 'rendering') return chosen;
+    const q = new URLSearchParams(window.location.search).get('look');
+    if (q === 'review' || q === 'rendering') return q;
+    const d = localStorage.getItem('pp.lookDefault');
+    if (d === 'review' || d === 'rendering') return d;
+  } catch { /* storage blocked: the default */ }
+  return RENDERING_DEFAULT ? 'rendering' : 'review';
+}
+
+function rememberLook(k: 'review' | 'rendering'): void {
+  try { sessionStorage.setItem(LOOK_KEY, k); } catch { /* not remembered */ }
+}

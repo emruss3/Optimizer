@@ -4327,7 +4327,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
-          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); }}
+          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); if (viewMode === '3d') window.dispatchEvent(new Event('pp:look-review')); }}
           unverified={contextState === 'unavailable' || contextState === 'stale' ? contextStateLabel(contextState) : contextState === 'compiling' ? 'context still compiling' : null}
           empty={
             isGenerating || isGeneratingLots
@@ -4624,7 +4624,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 ? {
                     label: `${thV3Summary.homes} townhomes${thV3Summary.pattern ? ` (${thV3Summary.pattern})` : ''}`,
                     source: 'the townhome engine (th_v3): the neighborhood layout, attached homes by right',
-                    chip: 'drawn by right',
+                    // a failing check is not rolled up into a reassuring chip (handoff 11-27)
+                    chip: thV3Summary.requiredFails.length ? `drawn · ${thV3Summary.requiredFails.length} check${thV3Summary.requiredFails.length === 1 ? '' : 's'} fail` : 'drawn by right',
                   }
                 : sfV1Summary && displayElements.some(e => e.id.startsWith('sfseed-'))
                 ? { label: 'One house on the lot', source: 'the single-family seed (sf_seed_v1) on a parcel the by-right generator gives no new lots' }
@@ -4636,7 +4637,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                         ? 'No new lots by right — the parcel is one lot'
                         : `${sfV1Summary.lots} lot${sfV1Summary.lots === 1 ? '' : 's'}${patternPhrase(sfV1Summary.pattern)}`,
                     source: 'the by-right subdivision generator (sf_v1), from the district\'s own standards',
-                    chip: sfV1Summary.basis === 'override' ? 'drawn as an override' : 'drawn by right',
+                    chip: `${sfV1Summary.basis === 'override' ? 'drawn as an override' : 'drawn by right'}${sfV1Summary.fails.length ? ` · ${sfV1Summary.fails.length} check${sfV1Summary.fails.length === 1 ? '' : 's'} fail` : ''}`,
                   }
                 : null}
             />
