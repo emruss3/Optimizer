@@ -169,7 +169,7 @@ export function SfV1Panel({
     onOpen: (() => void) | null;
     schedule?: { rows: HomeRow[]; totals: DesignTotal[]; all?: HomesTotals } | null;
     /** why each lot did or did not get a suggested home on the last fresh solve */
-    starters?: { report: Array<{ houseId: string; lot: string; placed: string | null; reason: string | null }>; skipped: string | null } | null;
+    starters?: { report: Array<{ houseId: string; lot: string; placed: string | null; reason: string | null }>; skipped: string | null; pending?: boolean } | null;
   } | null;
 }) {
   const [lotW, setLotW] = useState<string>(override.lot_w_ft != null ? String(override.lot_w_ft) : '');
@@ -399,6 +399,7 @@ export function SfV1Panel({
                   <dd data-testid="sfv1-houses">
                     {withPlan} of {rows.length} lot{rows.length === 1 ? '' : 's'} carr{withPlan === 1 ? 'ies' : 'y'} a home plan
                     {withPlan < rows.length ? ` · ${rows.length - withPlan} provisional pad${rows.length - withPlan === 1 ? '' : 's'} (engine footprint, no home plan)` : ''}
+                    {housing?.starters?.pending && <span className="block text-slate-500" data-testid="sfv1-starters-pending">Screening each lot for a suggested home…</span>}
                     {housing?.starters?.skipped && <span className="block text-slate-500" data-testid="sfv1-starters-skipped">No home was suggested: {housing.starters.skipped}.</span>}
                     {unplaced.length > 0 && (
                       <span className="block text-slate-500" data-testid="sfv1-starters-reasons">

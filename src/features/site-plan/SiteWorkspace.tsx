@@ -53,7 +53,7 @@ import { SfV1Panel } from './ui/SfV1Panel';
 import type { SfV1CompetitionState } from './ui/SfV1Competition';
 import { assignmentFor, assignmentsFromElements, carryAssignments, commitConcept, type HomeAssignment } from './housing/carry';
 import { parentLotOf } from './housing/eligibility';
-import { placeStarterHomesWithReport, type StarterReport } from './housing/starterHomes';
+import { placeStarterHomesInBackground, placeStarterHomesWithReport, type StarterReport } from './housing/starterHomes';
 import { homesSchedule, homesScheduleRows } from './housing/schedule';
 import { imperviousAreaSf, imperviousNowPct } from './api/impervious';
 import { mark, markOnce } from '../../lib/timeline';
@@ -393,7 +393,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // new one, then asks for the solve).
   const solveFromRef = useRef<SfSnapshot | null>(null);
   // why each lot did or did not get a suggested home on the last fresh solve (audit eb378b1)
-  const [starterReport, setStarterReport] = useState<{ parcel: string; report: StarterReport[]; skipped: string | null } | null>(null);
+  // `pending`: the plan a background screening is running on (plans over 24 lots)
+  const [starterReport, setStarterReport] = useState<{ parcel: string; report: StarterReport[]; skipped: string | null; pending?: Element[] | undefined } | null>(null);
   const [homeLockConflict, setHomeLockConflict] = useState<{ before: SfSnapshot; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   const [homeCarry, setHomeCarry] = useState<{ kept: number; lost: Array<{ lotLabel: string; designId: string; reason: string }> } | null>(null);
   // The competition's best on the sheet in place of the default answer, and why
@@ -1893,7 +1894,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const boundary = starterBoundary(parcel?.geometry as Polygon | MultiPolygon | undefined);
     const starters = placeStarterHomesWithReport(planElements, boundary, plannerCtxRef.current?.solver_brief.hard_constraints.max_height_ft);
     planElements = starters.elements;
-    setStarterReport({ parcel: parcelIdStr, report: starters.report, skipped: starters.skipped });
+    setStarterReport({ parcel: parcelIdStr, report: starters.report, skipped: starters.skipped, pending: starters.deferred ? planElements : undefined });
     setPlanOutput(planElements, answerMetrics);
     setSubdivisionSummary(null);
     setSfV1Summary(answer);
@@ -3615,9 +3616,34 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     if (!starterReport || starterReport.parcel !== parcelIdStr || !starterReport.skipped?.includes('height limit')) return;
     if (homeHeightLimitFt == null || homeHistory) return;
     const starters = placeStarterHomesWithReport(elements, starterBoundary(parcel?.geometry as Polygon | MultiPolygon | undefined), homeHeightLimitFt);
-    setStarterReport({ parcel: parcelIdStr, report: starters.report, skipped: starters.skipped });
+    setStarterReport({ parcel: parcelIdStr, report: starters.report, skipped: starters.skipped, pending: starters.deferred ? elements : undefined });
     if (starters.elements !== elements) setPlanOutput(starters.elements, metrics);
   }, [homeHeightLimitFt, starterReport, parcelIdStr, homeHistory, elements, metrics, parcel?.geometry, setPlanOutput]);
+  // A plan over 24 lots: the same screening in slices, so the page stays responsive ("houses on all
+  // plans"). It applies only to the plan it started on: any edit, home change or new solve drops it.
+  const homeHistoryRef = useRef(homeHistory);
+  homeHistoryRef.current = homeHistory;
+  const starterMetricsRef = useRef(metrics);
+  starterMetricsRef.current = metrics;
+  useEffect(() => {
+    const base = starterReport?.pending;
+    if (!base || starterReport.parcel !== parcelIdStr) return;
+    let live = true;
+    const parcelAt = parcelIdStr;
+    const isCurrent = () => live && elementsRef.current === base && !homeHistoryRef.current;
+    void placeStarterHomesInBackground(base, starterBoundary(parcel?.geometry as Polygon | MultiPolygon | undefined), homeHeightLimitFt, isCurrent).then(r => {
+      if (!live) return;
+      if (!r) {
+        setStarterReport(prev => prev?.pending === base ? { parcel: parcelAt, report: [], skipped: 'the plan changed before the home screening finished; choose homes in Buildable plans' } : prev);
+        return;
+      }
+      setStarterReport({ parcel: parcelAt, report: r.report, skipped: r.skipped });
+      if (r.elements !== base) setPlanOutput(r.elements, starterMetricsRef.current);
+    });
+    return () => { live = false; };
+    // runs once per pending plan
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [starterReport?.pending]);
   // One eligibility result per detached house, shared by the sidebar summary,
   // the studio list and apply (housing/eligibility.ts).
   const stockRows = useMemo(
@@ -4719,7 +4745,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                     rows: stockRows,
                     onOpen: homesAvailable ? () => setHomesOpen(true) : null,
                     schedule: homesSchedule(baseElements),
-                    starters: starterReport?.parcel === parcelIdStr ? { report: starterReport.report, skipped: starterReport.skipped } : null,
+                    starters: starterReport?.parcel === parcelIdStr ? { report: starterReport.report, skipped: starterReport.skipped, pending: !!starterReport.pending } : null,
                   }
                 : null}
             />

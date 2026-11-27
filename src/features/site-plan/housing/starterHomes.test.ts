@@ -5,7 +5,7 @@ import { sfV1ToElements, type SfV1Response } from '../api/sfV1Plan';
 import { assignmentsFromElements, commitConcept } from './carry';
 import { residentialHomes } from './placement';
 import { homesSchedule } from './schedule';
-import { isGeometryBackedHome, placeStarterHomes, PROVISIONAL_PAD } from './starterHomes';
+import { isGeometryBackedHome, placeStarterHomes, placeStarterHomesInBackground, placeStarterHomesWithReport, PROVISIONAL_PAD } from './starterHomes';
 
 const plan = () => sfV1ToElements(fixture.deep as unknown as SfV1Response).elements;
 function boundingTestParcel(elements: Element[]): Element['geometry'] {
@@ -49,5 +49,28 @@ describe('starter homes on the captured Delk five-lot layout', () => {
     expect(placeStarterHomes(base, boundingTestParcel(base), null)).toBe(base);
     expect(placeStarterHomes(base, boundingTestParcel(base), 1)).toBe(base);
     expect(homesSchedule(base).rows.every(row => row.design === PROVISIONAL_PAD && row.beds === null)).toBe(true);
+  });
+  it('leaves a plan over the solve-time limit for the background pass, which gives the same homes', async () => {
+    const base = plan();
+    const boundary = boundingTestParcel(base);
+    const deferred = placeStarterHomesWithReport(base, boundary, 35, 2);
+    expect(deferred.deferred).toBe(true);
+    expect(deferred.elements).toBe(base);
+    const sync = placeStarterHomesWithReport(base, boundary, 35);
+    const bg = await placeStarterHomesInBackground(base, boundary, 35, () => true, 0);
+    expect(bg?.elements.map(e => e.properties.housingDesignId ?? null)).toEqual(sync.elements.map(e => e.properties.housingDesignId ?? null));
+    expect(bg?.report).toEqual(sync.report);
+  });
+  it('drops the background result when the plan changes before it finishes', async () => {
+    const base = plan();
+    let calls = 0;
+    const bg = await placeStarterHomesInBackground(base, boundingTestParcel(base), 35, () => ++calls < 2, 0);
+    expect(bg).toBeNull();
+  });
+  it('reports why the background pass could not run without waiting', async () => {
+    const base = plan();
+    const bg = await placeStarterHomesInBackground(base, boundingTestParcel(base), null, () => true);
+    expect(bg?.elements).toBe(base);
+    expect(bg?.skipped).toContain('height limit');
   });
 });
