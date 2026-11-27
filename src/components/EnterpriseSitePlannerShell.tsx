@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Building, Hand, Maximize2 } from 'lucide-react';
+import { Building, Crosshair, Hand, Maximize2, Undo2 } from 'lucide-react';
 import { centerOf, panFor, recall2D, remember2D } from '../lib/viewMemory';
 import { SelectedParcel } from '../types/parcel';
 import type { Element, SiteMetrics, PlannerOutput } from '../engine/types';
@@ -360,7 +360,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
   // centred through modal layout settles, devtools opens, window resizes.
   const userMovedViewRef = useRef(false);
   // the view is kept per parcel across the 2D ↔ 3D switch (navigation audit 11-27)
-  const viewKey = String((parcel as { ogc_fid?: unknown } | null)?.ogc_fid ?? parcel?.id ?? '');
+  const viewKey = String((parcel as { ogc_fid?: unknown; id?: unknown } | null)?.ogc_fid ?? (parcel as { id?: unknown } | null)?.id ?? '');
   // pan without editing: Space held, or the Hand tool on (navigation audit 11-27)
   const spaceDownRef = useRef(false);
   const [handTool, setHandTool] = useState(false);
@@ -383,9 +383,12 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
   /** User asked for a fit: do it now and resume auto-fit on future resizes. */
   const requestFit = useCallback(() => {
+    // the view left behind can be stepped back to
+    previousViewsRef.current = [...previousViewsRef.current.slice(-9), { ...viewport.viewport }];
+    setPreviousViews(previousViewsRef.current.length);
     userMovedViewRef.current = false;
     fitViewToParcel();
-  }, [fitViewToParcel]);
+  }, [fitViewToParcel, viewport.viewport]);
 
   // Initialize viewport when geometry loads
   useEffect(() => {
@@ -472,6 +475,42 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
     const c = canvasCenter();
     if (c) viewport.zoomOut(c.x, c.y); else viewport.zoomOut();
   }, [canvasCenter, viewport]);
+
+  // Views the user moved away from by Fit or Focus, to step back to (separate from the plan's undo)
+  const previousViewsRef = useRef<Array<{ zoom: number; panX: number; panY: number }>>([]);
+  const [previousViews, setPreviousViews] = useState(0);
+  const pushView = useCallback(() => {
+    previousViewsRef.current = [...previousViewsRef.current.slice(-9), { ...viewport.viewport }];
+    setPreviousViews(previousViewsRef.current.length);
+  }, [viewport.viewport]);
+  const backToPreviousView = useCallback(() => {
+    const v = previousViewsRef.current.pop();
+    setPreviousViews(previousViewsRef.current.length);
+    if (!v) return;
+    userMovedViewRef.current = true;
+    viewport.setViewport(v);
+  }, [viewport]);
+
+  /** Focus selection: the selected elements framed with room around them (navigation audit 11-27). */
+  const focusSelection = useCallback(() => {
+    const rect = canvasContainerRef.current?.getBoundingClientRect();
+    if (!rect || selection.selectedCount === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of elements) {
+      if (!selection.selectedElements.has(el.id)) continue;
+      const rings = el.geometry?.type === 'Polygon' ? el.geometry.coordinates : el.geometry?.type === 'MultiPolygon' ? el.geometry.coordinates.flat() : [];
+      for (const ring of rings) for (const [x, y] of ring as number[][]) {
+        if (x == null || y == null) continue;
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+    }
+    if (!Number.isFinite(minX)) return;
+    pushView();
+    // a single small building is framed with the lot around it, not filling the canvas edge to edge
+    const pad = Math.max(maxX - minX, maxY - minY) * 0.6 + 6;
+    userMovedViewRef.current = true;
+    viewport.fitToBounds({ minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }, rect.width, rect.height);
+  }, [elements, selection.selectedCount, selection.selectedElements, pushView, viewport]);
 
   // Handle mouse down
   const handleMouseDown = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -945,9 +984,11 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     // Exponential scaling reads the device: mouse wheels send big deltas
     // (~100/notch), trackpad pans small ones, pinch (ctrlKey) smaller still —
-    // a fixed step feels jumpy on one and sluggish on another.
+    // a fixed step feels jumpy on one and sluggish on another. Line and page
+    // deltas (Firefox, some mice) are brought to pixels first (navigation audit 11-27).
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
     const sensitivity = event.ctrlKey ? 0.01 : 0.002;
-    const zoomFactor = Math.exp(-event.deltaY * sensitivity);
+    const zoomFactor = Math.exp(-event.deltaY * unit * sensitivity);
     const newZoom = Math.max(0.1, Math.min(10, viewport.viewport.zoom * zoomFactor));
     viewport.zoomTo(newZoom, mouseX, mouseY);
   }, [viewport]);
@@ -1082,6 +1123,11 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
         requestFit();
       }
 
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && selection.selectedCount > 0) {
+        e.preventDefault();
+        focusSelection();
+      }
+
       if (e.key === '+' || e.key === '=') {
         e.preventDefault();
         zoomInCentered();
@@ -1095,7 +1141,7 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection.selectedCount, copiedElements.length, handleDelete, handleCopy, handlePaste, requestFit, zoomInCentered, zoomOutCentered]);
+  }, [selection.selectedCount, copiedElements.length, handleDelete, handleCopy, handlePaste, requestFit, zoomInCentered, zoomOutCentered, focusSelection]);
 
   // Guard placed AFTER all hooks so hook order stays stable across renders.
   if (!parcel) {
@@ -1314,10 +1360,31 @@ const EnterpriseSitePlanner: React.FC<EnterpriseSitePlannerProps> = ({
             <button
               onClick={requestFit}
               className="w-9 h-9 flex items-center justify-center text-gray-700 hover:bg-gray-50 border-t border-gray-100"
-              title="Fit to parcel (0)"
-              aria-label="Fit to parcel"
+              title="Fit site (0)"
+              aria-label="Fit site"
+              data-testid="plan-fit"
             >
               <Maximize2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={focusSelection}
+              disabled={selection.selectedCount === 0}
+              className="w-9 h-9 flex items-center justify-center text-gray-700 hover:bg-gray-50 border-t border-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              title={selection.selectedCount ? 'Focus on the selection (F)' : 'Select something to focus on it'}
+              aria-label="Focus selection"
+              data-testid="plan-focus"
+            >
+              <Crosshair className="w-4 h-4" />
+            </button>
+            <button
+              onClick={backToPreviousView}
+              disabled={previousViews === 0}
+              className="w-9 h-9 flex items-center justify-center text-gray-700 hover:bg-gray-50 border-t border-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Back to the view before Fit or Focus (the plan's undo is separate)"
+              aria-label="Previous view"
+              data-testid="plan-previous-view"
+            >
+              <Undo2 className="w-4 h-4" />
             </button>
           </div>
           <SitePlanCanvas
