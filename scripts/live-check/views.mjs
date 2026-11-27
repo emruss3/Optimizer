@@ -56,25 +56,26 @@ for (const p of PARCELS) {
     const vp = await page.locator('[data-testid="massing-3d"]').boundingBox();
     row.viewport3d = vp ? `${Math.round(vp.width)}×${Math.round(vp.height)}` : null;
     await page.waitForTimeout(1500);
-    row.treeFetchesInReview = treeFetches.length;
-    // a street camera placed in Review is placed again when Rendering stands up its trees (audit cf4f0e8)
-    await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
-      .catch(() => page.locator('[data-testid="camera-street"]').first().click({ force: true }));
-    await page.waitForTimeout(1500);
+    // one 3D view, the rendering (owner, 11-27): it plants trees from the start, and the plan's lines
+    // draw over it on request, keeping the camera
+    row.look = await page.locator('[data-testid="massing-3d"]').getAttribute('data-look').catch(() => null);
+    row.treeFetches = treeFetches.length;
+    row.lookToggle = await page.locator('[data-testid="look-review"]').count();
     const shotOf = () => page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null'); } catch { return null; } }).catch(() => null);
     const before = await shotOf();
-    row.reviewShot = before?.shot ?? null;
-    await page.locator('[data-testid="look-rendering"]').first().click().catch(() => {});
-    await page.locator('[data-testid="massing-3d"][data-ready="true"][data-look="rendering"]').first().waitFor({ timeout: 60000 }).catch(() => {});
-    row.treeFetchesInRendering = treeFetches.length;
-    await page.waitForTimeout(1500);
-    // handoff 11-27: a look change keeps the camera where the user left it and restates what it sees
+    await page.locator('[data-testid="plan-lines"]').first().click();
+    await page.locator('[data-testid="massing-3d"][data-ready="true"]').first().waitFor({ timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(1200);
     const after = await shotOf();
     const moved = before?.position && after?.position ? Math.hypot(...before.position.map((v, i) => v - after.position[i])) : null;
-    row.cameraKept = moved != null ? moved < 0.05 : null;
-    row.streetBasisInRendering = after?.basis ?? null;
-    row.sightNote = await page.locator('[data-testid="sight-note"]').innerText({ timeout: 1500 }).catch(() => null);
-    await page.waitForTimeout(1500);
+    row.planLines = {
+      pressed: await page.locator('[data-testid="plan-lines"]').getAttribute('aria-pressed').catch(() => null),
+      legend: await page.locator('[data-testid="review-legend"]').count(),
+      cameraKept: moved != null ? moved < 0.05 : null,
+    };
+    await page.screenshot({ path: path.join(out, `${p.id}-plan-lines.png`) });
+    await page.locator('[data-testid="plan-lines"]').first().click();
+    await page.locator('[data-testid="massing-3d"][data-ready="true"]').first().waitFor({ timeout: 60000 }).catch(() => {});
     // the 3D toolbar can re-render while the scene settles: retry the click, then force it
     await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
       .catch(() => page.locator('[data-testid="camera-street"]').first().click({ force: true }));
@@ -94,15 +95,11 @@ for (const p of PARCELS) {
     await page.locator('[data-testid="camera-previous"]').first().click().catch(() => {});
     await page.waitForTimeout(800);
     row.previousLabel = (await page.locator('[data-testid="camera-label"]').innerText().catch(() => '')).slice(0, 120);
-    // Present (audit 9379472 F8): the look label follows what is on screen, never Review over an illustration
-    await page.locator('[data-testid="look-review"]').first().click().catch(() => {});
-    await page.waitForTimeout(800);
+    // Present: the rendering full screen, labelled as illustration
     await page.locator('[data-testid="render-present"]').first().click();
     await page.waitForTimeout(2000);
     row.present = {
       on: await page.locator('[data-testid="massing-3d"]').getAttribute('data-present').catch(() => null),
-      reviewPressed: await page.locator('[data-testid="look-review"]').getAttribute('aria-pressed').catch(() => null),
-      renderingPressed: await page.locator('[data-testid="look-rendering"]').getAttribute('aria-pressed').catch(() => null),
       label: await page.locator('[data-testid="look-illustration"]').innerText().catch(() => null),
     };
     await page.screenshot({ path: path.join(out, `${p.id}-present.png`) });
@@ -120,11 +117,10 @@ for (const p of PARCELS) {
     };
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
-    if (row.present?.on !== 'true' || row.present.reviewPressed !== 'false' || row.present.renderingPressed !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong look label: ${JSON.stringify(row.present)}`);
+    if (row.present?.on !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong label: ${JSON.stringify(row.present)}`);
     if (!/Fit site/.test(row.fit?.label ?? '') || !(row.fit?.heightFt > 60)) throw new Error(`Fit site did not rise to the whole site: ${JSON.stringify(row.fit)}`);
-    if (row.reviewShot === 'street' && row.cameraKept === false) throw new Error('a look change moved the camera');
-    if (row.reviewShot === 'street' && !/kept from Review: \d+ trees? in the line of sight/.test(row.streetBasisInRendering ?? '')) throw new Error(`the kept camera's basis was not restated for Rendering: ${row.streetBasisInRendering}`);
-    if (row.treeFetchesInReview !== 0 || !(row.treeFetchesInRendering > 0)) throw new Error(`tree grower fetched ${row.treeFetchesInReview} times in Review and ${row.treeFetchesInRendering} by Rendering`);
+    if (row.look !== 'rendering' || row.lookToggle !== 0) throw new Error(`3D is not the single rendered view: look ${row.look}, review toggle ${row.lookToggle}`);
+    if (row.planLines?.pressed !== 'true' || !row.planLines.legend || row.planLines.cameraKept === false) throw new Error(`Plan lines did not draw over the rendering in place: ${JSON.stringify(row.planLines)}`);
     if (row.timeline.revision == null || row.timeline.interactive3d == null) throw new Error('timeline missing the plan revision or 3D milestone');
   } catch (e) {
     row.problem = String(e.message ?? e).slice(0, 240);
@@ -205,7 +201,7 @@ for (const l of layout) console.log(`LAYOUT 1280×720 ${l.parcel} | ${JSON.strin
 await browser.close();
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, layout }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | fit ${JSON.stringify(r.fit ?? null)} previous "${r.previousLabel ?? ''}" | camera kept ${r.cameraKept} "${r.streetBasisInRendering ?? ''}" note "${r.sightNote ?? ''}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
+  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | look ${r.look} trees fetched ${r.treeFetches} plan lines ${JSON.stringify(r.planLines ?? null)} | fit ${JSON.stringify(r.fit ?? null)} previous "${r.previousLabel ?? ''}"  timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
 const failed = results.filter(r => r.problem);
 if (failed.length) { console.log(`${failed.length} of ${results.length} parcels failed`); process.exit(1); }

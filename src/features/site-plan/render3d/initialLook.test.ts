@@ -1,14 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { initialLook, RENDERING_DEFAULT } from './RenderView';
+import { initialPlanLines } from './RenderView';
 
-describe('the look 3D opens on (handoff 11-27)', () => {
-  beforeEach(() => { sessionStorage.clear(); localStorage.clear(); });
-  it('keeps Review until the Rendering gates pass, and remembers an explicit choice for the session', () => {
-    expect(RENDERING_DEFAULT).toBe(false);
-    expect(initialLook()).toBe('review');
-    localStorage.setItem('pp.lookDefault', 'rendering');
-    expect(initialLook()).toBe('rendering');
-    sessionStorage.setItem('pp.look', 'review');
-    expect(initialLook()).toBe('review');
+describe('one 3D view, the rendering, with the plan lines on request (owner, 11-27)', () => {
+  beforeEach(() => { sessionStorage.clear(); });
+  it('starts without plan lines and remembers the choice for the session', () => {
+    expect(initialPlanLines()).toBe(false);
+    sessionStorage.setItem('pp.planLines', '1');
+    expect(initialPlanLines()).toBe(true);
   });
 });

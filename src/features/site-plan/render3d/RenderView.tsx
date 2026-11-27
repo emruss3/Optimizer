@@ -71,11 +71,14 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   // The look 3D opens on: the user's explicit choice this session, else the default (handoff 11-27).
-  const [look, setLookState] = useState<'review' | 'rendering'>(initialLook);
-  const setLook = useCallback((k: 'review' | 'rendering') => { rememberLook(k); setLookState(k); }, []);
+  // One 3D view, the rendering (owner, 11-27: "The 3D model should be the Render. We don't need both").
+  // The plan's lines (parcel, envelope, access, hazards) draw over it when asked.
+  const look = 'rendering' as 'review' | 'rendering';
+  const [planLines, setPlanLinesState] = useState<boolean>(initialPlanLines);
+  const setPlanLines = useCallback((on: boolean) => { rememberPlanLines(on); setPlanLinesState(on); }, []);
   // the feasibility badge asks for Review: the finding is read there, with its object marked (handoff 11-27)
   useEffect(() => {
-    const toReview = () => { setLookState('review'); setPresent(false); };
+    const toReview = () => { setPlanLinesState(true); setPresent(false); };
     window.addEventListener(LOOK_REVIEW_EVENT, toReview);
     return () => window.removeEventListener(LOOK_REVIEW_EVENT, toReview);
   }, []);
@@ -333,7 +336,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const reviewLook = look === 'review' && !present;
     try {
       const review = look === 'review' && !present;
-      model = buildSiteModel(data, { light, review });
+      model = buildSiteModel(data, { light, review, planLines: planLines && !present });
       stage = createStage(cv, model, { width: Math.max(2, el.clientWidth), height: Math.max(2, el.clientHeight), preserve: true, light, studio: review });
     } catch (err) {
       fail.current(err instanceof Error ? err : new Error(String(err)));
@@ -497,7 +500,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, lens, quality, look, present, planted, treesHere]);
+  }, [data, frame, lens, quality, look, present, planted, treesHere, planLines]);
 
   // Home designs → 3D: frame the previewed house once per token after the model includes it.
   // Do not re-frame on later rebuilds of the same token (avoids fighting the user).
@@ -592,8 +595,6 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed';
   // light, style and photoreal are for showing the plan, not for reading it
   const showy = look === 'rendering' || present;
-  // the look on screen: Present always shows the rendering, whatever the toggle was left on
-  const shownLook: 'review' | 'rendering' = showy ? 'rendering' : 'review';
   const hazards = new Set(data.polygons.map(p => p.hazard));
 
   return (
@@ -618,15 +619,11 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       </div>
       )}
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
-        <div className="inline-flex rounded border border-gray-200 overflow-hidden mr-1" role="group" aria-label="View">
-          {(['review', 'rendering'] as const).map(k => (
-            <button key={k} type="button" aria-pressed={shownLook === k} onClick={() => { setLook(k); if (k === 'review') setPresent(false); }} data-testid={`look-${k}`}
-              title={k === 'review' ? (present ? 'Leave Present and read the plan: the proposal stands out; the parcel, the envelope and the access are marked' : 'For reading the plan: the proposal stands out; the parcel, the envelope and the access are marked') : 'For showing the plan: materials, planting and the neighbourhood'}
-              className={`px-1.5 py-0.5 ${shownLook === k ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
-              {k === 'review' ? 'Review' : 'Rendering'}
-            </button>
-          ))}
-        </div>
+        <button type="button" aria-pressed={planLines} onClick={() => setPlanLines(!planLines)} data-testid="plan-lines"
+          title={planLines ? 'Hide the parcel line, buildable envelope, access and hazard areas' : 'Draw the parcel line, buildable envelope, access and hazard areas on the model'}
+          className={`mr-1 px-1.5 py-0.5 rounded border ${planLines ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
+          Plan lines
+        </button>
         <button className={btn} onClick={() => frame('iso')} data-testid="camera-iso">Aerial</button>
         <button className={btn} onClick={() => frame('top')} data-testid="camera-top">Top</button>
         <button className={btn} onClick={() => frame('street')} data-testid="camera-street">Street</button>
@@ -703,10 +700,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/85 rounded px-2 py-1 pointer-events-none">
         Drag to orbit · right-drag or Space+drag to pan · scroll zooms toward the cursor{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{graded ? ' · ground graded to 4% or less: assumed, not a grading plan' : ''}{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
       </div>
-      {look === 'review' && !present && (
+      {planLines && !present && (
         <div className="absolute bottom-9 left-2 flex items-center gap-3 text-[11px] text-gray-700 bg-white/90 rounded px-2 py-1 pointer-events-none" data-testid="review-legend">
-          <span className="flex items-center gap-1"><i className="inline-block w-3 h-2 rounded-sm bg-slate-400" />Proposal, in its materials</span>
-          <span className="flex items-center gap-1"><i className="inline-block w-3 h-2 rounded-sm bg-white border border-gray-300" />Existing</span>
           <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-slate-600" />Parcel</span>
           {envelopeRing && <span className="flex items-center gap-1"><i className="inline-block w-4 border-t-2 border-blue-600" />Buildable envelope</span>}
           {data.curbs.length > 0 && <span className="flex items-center gap-1" data-testid="legend-access"><i className="inline-block w-4 border-t-2 border-amber-500" />Access</span>}
@@ -755,28 +750,17 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
 
 export default RenderView;
 
-// ── the look 3D opens on ─────────────────────────────────────────────────────────────────────────
-// Rendering becomes the default once its release gates pass on real devices (handoff 11-27: framing,
-// obstruction, first usable frame ≤ 2 s warm, Review not slower by more than 10% at p95). Until then
-// Review stays the default; QA turns Rendering on with ?look=rendering or localStorage pp.lookDefault.
-// An explicit choice is remembered for the session either way.
-export const RENDERING_DEFAULT = false;
-/** Dispatched on window to bring the 3D view to Review (the feasibility badge). */
+// ── plan lines over the rendering ────────────────────────────────────────────────────────────────
+// The 3D view is the rendering (owner, 11-27). The plan's lines (parcel, envelope, access, hazards)
+// draw over it on request, remembered for the session; the feasibility badge turns them on.
+/** Dispatched on window to show the plan's lines in 3D (the feasibility badge). */
 export const LOOK_REVIEW_EVENT = 'pp:look-review';
-const LOOK_KEY = 'pp.look';
+const PLAN_LINES_KEY = 'pp.planLines';
 
-export function initialLook(): 'review' | 'rendering' {
-  try {
-    const chosen = sessionStorage.getItem(LOOK_KEY);
-    if (chosen === 'review' || chosen === 'rendering') return chosen;
-    const q = new URLSearchParams(window.location.search).get('look');
-    if (q === 'review' || q === 'rendering') return q;
-    const d = localStorage.getItem('pp.lookDefault');
-    if (d === 'review' || d === 'rendering') return d;
-  } catch { /* storage blocked: the default */ }
-  return RENDERING_DEFAULT ? 'rendering' : 'review';
+export function initialPlanLines(): boolean {
+  try { return sessionStorage.getItem(PLAN_LINES_KEY) === '1'; } catch { return false; }
 }
 
-function rememberLook(k: 'review' | 'rendering'): void {
-  try { sessionStorage.setItem(LOOK_KEY, k); } catch { /* not remembered */ }
+function rememberPlanLines(on: boolean): void {
+  try { sessionStorage.setItem(PLAN_LINES_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
 }
