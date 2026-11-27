@@ -14,6 +14,9 @@ import { fitStockDesignInLot, lotGeometry, pointInPolygon, type LotFitResult, ty
 import { createGroundFrame } from '../scene/frame';
 import type { HousingDesignRecord } from './types';
 
+/** Feet for a label: at most two decimals (34.1666… → 34.17, 40 → 40). */
+const ft2 = (v: number): string => (Number.isFinite(v) ? Number(v.toFixed(2)).toString() : String(v));
+
 export const DEFAULT_HOME_SETBACKS: Setbacks = { front: 20, side: 5, rear: 20 };
 
 export interface HouseLotEligibility {
@@ -113,7 +116,7 @@ export function houseEligibility(
     const [lo, hi] = dims(design);
     const beaten = lo > 0 ? failed.find(f => f.kind === kindOf(design) && f.lo <= lo && f.hi <= hi) : undefined;
     if (beaten) {
-      byIndex.set(i, { reason: `footprint ${design.footprint.widthFt}×${design.footprint.depthFt} ft is no smaller than ${beaten.design.planNumber}, which does not fit: ${beaten.reason}` });
+      byIndex.set(i, { reason: `footprint ${ft2(design.footprint.widthFt)}×${ft2(design.footprint.depthFt)} ft is no smaller than ${beaten.design.planNumber}, which does not fit: ${beaten.reason}` });
       continue;
     }
     const fit = fitStockDesignInLot(design, geo, lotIndex);

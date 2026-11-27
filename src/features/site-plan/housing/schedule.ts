@@ -28,9 +28,9 @@ export function homesScheduleRows(elements: Element[]): Array<{ label: string; v
     concept: 'Parcel Proforma concept study · schematic',
     engine: 'engine footprint · no home plan selected',
   };
-  const out = [{ label: 'Homes', value: `${s.all.homes} homes · ${s.totals.length} design${s.totals.length === 1 ? '' : 's'}${s.all.heatedSf > 0 ? ` · ${s.all.heatedSf.toLocaleString()} heated sf stated` : ''}${s.all.heatedUnknown ? ` (${s.all.heatedUnknown} without a stated area)` : ''}` }];
+  const out = [{ label: 'Homes', value: `${s.all.homes} homes · ${s.totals.length} design${s.totals.length === 1 ? '' : 's'}${s.all.heatedSf > 0 ? ` · ${Math.round(s.all.heatedSf).toLocaleString()} heated sf stated` : ''}${s.all.heatedUnknown ? ` (${s.all.heatedUnknown} without a stated area)` : ''}` }];
   for (const t of s.totals) {
-    out.push({ label: t.design, value: `${t.lots.join(', ')} · ${kindWords[t.kind]}${t.heatedSf ? ` · ${t.heatedSf.toLocaleString()} heated sf` : ''}` });
+    out.push({ label: t.design, value: `${t.lots.join(', ')} · ${kindWords[t.kind]}${t.heatedSf ? ` · ${Math.round(t.heatedSf).toLocaleString()} heated sf` : ''}` });
   }
   return out;
 }
