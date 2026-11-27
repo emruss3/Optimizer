@@ -1,3 +1,5 @@
+import { isProvisionalPad, PROVISIONAL_PAD } from '../housing/starterHomes';
+import { Kit, mat } from './architecture/kit';
 import { findHome } from '../housing/originalDesigns';
 import { placedArchitecture } from '../housing/architecture';
 import { makeTerrain } from '../render3d/terrain';
@@ -365,6 +367,12 @@ export function buildMassingData(
     const shrubs: Array<[number, number, number]> = [];
     buildings.forEach((el, i) => {
       const rings = el.geometry.coordinates.map(r => r.map(m));
+      if (isProvisionalPad(el)) {
+        const pad = new Kit(el.id, PROVISIONAL_PAD);
+        pad.mass(rings, 0, 0.25, mat(167, 165, 155, 'concrete'), 'base');
+        slabs.push(...pad.done().slabs);
+        return;
+      }
       const outdoor = propertiesOutdoor(el);
       const label = outdoor
         ? `${el.name ?? el.id} · outdoor deck`

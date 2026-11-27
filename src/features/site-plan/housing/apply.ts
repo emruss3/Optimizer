@@ -198,7 +198,7 @@ export function applyStockDesignToHouse(opts: {
   const n = /(\d+)$/.exec(row.lotId ?? house.id)?.[1] ?? '';
   // a concept study placed here before leaves its own anchors, gross area and parts (porch,
   // walk, pad): none of them belongs to the stock plan (PR 221 audit, stale product metadata)
-  const conceptKeys = ['homeEntry3857', 'homeVehicle3857', 'homeOrigin', 'homeAxis', 'homeGrossSf', 'heightFt', 'storiesAssumed', 'floorplanId', 'label'];
+  const conceptKeys = ['homeEntry3857', 'homeVehicle3857', 'homeOrigin', 'homeAxis', 'homeGrossSf', 'heightFt', 'storiesAssumed', 'floorplanId', 'label', 'housingAssignmentSource', 'housingPreviousEnginePlan'];
   const isPart = (e: Element) => e.id.startsWith(house.id + '-home-');
   const elements = opts.elements.filter(e => !isPart(e)).map(el => {
     if (el.id === house.id) {
