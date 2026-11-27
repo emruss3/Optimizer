@@ -99,7 +99,7 @@ python scripts/render4k/fetch_assets.py          # about 500 MB into out/assets
 `out/assets/assets.lock.json` records what arrived. The command-line renderer can use the kit when present. Pass `--assets` to
 point to another folder. The hosted worker uses the checked-in, hash-pinned
 viewer assets. The GLB carries the foreground foliage textures and detailed
-vehicle meshes used in the full browser tier.
+vehicle meshes used in browser Rendering, including its lighter tier. Review omits decorative vehicles.
 
 | Part | What the worker does with it |
 | --- | --- |
@@ -109,7 +109,7 @@ vehicle meshes used in the full browser tier.
 | Plants | A scanned tree for each tree in `planting.trees`, sized to its crown radius, and a scanned shrub for each in `planting.shrubs`. The job's seed fixes which one and which way it faces. |
 
 Unmapped slots use the worker materials. Large parking scenes may use the
-viewer’s simplified vehicle geometry to stay within its geometry budget.
+same detailed vehicle meshes when they fit. Missing assets and undersized spaces are left empty.
 
 ## Cost on 4 CPU cores, no GPU
 

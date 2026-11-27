@@ -16,7 +16,7 @@ import { CROWN_DRAWN } from '../scene/landscape';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
-import { carParts, carSpot, type CarSpot } from './cars';
+import { carSpot, type CarSpot } from './cars';
 import { drape, gradeMassingSite, latticeHeight, lift, type Grade } from './terrain';
 import { approachCut, approachGeometry, cutGround, planCurb, streetDetails, type ApproachAnchor } from './streetDetails';
 import type { Tree as EzTree } from '@dgreenheck/ez-tree';
@@ -841,28 +841,24 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       put('concrete|solid', prism([ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], 0.6), [150, 148, 142, 255]);
     }
   }
-  const detailedCars = real && !opts.light && data.cars.length <= 160;
   const parked: CarSpot[] = [];
-  const carFallback = new THREE.Group();
-  const carKey = (key: string) => detailedCars ? `${key}|car` : key;
   const foreground: ForegroundObstacle[] = opts.review ? [] : data.shrubs.map(([x, y, r]) => [x, y, r * 1.7]);
-  // The body footprint sets the car's placement. Use the shaped car on both
-  // viewing tiers, and swap in the detailed model where available.
-  data.cars.forEach((c, i) => {
-    if (c.elevation <= 0.6) return;
+  // No placeholder cars in Review, during asset loading, or after an asset
+  // failure. Light Rendering and dense sites use the same instanced assets.
+  if (real) data.cars.forEach((c, i) => {
     const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${i}`));
     if (!spot) return;
-    owner = `car:${i}`;
-    const datum = groundAt(spot.x, spot.y);
-    if (laid) seat.set(owner, datum);
-    for (const part of carParts(spot)) put(carKey(part.key), part.geometry, part.color);
-    foreground.push([spot.x, spot.y, Math.hypot(spot.length, spot.width) / 2]);
-    if (detailedCars) parked.push({ ...spot, z: spot.z + datum });
+    const dx = Math.cos(spot.heading), dy = Math.sin(spot.heading);
+    parked.push({
+      ...spot, z: spot.z + groundAt(spot.x, spot.y),
+      pitch: (groundAt(spot.x + dx, spot.y + dy) - groundAt(spot.x - dx, spot.y - dy)) / 2,
+      roll: (groundAt(spot.x - dy, spot.y + dx) - groundAt(spot.x + dy, spot.y - dx)) / 2,
+    });
   });
 
   lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
   for (const [key, list] of bins) {
-    const [kind, mode, batch] = key.split('|');
+    const [kind, mode] = key.split('|');
     const merged = mergeGeometries(list, false);
     list.forEach(g => g.dispose());
     if (!merged) continue;
@@ -888,9 +884,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (kind === 'glassrail') mesh.renderOrder = 2;
     mesh.receiveShadow = true;
     mesh.name = key;
-    (batch === 'car' ? carFallback : root).add(mesh);
+    root.add(mesh);
   }
-  if (carFallback.children.length) root.add(carFallback);
 
   lap('parts merged');
   // planting: a few grown trees (ez-tree), each placed many times, turned and
@@ -903,16 +898,22 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // the leaves and bark are pictures that arrive after the trees are grown
   const waits: Array<Promise<unknown>> = [...kinds, ...bushes].flatMap(t => [arrived((t.leaf as THREE.MeshStandardMaterial).map), arrived((t.bark as THREE.MeshStandardMaterial).map)]);
   let disposed = false;
-  if (parked.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(parked)).then(group => {
+  // A busy site should not render a vehicle in every stall. Use a stable
+  // dispersed sample above the visual budget instead of switching to toys.
+  const fleet = parked.length <= 96 ? parked : [...parked].sort((a, b) => a.seed - b.seed).slice(0, 96);
+  if (fleet.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(fleet)).then(group => {
     if (disposed) {
       group.children.forEach(child => (child as THREE.InstancedMesh).geometry.dispose());
       return;
     }
-    root.remove(carFallback);
-    carFallback.children.forEach(child => (child as THREE.Mesh).geometry.dispose());
+    if (!group.children.length) return;
     root.add(group);
+    for (const car of fleet) {
+      // Only placed vehicles are foreground obstacles (not omitted/crowded slots).
+      if (group.userData.occupancy?.has(car.seed)) foreground.push([car.x, car.y, Math.hypot(car.length, car.width) / 2]);
+    }
     root.updateMatrixWorld(true);
-  }).catch(err => { console.warn('[render] detailed vehicles could not load.', err); }));
+  }).catch(err => { console.warn('[render] decorative vehicles omitted.', err); }));
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
   const place = (forms: TreeForm[], items: Array<{ x: number; y: number; r: number; tint?: readonly number[] }>, z: number, kind = 'tree') => {
     forms.forEach((form, k) => {
