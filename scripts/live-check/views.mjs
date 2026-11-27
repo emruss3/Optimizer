@@ -27,6 +27,9 @@ for (const p of PARCELS) {
   const context = await browser.newContext({ viewport: { width: 1536, height: 791 } });
   await context.addInitScript(() => { try { localStorage.setItem('pp.visited', '1'); localStorage.setItem('pp.dock', 'open'); } catch { /* private */ } });
   const page = await context.newPage();
+  // a large scene drawn in software (the runner has no GPU) holds the page for tens of seconds a frame:
+  // give each step room rather than fail the check on the runner's speed (535 Main St timed out on main too)
+  page.setDefaultTimeout(90000);
   const errors = [];
   page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)));
   // the tree grower (about 4 MB) is fetched only once the model is planted, never for Review
