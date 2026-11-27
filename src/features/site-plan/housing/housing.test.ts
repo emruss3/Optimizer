@@ -73,7 +73,7 @@ describe('housing design record — Delk cottage 1754-00010', () => {
 describe('buildable stock catalogue', () => {
   it('lists multiple ABHP plans with footprints and publisher URLs', () => {
     const stock = buildableStockPlans();
-    expect(stock.length).toBeGreaterThanOrEqual(10);
+    expect(stock.length).toBeGreaterThanOrEqual(12);
     expect(HOUSING_CATALOGUE.every(d => d.source.rights === 'citation-only')).toBe(true);
     for (const d of stock) {
       expect(d.heatedSf).toBeGreaterThan(0);
