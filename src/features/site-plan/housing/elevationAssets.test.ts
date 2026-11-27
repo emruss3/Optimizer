@@ -13,9 +13,18 @@ import {
 const faces = ['front', 'right', 'back', 'left'] as const;
 const publicDir = resolve(process.cwd(), 'public/home-designs');
 
+/** Concept catalogue rows that intentionally stay on Diagram until a photoreal pack ships. */
+const DIAGRAM_ONLY_CONCEPT_IDS = new Set(['tn-pocket-cottage-v1']);
+
 describe('photoreal elevation assets', () => {
   it('lists the concept ids that ship elevation WebPs', () => {
-    expect(PHOTOREAL_ELEVATION_IDS).toEqual(HOME_DESIGNS.map(h => h.id));
+    expect(PHOTOREAL_ELEVATION_IDS).toEqual(
+      HOME_DESIGNS.map(h => h.id).filter(id => !DIAGRAM_ONLY_CONCEPT_IDS.has(id)),
+    );
+    for (const id of DIAGRAM_ONLY_CONCEPT_IDS) {
+      expect(HOME_DESIGNS.some(h => h.id === id)).toBe(true);
+      expect(hasPhotorealElevation(id)).toBe(false);
+    }
     for (const id of PHOTOREAL_ELEVATION_IDS) {
       expect(hasPhotorealElevation(id)).toBe(true);
       for (const side of faces) {
