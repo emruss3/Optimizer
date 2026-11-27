@@ -112,6 +112,23 @@ const openPlanner = async (page, q) => {
   results.push(row); await context.close();
 }
 
+// 4. 535 Main St: stalls nobody traced a route to are not shown as a verified supply
+{
+  const row = { case: '535 Main St' };
+  const { context, page } = await open();
+  try {
+    await openPlanner(page, '08215022700');
+    row.status = (await page.locator('[data-testid="kpi-status"]').first().innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200);
+    row.statusTitle = (await page.locator('[data-testid="kpi-status"] [title]').first().getAttribute('title').catch(() => '')) ?? '';
+    row.reachable = await page.getByText(/reachable from the street/).first().innerText({ timeout: 2000 }).catch(() => null);
+    const traced = row.reachable != null;
+    const named = /stalls not checked/.test(`${row.status} ${row.statusTitle}`);
+    if (!traced && !named) throw new Error('stall supply shown with no route traced and no open item saying so');
+  } catch (e) { row.problem = String(e.message ?? e).slice(0, 240); }
+  await page.screenshot({ path: path.join(out, 'main-535.png') }).catch(() => {});
+  results.push(row); await context.close();
+}
+
 await browser.close();
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results }, null, 2) + '\n');
 for (const r of results) console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.case} | ${JSON.stringify({ ...r, case: undefined })}`);

@@ -29,6 +29,7 @@ import type { Polygon, MultiPolygon } from 'geojson';
 import ParametersPanel from './ui/ParametersPanel';
 import ResultsPanel from './ui/ResultsPanel';
 import KpiStrip from './ui/KpiStrip';
+import { parkingStallsUntraced } from './ui/parkingCounts';
 import ContextPanel from './ui/ContextPanel';
 import { CensusBanner } from './ui/CensusBanner';
 import { routesToLotFit, fetchPermittedUses, normalizePermittedUses, permittedUsesStatus, pickDefaultUse, isNonResidentialOnly, defaultUseFromZoningBase, NON_RESIDENTIAL_USES, type DesignContext, type PermittedUsesStatus } from './api/designContext';
@@ -3797,10 +3798,15 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   }, [displayElements, mfAccess]);
   // Display metrics: stallsProvided stands on curb-reachable supply when known.
   const accessAwareMetrics = useMemo(() => {
-    if (!metrics || stallsUsable == null) return metrics;
+    if (!metrics) return metrics;
+    if (stallsUsable == null) {
+      // every drawn bay traced to the street: the reachable count is verified, not merely unknown
+      const traced = displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated && mfAccess.stallsServed != null && mfAccess.served >= mfAccess.bays;
+      return traced ? { ...metrics, stallsReachable: mfAccess.stallsServed } : metrics;
+    }
     // adequacy stands on the reachable supply; the count keeps its own name
     return { ...metrics, stallsProvided: stallsUsable, stallsReachable: stallsUsable };
-  }, [metrics, stallsUsable]);
+  }, [metrics, stallsUsable, displayElements, mfAccess]);
   // What the plan's own checks do not cover, stated beside their pass (audit 11-26: Ocala read
   // "checks passed" at 65,481 GSF over a 65,100 upper bound, Holt with a drive short of the street).
   const planOpenItems = useMemo(() => {
@@ -3809,8 +3815,12 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     const cap = maxBuildout && !draftMode ? maxBuildout.max_gsf : 0;
     if (cap > 0 && gsf > cap + 0.5) out.push(`${Math.round(gsf - cap).toLocaleString()} GSF over the ${Math.round(cap).toLocaleString()} GSF upper bound`);
     if (routeBreak) out.push('the drive does not reach the street');
+    // stalls counted that no route was traced to (a structured garage, a lot without drawn drives):
+    // the supply is a count, not a verified one (audit 9379472: Main's 252 against 240 required)
+    const stalls = parkingStallsUntraced(displayElements, accessAwareMetrics);
+    if (!routeBreak && stalls != null) out.push(`routes to the ${stalls.toLocaleString()} stalls not checked`);
     return out;
-  }, [metrics?.totalBuiltSF, maxBuildout, draftMode, routeBreak]);
+  }, [metrics?.totalBuiltSF, maxBuildout, draftMode, routeBreak, displayElements, accessAwareMetrics]);
   const routeBreakLabel = routeBreak
     ? routeBreak.gapFt != null
       ? `Drive stops here · no drawn connection to the street · ${formatGapFt(routeBreak.gapFt)} ft short`
