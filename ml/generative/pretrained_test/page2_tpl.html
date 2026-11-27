@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pretrained Layout Test Drawings</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;700&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* layout: a set of plan sheets. One site per band; three Optimizer site plan sheets stacked full width, each with a plain caption. */
+:root{--paper:#f4f3ee;--ink:#1d2a33;--dim:#5c6a73;--line:#c9cdc8;--sheet:#ffffff;--good:#2f6f52;--bad:#9a4a1f;
+--display:"Archivo Narrow","Arial Narrow",sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--paper:#141b20;--ink:#e6e9e6;--dim:#9aa6ad;--line:#33414a;--sheet:#ffffff;--good:#6fc09a;--bad:#e0996b}}
+:root[data-theme="dark"]{color-scheme:dark;--paper:#141b20;--ink:#e6e9e6;--dim:#9aa6ad;--line:#33414a;--sheet:#ffffff;--good:#6fc09a;--bad:#e0996b}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.5 var(--body)}
+main{max-width:1240px;margin:0 auto;padding:28px 20px 64px;display:flex;flex-direction:column;gap:36px}
+h1{font:700 32px/1.1 var(--display);margin:0 0 10px;text-wrap:balance}
+h2{font:700 24px/1.2 var(--display);margin:0;text-wrap:balance}
+.lede{max-width:68ch;margin:0 0 10px}.how{max-width:68ch;margin:0;color:var(--dim);font-size:14.5px}
+section{border-top:2px solid var(--ink);padding-top:16px;display:flex;flex-direction:column;gap:22px}
+section header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px}
+.tag{margin:0;font:700 13px/1 var(--display);text-transform:uppercase;letter-spacing:.07em;padding:6px 9px;border:1.5px solid currentColor;font-variant-numeric:tabular-nums}
+.tag.better{color:var(--good)}.tag.worse{color:var(--bad)}
+figure{margin:0;display:flex;flex-direction:column;gap:8px}
+figcaption{display:flex;flex-direction:column;gap:1px}figcaption b{font:700 19px/1.25 var(--display)}
+figcaption span{color:var(--dim);font-size:14.5px;max-width:75ch}figcaption .n{color:var(--ink);font-variant-numeric:tabular-nums}
+img{display:block;width:100%;height:auto;background:var(--sheet);border:1px solid var(--line)}
+</style></head><body><main>
+<div><h1>Six test sites, drawn as Optimizer site plan sheets</h1>
+<p class="lede">Every sheet below is drawn by the app's own site plan renderer, on the real parcel with its real streets and neighbours. For each site, look at three sheets in order: the plan the civil got approved, what the pretrained model drew for the same site, and the closest approved plan we already had.</p>
+<p class="how">How to read a sheet: the dash-dot line is the property, cream shapes with a dark edge are buildings, grey is drive and parking pavement, pale shapes outside the line are neighbouring buildings and lots. Trees are the renderer's own planting, not part of any plan. Story counts read "1 story" because the layout data carries no stories. The six sites were picked by rule from the scores (the typical better case and the typical worse case per product), not by how they look. Scores are error against the civil's plan; lower is better.</p></div>
+{{SECTIONS}}
+</main></body></html>

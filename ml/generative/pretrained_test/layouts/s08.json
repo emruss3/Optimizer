@@ -1,0 +1,35 @@
+{"samples": [
+  {"drives": [[[-202.0, -35.0], [185.0, -35.0]]],
+   "buildings": [
+    {"type": "detached", "cx": -162.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": -126.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": -90.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": -54.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": -18.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": 18.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": 54.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": 90.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": 126.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1},
+    {"type": "detached", "cx": 162.0, "cy": 10.0, "length": 40.0, "depth": 24.0, "angle_deg": 90, "units": 1}],
+   "parking": []},
+  {"drives": [[[-203.0, 32.0], [185.0, 32.0]]],
+   "buildings": [
+    {"type": "townhome_row", "cx": -150.0, "cy": -15.0, "length": 62.6, "depth": 45.0, "angle_deg": 0, "units": 3},
+    {"type": "townhome_row", "cx": -65.0, "cy": -15.0, "length": 62.6, "depth": 45.0, "angle_deg": 0, "units": 3},
+    {"type": "townhome_row", "cx": 15.0, "cy": -15.0, "length": 43.5, "depth": 45.0, "angle_deg": 0, "units": 2},
+    {"type": "townhome_row", "cx": 85.0, "cy": -15.0, "length": 43.5, "depth": 45.0, "angle_deg": 0, "units": 2}],
+   "parking": [{"cx": 150.0, "cy": 10.0, "length": 36.0, "depth": 18.0, "angle_deg": 0}]},
+  {"drives": [[[203.0, 0.0], [-160.0, 0.0]]],
+   "buildings": [
+    {"type": "detached", "cx": -120.0, "cy": 29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": -60.0, "cy": 29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": 0.0, "cy": 29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": 60.0, "cy": 29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": 120.0, "cy": 29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": -120.0, "cy": -29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": -60.0, "cy": -29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": 0.0, "cy": -29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": 60.0, "cy": -29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1},
+    {"type": "detached", "cx": 120.0, "cy": -29.0, "length": 40.0, "depth": 24.0, "angle_deg": 0, "units": 1}],
+   "parking": []}
+]}

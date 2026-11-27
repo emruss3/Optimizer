@@ -1,0 +1,12 @@
+{"samples": [
+  {"drives": [[[55.0, -133.5], [110.0, -110.0], [135.0, -75.0]]],
+   "buildings": [{"type": "podium", "cx": -19.2, "cy": 19.3, "length": 224, "depth": 190, "angle_deg": 117.7, "units": 150}],
+   "parking": []},
+  {"drives": [[[55.0, -133.5], [100.0, -120.0], [136.1, -97.9], [1.3, 158.8], [-1.5, 164.1]]],
+   "buildings": [{"type": "podium", "cx": -28.3, "cy": 4.3, "length": 206, "depth": 160, "angle_deg": 117.7, "units": 150}],
+   "parking": [{"cx": 82.4, "cy": -94.5, "length": 58, "depth": 18, "angle_deg": 27.7}]},
+  {"drives": [[[61.1, -133.5], [-75.9, 127.2]]],
+   "buildings": [{"type": "podium", "cx": -68.7, "cy": -6.8, "length": 224, "depth": 78, "angle_deg": 117.7, "units": 65},
+                 {"type": "podium", "cx": 43.0, "cy": 21.4, "length": 278, "depth": 78, "angle_deg": 117.7, "units": 85}],
+   "parking": []}
+]}

@@ -1,0 +1,40 @@
+{"samples": [
+  {"drives": [
+     [[25, -114.5], [25, -103.5]],
+     [[-250, -120], [-40, -120], [-25, -103.5], [25, -103.5], [240, -106]],
+     [[-250, -120], [-235, 10], [-190, 70], [160, 70]]
+   ],
+   "buildings": [
+     {"type": "podium", "cx": 22.5, "cy": -20, "length": 415, "depth": 130, "angle_deg": 0, "units": 254}
+   ],
+   "parking": [
+     {"cx": -213, "cy": -50, "length": 100, "depth": 18, "angle_deg": 90},
+     {"cx": -20, "cy": 91, "length": 240, "depth": 18, "angle_deg": 0}
+   ]},
+  {"drives": [
+     [[25, -114.5], [25, 50]],
+     [[-200, 50], [25, 50], [200, 50]]
+   ],
+   "buildings": [
+     {"type": "wrap", "cx": -125, "cy": -50, "length": 230, "depth": 150, "angle_deg": 0, "units": 143},
+     {"type": "podium", "cx": 152.5, "cy": -35, "length": 205, "depth": 130, "angle_deg": 0, "units": 111}
+   ],
+   "parking": [
+     {"cx": 4, "cy": -37, "length": 130, "depth": 16, "angle_deg": 90},
+     {"cx": -70, "cy": 71, "length": 150, "depth": 18, "angle_deg": 0},
+     {"cx": 110, "cy": 71, "length": 130, "depth": 18, "angle_deg": 0}
+   ]},
+  {"drives": [
+     [[25, -114.5], [25, 2.7]],
+     [[240.5, -123.7], [25, 2.7], [-147.7, 104.0]]
+   ],
+   "buildings": [
+     {"type": "podium", "cx": 84.6, "cy": 65.2, "length": 410, "depth": 102, "angle_deg": 149.6, "units": 153},
+     {"type": "podium", "cx": -127.5, "cy": -61, "length": 225, "depth": 122, "angle_deg": 0, "units": 101}
+   ],
+   "parking": [
+     {"cx": 135.1, "cy": -36.4, "length": 190, "depth": 18, "angle_deg": 149.6},
+     {"cx": -54.6, "cy": 74.9, "length": 170, "depth": 18, "angle_deg": 149.6},
+     {"cx": 1, "cy": -55, "length": 100, "depth": 18, "angle_deg": 90}
+   ]}
+]}
