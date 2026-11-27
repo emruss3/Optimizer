@@ -4,6 +4,7 @@ import { HOME_DESIGNS, type Face, type HomeDesign } from './originalDesigns';
 import { designBounds, program, roofHeight } from './drawings';
 import { exteriorRendering, hasPhotorealElevation, interiorRenderings, photorealElevationSrc } from './elevationAssets';
 import { HomePlan, Elevation } from './PlanIllustrations';
+import { StockDrawings } from './StockDrawings';
 import { placeHome, residentialHomes, type FitResult, type HomePlacement } from './placement';
 import { buildableStockPlans } from './catalogue';
 import { designsFittingHouse, stepHomeDesignIndex } from './homeDesignsGate';
@@ -401,6 +402,7 @@ export default function HomeStudio({
                       )}
                       {plan.notes[0] && <p className="home-stock-note">{plan.notes[0]}</p>}
                     </div>
+                    <StockDrawings plan={plan} />
                     <section className="home-placement">
                       <h4>Apply on this site</h4>
                       {stockRow && onApplyStock ? (
