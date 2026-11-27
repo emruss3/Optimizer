@@ -1,5 +1,5 @@
 {
-  "version": "site-daylight-v2",
+  "version": "site-daylight-v3",
   "sky": {
     "file": "daylight.hdr",
     "sha256": "cf7ff4bab60967a61e6fc8c0384072705dd2f24e90037d1a508f8ee3f3be93b3",
@@ -79,18 +79,20 @@
       "normal_sha256": "a42daed4fb96527a74b4e98d058fa378bf6d65b15d61d0e7b717dc2132abfb6b"
     },
     "concrete": {
-      "source": "https://polyhaven.com/a/concrete_pavement",
+      "source": "https://polyhaven.com/a/rough_concrete",
       "license": "CC0",
       "tile_m": [
-        2.8,
-        2.8
+        1.65,
+        1.65
       ],
-      "roughness": 0.77,
-      "normal_strength": 0.8,
-      "color": "concrete.jpg",
-      "normal": "concrete_n.jpg",
-      "color_sha256": "e9ad147f3f0bac6e5a9f329fc0d116e4b6d3f24b29ae94089aa2cfcd8ddaa231",
-      "normal_sha256": "b146f46536d2a9d8f29563810536fcc625c7e7409c259c249c0c6b6991673e34"
+      "roughness": 0.83,
+      "normal_strength": 0.42,
+      "color": "cast-concrete.jpg",
+      "color_sha256": "d1f3c2c18e7534e80ecd1044756d3f289d1064fb1527abbc40baa3ced4943ea2",
+      "normal": "cast-concrete-normal.jpg",
+      "normal_sha256": "a2cbfa28193c98228a5ad98c30c16e3598804469478eb54c3959f8912a58b3d8",
+      "roughness_map": "cast-concrete-roughness.jpg",
+      "roughness_map_sha256": "f5279cabb5931694837e3fce3bc07f6dee4f03b15dcf8bcb0be4691b8dac3868"
     },
     "wood": {
       "source": "https://polyhaven.com/a/oak_wood_planks",
@@ -105,6 +107,38 @@
       "normal": "wood_n.jpg",
       "color_sha256": "44aef5346031794d8506154a79a3a370095adf4ea749acd8bd67f234cd3b7699",
       "normal_sha256": "004e7515ae96b86bcc3262d915a8cdb1699b23dc2a113588f29645e81fcb2867"
+    },
+    "siding": {
+      "source": "https://ambientcg.com/a/WoodSiding009",
+      "license": "CC0",
+      "tile_m": [
+        1.2192,
+        1.2192
+      ],
+      "roughness": 0.78,
+      "normal_strength": 0.42,
+      "color": "lap-cladding.jpg",
+      "color_sha256": "fbbfcf9067895395299ec35a648b3d35020f7d491ec932b56e54e78376fe9da5",
+      "normal": "lap-cladding-normal.jpg",
+      "normal_sha256": "3045974a25bb1579105bcd4c181baf69955c5d721118954d7c4c007a13f67668",
+      "roughness_map": "lap-cladding-roughness.jpg",
+      "roughness_map_sha256": "9112abe5a2cc9a5e14a489fe7263e50eaabd43457c0b5d4d6e31660684b03ef5"
+    }
+  },
+  "review_textures": {
+    "concrete": {
+      "source": "https://polyhaven.com/a/concrete_pavement",
+      "license": "CC0",
+      "tile_m": [
+        2.8,
+        2.8
+      ],
+      "roughness": 0.77,
+      "normal_strength": 0.8,
+      "color": "concrete.jpg",
+      "normal": "concrete_n.jpg",
+      "color_sha256": "e9ad147f3f0bac6e5a9f329fc0d116e4b6d3f24b29ae94089aa2cfcd8ddaa231",
+      "normal_sha256": "b146f46536d2a9d8f29563810536fcc625c7e7409c259c249c0c6b6991673e34"
     }
   }
 }

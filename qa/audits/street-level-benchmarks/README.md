@@ -32,11 +32,32 @@ controlled front detail view, not a pass of the app's public arrival camera.
 The fixtures use flat ground for this isolated view check. No production
 deployment, AI repaint or survey is implied.
 
-The next gate is a complete street scene using dimensioned facade and lobby
-drawings, verified grade at the door and curb, and specific landscaping.
-Review both a held-out rear-load housing site and a multifamily site with
-actual entry information, before making any claim about photorealism at
-parcel scale.
+## Photographed materials pass
+
+[`Material_Comparison.jpg`](Material_Comparison.jpg) compares browser and
+Cycles images using the same two benchmark scenes and camera positions. Photo
+normal and roughness maps replace drawn lap siding and the paver material used
+on site concrete. The walk no longer has the photo's false rectangular paver
+grid. The siding has a consistent 6-inch exposure and softer variation across
+boards. The browser requested the new maps successfully. Geometry buffers,
+quantities, approach locations, camera and sun are unchanged. The photos are
+material inputs, not image-to-image edits. The alternate turf scan looked
+flatter in the same browser view, so it did not ship.
+
+### What would make the next pass look like a photograph?
+
+| Priority | Build | Acceptance test |
+| --- | --- | --- |
+| 1 | Use site-specific context. Start from a reference set of owned or licensed ground-level photos and dimensioned elevation/grade data. Use a confirmed rear-load view at The Lanes and a real multifamily arrival such as DELUX WeHo as separate benchmarks. Model the actual curb, walk, driveway and foundation interface. | Match camera pose against the reference. Compare the height of the curb and door, roofline, garage and street connection, and the position and scale of visible neighbors. Keep unsurveyed details illustrative. |
+| 2 | Build architectural details that change the silhouette or catch light. Author roof edges and returns, window relief and trim, recessed entrances, real garage-door panels, and separate durable finishes for entries and service sides. | Walk around the model at eye height. Distinguish designs by massing and openings from street, side and rear regardless of the selected material palette. Geometry is checked against its source elevations. |
+| 3 | Fix flat planting and glass. Select climate-appropriate groundcover, shrubs and tree forms per site. Mix plant heights and age. Light actual rooms and lobbies behind clear glazing, separate direct sun from warm practical fixtures, and test dark and backlit angles. | On a dusk or overcast comparison, interior light reaches adjacent surfaces without lighting the exterior through walls. Plant coverage stops at hardscape and never hides the route to a door or garage. |
+| 4 | Keep live interaction and 4K stills separate, with one authoritative model and explicit material versions. Stream display-ready assets as the user approaches, and let Cycles spend more samples and cost for the same saved camera. | Both views pass plan-geometry and camera checks. Compare against the actual photo, not just the earlier render, while tracking time to meaningful first frame on the full-parcel benchmark. |
+
+A material scan can get a wall right. It cannot fix generic buildings and
+an empty horizon, derive a real landscape from a parcel outline, or establish
+that a cut/fill assumption or driveway is correct. Reuse the controlled views
+above as regression fixtures, and require a new held-out parcel for each
+broader improvement.
 
 ## Visual references
 
