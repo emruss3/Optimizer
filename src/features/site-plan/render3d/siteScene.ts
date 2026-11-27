@@ -16,7 +16,8 @@ import { CROWN_DRAWN } from '../scene/landscape';
 import { builtFocus, type Focus } from '../scene/builtFocus';
 import { METERS_PER_FOOT } from '../../../engine/units';
 import { Surfaces } from './textures';
-import { carSpot, type CarSpot } from './cars';
+import { carSpot } from './cars';
+import { foregroundVehicles, seatVehicle, vehicleWheelPoints } from './vehiclePlacement';
 import { drape, gradeMassingSite, latticeHeight, lift, type Grade } from './terrain';
 import { approachCut, approachGeometry, cutGround, planCurb, streetDetails, type ApproachAnchor } from './streetDetails';
 import type { Tree as EzTree } from '@dgreenheck/ez-tree';
@@ -448,6 +449,18 @@ function plane(points: number[][]): THREE.BufferGeometry | null {
   return g;
 }
 
+/** Turf is a surface draped over the terrain, not an extruded green platform. */
+function turfSheet(ring: number[][], z: number): THREE.BufferGeometry | null {
+  if (ring.length < 3) return null;
+  const points = ring.map(p => new THREE.Vector2(p[0] ?? 0, p[1] ?? 0));
+  if (points.length > 3 && points[0]!.distanceToSquared(points[points.length - 1]!) < 1e-9) points.pop();
+  const indexed = new THREE.ShapeGeometry(new THREE.Shape(points));
+  const sheet = indexed.toNonIndexed();
+  indexed.dispose();
+  sheet.translate(0, 0, z);
+  return sheet;
+}
+
 /** A line drawn `width` wide on the ground at height `z`, joints rounded. */
 function ribbon(path: number[][], width: number, z: number): THREE.BufferGeometry | null {
   const pos: number[] = [], uv: number[] = [];
@@ -561,7 +574,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   const debug = typeof window !== 'undefined' && !!(window as unknown as { __renderDebug?: boolean }).__renderDebug;
   const t0 = debug ? performance.now() : 0;
   const lap = (what: string) => { if (debug) console.info(`[time] model: ${what} at ${Math.round(performance.now() - t0)} ms`); };
-  const surfaces = new Surfaces();
+  const real = !opts.clayContext && !opts.review;
+  const surfaces = new Surfaces(real);
   const root = new THREE.Group();
   root.rotation.x = -Math.PI / 2;          // z up in the model, y up on the stage
   const bins = new Map<string, THREE.BufferGeometry[]>();
@@ -616,17 +630,16 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   };
 
   // ground: a wide plate that runs out into the haze, then the neighbourhood on it
-  const real = !opts.clayContext && !opts.review;
   const paved = real ? data.polygons.flatMap(p => {
     if (p.building || !p.kind || !SITE[p.kind] || p.kind === 'walk' || p.kind === 'greenspace') return [];
     const ring = p.polygon[0] ?? [];
     if (ring.length < 3) return [];
     const xs = ring.map(q => q[0] ?? 0), ys = ring.map(q => q[1] ?? 0);
-    return [{ rings: p.polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }];
+    return [{ kind: p.kind, rings: p.polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }];
   }) : [];
   const pavedAt = (x: number, y: number) => paved.some(p => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings));
   const reach = Math.max(1600, data.extent * 16);
-  put('plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
+  put(real ? 'grass|ground' : 'plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
   // Public streets. The record gives the neighbouring parcels, and often no street lines: a gap
   // between two parcels is right of way. A road-coloured strip is laid across each such gap, so
   // the streets read even where no line was sent. Open land beside a parcel is not a street: a
@@ -723,7 +736,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   for (const l of data.lawn) {
     const ring = l.polygon[0];
     // in review the parcel is lighter than the land round it, so there is no doubt which one it is
-    if (ring) put('grass|flat', prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), opts.review ? [214, 224, 170, 255] : LAWN);
+    if (ring) put('grass|flat', real ? turfSheet(ring, 0.17) : prism([ring.map(p => [p[0] ?? 0, p[1] ?? 0, 0])], 0.17), opts.review ? [214, 224, 170, 255] : LAWN);
     // the parcel line, on the ground: a pale band over a dark one, so it reads on grass and on pavement
     if (ring && opts.markSite) {
       const line = [...ring, ring[0] ?? []].map(p => [p[0] ?? 0, p[1] ?? 0]);
@@ -744,8 +757,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     data.lots.forEach((lot, i) => {
       owner = `lot:${i + 1}`;
       const ring = lot.map(q => [q[0] ?? 0, q[1] ?? 0] as [number, number]);
-      const t = 0.94 + ((i * 37) % 13) / 100;
-      put('grass|flat', prism([ring.map(q => [q[0], q[1], 0])], 0.19), [LAWN[0] * t, LAWN[1] * (t + ((i * 11) % 5 - 2) / 100), LAWN[2] * t, 255]);
+      const t = 0.985 + ((i * 37) % 7) / 180;
+      put('grass|flat', real ? turfSheet(ring, 0.19) : prism([ring.map(q => [q[0], q[1], 0])], 0.19), [LAWN[0] * t, LAWN[1] * t, LAWN[2] * t, 255]);
       const pad = pads.find(r => r.length >= 3 && pointInPolygon(middle(r)[0], middle(r)[1], [ring]));
       if (!pad || !paved.length) return;
       // the house faces the nearest pavement; the fence stands on the lot lines behind the middle of the house
@@ -841,20 +854,18 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
       put('concrete|solid', prism([ring.map(q => [q[0] ?? 0, q[1] ?? 0, 0])], 0.6), [150, 148, 142, 255]);
     }
   }
-  const parked: CarSpot[] = [];
   const foreground: ForegroundObstacle[] = opts.review ? [] : data.shrubs.map(([x, y, r]) => [x, y, r * 1.7]);
-  // No placeholder cars in Review, during asset loading, or after an asset
-  // failure. Light Rendering and dense sites use the same instanced assets.
-  if (real) data.cars.forEach((c, i) => {
+  const parking = paved.filter(p => p.kind === 'parking' || p.kind === 'parking-bay' || p.kind === 'driveway');
+  const supported = (x: number, y: number) => parking.some(p =>
+    x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings));
+  // The same optional assets are used on both device tiers and in the exact scene pack.
+  // No cars on a known disconnected site, curb crossings, or a footprint without paved support.
+  const nearby = real && !data.vehicleAccessBreak ? foregroundVehicles(data.cars.flatMap((c, i) => {
     const spot = carSpot(c.polygon[0] ?? [], c.color, hashId(`${c.id}-${i}`));
-    if (!spot) return;
-    const dx = Math.cos(spot.heading), dy = Math.sin(spot.heading);
-    parked.push({
-      ...spot, z: spot.z + groundAt(spot.x, spot.y),
-      pitch: (groundAt(spot.x + dx, spot.y + dy) - groundAt(spot.x - dx, spot.y - dy)) / 2,
-      roll: (groundAt(spot.x - dy, spot.y + dx) - groundAt(spot.x + dy, spot.y - dx)) / 2,
-    });
-  });
+    if (!spot || !vehicleWheelPoints(spot).every(([x, y]) => supported(x, y))) return [];
+    const fit = seatVehicle(spot, groundAt);
+    return Math.max(Math.abs(fit.pitch), Math.abs(fit.roll)) <= 0.14 ? [fit] : [];
+  }), 0, 0, opts.light ? 12 : 36) : [];
 
   lap(`${[...bins.values()].reduce((n, l) => n + l.length, 0)} parts made`);
   for (const [key, list] of bins) {
@@ -898,17 +909,14 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // the leaves and bark are pictures that arrive after the trees are grown
   const waits: Array<Promise<unknown>> = [...kinds, ...bushes].flatMap(t => [arrived((t.leaf as THREE.MeshStandardMaterial).map), arrived((t.bark as THREE.MeshStandardMaterial).map)]);
   let disposed = false;
-  // A busy site should not render a vehicle in every stall. Use a stable
-  // dispersed sample above the visual budget instead of switching to toys.
-  const fleet = parked.length <= 96 ? parked : [...parked].sort((a, b) => a.seed - b.seed).slice(0, 96);
-  if (fleet.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(fleet)).then(group => {
+  if (nearby.length) waits.push(import('./vehicles').then(({ parkedVehicles }) => parkedVehicles(nearby)).then(group => {
     if (disposed) {
       group.children.forEach(child => (child as THREE.InstancedMesh).geometry.dispose());
       return;
     }
     if (!group.children.length) return;
     root.add(group);
-    for (const car of fleet) {
+    for (const car of nearby) {
       // Only placed vehicles are foreground obstacles (not omitted/crowded slots).
       if (group.userData.occupancy?.has(car.seed)) foreground.push([car.x, car.y, Math.hypot(car.length, car.width) / 2]);
     }
