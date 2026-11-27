@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pretrained Layout Test Drawings</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;700&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* layout: a drawing sheet. One site per band, three plan panels at one scale, title block above, figures below. */
+:root{--paper:#f4f3ee;--ink:#1d2a33;--dim:#5c6a73;--line:#c9cdc8;--panel:#fbfbf8;--bldg:#27475c;--drive:#c8c4b7;--park:#e3b96a;--street:#b3402e;--good:#2f6f52;--bad:#9a4a1f;
+--display:"Archivo Narrow","Arial Narrow",sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--paper:#141b20;--ink:#e6e9e6;--dim:#9aa6ad;--line:#33414a;--panel:#1b242a;--bldg:#8fb8d1;--drive:#4a5258;--park:#b98d3c;--street:#e8735e;--good:#6fc09a;--bad:#e0996b}}
+:root[data-theme="dark"]{color-scheme:dark;--paper:#141b20;--ink:#e6e9e6;--dim:#9aa6ad;--line:#33414a;--panel:#1b242a;--bldg:#8fb8d1;--drive:#4a5258;--park:#b98d3c;--street:#e8735e;--good:#6fc09a;--bad:#e0996b}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:400 15px/1.5 var(--body)}
+main{max-width:1180px;margin:0 auto;padding:28px 20px 56px;display:flex;flex-direction:column;gap:28px}
+h1{font:700 30px/1.1 var(--display);margin:0 0 8px;text-wrap:balance;letter-spacing:.01em}
+h2{font:700 20px/1.2 var(--display);margin:0;text-wrap:balance}
+.lede{max-width:66ch;margin:0;color:var(--dim)}.lede b{color:var(--ink)}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px 28px;border-top:2px solid var(--ink);padding-top:14px}
+.notes h3{font:700 13px/1.2 var(--display);text-transform:uppercase;letter-spacing:.08em;margin:0 0 4px}.notes p{margin:0;color:var(--dim);font-size:14px}
+.key{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--dim)}.key i{display:inline-block;width:22px;height:10px;margin-right:6px;vertical-align:middle}
+section{border-top:1px solid var(--line);padding-top:16px;display:flex;flex-direction:column;gap:10px}
+section header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px}
+.tag{margin:0;font:700 12px/1 var(--display);text-transform:uppercase;letter-spacing:.08em;padding:5px 8px;border:1.5px solid currentColor}
+.tag.better{color:var(--good)}.tag.worse{color:var(--bad)}
+.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.row{grid-template-columns:1fr}}
+figure{margin:0;display:flex;flex-direction:column;gap:6px}
+svg{width:100%;height:auto;aspect-ratio:1;background:var(--panel);border:1px solid var(--line);display:block}
+figcaption{display:flex;flex-direction:column;font-size:13px;color:var(--dim)}figcaption b{color:var(--ink);font:700 15px/1.3 var(--display)}
+figcaption .n{color:var(--ink);font-variant-numeric:tabular-nums}
+.err{margin:0;display:flex;flex-wrap:wrap;gap:4px 22px;font-variant-numeric:tabular-nums}.err b{font-size:17px}.dim{color:var(--dim);font-size:13px}
+.site{fill:none;stroke:var(--ink);stroke-width:1.2;vector-effect:non-scaling-stroke;stroke-dasharray:5 3}
+.drive{fill:none;stroke:var(--drive);stroke-linecap:round;stroke-linejoin:round}
+.park{fill:var(--park);fill-opacity:.75;stroke:none}.bldg{fill:var(--bldg);stroke:var(--panel);stroke-width:.6;vector-effect:non-scaling-stroke}
+.street{fill:none;stroke:var(--street);stroke-linecap:butt}.bar{stroke:var(--ink)}.bart{fill:var(--dim);font-family:var(--body)}
+</style></head><body><main>
+<div><h1>Pretrained layout test: six of the 28 sites, drawn</h1>
+<p class="lede">Each band is one development site. Left is the plan the civil got approved, centre is the pretrained model's first try on the same boundary, right is the nearest clean training plan that the lookup control uses. The three panels in a band share one scale. Across the 28 sites the two tied: <b>0.53</b> pretrained, <b>0.57</b> lookup.</p></div>
+<div class="notes">
+<div><h3>How the six were chosen</h3><p>By rule from the scores, before anything was drawn. Multifamily and townhome: of the sites where the pretrained layout scored better than the lookup, the one with the median margin, and the same among the sites where it scored worse. Residential and mixed use: the site with the median margin. That gives typical cases, not the best or worst.</p></div>
+<div><h3>Read with care</h3><p>All five residential sites scored better, so there is no worse residential case to show; four of the six bands are better cases against 17 of 28 overall. Mixed use has only two sites. The error compares counts, sizes, coverage, setback, parking and drive length, so a layout can score well and still look wrong.</p></div>
+<div><h3>What is drawn</h3><p>Traced footprints for the civil and training plans, rectangles for the pretrained layout. Drives are centrelines drawn 24 ft wide. Traces include retained buildings. The lookup error uses the neighbour's measures scaled to this site's density.</p>
+<p class="key"><span><i style="border:1.5px dashed var(--ink);background:none"></i>Boundary</span><span><i style="background:var(--street);height:4px"></i>Street edge</span><span><i style="background:var(--bldg)"></i>Building</span><span><i style="background:var(--drive)"></i>Drive</span><span><i style="background:var(--park)"></i>Parking</span></p></div>
+</div>
+{{SECTIONS}}
+</main></body></html>

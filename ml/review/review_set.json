@@ -1,0 +1,282 @@
+[
+ {
+  "fid": 485405,
+  "zoning": "RS5",
+  "group": "sf",
+  "flagged": true,
+  "why": "1320 Brick Church Pike (owner: plan hung/timeouts)"
+ },
+ {
+  "fid": 691906,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": true,
+  "why": "1530 9th Ave N (owner: townhomes not what a developer builds; visitor parking, green)"
+ },
+ {
+  "fid": 489018,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": true,
+  "why": "1601 Rosa L Parks Blvd (owner: half site empty; MF drive short)"
+ },
+ {
+  "fid": 661807,
+  "zoning": "SP",
+  "group": "mf",
+  "flagged": true,
+  "why": "2518 W Heiman St, The Lanes (owner: density)"
+ },
+ {
+  "fid": 701867,
+  "zoning": "RM15",
+  "group": "mf",
+  "flagged": true,
+  "why": "330 Athens Way (owner: sidewalks in pond)"
+ },
+ {
+  "fid": 639832,
+  "zoning": "RS15",
+  "group": "sf",
+  "flagged": true,
+  "why": "4815 Drakes Branch Rd (owner: 1 lot on 40 ac)"
+ },
+ {
+  "fid": 659496,
+  "zoning": "MUG",
+  "group": "mf",
+  "flagged": true,
+  "why": "560 Great Circle Rd (owner: why this layout)"
+ },
+ {
+  "fid": 487660,
+  "zoning": "CS",
+  "group": "mf",
+  "flagged": true,
+  "why": "909 Buchanan St (owner: two street frontages)"
+ },
+ {
+  "fid": 668808,
+  "zoning": "CL",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CL"
+ },
+ {
+  "fid": 664945,
+  "zoning": "ORI",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, ORI"
+ },
+ {
+  "fid": 662916,
+  "zoning": "CS",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CS"
+ },
+ {
+  "fid": 571134,
+  "zoning": "CS",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CS"
+ },
+ {
+  "fid": 632606,
+  "zoning": "CS",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CS"
+ },
+ {
+  "fid": 660495,
+  "zoning": "RM20",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM20"
+ },
+ {
+  "fid": 669750,
+  "zoning": "OR20",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, OR20"
+ },
+ {
+  "fid": 604241,
+  "zoning": "CL",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CL"
+ },
+ {
+  "fid": 429160,
+  "zoning": "MUG-A",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, MUG-A"
+ },
+ {
+  "fid": 661683,
+  "zoning": "CL",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CL"
+ },
+ {
+  "fid": 660366,
+  "zoning": "CS",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CS"
+ },
+ {
+  "fid": 561354,
+  "zoning": "CS",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CS"
+ },
+ {
+  "fid": 661554,
+  "zoning": "RM15",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM15"
+ },
+ {
+  "fid": 668869,
+  "zoning": "RM20-NS",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM20-NS"
+ },
+ {
+  "fid": 393480,
+  "zoning": "CS",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, CS"
+ },
+ {
+  "fid": 668910,
+  "zoning": "RM20",
+  "group": "mf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM20"
+ },
+ {
+  "fid": 646252,
+  "zoning": "RS40",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RS40"
+ },
+ {
+  "fid": 322877,
+  "zoning": "RS20",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RS20"
+ },
+ {
+  "fid": 668350,
+  "zoning": "RS40",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RS40"
+ },
+ {
+  "fid": 669147,
+  "zoning": "RS15",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RS15"
+ },
+ {
+  "fid": 666059,
+  "zoning": "R40",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, R40"
+ },
+ {
+  "fid": 404138,
+  "zoning": "RS10",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RS10"
+ },
+ {
+  "fid": 664783,
+  "zoning": "RS20",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RS20"
+ },
+ {
+  "fid": 680084,
+  "zoning": "RS20",
+  "group": "sf",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RS20"
+ },
+ {
+  "fid": 682181,
+  "zoning": "RM6",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM6"
+ },
+ {
+  "fid": 666135,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM9"
+ },
+ {
+  "fid": 669486,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM9"
+ },
+ {
+  "fid": 382774,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM9"
+ },
+ {
+  "fid": 660274,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM9"
+ },
+ {
+  "fid": 674370,
+  "zoning": "RM4",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM4"
+ },
+ {
+  "fid": 669448,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM9"
+ },
+ {
+  "fid": 667602,
+  "zoning": "RM9",
+  "group": "th",
+  "flagged": false,
+  "why": "stratified sample: vacant parcel, RM9"
+ }
+]

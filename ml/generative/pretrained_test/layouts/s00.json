@@ -1,0 +1,27 @@
+{"samples": [
+  {"drives": [[[0, -138.5], [0, 105]]],
+   "buildings": [
+     {"type": "townhome_row", "cx": -50, "cy": -65, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": -50, "cy": 45, "length": 60, "depth": 40, "angle_deg": 90, "units": 3},
+     {"type": "townhome_row", "cx": 50, "cy": -75, "length": 60, "depth": 40, "angle_deg": 90, "units": 3},
+     {"type": "townhome_row", "cx": 50, "cy": 15, "length": 60, "depth": 40, "angle_deg": 90, "units": 3}],
+   "parking": [
+     {"cx": 21, "cy": 85, "length": 60, "depth": 18, "angle_deg": 90},
+     {"cx": -21, "cy": 100, "length": 40, "depth": 18, "angle_deg": 90}]},
+  {"drives": [[[60, -138.5], [60, 110]], [[60, -45], [-72, -45]], [[60, 65], [-72, 65]]],
+   "buildings": [
+     {"type": "townhome_row", "cx": -35, "cy": -90, "length": 80, "depth": 40, "angle_deg": 0, "units": 4},
+     {"type": "townhome_row", "cx": -35, "cy": 0, "length": 80, "depth": 40, "angle_deg": 0, "units": 4},
+     {"type": "townhome_row", "cx": -28, "cy": 110, "length": 100, "depth": 40, "angle_deg": 0, "units": 5}],
+   "parking": [
+     {"cx": -20, "cy": 44, "length": 80, "depth": 18, "angle_deg": 0},
+     {"cx": 39, "cy": -90, "length": 40, "depth": 18, "angle_deg": 90}]},
+  {"drives": [[[0, -138.5], [0, 20]], [[-70, 20], [70, 20]]],
+   "buildings": [
+     {"type": "townhome_row", "cx": -50, "cy": -55, "length": 100, "depth": 40, "angle_deg": 90, "units": 5},
+     {"type": "townhome_row", "cx": 50, "cy": -45, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": 0, "cy": 65, "length": 80, "depth": 40, "angle_deg": 0, "units": 4}],
+   "parking": [
+     {"cx": -62, "cy": 41, "length": 36, "depth": 18, "angle_deg": 0},
+     {"cx": 60, "cy": 41, "length": 36, "depth": 18, "angle_deg": 0}]}
+]}

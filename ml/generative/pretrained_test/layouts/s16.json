@@ -1,0 +1,31 @@
+{"samples": [
+  {"drives": [[[25.4, -292.7], [23.1, -210.0], [19.8, -90.0], [16.5, 30.0], [13.1, 150.0], [11.4, 210.0]], [[11.4, 210.0], [-25.0, 210.0]]],
+   "buildings": [
+     {"type": "townhome_row", "cx": -13.9, "cy": -210.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": -17.2, "cy": -90.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": -20.5, "cy": 30.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": -23.9, "cy": 150.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4}],
+   "parking": [
+     {"cx": 44.1, "cy": -210.0, "length": 54, "depth": 18, "angle_deg": 90},
+     {"cx": 40.8, "cy": -90.0, "length": 54, "depth": 18, "angle_deg": 90},
+     {"cx": 37.5, "cy": 30.0, "length": 54, "depth": 18, "angle_deg": 90},
+     {"cx": 34.1, "cy": 150.0, "length": 54, "depth": 18, "angle_deg": 90}]},
+  {"drives": [[[-5.7, -292.7], [-8.7, -210.0], [-12.9, -90.0], [-17.2, 30.0], [-21.5, 150.0], [-23.7, 210.0]], [[-23.7, 210.0], [15.0, 210.0]]],
+   "buildings": [
+     {"type": "townhome_row", "cx": 28.3, "cy": -210.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": 24.1, "cy": -90.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": 19.8, "cy": 30.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4},
+     {"type": "townhome_row", "cx": 15.5, "cy": 150.0, "length": 80, "depth": 40, "angle_deg": 90, "units": 4}],
+   "parking": [
+     {"cx": -29.7, "cy": -210.0, "length": 54, "depth": 18, "angle_deg": 90},
+     {"cx": -33.9, "cy": -90.0, "length": 54, "depth": 18, "angle_deg": 90},
+     {"cx": -38.2, "cy": 30.0, "length": 54, "depth": 18, "angle_deg": 90},
+     {"cx": -42.5, "cy": 150.0, "length": 54, "depth": 18, "angle_deg": 90}]},
+  {"drives": [[[11.4, -292.7], [8.3, -180.0], [4.4, -40.0], [1.4, 70.0]], [[1.4, 70.0], [-30.0, 70.0]]],
+   "buildings": [
+     {"type": "garden_walk_up", "cx": -22.2, "cy": -180.0, "length": 90, "depth": 27, "angle_deg": 90, "units": 8},
+     {"type": "garden_walk_up", "cx": -26.1, "cy": -40.0, "length": 90, "depth": 27, "angle_deg": 90, "units": 8}],
+   "parking": [
+     {"cx": 29.3, "cy": -180.0, "length": 126, "depth": 18, "angle_deg": 90},
+     {"cx": 25.4, "cy": -40.0, "length": 126, "depth": 18, "angle_deg": 90}]}
+]}
