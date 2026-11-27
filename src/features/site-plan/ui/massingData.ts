@@ -11,6 +11,7 @@ import { pointsAlongSegment, type Segment } from '../../../components/site-plann
 import { createGroundFrame, pointInPolygon } from '../scene/frame';
 import { buildingHeight } from '../scene/heights';
 import { buildingUse, pavementKind } from '../scene/buildScene';
+import { isMappedAlley } from '../scene/mappedAlley';
 import { isOutdoorAmenityName, OUTDOOR_DECK_HEIGHT_FT } from '../scene/outdoorAmenity';
 import { clearestAzimuth, MAX_WINDOWS, type RenderSlab, type RenderWindow } from './renderModel';
 import { buildArchitecture, DEFAULT_STYLE, type ArchStyle } from './architecture';
@@ -45,6 +46,7 @@ export interface MassingPolygon {
   /** what the held land is (wetland, its buffer, a fill hold, a hillside), apart from its hatch */
   source?: ConstraintSource;
   privateDrive?: boolean;
+  mappedAlley?: boolean;
   /** Polygon rings in local metres, centred on the plan's bbox centre */
   polygon: number[][][];
   /** Extrusion height in metres */
@@ -59,6 +61,7 @@ const TYPE_COLORS: Record<string, [number, number, number, number]> = {
   parking: [226, 232, 240, 210],
   'parking-aisle': [203, 213, 225, 190],
   circulation: [148, 163, 184, 190],
+  road: [148, 163, 184, 190],
   greenspace: [134, 239, 172, 170],
 };
 
@@ -129,7 +132,7 @@ export function buildMassingData(
    *  streets (with a planted strip inside the walk) and the larger buildings. */
   walks: Array<{ id?: string; path: number[][]; widthM: number; strip: boolean }>;
   /** Curbs: the edges of the plan's streets and drives. */
-  curbs: Array<{ id?: string; path: number[][] }>;
+  curbs: Array<{ id?: string; path: number[][]; guideOnly?: boolean }>;
   /** The block's streets, centre lines in local metres. */
   roads: Array<{ id?: string; path: number[][] }>;
   /** Stall stripes, where a bay's reported count divides into whole stalls. */
@@ -218,6 +221,7 @@ export function buildMassingData(
       building: el.type === 'building',
       ...(el.type === 'building' && buildingUse(el) === 'house' ? { detached: true } : {}),
       kind: el.type === 'circulation' && el.name === 'Walk' ? 'walk' : el.properties?.kind === 'pond' ? 'pond' : pavementKind(el) ?? el.type,
+      ...(isMappedAlley(el) ? { mappedAlley: true } : {}),
       ...(hazard === 'wetland' || hazard === 'floodplain' || hazard === 'floodway' || hazard === 'slope' ? { hazard } : {}),
       ...(isConstraintSource(el.properties?.constraintSource) ? { source: el.properties.constraintSource } : {}),
       ...(el.properties?.privateDrive === true || /private drive/i.test(el.name ?? '') ? { privateDrive: true } : {}),
@@ -444,20 +448,22 @@ export function buildMassingData(
   if (debug) console.info(`[time] buildings settled at ${Math.round(performance.now() - t0)} ms: ${slabs.length} solids, ${roofs.length} flats, ${windows.length} panes`);
   // walks and curbs follow the plan's own shapes
   const walks: Array<{ id: string; path: number[][]; widthM: number; strip: boolean }> = [];
-  const curbs: Array<{ id: string; path: number[][] }> = [];
+  const curbs: Array<{ id: string; path: number[][]; guideOnly?: boolean }> = [];
   for (const el of drawable) {
     const kind = pavementKind(el);
+    const guideOnly = el.type === 'road' || isMappedAlley(el);
     const use = el.type === 'building' ? buildingUse(el) : null;
     for (const [index, ring] of el.geometry.coordinates.entries()) {
       const path = ring.map(p => [...m(p)]);
       const id = `${el.id}:${index}`;
-      if (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? '')) {
+      if (!guideOnly && kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? '')) {
         walks.push({ id, path, widthM: 22 * METERS_PER_FOOT, strip: true });
       }
       if ((use === 'apartments' || use === 'amenity' || use === 'other') && !propertiesOutdoor(el)) {
         walks.push({ id, path, widthM: 12 * METERS_PER_FOOT, strip: false });
       }
-      if (kind === 'drive' || (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? ''))) curbs.push({ id, path });
+      if (guideOnly) curbs.push({ id, path, guideOnly: true });
+      else if (kind === 'drive' || (kind === 'street' && el.properties?.privateDrive !== true && !/private drive/i.test(el.name ?? ''))) curbs.push({ id, path });
     }
   }
   // stalls: stripes only where they show exactly the count the plan reports
@@ -515,8 +521,9 @@ export function buildMassingData(
   // The plan's drives and lanes stop at the right-of-way line; the street's pavement is drawn from its
   // centre line and is narrower than the right-of-way. The apron across that strip is drawn here, so
   // the scheme's pavement meets the street. Illustration: the plan gives the mouth, not the apron.
+  const mappedRoads = new Set(drawable.filter(el => el.type === 'road').map(el => el.id));
   const mouth = streetConnection(
-    polygons.filter(q => !q.building && PAVED.has(q.kind ?? '')).map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
+    polygons.filter(q => !q.building && !q.mappedAlley && !mappedRoads.has(q.id ?? '') && PAVED.has(q.kind ?? '')).map(q => (q.polygon[0] ?? []).map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
     roads.map(r => r.path.map(v => [v[0] ?? 0, v[1] ?? 0] as [number, number])),
     // Where the record has no centre line for the street, the parcel line stands for it: a lane that
     // leaves the site leaves it across the line, and the mouth nearest the line is the way out.

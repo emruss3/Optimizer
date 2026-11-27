@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { HOME_DESIGNS } from './originalDesigns';
 import { wallsFor, doorAnchors, floorArea, program, roofHeight } from './drawings';
@@ -10,6 +10,18 @@ import fixture from '../api/__fixtures__/delk-675423.json';
 import type { SfV1Response } from '../api/sfV1Plan';
 import { buildDrawingScene } from '../scene/buildScene';
 import { buildMassingData } from '../ui/massingData';
+
+it('draws the E2 rear garage with the solid recessed sectional leaf from its elevation', () => {
+  const home = HOME_DESIGNS.find(h => h.id === 'tn-west-heiman-e2-study-v1')!;
+  const kit = new Kit(home.id, home.name);
+  const garage = vi.spyOn(kit, 'garage');
+  drawHome(kit, home);
+  expect(garage).toHaveBeenCalledOnce();
+  const [, start, end, , , finish, recess] = garage.mock.calls[0]!;
+  expect((end - start) / 0.3048).toBeCloseTo(16, 4);
+  expect(finish).toMatchObject({ lites: false, rows: 4 });
+  expect(recess).toBeLessThan(0);
+});
 
 for (const h of HOME_DESIGNS)
   it(h.name + ' has connected room drawings, fixed dimensions and matching exterior openings', () => {

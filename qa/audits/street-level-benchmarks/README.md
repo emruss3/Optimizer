@@ -63,3 +63,32 @@ broader improvement.
 
 - The Lanes project reference: [308 Edith Circle](https://www.zillow.com/homedetails/308-Edith-Cir-Nashville-TN-37208/458739669_zpid/). The listing is not used as source dimensions for B2.
 - The timber/glass relationship: [EOA's Standard Assembly](https://eoa-architects.com/project/standard-assembly-apartments/). This is Nashville precedent, not a source floor plan for Smith Springs. No reference photographs are included in the renderer or these previews.
+
+## Rear-alley benchmark
+
+[Rear_Alley_Comparison.jpg](Rear_Alley_Comparison.jpg) compares the prior
+renderer with the updated asphalt default, the optional herringbone finish,
+and a 960 × 540 Cycles preview. The same controlled three-lot fixture places
+the B2, E2 and F2 studies through the buildable-plan workflow. This is not
+a survey or a reconstruction of the entire development. The prior render
+dropped the mapped road polygons, including the alley. The updated default
+renders them. The nearby garage recess and sectional detail were informed by
+the E2 elevation and the [54th Avenue North rear-lane photo](https://images.homes.com/listings/112/2508273815-369275932/1424-54th-ave-n-nashville-tn-unit-4-buildingphoto-10.jpg).
+No listing photo is included in the product. The new [photographic material](https://polyhaven.com/a/herringbone_pavement_03)
+is CC0 and uses three versioned maps, approximately 0.4 MB in total.
+
+The paver preview is off by default. It is available in Rendering only when an
+explicit alley polygon exists. The front street and connected concrete drives
+retain their own surfaces. Toggling the finish preserves the fixture's
+scheme hash, camera, building quantities and entrance/garage anchor
+coordinates. Roads and approaches retain their own drawn geometry. The
+renderer does not place synthetic trees or invent sidewalks on the restored
+mapped lane. The Garage camera can stand on the drawn pavement connected to a
+short threshold ramp. On a gap it will not extend that ramp by guesswork.
+The 4K scene pack carries the chosen finish in its GLB material slot. Offline
+workers should render v4 scene packs with the matching catalog and texture maps.
+
+A separate Smith Springs multifamily fixture still exported 42 units and 113
+stalls, with no alley material or paver asset requests. The Cycles preview
+passed model and camera checks. Maximum browser-to-Blender camera projection
+error was 0.006 px at the worker's 1920 × 1080 check size.

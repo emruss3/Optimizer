@@ -1,5 +1,5 @@
 {
-  "version": "site-daylight-v3",
+  "version": "site-daylight-v4",
   "sky": {
     "file": "daylight.hdr",
     "sha256": "cf7ff4bab60967a61e6fc8c0384072705dd2f24e90037d1a508f8ee3f3be93b3",
@@ -123,6 +123,22 @@
       "normal_sha256": "3045974a25bb1579105bcd4c181baf69955c5d721118954d7c4c007a13f67668",
       "roughness_map": "lap-cladding-roughness.jpg",
       "roughness_map_sha256": "9112abe5a2cc9a5e14a489fe7263e50eaabd43457c0b5d4d6e31660684b03ef5"
+    },
+    "pavers": {
+      "source": "https://polyhaven.com/a/herringbone_pavement_03",
+      "license": "CC0",
+      "tile_m": [
+        2.4,
+        2.4
+      ],
+      "roughness": 0.87,
+      "normal_strength": 0.66,
+      "color": "alley-pavers.jpg",
+      "color_sha256": "4e87683ce26f46aac73b97e0f42100152f2ea62864a53b072a39c64980df5b87",
+      "normal": "alley-pavers-normal.jpg",
+      "normal_sha256": "a07ea96abb20620846bdb17f3d5d3cd8ba06bf2bbe048e92c98662adde820e20",
+      "roughness_map": "alley-pavers-roughness.jpg",
+      "roughness_map_sha256": "dbcb11f43b2199b9a49d790693c7c4821419a53f1a303314a948683cbc3c5257"
     }
   },
   "review_textures": {

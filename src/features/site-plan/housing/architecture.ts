@@ -54,11 +54,18 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
     for (const room of home.levels[floor]!.rooms) {
       const garage = room.name === 'Garage',
         z = garage ? 0.1 : base;
+      const [x, y, w, d] = room.rect;
+      const wing = home.rearLoadPrecedent && floor > 0
+        ? home.volumes.find(v => floor >= v.first && floor < v.first + v.count && inside([x + w / 2, y + d / 2], v.rect))
+        : undefined;
+      // A thin rim behind the façade. The old coplanar trim at the slab edge fought the cladding
+      // below it, leaving white flashes between stories. An exposed cantilever keeps its own finish.
+      const inset = wing ? Math.min(0.03 / FT, w / 4, d / 4) : 0;
       kit.prism(
-        ring(room.rect),
+        ring([x + inset, y + inset, w - 2 * inset, d - 2 * inset]),
         floor === 0 ? 0 : z - 0.11,
         floor === 0 ? z : 0.11,
-        floor === 0 ? mat(150, 139, 124, 'concrete') : trim,
+        floor === 0 ? mat(150, 139, 124, 'concrete') : wing ? wallMat(wing.finish) : trim,
         'base',
       );
     }
@@ -116,9 +123,9 @@ export function drawHome(kit: Kit, home: HomeDesign, front: Wall = canonicalFron
           kit.garage(wall, s - width / 2, s + width / 2, z, head - z, {
             frame: trim,
             leaf: tone(accent, 0.85),
-            lites: true,
+            lites: home.garageDoor !== 'solid-sectional',
             rows: 4,
-          });
+          }, home.garageDoor === 'solid-sectional' ? -0.065 : 0);
           kit.lamp(wall, s + width / 2 + 0.22, head - 0.3);
         } else if (c.kind === 'garden' && deck && (w.room === deck.name || w.other === deck.name)) {
           const side = w.room === deck.name ? { ...wall, n: [-wall.n[0], -wall.n[1]] as V2 } : wall;

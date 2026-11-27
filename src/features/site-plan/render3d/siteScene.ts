@@ -52,7 +52,7 @@ export interface SiteModel {
   /** The built part of the plan, where it is much smaller than the parcel; otherwise the parcel. */
   built: Focus;
   /** What a street camera needs (render3d/shots): the scheme's buildings, the neighbours that can stand in the way, and the street lines. */
-  ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]>; foreground: ForegroundObstacle[]; approaches: ApproachAnchor[] };
+  ground: { subjects: Subject[]; obstacles: number[][][]; roads: number[][][]; trees: Array<[number, number, number]>; foreground: ForegroundObstacle[]; approaches: ApproachAnchor[]; garagePavementAt: (x: number, y: number) => boolean };
   plants: ModelPlant[];
   /** The height of the ground the model is drawn on at a point, metres: 0 everywhere on flat ground. */
   groundAt(x: number, y: number): number;
@@ -287,6 +287,8 @@ export interface SiteModelOptions {
    *  white solids, no trees to hide it, and the parcel line, the buildable envelope and the
    *  access drawn on the ground. */
   review?: boolean;
+  /** A finish-only illustration on mapped alleys. Never changes the review, layout or grade. */
+  alleyPavers?: boolean;
   /** A lighter model of the same plan, for a device that draws on its processor
    *  (render3d/quality): the site's trees as painted cards, no shrubs, plain neighbours. */
   light?: boolean;
@@ -533,6 +535,7 @@ const SITE: Record<string, { surface: Surface; color: RGBA }> = {
   greenspace: { surface: 'grass', color: [122, 142, 94, 255] },
   pond: { surface: 'water', color: [87, 134, 142, 255] },
 };
+const ALLEY_PAVERS: { surface: Surface; color: RGBA } = { surface: 'pavers', color: [238, 236, 232, 255] };
 const LAWN: RGBA = [146, 154, 111, 255];
 const WALK: RGBA = [214, 210, 200, 255];
 const HAZARD_COLORS: Record<NonNullable<MassingData['polygons'][number]['hazard']>, RGBA> = {
@@ -635,9 +638,12 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     const ring = p.polygon[0] ?? [];
     if (ring.length < 3) return [];
     const xs = ring.map(q => q[0] ?? 0), ys = ring.map(q => q[1] ?? 0);
-    return [{ kind: p.kind, rings: p.polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }];
+    return [{ kind: p.kind, mappedAlley: p.mappedAlley, rings: p.polygon, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }];
   }) : [];
-  const pavedAt = (x: number, y: number) => paved.some(p => x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings));
+  const contains = (p: typeof paved[number], x: number, y: number) =>
+    x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings);
+  const pavedAt = (x: number, y: number) => paved.some(p => contains(p, x, y));
+  const homePavement = data.vehicleAccessBreak ? [] : paved.filter(p => p.kind === 'driveway' || p.mappedAlley);
   const reach = Math.max(1600, data.extent * 16);
   put(real ? 'grass|ground' : 'plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
   // Public streets. The record gives the neighbouring parcels, and often no street lines: a gap
@@ -793,7 +799,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   }
   for (const p of data.polygons) {
     if (p.building) continue;
-    const m = SITE[p.kind ?? ''];
+    const m = real && opts.alleyPavers && p.mappedAlley ? ALLEY_PAVERS : SITE[p.kind ?? ''];
     if (!m) continue;
     if (p.hazard && opts.review) {
       owner = `hazard:${p.id ?? p.hazard}`;
@@ -812,8 +818,8 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
   // in review the edges of the streets and drives are drawn in amber: the access is what is being checked
   for (const [index, c] of data.curbs.entries()) {
     owner = `curb:${c.id ?? index}`;
-    if (real) put('concrete|solid', planCurb(c.path, pavedAt), [206, 198, 183, 255]);
-    else if (!opts.review) put('concrete|flat', ribbon(c.path, 0.2, 0.36), [226, 223, 214, 255]);
+    if (real && !c.guideOnly) put('concrete|solid', planCurb(c.path, pavedAt), [206, 198, 183, 255]);
+    else if (!opts.review && !c.guideOnly) put('concrete|flat', ribbon(c.path, 0.2, 0.36), [226, 223, 214, 255]);
     // the access is a labelled overlay of the review view only, never part of the rendering
     if (opts.review) put('plain|flat', ribbon(c.path, 0.45, 0.43), [234, 138, 30, 255]);
   }
@@ -1048,7 +1054,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
           if (rnd() > keep * (0.3 + 1.4 * grove(px, py)) || d < inner || d > outer) continue;
           if (site && pointInPolygon(px, py, [site])) continue;
           if (neighbours.some(b => px > b.minX - 3 && px < b.maxX + 3 && py > b.minY - 3 && py < b.maxY + 3)) continue;
-          if (d < half * 4 && near(px, py)) continue;
+          if (d < half * 4 && (pavedAt(px, py) || near(px, py))) continue;
           spots.push([px, py, size]);
         }
       }
@@ -1158,6 +1164,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     trees: opts.review ? [] : standing.map(([x, y, r]) => [x, y, r * CROWN_DRAWN] as [number, number, number]),
     foreground,
     approaches,
+    garagePavementAt: (x, y) => homePavement.some(p => contains(p, x, y)),
   };
   const built = builtFocus(focus, [...byBuilding.values()]);
   // picking: one unseen solid a building

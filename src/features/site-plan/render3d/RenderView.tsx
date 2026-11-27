@@ -100,6 +100,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     [elements, parcelRing, envelopeRing, accessBreak, neighbors, edgeClassifications, scene, archStyle, topo],
   );
 
+  const [alleyPavers, setAlleyPavers] = useState(false);
+  const hasMappedAlley = data.polygons.some(p => p.mappedAlley);
+  const usePavers = alleyPavers && hasMappedAlley;
+
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const rig = useRef<Rig | null>(null);
@@ -245,12 +249,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
       const cv = canvas.current;
       const picture = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : r.camera.aspect;
-      const { subjects, obstacles, roads, trees, approaches, foreground } = r.model.ground;
+      const { subjects, obstacles, roads, trees, approaches, foreground, garagePavementAt } = r.model.ground;
       const chosen = selectedRef.current;
       const house = chosen && subjects.some(s => s.id === chosen) ? chosen : previewHouse.current;
       const entranceWalks = house ? approaches.filter(a => a.building === house) : approaches;
       const arrival = shot === 'approach' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
-        : shot === 'garage' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron')
+        : shot === 'garage' ? approachShot(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron', garagePavementAt)
         : shot === 'street' ? streetShot(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : null;
       const close = shot === 'approach' || shot === 'garage';
       r.controls.minDistance = arrival && close ? 0.55 : 8;
@@ -335,7 +339,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const reviewLook = look === 'review' && !present;
     try {
       const review = look === 'review' && !present;
-      model = buildSiteModel(data, { light, review });
+      model = buildSiteModel(data, { light, review, alleyPavers: usePavers });
       stage = createStage(cv, model, { width: Math.max(2, el.clientWidth), height: Math.max(2, el.clientHeight), preserve: true, light, studio: review });
     } catch (err) {
       fail.current(err instanceof Error ? err : new Error(String(err)));
@@ -499,7 +503,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       model.dispose();
       rig.current = null;
     };
-  }, [data, frame, lens, quality, look, present, planted, treesHere]);
+  }, [data, frame, lens, quality, look, present, planted, treesHere, usePavers]);
 
   // Home designs → 3D: frame the previewed house once per token after the model includes it.
   // Do not re-frame on later rebuilds of the same token (avoids fighting the user).
@@ -619,6 +623,12 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <ArchStylePicker />
       </div>
       )}
+      {showy && hasMappedAlley && (
+        <label className="absolute top-11 left-2 inline-flex items-center gap-1.5 rounded-md bg-white/90 px-2 py-1 text-[11px] text-gray-700 shadow-sm" title="Try herringbone pavers on mapped alleys. This illustrative finish does not change the plan.">
+          <input type="checkbox" checked={alleyPavers} onChange={e => setAlleyPavers(e.target.checked)} data-testid="render-alley-pavers" />
+          Alley pavers
+        </label>
+      )}
       <div className="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-lg px-1.5 py-1 text-[11px] shadow-sm">
         <div className="inline-flex rounded border border-gray-200 overflow-hidden mr-1" role="group" aria-label="View">
           {(['review', 'rendering'] as const).map(k => (
@@ -723,7 +733,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       {showy && renderCamera !== null && (
         <Render4kPanel key={JSON.stringify([scene.identity.key, scene.identity.revision, archStyle, sunKey, sunHour, savedPlanId])}
           data={data} scene={scene} style={archStyle} sunKey={sunKey} sunHour={sunHour} camera={renderCamera}
-          grossSf={grossSf} savedPlanId={savedPlanId} onClose={() => setRenderCamera(null)} />
+          grossSf={grossSf} savedPlanId={savedPlanId} alleyPavers={usePavers} onClose={() => setRenderCamera(null)} />
       )}
       {photo.status === 'working' && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/35 text-white text-sm" role="status" data-testid="photoreal-working">

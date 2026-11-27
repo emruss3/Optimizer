@@ -61,6 +61,8 @@ export interface HomeDesign {
   attached?: boolean;
   /** This drawn detached rear-load study needs separate mapped front and rear approaches. */
   rearLoadPrecedent?: { source: string };
+  /** Exterior garage treatment when verified by the model's elevation. */
+  garageDoor?: 'solid-sectional';
   sideWindows?: SideWindow[];
   balconyScreen?: { level: number; width: number; openingAt: number; openingWidth: number };
   roofBulkhead?: { rect: Rect; heightFt: number };

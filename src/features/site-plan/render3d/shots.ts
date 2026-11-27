@@ -129,6 +129,7 @@ export function approachShot(
   foreground: readonly ForegroundObstacle[] = [], aspect = 16 / 9,
   /** 'walk': the front entry, at the door; 'apron': the vehicle approach, at the garage (handoff 11-27) */
   kind: 'walk' | 'apron' = 'walk',
+  garagePavementAt?: (x: number, y: number) => boolean,
 ): Shot | null {
   const main = prominentSubject(subjects);
   const ranked = approaches.filter(a => a.kind === kind).sort((a, b) =>
@@ -139,10 +140,24 @@ export function approachShot(
     const [x, y, z] = a.threshold;
     const dx = a.connection[0] - x, dy = a.connection[1] - y;
     const distance = Math.hypot(dx, dy);
-    if (distance < 1.2) continue;
+    if (distance < 0.18) continue;
     const tx = dx / distance, ty = dy / distance;
-    for (const reach of [Math.min(10, distance + 2.2), Math.min(8, distance + 0.8), Math.max(2.5, distance)]) for (const offset of [1.2, -1.2, 0]) {
+    // An authored garage's anchor may only describe its threshold ramp. Find room for an
+    // eye-level shot along the connected, drawn driveway or alley without lengthening that ramp.
+    let reaches = [Math.min(10, distance + 2.2), Math.min(8, distance + 0.8), Math.max(2.5, distance)];
+    const shortApron = distance < 1.2;
+    if (shortApron) {
+      if (kind !== 'apron' || !garagePavementAt) continue;
+      let pavedReach = distance;
+      for (let step = distance + 0.1; step <= 10; step += 0.2) {
+        if (!garagePavementAt(x + tx * step, y + ty * step)) break;
+        pavedReach = step;
+      }
+      reaches = [pavedReach, pavedReach * 0.8, pavedReach * 0.6].filter(reach => reach >= 2.5);
+    }
+    for (const reach of reaches) for (const offset of [1.2, -1.2, 0]) {
       const point: [number, number] = [x + tx * reach - ty * offset, y + ty * reach + tx * offset];
+      if (shortApron && !garagePavementAt?.(...point)) continue;
       if (blockers.some(r => pointInPolygon(point[0], point[1], [r]) || crosses(point, [x, y], r))) continue;
       if (trees.some(tree => nearCanopy(point, [x, y], tree, 1.55))) continue;
       const eye = groundAt(...point) + EYE, targetHeight = z + 0.95;

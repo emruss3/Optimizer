@@ -250,7 +250,7 @@ const DRAW: Record<Drawn, () => Tile> = {
 type Photo = { tile_m: number[]; normal_strength: number; roughness: number; color: string; normal: string; roughness_map?: string };
 const PHOTOS: Partial<Record<string, Photo>> = siteAssets.textures;
 const REVIEW_PHOTOS: Partial<Record<string, Photo>> = {
-  ...siteAssets.textures, ...siteAssets.review_textures, siding: undefined,
+  ...siteAssets.textures, ...siteAssets.review_textures, siding: undefined, pavers: undefined,
 };
 
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
@@ -329,7 +329,7 @@ export class Surfaces {
     } else if (kind === 'metalwork') {
       m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.47, metalness: 0.38 });
     } else {
-      const t = DRAW[kind]();
+      const t = DRAW[kind === 'pavers' ? 'asphalt' : kind]();
       this.tiles.set(kind, t);
       const bump = this.photographic && (kind === 'siding' || kind === 'batten' || kind === 'panel') ? t.bumpScale * 0.46 : t.bumpScale;
       const drawn = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: bump, roughness: t.roughness, metalness: t.metalness ?? 0 });
