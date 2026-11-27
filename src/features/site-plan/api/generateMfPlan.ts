@@ -17,6 +17,51 @@ import { geom2274To4326 } from '../../../utils/tnStatePlane';
 import { feature4326To3857 } from '../../../utils/reproject';
 import { supabase } from '../../../lib/supabase';
 import { toCanvasPolygon } from './generateSfPlan';
+import polygonClipping from 'polygon-clipping';
+
+/** Planar area of a polygon's rings (outer minus holes), in the units of its coordinates. */
+function planarArea(rings: Position[][]): number {
+  const ring = (r: Position[]) => Math.abs(r.reduce((s, [x, y], i) => { const [x2, y2] = r[(i + 1) % r.length]; return s + x * y2 - x2 * y; }, 0)) / 2;
+  return rings.length ? ring(rings[0]) - rings.slice(1).reduce((s, r) => s + ring(r), 0) : 0;
+}
+
+/** Share of an amenity covered by planned residential buildings, and the building covering most of it. */
+export function amenityHost(amenity: Polygon, buildings: Element[]): { index: number; share: number } | null {
+  const a = planarArea(amenity.coordinates as Position[][]);
+  if (!(a > 0)) return null;
+  let best: { index: number; share: number } | null = null;
+  buildings.forEach((b, index) => {
+    const g = b.geometry as Polygon | undefined;
+    if (b.type !== 'building' || b.properties?.use !== 'residential' || g?.type !== 'Polygon') return;
+    try {
+      const inter = polygonClipping.intersection(amenity.coordinates as never, g.coordinates as never);
+      const share = inter.reduce((s, poly) => s + planarArea(poly as Position[][]), 0) / a;
+      if (share > (best?.share ?? 0)) best = { index, share };
+    } catch { /* a malformed ring leaves the amenity standalone */ }
+  });
+  return best;
+}
+
+/** An amenity at least this share inside a residential building is that building's ground floor
+ *  (engine flag amenity_program_ground_floor_v1: "a clubhouse occupies the ground floor of the building
+ *  nearest the arrival"), not a second building on the same footprint. Below it, it is a standalone clubhouse. */
+export const AMENITY_GROUND_FLOOR_SHARE = 0.5;
+
+/** Puts each amenity either into its host building's ground floor or on the sheet as its own one-story building. */
+function placeAmenity(elements: Element[], amenity: Element): void {
+  const host = amenityHost(amenity.geometry as Polygon, elements);
+  if (host && host.share >= AMENITY_GROUND_FLOOR_SHARE) {
+    const b = elements[host.index];
+    b.properties = {
+      ...b.properties,
+      groundFloorUse: 'amenity',
+      groundFloorAmenityName: amenity.name,
+      groundFloorAmenitySqFt: (amenity.properties as { areaSqFt?: number } | undefined)?.areaSqFt,
+    };
+    return;
+  }
+  elements.push(amenity);
+}
 
 /** Matches the server's average-unit assumption (units = GFA / 950). */
 const AVG_UNIT_SF = 950;
@@ -171,14 +216,14 @@ export function mfPlanToElements(resp: MfPlanResponse): {
   (resp.amenity ?? []).forEach((a, idx) => {
     const poly = toCanvasPolygon(a.geom);
     if (!poly) return;
-    elements.push({
+    placeAmenity(elements, {
       id: `mfgen-amenity-${idx + 1}`,
       type: 'building',
       name: a.name ?? 'Clubhouse',
       geometry: poly,
       properties: { areaSqFt: a.area_sqft, floors: 1, stories: 1, use: 'amenity', color: '#F59E0B' },
       metadata: meta,
-    });
+    } as Element);
   });
 
   // Defensive family guard (Eric's 2026-08-04 console): a seed payload
@@ -659,6 +704,8 @@ export function seedFamilyPlanToElements(
         ...(b.composition_note ? { compositionNote: b.composition_note } : {}),
         ...(b.legs_meta != null ? { legsMeta: b.legs_meta } : {}),
         ...(isWrapBar ? { wrapBar: b.name, overGarage: b.over_garage === true } : {}),
+        // a podium building stands over its own garage (podium_v1): the scene draws the lower levels as parking
+        ...(!isWrapBar && b.over_garage === true ? { overGarage: true } : {}),
         ...(typeof b.residential_levels === 'number' ? { residentialLevels: b.residential_levels } : {}),
       },
       metadata: meta,
@@ -758,7 +805,7 @@ export function seedFamilyPlanToElements(
   (resp.amenity ?? []).forEach((a, i) => {
     if (!a?.geom_2274) return;
     try {
-      elements.push({
+      placeAmenity(elements, {
         id: `${prefix}-amenity-${i + 1}`,
         type: 'building',
         name: a.name ?? 'Clubhouse',
@@ -869,6 +916,10 @@ export function seedFamilyPlanToElements(
   // Provided = the drawn bays' stalls when they carry counts (what the canvas
   // labels), else the engine's summary. The summary rides along as reported.
   const stallsReported = num(m.stalls) ?? num(resp.parking?.stalls);
+  // A podium or wrap garage holds its stalls inside the building: nothing is drawn as bays, so the count is the
+  // garage's own, labelled as such, and never compared with drawn surface stalls.
+  const structured = (resp.parking as { structured?: unknown } | undefined)?.structured === true;
+  const stallsStructured = structured ? stallsReported : null;
   const stalls = stallsDrawn ?? stallsReported;
   const summaryDisagrees = stallsDrawn != null && stallsReported != null && stallsDrawn !== stallsReported;
   const stallsRequired = num(resp.parking?.stalls_required_at_placed) ?? num(resp.parking?.stalls_required) ?? num(legacy.stalls_required);
@@ -891,7 +942,8 @@ export function seedFamilyPlanToElements(
         // "0 / 0" in the strip under a table that said 2, 2026-11-09).
         stallsRequired: opts.house ? undefined : (stallsRequired ?? undefined),
         stallsDrawn: stallsDrawn ?? undefined,
-        stallsReported: stallsReported ?? undefined,
+        stallsReported: structured ? undefined : (stallsReported ?? undefined),
+        stallsStructured: stallsStructured ?? undefined,
         ...(opts.house
           ? { parkingStatus: 'not_evaluated' as const, parkingStatusReason: 'the house sketch draws no parking and the district\'s requirement for one house was not evaluated' }
           : parkingStatusOf(stallsDrawn, stallsReported, explainStallCounts(bays, stallsReported, units, num((m as { parking_ratio_provided?: unknown }).parking_ratio_provided)))),
@@ -1052,7 +1104,8 @@ export async function generateThSitePlan(
 
 export interface MfAiPickSide { units?: number | null; n_fail?: number | null; fails?: string[] | null; regime?: string | null }
 export interface MfAiPick {
-  picked?: 'model' | 'engine';
+  /** model: a design-model plan won; podium: the podium drafter (structured parking) won; engine: the engine's own plan */
+  picked?: 'model' | 'podium' | 'engine';
   model_version?: string | null;
   rule?: string;
   engine?: MfAiPickSide;

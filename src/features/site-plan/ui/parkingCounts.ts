@@ -17,6 +17,8 @@ export interface ParkingCounts {
   drawn: number | null;
   reported: number | null;
   reachable: number | null;
+  /** stalls inside a parking structure (podium or wrap garage), not drawn as bays */
+  structured: number | null;
   required: number | null;
   /** false when the requirement was not evaluated for this sketch */
   requiredEvaluated: boolean;
@@ -28,9 +30,10 @@ export function parkingCounts(m: SiteMetrics | null | undefined): ParkingCounts 
   const drawn = num(m?.stallsDrawn);
   const reported = num(m?.stallsReported);
   return {
-    drawn: drawn ?? (reported == null ? num(m?.stallsProvided) : null),
+    drawn: drawn ?? (reported == null && m?.stallsStructured == null ? num(m?.stallsProvided) : null),
     reported,
     reachable: num(m?.stallsReachable),
+    structured: num(m?.stallsStructured),
     required: num(m?.stallsRequired) && (m?.stallsRequired as number) > 0 ? num(m?.stallsRequired) : null,
     requiredEvaluated: m?.parkingStatus !== 'not_evaluated',
   };
@@ -45,6 +48,7 @@ export function parkingCountsDisagree(c: ParkingCounts): boolean {
 /** The supply figures, each with its name: "150 drawn · 64 in the engine summary · 0 reachable from the street". */
 export function parkingSupplyParts(c: ParkingCounts): string[] {
   const parts: string[] = [];
+  if (c.structured != null) parts.push(`${c.structured.toLocaleString()} in a garage (structured parking)`);
   if (c.drawn != null) parts.push(`${c.drawn.toLocaleString()} drawn`);
   if (c.reported != null && c.reported !== c.drawn) parts.push(`${c.reported.toLocaleString()} in the engine summary`);
   if (c.reachable != null && c.reachable !== c.drawn) parts.push(`${c.reachable.toLocaleString()} reachable from the street`);
@@ -62,7 +66,7 @@ export function parkingCountsLine(c: ParkingCounts): string | null {
 
 /** The supply that meets the requirement: reachable when checked, else drawn, else the engine's. */
 export function parkingSupplyForAdequacy(c: ParkingCounts): number | null {
-  return c.reachable ?? c.drawn ?? c.reported;
+  return c.reachable ?? (c.structured != null ? c.structured + (c.drawn ?? 0) : null) ?? c.drawn ?? c.reported;
 }
 
 /**
