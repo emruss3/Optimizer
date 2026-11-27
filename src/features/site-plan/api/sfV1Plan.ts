@@ -34,6 +34,7 @@ import { feature4326To3857 } from '../../../utils/reproject';
 import { geom2274To4326 } from '../../../utils/tnStatePlane';
 import { supabase } from '../../../lib/supabase';
 import { wktLines, wktPoint, wktPolygons, wktMemberPolygons } from './wkt';
+import { engineLong, isStatementTimeout } from './engineLong';
 
 export type SfV1Basis = 'by_right' | 'override';
 
@@ -1148,7 +1149,12 @@ export async function fetchSfV1Plan(ogcFid: number, opt: SfV1Options = {}): Prom
   try {
     if (!supabase) return null;
     const clean = cleanOpt(opt);
-    const { data, error } = await supabase.rpc('fn_sf_v1_plan_app', { p_ogc_fid: ogcFid, p_opt: clean });
+    let { data, error } = await supabase.rpc('fn_sf_v1_plan_app', { p_ogc_fid: ogcFid, p_opt: clean });
+    // a large site can outlast the 20 s limit of the app's role: rerun it where it has 140 s
+    if (error && isStatementTimeout(error)) {
+      const long = await engineLong<SfV1Response>('fn_sf_v1_plan_app', { p_ogc_fid: ogcFid, p_opt: clean });
+      ({ data, error } = { data: long.data, error: long.error as typeof error });
+    }
     if (error) {
       console.warn('[sfV1Plan] RPC failed:', error.message ?? error);
       // The generator answering with an exception is not the service being
@@ -1701,7 +1707,11 @@ export function fetchSfV1Candidates(ogcFid: number, opt: SfV1Options = {}): Prom
   const p: Promise<SfV1CandidatesResult> = (async () => {
     try {
       if (!supabase) return { data: null, error: 'the plan service is not configured' };
-      const { data, error } = await supabase.rpc('fn_sf_v1_candidates_app', { p_ogc_fid: ogcFid, p_opt: clean });
+      let { data, error } = await supabase.rpc('fn_sf_v1_candidates_app', { p_ogc_fid: ogcFid, p_opt: clean });
+      if (error && isStatementTimeout(error)) {
+        const long = await engineLong<SfV1CandidatesResponse>('fn_sf_v1_candidates_app', { p_ogc_fid: ogcFid, p_opt: clean });
+        ({ data, error } = { data: long.data, error: long.error as typeof error });
+      }
       if (error) return { data: null, error: String((error as { message?: string }).message ?? error) };
       if (!data || typeof data !== 'object') return { data: null, error: 'the engine returned nothing' };
       return { data: data as SfV1CandidatesResponse, error: null };
