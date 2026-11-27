@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Element } from '../../../engine/types';
 import type { EdgeClassification } from '../../../engine/setbacks';
 import type { DrawingScene } from '../scene/types';
-import { buildMassingData } from '../ui/massingData';
+import { buildMassingData, type MassingData } from '../ui/massingData';
 import { sunPosition, SUN_DATES } from '../ui/sunPosition';
 import { SceneInspector } from '../ui/SceneInspector';
 import { buildSiteModel, loadTreeKit, treeKitLoaded, type SiteModel } from './siteScene';
@@ -20,6 +20,15 @@ import type { RenderCameraId } from './exportJob';
 import { mark, markOnce } from '../../../lib/timeline';
 
 const RENDER_SERVICE = Boolean((import.meta.env.VITE_RENDER_SERVICE_URL as string | undefined)?.trim());
+
+export interface RenderReferenceView {
+  label: string;
+  position: number[];
+  target: number[];
+  eyeFt: number;
+  targetFt: number;
+  fov: number;
+}
 
 export interface RenderViewProps {
   elements: Element[];
@@ -41,6 +50,9 @@ export interface RenderViewProps {
   focusHomeId?: string | null | undefined;
   focusHomeToken?: number | undefined;
   homeCompare?: boolean | undefined;
+  /** Opt-in geometry and camera presets for controlled visual studies. The
+   * study cannot masquerade as a planner scheme or generate its deliverables. */
+  referenceStudy?: { decorate: (data: MassingData) => MassingData; views: readonly RenderReferenceView[] };
   /** Called when this device cannot draw the view, so the caller can fall back. */
   onFail: (err: Error) => void;
 }
@@ -68,7 +80,7 @@ interface Rig {
  * and ids are the drawing scene's; the facades, the planting and the cars are
  * illustration, and the view says so.
  */
-export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, homeCompare, onFail }) => {
+export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, envelopeRing, neighbors, edgeClassifications, scene, selectedId, onSelect, topo, grossSf, savedPlanId, accessBreak, focusHomeId, focusHomeToken, homeCompare, referenceStudy, onFail }) => {
   // Two ways to see the plan. Review, the default, is for reading it: the proposal stands out, the
   // parcel, the envelope and the access are marked. Rendering is for showing it, and Present uses it.
   // The look 3D opens on: the user's explicit choice this session, else the default (handoff 11-27).
@@ -86,8 +98,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   const archStyle = useArchStyle();
   const quality = useMemo(() => renderQuality(), []);
   const data = useMemo(
-    () =>
-      buildMassingData(elements, {
+    () => {
+      const massing = buildMassingData(elements, {
         ...(parcelRing ? { parcelRing } : {}),
         ...(envelopeRing ? { envelopeRing } : {}),
         ...(accessBreak ? { accessBreak } : {}),
@@ -98,8 +110,10 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         treePoints: scene.landscape.trees.map(t => ({ at: scene.frame.fromFeet(t.at), radiusM: t.radiusFt * 0.3048 })),
         style: archStyle,
         ...(topo ? { topo } : {}),
-      }),
-    [elements, parcelRing, envelopeRing, accessBreak, neighbors, edgeClassifications, scene, archStyle, topo],
+      });
+      return referenceStudy?.decorate(massing) ?? massing;
+    },
+    [elements, parcelRing, envelopeRing, accessBreak, neighbors, edgeClassifications, scene, archStyle, topo, referenceStudy],
   );
 
   const [alleyPavers, setAlleyPavers] = useState(false);
@@ -220,6 +234,36 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     }
     camera.updateProjectionMatrix();
   }, []);
+  function frameStudy(view: RenderReferenceView) {
+    const r = rig.current, cv = canvas.current;
+    if (!r || !cv) return;
+    const [x, y] = data.toLocal(view.position), [tx, ty] = data.toLocal(view.target);
+    if ([x,y,tx,ty].some(n => !Number.isFinite(n))) return;
+    pushPose();
+    lift.current = 1;
+    r.controls.minDistance = 1;
+    r.controls.maxPolarAngle = Math.PI / 2;
+    r.camera.fov = view.fov;
+    lens(r.camera, cv.clientWidth, cv.clientHeight);
+    const eye = r.model.groundAt(x!, y!) + view.eyeFt * FT;
+    const target = r.model.groundAt(tx!, ty!) + view.targetFt * FT;
+    r.camera.position.set(x!, eye, -y!);
+    r.controls.target.set(tx!, target, -ty!);
+    r.controls.update();
+    lastShot.current = {shot: 'reference-study', basis: view.label, position:[x!,y!,eye], target:[tx!,ty!,target], fovDeg:view.fov};
+    setShotNote(null);
+    setSightNote(null);
+    setShotStamp(n => n + 1);
+    r.request();
+  }
+  const openedReference = useRef(false);
+  useEffect(() => {
+    const first = referenceStudy?.views[0];
+    if (!painted || !first || openedReference.current) return;
+    openedReference.current = true;
+    frameStudy(first);
+  }, [painted, referenceStudy]);
+
   const frame = useCallback((shot: Shot | 'fit', opts: { record?: boolean } = {}) => {
     const r = rig.current;
     if (!r) return;
@@ -623,6 +667,11 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <ArchStylePicker />
       </div>
       )}
+      {!!referenceStudy?.views.length && (
+        <div className="absolute top-11 left-2 flex flex-wrap gap-1 rounded-md bg-white/90 p-1 text-xs shadow-sm" aria-label="Reference camera presets">
+          {referenceStudy.views.map(view => <button key={view.label} className="rounded border px-2 py-1 disabled:opacity-50" type="button" disabled={!painted} onClick={() => frameStudy(view)}>{view.label}</button>)}
+        </div>
+      )}
       {showy && hasMappedAlley && (
         <label className="absolute top-11 left-2 inline-flex items-center gap-1.5 rounded-md bg-white/90 px-2 py-1 text-[11px] text-gray-700 shadow-sm" title="Try herringbone pavers on mapped alleys. This illustrative finish does not change the plan.">
           <input type="checkbox" checked={alleyPavers} onChange={e => setAlleyPavers(e.target.checked)} data-testid="render-alley-pavers" />
@@ -646,7 +695,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         <button className={btn} onClick={backToPrevious} disabled={previousCount === 0} data-testid="camera-previous" title="Back to the view before the last camera move (the plan's undo is separate)" aria-label="Previous view">↶ View</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
-        {showy && <button
+        {showy && !referenceStudy && <button
           className="px-1.5 py-0.5 rounded bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50"
           onClick={makePhotoreal}
           disabled={photo.status === 'working'}
@@ -655,7 +704,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         >
           {photo.status === 'working' ? 'Painting…' : 'AI impression'}
         </button>}
-        {showy && ready && scene.buildings.length > 0 && (
+        {showy && !referenceStudy && ready && scene.buildings.length > 0 && (
           <button type="button" className={btn} data-testid="render-4k" aria-expanded={renderCamera !== null}
             onClick={() => setRenderCamera(previous => previous ? null : lastShot.current?.shot === 'street' ? 'street' : lastShot.current?.shot === 'approach' ? 'approach' : 'drone')}
             // without a render service there is no finished image to give: the label says what you get (PR 221 audit)
