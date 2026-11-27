@@ -80,6 +80,12 @@ for (const p of PARCELS) {
     await page.locator('[data-testid="camera-street"]').first().click({ timeout: 15000 })
       .catch(() => page.locator('[data-testid="camera-street"]').first().click({ force: true }));
     await page.waitForTimeout(2500);
+    // the eye-level camera moves at once and is then checked against its picture: wait for the check
+    for (let i = 0; i < 40; i++) {
+      const st = await shotOf();
+      if (st?.seen || st?.shot === 'iso' || !/checking what the picture shows/.test(st?.basis ?? '')) break;
+      await page.waitForTimeout(1500);
+    }
     row.camera = await page.locator('[data-testid="camera-label"]').innerText().catch(() => null);
     row.cameraFallback = await page.locator('[data-testid="camera-label"]').getAttribute('data-fallback').catch(() => null);
     row.shotNote = await page.locator('[data-testid="shot-note"]').innerText().catch(() => null);

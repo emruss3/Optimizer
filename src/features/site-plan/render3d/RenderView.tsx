@@ -225,9 +225,13 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     }
     camera.updateProjectionMatrix();
   }, []);
+  const sceneNow = useRef(scene);
+  sceneNow.current = scene;
+  /** A pending check of an eye-level camera: a newer camera request makes it stale. */
+  const checkToken = useRef(0);
   /** A building as a reader knows it: its label, or the first part of its name ("House 3"). */
   const buildingLabel = (id?: string): string => {
-    const b = id ? scene.buildings.find(x => x.id === id) : undefined;
+    const b = id ? sceneNow.current.buildings.find(x => x.id === id) : undefined;
     return (b && (b.label || b.name?.split(' · ')[0] || b.display.title)) || 'the building';
   };
   /** Stand the camera at each place in turn, measure what it shows of its building, and pick one
@@ -251,6 +255,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         const seen = measureSeen(r.stage.renderer, r.model.root, r.camera, { id: subject.id!, outline: subject.points, base: subject.base ?? 0 });
         tried.push({ shot: place, seen });
         if (seen && seenOk(seen, bars.good)) break;
+        // a device that draws slowly checks fewer places rather than freezing the page
+        if (performance.now() - t0 > 2500) break;
       }
     } catch (err) {
       // a device that cannot draw the check: the places are used as found, and the receipt says so
@@ -266,12 +272,44 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const chosen = choosePlace(tried, bars);
     mark('camera-check', {
       tried: tried.map(t => ({ subject: t.shot.subject ?? null, ...(t.seen ? { visible: +t.seen.visible.toFixed(3), framed: +t.seen.framed.toFixed(3), coverage: +t.seen.coverage.toFixed(4), hiddenBy: t.seen.hiddenBy } : { seen: null }) })),
-      quality: chosen.quality, ms: Math.round(performance.now() - t0),
+      quality: chosen.quality, ms: Math.round(performance.now() - t0), programs: r.stage.renderer.info.programs?.length ?? null,
     });
     return {
       shot: chosen.pick?.shot ?? null, seen: chosen.pick?.seen ?? chosen.best, quality: chosen.quality, tried: tried.length,
       why: chosen.pick ? null : unseenReason(chosen.best, tried.length, label(tried[0]?.shot.subject), bars.floor),
     };
+  };
+  /** Stand the camera at an eye-level place, with its receipt; `checked` adds what the picture shows. */
+  const placeArrival = (r: Rig, shot: Shot, arrival: Place, checked: ReturnType<typeof checkPlaces> | null) => {
+    const cv = canvas.current, t = r.controls.target;
+    // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
+    lift.current = arrival.lift;
+    r.camera.fov = (2 * Math.atan(Math.tan((arrival.fovDeg * Math.PI) / 360) * arrival.lift) * 180) / Math.PI;
+    if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+    t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
+    r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
+    const name = buildingLabel(arrival.subject);
+    const seenLine = checked?.seen ? `; ${seenWords(checked.seen, name)} (${checked.tried} place${checked.tried === 1 ? '' : 's'} checked)`
+      : checked?.unchecked ? '; not checked against the drawn picture' : `; checking what the picture shows of ${name}`;
+    lastShot.current = {
+      shot, ...arrival,
+      basis: `${padOnly.current ? 'Site context at eye level: the houses here are provisional pads (engine footprints), not home designs. ' : ''}${arrival.subject ? arrival.basis.replace(arrival.subject, name) : arrival.basis}${seenLine}`,
+      ...(checked?.seen ? { seen: { ...checked.seen, tried: checked.tried, quality: checked.quality } } : {}),
+    };
+  };
+  /** The three-quarter aerial (or straight down), centred on what is built. */
+  const placeAerial = (r: Rig, shot: Shot) => {
+    const cv = canvas.current, t = r.controls.target;
+    lift.current = 1;
+    r.camera.fov = AERIAL_FOV;
+    if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+    // the drone view of a rendering centres on what is built; review centres on the parcel
+    const c = shot === 'top' || r.review ? r.model.focus : r.model.built;
+    const padOf = (p: { x: number; y: number }) => prominentSubject(r.model.ground.subjects)?.base ?? r.model.groundAt(p.x, p.y);
+    const camera = aerialShot(c, shot === 'top' ? 0 : aerial.current, r.camera.aspect, padOf(c), shot === 'top' ? 89.2 : r.review ? 32 : 28);
+    t.set(camera.target[0], camera.target[2], -camera.target[1]);
+    r.camera.position.set(camera.position[0], camera.position[2], -camera.position[1]);
+    lastShot.current = { shot: shot === 'top' ? 'top' : 'iso', ...camera, ...(shot === 'top' ? { basis: 'Straight down on the parcel' } : {}) };
   };
   const frame = useCallback((shot: Shot | 'fit', opts: { record?: boolean } = {}) => {
     const r = rig.current;
@@ -281,6 +319,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const padOf = (c: { x: number; y: number }) => prominentSubject(r.model.ground.subjects)?.base ?? r.model.groundAt(c.x, c.y);
     const t = r.controls.target;
     if (shot === 'fit') {
+      checkToken.current++;
       // Fit site, the rescue (navigation audit 11-27): always an elevated view that holds the whole
       // parcel and what is built on it, from the direction the camera faces now. From an eye-level
       // street camera that means rising to the aerial; the label says Fit site, not the shot before.
@@ -299,7 +338,6 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       setShotNote(null);
       setSightNote(null);
     } else {
-      const review = r.review;
       // Street arrival: a person's eye on the approach, with a clear line to the building
       // (render3d/shots). Where no such place is found the view says so and keeps the aerial.
       const cv = canvas.current;
@@ -311,44 +349,45 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       const candidates = shot === 'approach' ? approachShots(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture)
         : shot === 'garage' ? approachShots(entranceWalks, subjects, obstacles, trees, r.model.groundAt, foreground, picture, 'apron', garagePavementAt)
         : shot === 'street' ? streetShots(subjects, obstacles, roads, picture, trees, r.model.groundAt, foreground, house) : [];
-      // Each place is checked against the picture it would actually draw (audit eb378b1): how much of
-      // the building is in frame and in view, and what hides the rest. The first that shows it is used.
-      const checked = candidates.length ? checkPlaces(r, candidates, cv, shot === 'approach' || shot === 'garage') : null;
-      const arrival = checked ? checked.shot : null;
+      // The camera goes to the best place found on the plan at once; then each place is checked against
+      // the picture it actually draws (audit eb378b1): how much of the building is in frame and in view,
+      // and what hides the rest. That check runs after this frame, so the page answers the click first.
+      const first = candidates[0] ?? null;
       const close = shot === 'approach' || shot === 'garage';
-      r.controls.minDistance = arrival && close ? 0.55 : 8;
-      r.controls.maxPolarAngle = arrival && close ? 2.05 : Math.PI / 2;
+      r.controls.minDistance = first && close ? 0.55 : 8;
+      r.controls.maxPolarAngle = first && close ? 2.05 : Math.PI / 2;
       const asked = shot === 'street' ? 'Street view' : shot === 'garage' ? 'Garage view' : 'Front entry view';
       setSightNote(null);
-      const subjectLabel = buildingLabel;
-      setShotNote((shot === 'street' || close) && !arrival
-        ? `${asked} requested · showing the aerial instead: ${candidates.length && checked?.why ? checked.why : shotUnavailableReason(shot, subjects, roads, entranceWalks)}.`
-        : checked?.quality === 'partial' && checked.seen
-          ? `${asked}: the best eye-level place found still has ${subjectLabel(checked.shot?.subject)} partly hidden (${Math.round(checked.seen.visible * 100)}% visible).`
-          : null);
-      if (arrival) {
-        // the frame is taller than the picture and the picture is its top part: a level camera, upright walls
-        lift.current = arrival.lift;
-        r.camera.fov = (2 * Math.atan(Math.tan((arrival.fovDeg * Math.PI) / 360) * arrival.lift) * 180) / Math.PI;
-        if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
-        t.set(arrival.target[0], arrival.target[2], -arrival.target[1]);
-        r.camera.position.set(arrival.position[0], arrival.position[2], -arrival.position[1]);
-        const seenLine = checked?.seen ? `; ${seenWords(checked.seen, subjectLabel(arrival.subject))} (${checked.tried} place${checked.tried === 1 ? '' : 's'} checked)` : checked?.unchecked ? '; not checked against the drawn picture' : '';
-        lastShot.current = {
-          shot, ...arrival,
-          basis: `${padOnly.current ? 'Site context at eye level: the houses here are provisional pads (engine footprints), not home designs. ' : ''}${arrival.subject ? arrival.basis.replace(arrival.subject, subjectLabel(arrival.subject)) : arrival.basis}${seenLine}`,
-          ...(checked?.seen ? { seen: { ...checked.seen, tried: checked.tried, quality: checked.quality } } : {}),
-        };
+      setShotNote((shot === 'street' || close) && !first
+        ? `${asked} requested · showing the aerial instead: ${shotUnavailableReason(shot, subjects, roads, entranceWalks)}.`
+        : null);
+      const token = ++checkToken.current;
+      if (first) {
+        placeArrival(r, shot, first, null);
+        const placedAt = r.camera.position.clone();
+        // after the new view has been drawn once
+        requestAnimationFrame(() => setTimeout(() => {
+          const rr = rig.current;
+          if (!rr || token !== checkToken.current || lastShot.current?.shot !== shot || rr.camera.position.distanceTo(placedAt) > 1e-3) return;
+          const checked = checkPlaces(rr, candidates, canvas.current, close);
+          if (checked.shot) {
+            placeArrival(rr, shot, checked.shot, checked);
+            setShotNote(checked.quality === 'partial' && checked.seen
+              ? `${asked}: the best eye-level place found still has ${buildingLabel(checked.shot.subject)} partly hidden (${Math.round(checked.seen.visible * 100)}% visible).`
+              : null);
+          } else {
+            placeAerial(rr, 'iso');
+            rr.controls.minDistance = 8;
+            rr.controls.maxPolarAngle = Math.PI / 2;
+            setShotNote(`${asked} requested · showing the aerial instead: ${checked.why ?? 'no eye-level place shows the building'}.`);
+          }
+          setShotStamp(n => n + 1);
+          mark('camera', { requested: shot, shown: lastShot.current?.shot ?? null, revision: sceneNow.current.identity.revision, checked: checked.quality });
+          rr.controls.update();
+          rr.request();
+        }, 0));
       } else {
-        lift.current = 1;
-        r.camera.fov = AERIAL_FOV;
-        if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
-        // the drone view of a rendering centres on what is built; review centres on the parcel
-        const c = shot === 'top' || review ? r.model.focus : r.model.built;
-        const camera = aerialShot(c, shot === 'top' ? 0 : aerial.current, r.camera.aspect, padOf(c), shot === 'top' ? 89.2 : review ? 32 : 28);
-        t.set(camera.target[0], camera.target[2], -camera.target[1]);
-        r.camera.position.set(camera.position[0], camera.position[2], -camera.position[1]);
-        lastShot.current = { shot: shot === 'top' ? 'top' : 'iso', ...camera, ...(shot === 'top' ? { basis: 'Straight down on the parcel' } : {}) };
+        placeAerial(r, shot);
       }
     }
     setShotStamp(s => s + 1);
@@ -374,6 +413,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     const pick = id ? r?.model.pick.find(m => m.userData.id === id) : undefined;
     if (!r || !pick) return;
     pushPose();
+    checkToken.current++;
     const box = new THREE.Box3().setFromObject(pick);
     const centre = box.getCenter(new THREE.Vector3());
     const radius = Math.max(4, box.getSize(new THREE.Vector3()).length() / 2);
@@ -397,10 +437,13 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     };
     try {
       let best: { deg: number; seen: Seen } | null = null;
+      const f0 = performance.now();
       for (const deg of subject ? [0, 30, -30, 60, -60, 90, -90, 135, -135, 180] : []) {
         const s = tryTurn(deg);
         if (s && (!best || s.visible > best.seen.visible)) best = { deg, seen: s };
         if (s && s.visible >= 0.75) break;
+        // a device that draws slowly checks fewer directions rather than freezing the page
+        if (performance.now() - f0 > 2500) break;
       }
       if (best) { seen = best.seen; turnedDeg = best.deg; }
     } catch (err) {

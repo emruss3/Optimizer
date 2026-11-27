@@ -89,7 +89,8 @@ function probeMaterial(kind: HiddenBy, source: THREE.Material | undefined, u: Pr
   const m = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, ...(cut ? { map: src!.map ?? null, alphaMap: src!.alphaMap ?? null, alphaTest: src!.alphaTest || 0.5 } : {}) });
   const tint = COLOR[kind];
   m.onBeforeCompile = shader => {
-    Object.assign(shader.uniforms, u, { uTint: { value: tint } });
+    // the kind is a uniform, not part of the program: one program serves all three kinds
+    Object.assign(shader.uniforms, u, { uTint: { value: tint }, uMayBeMine: { value: kind === 'structures' ? 1 : 0 } });
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vProbeWorld;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvProbeWorld = (inverse(viewMatrix) * mvPosition).xyz;');
@@ -101,6 +102,7 @@ uniform int uCount;
 uniform float uBase;
 uniform float uOnly;
 uniform vec3 uTint;
+uniform float uMayBeMine;
 bool probeInside(vec2 p) {
   bool inside = false;
   float near = 1e9;
@@ -118,11 +120,11 @@ bool probeInside(vec2 p) {
       .replace('#include <dithering_fragment>', `#include <dithering_fragment>
 // model axes: x east, y north (stage -z), z up (stage y)
 vec2 probeXY = vec2(vProbeWorld.x, -vProbeWorld.z);
-bool probeMine = ${kind === 'structures' ? 'true' : 'false'} && probeInside(probeXY) && vProbeWorld.y > uBase + 0.3;
+bool probeMine = uMayBeMine > 0.5 && vProbeWorld.y > uBase + 0.3 && probeInside(probeXY);
 if (uOnly > 0.5 && !probeMine) discard;
 gl_FragColor = vec4(probeMine ? vec3(1.0) : uTint, 1.0);`);
   };
-  m.customProgramCacheKey = () => `probe-${kind}-${cut ? 'cut' : 'solid'}`;
+  m.customProgramCacheKey = () => `probe-${cut ? 'cut' : 'solid'}`;
   return m;
 }
 
