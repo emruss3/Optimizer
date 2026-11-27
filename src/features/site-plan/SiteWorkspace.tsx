@@ -3368,6 +3368,10 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   // toggle swapped a 25-unit apartment building under a "3 lots · All tests
   // pass" header, and the table read 133% / 500% against the lots' count.
   const quickMassingAvailable = !!seedRender && seedRender.elements.length > 0 && elements.some(e => isMfPlanElement(e));
+  // Quick massing (the engine's first-pass composition) is for engine diagnostics, not site decisions
+  const seedDiagnostics = useMemo(() => {
+    try { return new URLSearchParams(window.location.search).get('debug') === 'seed'; } catch { return false; }
+  }, []);
   const seedViewOn = showSeed && quickMassingAvailable;
   useEffect(() => {
     if (!quickMassingAvailable) setShowSeed(false);
@@ -4430,7 +4434,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
               Section
             </button>
           )}
-          {quickMassingAvailable && (
+          {/* the engine's first pass, an engineering view: off the toolbar, behind ?debug=seed (owner, 11-27) */}
+          {quickMassingAvailable && seedDiagnostics && (
             <button
               data-testid="seed-toggle"
               onClick={() => setShowSeed(v => !v)}
@@ -4540,6 +4545,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
         <span><strong>Locked homes this plan cannot keep:</strong> {homeLockConflict.lost.map(l => `${l.designId.replace(/^abhp:/, '')} on ${l.lotLabel} — ${l.reason}`).join('; ')}.</span>
         <span className="flex gap-3">
           <button type="button" className="underline" data-testid="home-lock-return" onClick={() => {
+            // a solve still on its way would land on top of the plan returned to: it no longer counts
+            planRequests.invalidate();
             const b = homeLockConflict.before;
             setHomeLockConflict(null);
             setSfV1Summary(b.summary);

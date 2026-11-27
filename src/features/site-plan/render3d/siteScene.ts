@@ -297,6 +297,10 @@ export interface SiteModelOptions {
   /** A picture for a sheet, where the reader must see at once which land is the scheme's: the
    *  parcel line drawn on the ground, and the existing buildings as quiet pale solids. */
   markSite?: boolean;
+  /** The plan's lines over the rendered model (owner, 11-27: the 3D view is the rendering): the
+   *  parcel line, the buildable envelope, the access in amber and the hazard areas, drawn on the
+   *  ground of the full model with its trees and neighbours. */
+  planLines?: boolean;
 }
 
 /** The style the existing houses round a site are drawn in: ordinary, and not the scheme's own. */
@@ -644,6 +648,9 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     x >= p.x0 && x <= p.x1 && y >= p.y0 && y <= p.y1 && pointInPolygon(x, y, p.rings);
   const pavedAt = (x: number, y: number) => paved.some(p => contains(p, x, y));
   const homePavement = data.vehicleAccessBreak ? [] : paved.filter(p => p.kind === 'driveway' || p.mappedAlley);
+  // the street surfaces laid between parcels, so no tree is planted on a road (owner, 11-27: trees in the middle of a road)
+  const streetPavement: number[][][] = [];
+  const onPavement = (x: number, y: number) => pavedAt(x, y) || streetPavement.some(q => pointInPolygon(x, y, [q as never]));
   const reach = Math.max(1600, data.extent * 16);
   put(real ? 'grass|ground' : 'plain|ground', plane([[-reach, -reach, -0.02], [reach, -reach, -0.02], [reach, reach, -0.02], [-reach, reach, -0.02]]), real ? [118, 134, 94, 255] : [176, 186, 152, 255]);
   // Public streets. The record gives the neighbouring parcels, and often no street lines: a gap
@@ -657,11 +664,17 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     for (const q of streetGaps([
       ...data.contextPolygons.filter(c => c.elevation < 1).map(c => c.polygon[0] ?? []),
       ...(data.lawn[0]?.polygon[0] ? [data.lawn[0].polygon[0]] : []),
-    ])) put(streetKey, plane(q.map(p => [p[0] ?? 0, p[1] ?? 0, -0.005])), streetColor);
+    ])) {
+      put(streetKey, plane(q.map(p => [p[0] ?? 0, p[1] ?? 0, -0.005])), streetColor);
+      streetPavement.push(q);
+    }
   }
   const neighbours: Array<{ ring: number[][]; minX: number; minY: number; maxX: number; maxY: number }> = [];
   // every tree that stands in the model, as [x, y, crown radius]: a camera keeps them out of its line of sight
-  const standing: Array<[number, number, number]> = data.trees.map(t => [t.position[0] ?? 0, t.position[1] ?? 0, t.radiusM ?? 2.8]);
+  const standing: Array<[number, number, number]> = data.trees
+    .map(t => [t.position[0] ?? 0, t.position[1] ?? 0, t.radiusM ?? 2.8] as [number, number, number])
+    // the site's own trees never stand on a drive, a parking area or a street
+    .filter(([x, y]) => !onPavement(x, y));
   // how far from the middle of the site a neighbour is still drawn with its windows and roof
   const detailReach = Math.max(110, data.extent * 0.95);
   const FAR_WALLS: RGBA[] = [[206, 196, 176, 255], [186, 180, 170, 255], [150, 104, 88, 255], [198, 192, 184, 255], [164, 170, 172, 255], [214, 206, 188, 255]];
@@ -801,7 +814,7 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (p.building) continue;
     const m = real && opts.alleyPavers && p.mappedAlley ? ALLEY_PAVERS : SITE[p.kind ?? ''];
     if (!m) continue;
-    if (p.hazard && opts.review) {
+    if (p.hazard && (opts.review || opts.planLines)) {
       owner = `hazard:${p.id ?? p.hazard}`;
       put('site-hatch|flat', prism(p.polygon.map(r => r.map(q => [q[0] ?? 0, q[1] ?? 0, 0])), 0.41), HAZARD_COLORS[p.hazard]);
       continue;
@@ -821,10 +834,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
     if (real && !c.guideOnly) put('concrete|solid', planCurb(c.path, pavedAt), [206, 198, 183, 255]);
     else if (!opts.review && !c.guideOnly) put('concrete|flat', ribbon(c.path, 0.2, 0.36), [226, 223, 214, 255]);
     // the access is a labelled overlay of the review view only, never part of the rendering
-    if (opts.review) put('plain|flat', ribbon(c.path, 0.45, 0.43), [234, 138, 30, 255]);
+    if (opts.review || opts.planLines) put('plain|flat', ribbon(c.path, 0.45, 0.43), [234, 138, 30, 255]);
   }
   // and the parcel line and the buildable envelope are drawn on the ground
-  if (opts.review) for (const g of data.groundPaths) put('plain|flat', ribbon(g.path, Math.max(0.5, g.widthM * 1.1), 0.42), g.color);
+  if (opts.review || opts.planLines) for (const g of data.groundPaths) put('plain|flat', ribbon(g.path, Math.max(0.5, g.widthM * 1.1), 0.42), g.color);
   owner = 'stripes';
   for (const s of data.stripes) put('plain|flat', ribbon(s.path, 0.12, 0.33), [244, 244, 240, 255]);
 
@@ -1053,8 +1066,10 @@ export function buildSiteModel(data: MassingData, opts: SiteModelOptions = {}): 
           const d = Math.max(Math.abs(px), Math.abs(py));
           if (rnd() > keep * (0.3 + 1.4 * grove(px, py)) || d < inner || d > outer) continue;
           if (site && pointInPolygon(px, py, [site])) continue;
+          if (onPavement(px, py)) continue;
           if (neighbours.some(b => px > b.minX - 3 && px < b.maxX + 3 && py > b.minY - 3 && py < b.maxY + 3)) continue;
-          if (d < half * 4 && (pavedAt(px, py) || near(px, py))) continue;
+          // no tree on a mapped road, near the site or far out toward the haze
+          if (near(px, py)) continue;
           spots.push([px, py, size]);
         }
       }
