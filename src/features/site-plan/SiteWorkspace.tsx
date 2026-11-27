@@ -8,6 +8,7 @@ import { useBuildableEnvelope } from './api/useBuildableEnvelope';
 import type { HomePlacement } from './housing/placement';
 import { residentialHomes } from './housing/placement';
 import { HOME_DESIGNS } from './housing/originalDesigns';
+import { projectPlansFor } from './housing/projectPlans';
 import {
   HOME_DESIGNS_NONE_FIT_TITLE,
   schemeAllowsHomeDesigns,
@@ -3583,6 +3584,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
     return { show: true as const, enabled: eligible.length > 0 || stockOk, eligible };
   }, [baseElements, layoutShown, product, homeStudioBoundary, stockRows, homeHeightLimitFt]);
   // The reasons nothing fits, read only when asked (a 79-lot plan is checked on a sample of 40 lots).
+  // designs linked to this parcel's project ("My plans"); none until the project's parcels are mapped
+  const projectPlans = useMemo(() => projectPlansFor(parcelIdStr), [parcelIdStr]);
   const [homesWhyOpen, setHomesWhyOpen] = useState(false);
   const homesWhy = useMemo(
     () => (homesWhyOpen && homeDesignsUi.show && !homeDesignsUi.enabled
@@ -3839,7 +3842,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
       // 9379472: Main's 252 stalls cannot read verified until routes prove them)
       const structured = displayElements.some(e => e.type === 'parking' && e.properties?.structured === true);
       const traced = !structured && displayElements.some(e => e.id.startsWith('mfgen-')) && mfAccess.evaluated && mfAccess.stallsServed != null && mfAccess.served >= mfAccess.bays;
-      return traced ? { ...metrics, stallsReachable: mfAccess.stallsServed } : metrics;
+      return traced ? { ...metrics, stallsReachable: mfAccess.stallsServed as number } : metrics;
     }
     // adequacy stands on the reachable supply; the count keeps its own name
     return { ...metrics, stallsProvided: stallsUsable, stallsReachable: stallsUsable };
@@ -4208,7 +4211,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
   const canRedo = homeCanRedo || (historyVersion >= 0 && futureRef.current.length > 0);
 
   return (
-    <div className="h-full min-h-0 flex flex-col bg-gray-100">
+    // with the studio docked beside it (wide screens) the workspace gives up that width, so the drawing
+    // reflows beside the studio instead of lying under it (handoff 11-27)
+    <div className={`h-full min-h-0 flex flex-col bg-gray-100${homesOpen && homeDesignsUi.show && homeDesignsUi.enabled ? ' pp-studio-docked' : ''}`} data-testid="site-workspace">
       <CensusBanner />
       {/* Order-8: on a commercial-only lot the multifamily refusal (and its
           "draw the house" switch) is the wrong conversation — no residential
@@ -4327,7 +4332,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           investment={investmentAnalysis}
           money={serverMoney}
           planFlags={planLineage?.flags ?? []}
-          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); }}
+          onOpenChecks={() => { setDockTab('flags'); setDockOpen(true); if (viewMode === '3d') window.dispatchEvent(new Event('pp:look-review')); }}
           unverified={contextState === 'unavailable' || contextState === 'stale' ? contextStateLabel(contextState) : contextState === 'compiling' ? 'context still compiling' : null}
           empty={
             isGenerating || isGeneratingLots
@@ -4484,7 +4489,9 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
           maxHeightFt={homeHeightLimitFt}
           elements={baseElements}
           selected={sceneSelectedIds[0] ?? null}
-          designs={homeDesignsUi.eligible}
+          designs={HOME_DESIGNS}
+          projectDesignIds={projectPlans?.designIds ?? []}
+          projectName={projectPlans?.project.name ?? null}
           stockPlans={sfStockDesigns}
           stockSetbacks={homeSetbacks}
           stockEligibilityRows={stockRows}
@@ -4624,7 +4631,8 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                 ? {
                     label: `${thV3Summary.homes} townhomes${thV3Summary.pattern ? ` (${thV3Summary.pattern})` : ''}`,
                     source: 'the townhome engine (th_v3): the neighborhood layout, attached homes by right',
-                    chip: 'drawn by right',
+                    // a failing check is not rolled up into a reassuring chip (handoff 11-27)
+                    chip: thV3Summary.requiredFails.length ? `drawn · ${thV3Summary.requiredFails.length} check${thV3Summary.requiredFails.length === 1 ? '' : 's'} fail` : 'drawn by right',
                   }
                 : sfV1Summary && displayElements.some(e => e.id.startsWith('sfseed-'))
                 ? { label: 'One house on the lot', source: 'the single-family seed (sf_seed_v1) on a parcel the by-right generator gives no new lots' }
@@ -4636,7 +4644,7 @@ const SiteWorkspace: React.FC<SiteWorkspaceProps> = ({ parcel }) => {
                         ? 'No new lots by right — the parcel is one lot'
                         : `${sfV1Summary.lots} lot${sfV1Summary.lots === 1 ? '' : 's'}${patternPhrase(sfV1Summary.pattern)}`,
                     source: 'the by-right subdivision generator (sf_v1), from the district\'s own standards',
-                    chip: sfV1Summary.basis === 'override' ? 'drawn as an override' : 'drawn by right',
+                    chip: `${sfV1Summary.basis === 'override' ? 'drawn as an override' : 'drawn by right'}${sfV1Summary.fails.length ? ` · ${sfV1Summary.fails.length} check${sfV1Summary.fails.length === 1 ? '' : 's'} fail` : ''}`,
                   }
                 : null}
             />

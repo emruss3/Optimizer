@@ -127,9 +127,11 @@ export function approachShot(
   approaches: ApproachAnchor[], subjects: Subject[], obstacles: number[][][],
   trees: Array<[number, number, number]>, groundAt: (x: number, y: number) => number,
   foreground: readonly ForegroundObstacle[] = [], aspect = 16 / 9,
+  /** 'walk': the front entry, at the door; 'apron': the vehicle approach, at the garage (handoff 11-27) */
+  kind: 'walk' | 'apron' = 'walk',
 ): Shot | null {
   const main = prominentSubject(subjects);
-  const ranked = approaches.filter(a => a.kind === 'walk').sort((a, b) =>
+  const ranked = approaches.filter(a => a.kind === kind).sort((a, b) =>
     Number(b.building === main?.id) - Number(a.building === main?.id));
   const blockers = [...obstacles, ...subjects.map(s => s.points)];
   let fallback: Shot | null = null;
@@ -147,7 +149,7 @@ export function approachShot(
       if (terrainBlocks(point, eye, [x, y], targetHeight, groundAt)) continue;
       const shot: Shot = {
         position: [...point, eye], target: [x - tx * 0.65, y - ty * 0.65, targetHeight],
-        fovDeg: 46, lift: 1, basis: `Eye level at the entrance walk of ${a.building}`,
+        fovDeg: 46, lift: 1, basis: kind === 'apron' ? `Eye level on the drive at the garage of ${a.building}` : `Eye level at the entrance walk of ${a.building}`,
       };
       if (!foregroundBlocks(point, [x, y], aspect, 46, foreground)) return shot;
       fallback ??= shot;
@@ -271,14 +273,51 @@ function extent(pts: Array<[number, number]>): number {
  * should have actual camera and reason"). Read from the same inputs the camera searches use.
  */
 export function shotUnavailableReason(
-  shot: 'street' | 'approach',
+  shot: 'street' | 'approach' | 'garage',
   subjects: Subject[], roads: number[][][], approaches: ApproachAnchor[],
 ): string {
   if (!subjects.some(s => s.points.length >= 3)) return 'no building is drawn to frame';
+  if (shot === 'garage') {
+    if (!approaches.some(a => a.kind === 'apron')) return 'no drive is drawn to a garage on this plan, so there is no garage approach to stand on';
+    return 'every point along the drive has its view of the garage blocked (buildings, trees or ground)';
+  }
   if (shot === 'approach') {
     if (!approaches.some(a => a.kind === 'walk')) return 'no entrance walk is drawn, so there is no entrance to stand at';
     return 'every point along the entrance walks has its view of the door blocked (buildings, trees or ground)';
   }
   if (!roads.length) return 'no street is mapped beside the buildings, so there is no street to stand on';
   return 'every eye-level position on the street side with the whole building in frame is blocked (neighbouring buildings, trees or ground), or the building faces away from the mapped street';
+}
+
+/**
+ * What a camera standing at `eye` (ground position) sees of a building past the tree crowns: the
+ * crowns its sight lines to the building's centre and corners pass through, and the share of
+ * those lines that pass clear. Used when the camera is kept and the scene changes under it
+ * (Review → Rendering stands trees up), so the view's stated basis is this scene's, not the
+ * last one's (handoff 11-27).
+ */
+export function sightReport(eye: [number, number], subject: Subject, trees: Array<[number, number, number]>): { trees: number; clearShare: number } {
+  const [cx, cy] = centre(subject.points);
+  const sights: Array<[number, number]> = [[cx, cy], ...subject.points];
+  const crossing = new Set<number>();
+  let clear = 0;
+  for (const s of sights) {
+    let blocked = false;
+    trees.forEach((tree, i) => { if (nearCanopy(eye, s, tree, 1)) { crossing.add(i); blocked = true; } });
+    if (!blocked) clear++;
+  }
+  return { trees: crossing.size, clearShare: sights.length ? clear / sights.length : 1 };
+}
+
+/** The subject a camera is aimed at: the one whose outline holds the target, else the nearest. */
+export function aimedSubject(target: [number, number], subjects: Subject[]): Subject | undefined {
+  let best: Subject | undefined, bestD = Infinity;
+  for (const s of subjects) {
+    if (s.points.length < 3) continue;
+    if (pointInPolygon(target[0], target[1], [s.points as never])) return s;
+    const [x, y] = centre(s.points);
+    const d = Math.hypot(x - target[0], y - target[1]);
+    if (d < bestD) { bestD = d; best = s; }
+  }
+  return best;
 }

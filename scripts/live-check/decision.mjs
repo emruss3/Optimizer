@@ -80,7 +80,9 @@ const openPlanner = async (page, q) => {
     const target = ev?.homes?.rows?.find(r => r.eligible.length >= 2);
     if (!target) throw new Error('no lot to change');
     await page.locator('[data-testid="home-designs"]').first().click();
-    const lotSel = page.locator('[data-testid="home-stock-lot"]').first();
+    // the studio opens on the authored catalogue; stock plans are their own tab with the shared target lot
+    await page.locator('[data-testid="home-tab-stock"]').first().click();
+    const lotSel = page.locator('[data-testid="home-target-lot"]').first();
     await lotSel.waitFor({ state: 'visible', timeout: 30000 });
     await lotSel.selectOption(target.house);
     await page.locator('nav[aria-label="Buildable stock plans"] button').last().click();
