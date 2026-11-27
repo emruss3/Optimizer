@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { HOME_DESIGNS } from './originalDesigns';
 import { WEST_HEIMAN_IDS } from './westHeimanDesigns';
+import { MIDDLE_TENNESSEE_IDS } from './middleTennesseeDesigns';
 import {
   PHOTOREAL_ELEVATION_IDS,
   hasPhotorealElevation,
@@ -19,14 +20,15 @@ describe('photoreal elevation assets', () => {
     for (const id of PHOTOREAL_ELEVATION_IDS) {
       expect(hasPhotorealElevation(id)).toBe(true);
       for (const side of faces) {
+        const version = id === 'tn-motor-court-v1' ? 'v3' : 'v2';
         const src = photorealElevationSrc(id, side);
-        expect(src).toBe(`/home-designs/${id}-elevation-${side}-v2.webp`);
-        expect(existsSync(resolve(publicDir, `${id}-elevation-${side}-v2.webp`))).toBe(true);
+        expect(src).toBe(`/home-designs/${id}-elevation-${side}-${version}.webp`);
+        expect(existsSync(resolve(publicDir, src.split('/').pop()!))).toBe(true);
       }
     }
   });
 
-  it.each(WEST_HEIMAN_IDS)('ships both interior views for %s', id => {
+  it.each(['tn-motor-court-v1', ...MIDDLE_TENNESSEE_IDS, ...WEST_HEIMAN_IDS])('ships both interior views for %s', id => {
     const views = interiorRenderings(id);
     expect(views).toHaveLength(2);
     for (const { src } of views) expect(existsSync(resolve(publicDir, src.split('/').pop()!))).toBe(true);

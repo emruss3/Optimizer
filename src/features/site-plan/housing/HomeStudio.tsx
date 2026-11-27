@@ -564,7 +564,10 @@ export default function HomeStudio({
                     </div>
                     {shownView === 'Interiors' ? (
                       <div>
-                        <p className="home-exterior-note">Level 2 is 19′-9¼″ across the outside walls. Clear room widths are smaller. These are illustrative studies, not dimensional or construction drawings.</p>
+                        <p className="home-exterior-note">
+                          {home.id.startsWith('tn-west-heiman-') && 'Level 2 is 19′-9¼″ across the outside walls. Clear room widths are smaller. '}
+                          These are illustrative studies, not dimensional or construction drawings.
+                        </p>
                         {interiors.map(({ name, src }) => (
                           <figure key={src}>
                             <img src={src} alt={home.name + ', illustrative ' + name.toLowerCase()} loading="lazy" />
