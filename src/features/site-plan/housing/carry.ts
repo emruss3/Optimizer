@@ -48,6 +48,8 @@ export function commitConcept(designId: string, houseId: string, elements: Eleme
 export interface HomeAssignment {
   /** stock: a publisher plan (housing catalogue); concept: an original concept study */
   kind?: 'stock' | 'concept';
+  /** hard lock: a re-solve that cannot keep it is a conflict to resolve, not a quiet carry */
+  lock?: boolean;
   designId: string;
   lotLabel: string;
   /** centre and area of the lot the choice was made on, EPSG:3857 / ground sf */
@@ -58,7 +60,7 @@ export interface HomeAssignment {
 export interface CarryResult {
   elements: Element[];
   kept: Array<{ lotLabel: string; designId: string }>;
-  lost: Array<{ lotLabel: string; designId: string; reason: string }>;
+  lost: Array<{ lotLabel: string; designId: string; reason: string; locked?: boolean }>;
   /** the assignments to remember from here: kept ones re-read off the new plan, and the ones
    *  not kept left as they were, so a return to a plan where they fit restores them */
   next: HomeAssignment[];
@@ -117,7 +119,7 @@ export function carryAssignments(assignments: HomeAssignment[], elements: Elemen
       return a.lotAreaSf > 0 && Math.abs(area - a.lotAreaSf) / a.lotAreaSf <= 0.15;
     });
     if (!house) {
-      lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: `the lot that carried ${name} is not on this plan` });
+      lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: `the lot that carried ${name} is not on this plan`, locked: !!a.lock });
       next.push(a);
       continue;
     }
@@ -125,14 +127,14 @@ export function carryAssignments(assignments: HomeAssignment[], elements: Elemen
       ? (() => { const c = commitConcept(a.designId, house.id, els); return c.ok ? { ok: true as const, elements: c.elements, lotLabel: parentLotOf(house, els)?.name ?? a.lotLabel } : c; })()
       : applyStockDesignToHouse({ designId: a.designId, houseId: house.id, elements: els, setbacks });
     if (!res.ok) {
-      lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: res.reason });
+      lost.push({ lotLabel: a.lotLabel, designId: a.designId, reason: res.reason, locked: !!a.lock });
       next.push(a);
       continue;
     }
     els = res.elements;
     kept.push({ lotLabel: res.lotLabel, designId: a.designId });
     const again = assignmentFor(house.id, els, a.designId, a.kind ?? 'stock');
-    if (again) next.push(again);
+    if (again) next.push({ ...again, ...(a.lock ? { lock: true } : {}) });
   }
   return { elements: els, kept, lost, next };
 }

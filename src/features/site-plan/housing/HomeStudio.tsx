@@ -27,7 +27,7 @@ interface Props {
   /** Setbacks the fit uses (the zoning brief's); a lot's own engine setbacks win. */
   stockSetbacks?: { front: number; side: number; rear: number };
   /** Change the home on one house's lot to this stock plan. */
-  onApplyStock?: (designId: string, houseId: string) => void;
+  onApplyStock?: (designId: string, houseId: string, lock?: boolean) => void;
   /** Apply one stock plan to several lots as one change. */
   onApplyStockMany?: (designId: string, houseIds: string[]) => void;
   /** Commit a concept study on one house's lot (not a preview: it becomes the plan). */
@@ -154,6 +154,8 @@ export default function HomeStudio({
   const stock = useMemo(() => stockRow?.eligible.map((e) => e.design) ?? [], [stockRow]);
   // other lots the plan on show also fits, to apply it to several at once
   const [alsoLots, setAlsoLots] = useState<string[]>([]);
+  // lock the change through re-solves: a plan that cannot keep it is shown as a conflict
+  const [lockHome, setLockHome] = useState(false);
 
   useEffect(() => {
     if (stockIndex >= stock.length) setStockIndex(0);
@@ -404,7 +406,7 @@ export default function HomeStudio({
                               className="home-primary"
                               data-testid="home-stock-apply"
                               onClick={() => {
-                                onApplyStock(plan.id, stockRow.houseId);
+                                onApplyStock(plan.id, stockRow.houseId, lockHome);
                                 onClose();
                               }}
                             >
@@ -444,6 +446,10 @@ export default function HomeStudio({
                               </fieldset>
                             );
                           })()}
+                          <label className="home-lock" data-testid="home-stock-lock">
+                            <input type="checkbox" checked={lockHome} onChange={(e) => setLockHome(e.target.checked)} /> Lock this home through
+                            re-solves (a new plan that cannot keep it asks before replacing it)
+                          </label>
                           <p data-testid="home-stock-fit">
                             {stockRow.eligible.find((e) => e.design.id === plan.id)?.fit.reason ?? ''}. Only this
                             lot changes: its pad takes this plan’s listing-overall footprint in the placed

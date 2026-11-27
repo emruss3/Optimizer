@@ -59,3 +59,31 @@ describe('house choices through a re-solve (masterplan audit 2026-11-26)', () =>
     expect(tight.lost[0]!.reason).toMatch(/does not fit Lot 1/);
   });
 });
+
+describe('hard locks (audit 9379472 item 3)', () => {
+  it('a locked choice the new plan cannot keep is flagged locked; a soft one is not', () => {
+    let els = plan('deep');
+    const d = houseEligibility(els.find(e => e.id === 'sfv1-pad-1')!, buildableStockPlans(), els, SB).eligible[0]!.design.id;
+    const r = applyStockDesignToHouse({ designId: d, houseId: 'sfv1-pad-1', elements: els, setbacks: SB });
+    if (!r.ok) throw new Error(r.reason);
+    els = r.elements;
+    const a = assignmentFor('sfv1-pad-1', els, d)!;
+    const tighter = plan('deep').map(e => (/lot-\d+$/.test(e.id) ? { ...e, properties: { ...e.properties, homeSetbacksFt: { front: 60, side: 20, rear: 60 } } } : e));
+    const locked = carryAssignments([{ ...a, lock: true }], tighter, SB);
+    expect(locked.lost[0]?.locked).toBe(true);
+    expect(locked.next[0]?.lock).toBe(true); // still remembered, still locked
+    const soft = carryAssignments([a], tighter, SB);
+    expect(soft.lost[0]?.locked).toBe(false);
+  });
+
+  it('a kept locked choice stays locked on the new plan', () => {
+    let els = plan('deep');
+    const d = houseEligibility(els.find(e => e.id === 'sfv1-pad-2')!, buildableStockPlans(), els, SB).eligible[0]!.design.id;
+    const r = applyStockDesignToHouse({ designId: d, houseId: 'sfv1-pad-2', elements: els, setbacks: SB });
+    if (!r.ok) throw new Error(r.reason);
+    els = r.elements;
+    const kept = carryAssignments([{ ...assignmentFor('sfv1-pad-2', els, d)!, lock: true }], plan('deep'), SB);
+    expect(kept.kept).toHaveLength(1);
+    expect(kept.next[0]?.lock).toBe(true);
+  });
+});
