@@ -246,8 +246,12 @@ const DRAW: Record<Drawn, () => Tile> = {
   },
 };
 
-// Surfaces that have a photograph (public/textures/site, from Poly Haven, CC0), and the metres one tile covers.
-const PHOTOS: Record<string, (typeof siteAssets.textures)[keyof typeof siteAssets.textures]> = siteAssets.textures;
+// The review keeps the original finishes for familiar, stable plan legibility.
+type Photo = { tile_m: number[]; normal_strength: number; roughness: number; color: string; normal: string; roughness_map?: string };
+const PHOTOS: Partial<Record<string, Photo>> = siteAssets.textures;
+const REVIEW_PHOTOS: Partial<Record<string, Photo>> = {
+  ...siteAssets.textures, ...siteAssets.review_textures, siding: undefined,
+};
 
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
 export class Surfaces {
@@ -260,7 +264,7 @@ export class Surfaces {
 
   /** Put the photograph of a surface, and its normal map, in place of the drawn pattern once they have loaded. */
   private photograph(kind: string, m: THREE.MeshStandardMaterial): void {
-    const entry = PHOTOS[kind];
+    const entry = (this.photographic ? PHOTOS : REVIEW_PHOTOS)[kind];
     if (!entry || typeof document === 'undefined') return;
     const { tile_m: size, normal_strength: relief } = entry;
     const loader = new THREE.TextureLoader();
@@ -274,13 +278,15 @@ export class Surfaces {
         resolve(t);
       }, undefined, () => resolve(null));
     });
-    this.pending.push(Promise.all([one(entry.color, true), one(entry.normal, false)]).then(([map, normal]) => {
+    const roughnessMap = entry.roughness_map ? one(entry.roughness_map, false) : null;
+    this.pending.push(Promise.all([one(entry.color, true), one(entry.normal, false), roughnessMap]).then(([map, normal, roughness]) => {
       if (!map || !normal) return;       // the drawn pattern stays
       m.map = map;
       m.bumpMap = null;
       m.normalMap = normal;
       m.normalScale.set(relief, relief);
-      m.roughness = entry.roughness;
+      m.roughnessMap = roughness;
+      m.roughness = roughness ? 1 : entry.roughness;
       m.needsUpdate = true;
     }));
   }
