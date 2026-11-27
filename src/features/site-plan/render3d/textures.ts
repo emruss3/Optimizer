@@ -5,6 +5,7 @@
 // colour, so one material serves every house on the street.
 import * as THREE from 'three';
 import siteAssets from './siteAssets.json';
+import { groundPhotoFinish } from './photoSurfaces';
 import type { Surface } from '../ui/renderModel';
 
 export type { Surface };
@@ -250,6 +251,7 @@ const PHOTOS: Record<string, (typeof siteAssets.textures)[keyof typeof siteAsset
 
 /** The materials of one render. Made once, shared by every mesh, disposed together. */
 export class Surfaces {
+  constructor(private readonly photographic = false) {}
   private made = new Map<string, THREE.Material>();
   private tiles = new Map<string, Tile>();
   private photos: THREE.Texture[] = [];
@@ -321,8 +323,10 @@ export class Surfaces {
     } else {
       const t = DRAW[kind]();
       this.tiles.set(kind, t);
-      const drawn = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: t.bumpScale, roughness: t.roughness, metalness: t.metalness ?? 0 });
-      if (kind === 'grass') drawn.onBeforeCompile = shader => {
+      const bump = this.photographic && (kind === 'siding' || kind === 'batten' || kind === 'panel') ? t.bumpScale * 0.46 : t.bumpScale;
+      const drawn = new THREE.MeshStandardMaterial({ vertexColors: true, map: t.map, bumpMap: t.bump, bumpScale: bump, roughness: t.roughness, metalness: t.metalness ?? 0 });
+      if (this.photographic && (kind === 'grass' || kind === 'asphalt' || kind === 'concrete')) groundPhotoFinish(drawn, kind);
+      else if (kind === 'grass') drawn.onBeforeCompile = shader => {
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', `#include <common>
             float lawnHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -355,7 +359,25 @@ export class Surfaces {
     const m = new THREE.MeshPhysicalMaterial(clear
       ? { color: 0x6e7a79, roughness: 0.12, metalness: 0, ior: 1.5, transparent: true, opacity: 0.28, depthWrite: false, envMapIntensity: 1.6 }
       : { vertexColors: true, color: 0xffffff, roughness: 0.07, metalness: 0.82, envMapIntensity: 1.5, clearcoat: 1, clearcoatRoughness: 0.05 });
-    if (clear) m.onBeforeCompile = shader => {
+    if (this.photographic) {
+      // The HDR environment is reflected at the angle of each real window.
+      // Keep existing backed/opaque windows backed; never expose an empty shell.
+      m.roughness = clear ? 0.08 : 0.105;
+      m.clearcoat = 0.85;
+      m.clearcoatRoughness = 0.065;
+      m.customProgramCacheKey = () => clear ? 'pp-clear-photo-glass' : 'pp-backed-photo-glass';
+      m.onBeforeCompile = shader => {
+        shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+          float ppAngle = pow(1.0 - saturate(dot(normal, geometryViewDir)), 4.0);
+          #ifdef USE_ENVMAP
+            vec3 ppSceneReflection = getIBLRadiance(geometryViewDir, normal, 0.09) * vec3(0.83, 0.92, 1.0);
+            outgoingLight = mix(outgoingLight, ppSceneReflection, mix(${clear ? '0.11, 0.39' : '0.12, 0.46'}, ppAngle));
+          #endif
+          ${clear ? 'diffuseColor.a = mix(0.30, 0.72, ppAngle);' : ''}
+          #include <opaque_fragment>
+        `);
+      };
+    } else if (clear) m.onBeforeCompile = shader => {
       shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
         float edgeReflection = pow(1.0 - saturate(dot(normal, geometryViewDir)), 4.0);
         diffuseColor.a = mix(0.26, 0.8, edgeReflection);

@@ -88,6 +88,27 @@ export function vehicleTransform(spot: CarSpot): THREE.Matrix4 {
     .multiply(new THREE.Matrix4().makeRotationX(Math.atan(spot.roll ?? 0)));
 }
 
+// Under-body bounce occlusion for the interactive view. The offline GLB
+// exporter omits this non-PBR mesh; Cycles casts its own contact shadows.
+let contact: THREE.MeshBasicMaterial | null = null;
+function shadowMaterial(): THREE.MeshBasicMaterial {
+  if (contact) return contact;
+  const size = 32, data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const u = Math.abs((x + 0.5) * 2 / size - 1), v = Math.abs((y + 0.5) * 2 / size - 1);
+    const a = Math.max(0, 1 - u ** 4 - v ** 4);
+    const p = (y * size + x) * 4;
+    data[p] = data[p + 1] = data[p + 2] = 255;
+    data[p + 3] = Math.round(a ** 1.5 * 255);
+  }
+  const map = new THREE.DataTexture(data, size, size);
+  map.minFilter = map.magFilter = THREE.LinearFilter;
+  map.needsUpdate = true;
+  contact = new THREE.MeshBasicMaterial({ map, color: 0x191a18, opacity: 0.33,
+    depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+  return contact;
+}
+
 /** Keep the assets at native scale. A narrow space or a failed asset gets no placeholder. */
 export async function parkedVehicles(spots: CarSpot[]): Promise<THREE.Group> {
   const group = new THREE.Group();
@@ -106,6 +127,14 @@ export async function parkedVehicles(spots: CarSpot[]): Promise<THREE.Group> {
   for (const { style, model, places } of bins) {
     if (!places.length) continue;
     const transforms = places.map(vehicleTransform);
+    const shadowGeometry = new THREE.PlaneGeometry(model.length * 1.03, model.width * 1.03);
+    shadowGeometry.translate(0, 0, 0.008);
+    const shadow = new THREE.InstancedMesh(shadowGeometry, shadowMaterial(), places.length);
+    transforms.forEach((transform, i) => shadow.setMatrixAt(i, transform));
+    shadow.name = 'vehicle-contact';
+    shadow.userData.noOcclusion = true;
+    shadow.computeBoundingSphere();
+    group.add(shadow);
     for (const [partIndex, part] of model.parts.entries()) {
       const mesh = new THREE.InstancedMesh(part.geometry.clone(), part.material, places.length);
       mesh.userData = { partId: `${style}-${partIndex}`, spots: places.map(spot => spot.seed) };
