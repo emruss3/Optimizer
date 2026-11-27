@@ -11,6 +11,7 @@ import { buildSiteModel, loadTreeKit, treeKitLoaded, type SiteModel } from './si
 import { createStage, type Stage } from './stage';
 import { canvasToJpeg, describeScene, requestPhotoreal } from './photoreal';
 import { useArchStyle } from '../ui/archStyle';
+import { recall3D, remember3D } from '../../../lib/viewMemory';
 import { aerialShot, aimedSubject, approachShot, prominentSubject, shotUnavailableReason, sightReport, streetShot, AERIAL_FOV, DEFAULT_RENDER_SUN, FT } from './shots';
 import { renderQuality } from './quality';
 import { ArchStylePicker } from '../ui/ArchStylePicker';
@@ -44,6 +45,8 @@ export interface RenderViewProps {
 }
 
 type Shot = 'iso' | 'top' | 'street' | 'approach' | 'garage';
+// a camera moved by hand after a preset: the label says so instead of naming the preset (navigation audit 11-27)
+const MANUAL = 'custom';
 
 interface Rig {
   /** Set once the sun has been placed for this model: nothing is drawn before it. */
@@ -148,6 +151,48 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
   aerial.current = data.aerialAzimuth;
   // the last preset the camera was put on, so a capture can be regenerated from it
   const lastShot = useRef<{ shot: string; basis: string; position: number[]; target: number[]; fovDeg: number; lift?: number } | null>(null);
+  // the label follows the camera: once it is moved by hand it is a custom view, named from the preset it left
+  const adjusted = useCallback((how: string) => {
+    const r = rig.current, was = lastShot.current;
+    if (!r || !was) return;
+    const from = was.shot === MANUAL ? was.basis.replace(/^Custom view · /, '').replace(/ · .*$/, '') : was.basis.split(/[,;(]/)[0]!.trim();
+    lastShot.current = {
+      ...was, shot: MANUAL,
+      position: [r.camera.position.x, -r.camera.position.z, r.camera.position.y],
+      target: [r.controls.target.x, -r.controls.target.z, r.controls.target.y],
+      fovDeg: r.camera.fov,
+      basis: `Custom view · from ${from} · ${how}`,
+    };
+    setShotStamp(n => n + 1);
+  }, []);
+  const adjustedRef = useRef(adjusted);
+  adjustedRef.current = adjusted;
+  // camera moves the user asked for, to step back through; separate from the plan's undo (navigation audit 11-27)
+  const previous = useRef<Array<{ position: THREE.Vector3; target: THREE.Vector3; fov: number; lift: number; shot: typeof lastShot.current }>>([]);
+  const [previousCount, setPreviousCount] = useState(0);
+  const pushPose = useCallback(() => {
+    const r = rig.current;
+    if (!r) return;
+    previous.current = [...previous.current.slice(-9), { position: r.camera.position.clone(), target: r.controls.target.clone(), fov: r.camera.fov, lift: lift.current, shot: lastShot.current }];
+    setPreviousCount(previous.current.length);
+  }, []);
+  const backToPrevious = useCallback(() => {
+    const r = rig.current, p = previous.current.pop();
+    setPreviousCount(previous.current.length);
+    if (!r || !p) return;
+    r.camera.position.copy(p.position);
+    r.controls.target.copy(p.target);
+    r.camera.fov = p.fov;
+    lift.current = p.lift;
+    const cv = canvas.current;
+    if (cv) lens(r.camera, cv.clientWidth, cv.clientHeight);
+    r.controls.update();
+    lastShot.current = p.shot;
+    setShotNote(null);
+    setSightNote(null);
+    setShotStamp(n => n + 1);
+    r.request();
+  }, []);
   const [shotNote, setShotNote] = useState<string | null>(null);
   // the camera was kept across a look change and this look's planting stands in its way: say so, and offer a clear view
   const [sightNote, setSightNote] = useState<{ trees: number; clearPct: number; shot: Shot } | null>(null);
@@ -164,20 +209,31 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     }
     camera.updateProjectionMatrix();
   }, []);
-  const frame = useCallback((shot: Shot | 'fit') => {
+  const frame = useCallback((shot: Shot | 'fit', opts: { record?: boolean } = {}) => {
     const r = rig.current;
     if (!r) return;
-    // every camera centres on the parcel and stands far enough back to hold all of it:
-    // the radius that holds the parcel, seen through half the lens's angle, with room to spare
-    const { x, y, radius } = r.model.focus;
+    if (opts.record !== false) pushPose();
     // the level a camera centres on: the main building's pad, or the ground at the middle of the parcel
     const padOf = (c: { x: number; y: number }) => prominentSubject(r.model.ground.subjects)?.base ?? r.model.groundAt(c.x, c.y);
-    const fits = (radius * 1.2) / Math.sin((r.camera.fov * Math.PI) / 360 * Math.min(1, r.camera.aspect));
     const t = r.controls.target;
     if (shot === 'fit') {
-      const dir = r.camera.position.clone().sub(t).normalize();
-      t.set(x, radius * 0.06 + padOf(r.model.focus), -y);
-      r.camera.position.copy(t).addScaledVector(dir, fits);
+      // Fit site, the rescue (navigation audit 11-27): always an elevated view that holds the whole
+      // parcel and what is built on it, from the direction the camera faces now. From an eye-level
+      // street camera that means rising to the aerial; the label says Fit site, not the shot before.
+      const dx = r.camera.position.x - t.x, dy = t.z - r.camera.position.z;
+      const az = Math.hypot(dx, dy) > 1e-3 ? (Math.atan2(dx, -dy) * 180) / Math.PI : aerial.current;
+      lift.current = 1;
+      r.camera.fov = AERIAL_FOV;
+      const cvFit = canvas.current;
+      if (cvFit) lens(r.camera, cvFit.clientWidth, cvFit.clientHeight);
+      r.controls.minDistance = 8;
+      r.controls.maxPolarAngle = Math.PI / 2;
+      const camera = aerialShot(r.model.focus, az, r.camera.aspect, padOf(r.model.focus), r.review ? 32 : 28);
+      t.set(camera.target[0], camera.target[2], -camera.target[1]);
+      r.camera.position.set(camera.position[0], camera.position[2], -camera.position[1]);
+      lastShot.current = { shot: 'fit', ...camera, basis: 'Fit site: the whole parcel, from the current direction' };
+      setShotNote(null);
+      setSightNote(null);
     } else {
       const review = r.review;
       // Street arrival: a person's eye on the approach, with a clear line to the building
@@ -232,7 +288,36 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     r.camera.position.copy(r.controls.target).add(off);
     r.controls.update();
     r.request();
+    adjusted(`turned ${deg > 0 ? 'right' : 'left'} ${Math.abs(deg)}°`);
   }, []);
+
+  // Focus selection: the selected building framed, the orbit turning around it, from the direction the
+  // camera faces now; the view before is kept for Previous view (navigation audit 11-27)
+  const focusSelected = useCallback(() => {
+    const r = rig.current, id = selectedRef.current;
+    const pick = id ? r?.model.pick.find(m => m.userData.id === id) : undefined;
+    if (!r || !pick) return;
+    pushPose();
+    const box = new THREE.Box3().setFromObject(pick);
+    const centre = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(4, box.getSize(new THREE.Vector3()).length() / 2);
+    const dir = r.camera.position.clone().sub(r.controls.target);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 1, 1);
+    dir.normalize();
+    // never below the eaves: a focus from an eye-level camera lifts to look down on the building
+    if (dir.y < 0.35) { dir.y = 0.35; dir.normalize(); }
+    const distance = (radius * 1.25) / Math.sin((r.camera.fov * Math.PI) / 360 * Math.min(1, r.camera.aspect));
+    r.controls.target.copy(centre);
+    r.camera.position.copy(centre).addScaledVector(dir, distance);
+    r.controls.minDistance = 2;
+    r.controls.update();
+    const label = scene.buildings.find(b => b.id === id)?.label ?? 'the selected building';
+    lastShot.current = { shot: 'focus', basis: `Focused on ${label}: the orbit turns around it`, position: [r.camera.position.x, -r.camera.position.z, r.camera.position.y], target: [centre.x, -centre.z, centre.y], fovDeg: r.camera.fov };
+    setShotNote(null);
+    setSightNote(null);
+    setShotStamp(n => n + 1);
+    r.request();
+  }, [pushPose, scene]);
 
   // build the model and the stage when the plan changes
   useEffect(() => {
@@ -287,6 +372,28 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     controls.addEventListener('change', request);
     controls.addEventListener('start', startMoving);
     controls.addEventListener('end', stopMoving);
+    // a hand move after a preset makes it a custom view (the label follows the camera)
+    let startPose = '';
+    const poseKey = () => [...camera.position.toArray(), ...controls.target.toArray()].map(v => v.toFixed(2)).join(',');
+    controls.addEventListener('start', () => { startPose = poseKey(); });
+    controls.addEventListener('end', () => { if (poseKey() !== startPose) adjustedRef.current('moved by hand'); });
+    // zoom toward the point under the cursor; Space+drag pans, as right-drag does (navigation audit 11-27)
+    controls.zoomToCursor = true;
+    const ORBIT_BUTTONS = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    const PAN_BUTTONS = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    controls.mouseButtons = { ...ORBIT_BUTTONS };
+    const typingIn = (t: EventTarget | null) => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || (t instanceof HTMLElement && t.isContentEditable);
+    const spaceDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat || typingIn(e.target) || !el.matches(':hover')) return;
+      e.preventDefault();
+      controls.mouseButtons = { ...PAN_BUTTONS };
+      el.style.cursor = 'grab';
+    };
+    const spaceUp = (e: KeyboardEvent) => { if (e.code === 'Space') { controls.mouseButtons = { ...ORBIT_BUTTONS }; el.style.cursor = ''; } };
+    const spaceReset = () => { controls.mouseButtons = { ...ORBIT_BUTTONS }; el.style.cursor = ''; };
+    window.addEventListener('keydown', spaceDown);
+    window.addEventListener('keyup', spaceUp);
+    window.addEventListener('blur', spaceReset);
     const ro = new ResizeObserver(() => {
       const w = Math.max(2, el.clientWidth), h = Math.max(2, el.clientHeight);
       stage.setSize(w, h);
@@ -313,6 +420,14 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     // what ground this model stands on, for a reader of the page and for the regression runner
     setGround(model.grade ? { kind: model.grade.grading ? 'graded' : 'survey', ...(model.grade.grading ?? {}), pads: model.grade.padList.length } : { kind: 'flat' });
     const modelRevision = revision.current;
+    // back from 2D: the camera the user left on this parcel (navigation audit 11-27)
+    if (!stood.current) {
+      const kept = recall3D(scene.identity.parcelId);
+      if (kept) {
+        stood.current = { revision: kept.revision, review: kept.review, position: new THREE.Vector3(...kept.position), target: new THREE.Vector3(...kept.target), fov: kept.fov };
+        if (kept.shot && kept.basis && !lastShot.current) lastShot.current = { shot: kept.shot, basis: kept.basis, position: [], target: [], fovDeg: kept.fov };
+      }
+    }
     const was = stood.current;
     const reviewNow = look === 'review' && !present;
     const placed = lastShot.current?.shot;
@@ -339,7 +454,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         setSightNote(seen.trees > 0 ? { trees: seen.trees, clearPct, shot: placed } : null);
       }
     } else {
-      frame('iso');
+      frame('iso', { record: false });
     }
     setReady(true);
     setBuilt(n => n + 1);
@@ -359,12 +474,20 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       active = false;
       clearTimeout(settle);
       stood.current = { revision: modelRevision, review: look === 'review' && !present, position: camera.position.clone(), target: controls.target.clone(), fov: camera.fov };
+      remember3D(scene.identity.parcelId, {
+        revision: modelRevision, review: stood.current.review,
+        position: camera.position.toArray() as [number, number, number], target: controls.target.toArray() as [number, number, number], fov: camera.fov,
+        ...(lastShot.current ? { shot: lastShot.current.shot, basis: lastShot.current.basis } : {}),
+      });
       setReady(false);
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
       cv.removeEventListener('pointerdown', onDown);
       cv.removeEventListener('pointerup', onUp);
       controls.dispose();
+      window.removeEventListener('keydown', spaceDown);
+      window.removeEventListener('keyup', spaceUp);
+      window.removeEventListener('blur', spaceReset);
       stage.dispose();
       model.dispose();
       rig.current = null;
@@ -461,7 +584,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
 
   const tagged = scene.buildings.filter(b => b.tagOnPlan);
   const selected = selectedId ? scene.buildings.find(b => b.id === selectedId) ?? null : null;
-  const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700';
+  const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed';
   // light, style and photoreal are for showing the plan, not for reading it
   const showy = look === 'rendering' || present;
   // the look on screen: Present always shows the rendering, whatever the toggle was left on
@@ -505,7 +628,9 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         {showy && data.slabs.some(s => s.approach?.kind === 'walk') && <button className={btn} onClick={() => frame('approach')} data-testid="camera-approach" title="Eye level on the front walk, at the door">Front entry</button>}
         {/* a rear-load home: the garage approach is its own camera, never stood in for by the front or the aerial */}
         {showy && data.slabs.some(s => s.approach?.kind === 'apron') && <button className={btn} onClick={() => frame('garage')} data-testid="camera-garage" title="Eye level on the drive, at the garage">Garage</button>}
-        <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="Bring the whole site back into view, keeping the angle">Fit site</button>
+        <button className={btn} onClick={() => frame('fit')} data-testid="camera-fit" title="The whole parcel and what is built on it, from above, facing the way you face now">Fit site</button>
+        <button className={btn} onClick={focusSelected} disabled={!selectedId} data-testid="camera-focus" title={selectedId ? 'Frame the selected building and orbit around it' : 'Select a building to focus on it'}>Focus</button>
+        <button className={btn} onClick={backToPrevious} disabled={previousCount === 0} data-testid="camera-previous" title="Back to the view before the last camera move (the plan's undo is separate)" aria-label="Previous view">↶ View</button>
         <button className={btn} onClick={() => turn(-45)} data-testid="camera-turn-left" aria-label="Turn left 45 degrees" title="Turn left 45°">⟲</button>
         <button className={btn} onClick={() => turn(45)} data-testid="camera-turn-right" aria-label="Turn right 45 degrees" title="Turn right 45°">⟳</button>
         {showy && <button
@@ -566,7 +691,7 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
         </div>
       )}
       <div className="absolute bottom-2 left-2 text-[11px] text-gray-600 bg-white/85 rounded px-2 py-1 pointer-events-none">
-        Drag to orbit · scroll to zoom{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{graded ? ' · ground graded to 4% or less: assumed, not a grading plan' : ''}{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
+        Drag to orbit · right-drag or Space+drag to pan · scroll zooms toward the cursor{onSelect && tagged.length > 0 ? ' · click a building' : ''} · facades, planting and cars are illustrative{graded ? ' · ground graded to 4% or less: assumed, not a grading plan' : ''}{quality === 'light' ? ' · drawn simply: this device has no graphics acceleration' : ''}
       </div>
       {look === 'review' && !present && (
         <div className="absolute bottom-9 left-2 flex items-center gap-3 text-[11px] text-gray-700 bg-white/90 rounded px-2 py-1 pointer-events-none" data-testid="review-legend">

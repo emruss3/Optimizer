@@ -84,6 +84,16 @@ for (const p of PARCELS) {
     row.shotNote = await page.locator('[data-testid="shot-note"]').innerText().catch(() => null);
     row.fourK = await page.locator('[data-testid="render-4k"]').innerText().catch(() => null);
     await page.screenshot({ path: path.join(out, `${p.id}-street.png`) });
+    // Fit site is the rescue (navigation audit 11-27): from the street it rises to the whole parcel, and says so
+    await page.locator('[data-testid="camera-fit"]').first().click({ timeout: 15000 }).catch(() => page.locator('[data-testid="camera-fit"]').first().click({ force: true }));
+    await page.waitForTimeout(1500);
+    const fitShot = await page.locator('[data-testid="massing-3d"]').getAttribute('data-shot').then(v => { try { return JSON.parse(v ?? 'null'); } catch { return null; } }).catch(() => null);
+    row.fit = { label: (await page.locator('[data-testid="camera-label"]').innerText().catch(() => '')).slice(0, 120), heightFt: fitShot?.position?.[2] ?? null, shot: fitShot?.shot ?? null };
+    await page.screenshot({ path: path.join(out, `${p.id}-fit.png`) });
+    // Previous view steps back to the street camera
+    await page.locator('[data-testid="camera-previous"]').first().click().catch(() => {});
+    await page.waitForTimeout(800);
+    row.previousLabel = (await page.locator('[data-testid="camera-label"]').innerText().catch(() => '')).slice(0, 120);
     // Present (audit 9379472 F8): the look label follows what is on screen, never Review over an illustration
     await page.locator('[data-testid="look-review"]').first().click().catch(() => {});
     await page.waitForTimeout(800);
@@ -111,6 +121,7 @@ for (const p of PARCELS) {
     if (!row.camera) throw new Error('no camera label after asking for the street view');
     if (row.cameraFallback === 'true' && !/requested · showing the aerial instead: /.test(row.shotNote ?? '')) throw new Error('fallback without a reason');
     if (row.present?.on !== 'true' || row.present.reviewPressed !== 'false' || row.present.renderingPressed !== 'true' || !/Present/.test(row.present.label ?? '')) throw new Error(`Present shows the wrong look label: ${JSON.stringify(row.present)}`);
+    if (!/Fit site/.test(row.fit?.label ?? '') || !(row.fit?.heightFt > 60)) throw new Error(`Fit site did not rise to the whole site: ${JSON.stringify(row.fit)}`);
     if (row.reviewShot === 'street' && row.cameraKept === false) throw new Error('a look change moved the camera');
     if (row.reviewShot === 'street' && !/kept from Review: \d+ trees? in the line of sight/.test(row.streetBasisInRendering ?? '')) throw new Error(`the kept camera's basis was not restated for Rendering: ${row.streetBasisInRendering}`);
     if (row.treeFetchesInReview !== 0 || !(row.treeFetchesInRendering > 0)) throw new Error(`tree grower fetched ${row.treeFetchesInReview} times in Review and ${row.treeFetchesInRendering} by Rendering`);
@@ -194,7 +205,7 @@ for (const l of layout) console.log(`LAYOUT 1280×720 ${l.parcel} | ${JSON.strin
 await browser.close();
 fs.writeFileSync(path.join(out, 'results.json'), JSON.stringify({ base, at: new Date().toISOString(), results, layout }, null, 2) + '\n');
 for (const r of results) {
-  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | camera kept ${r.cameraKept} "${r.streetBasisInRendering ?? ''}" note "${r.sightNote ?? ''}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
+  console.log(`${r.problem ? 'FAIL' : 'OK  '} ${r.parcel} (${r.id}) | 3D ${r.viewport3d} dock ${r.dockBefore3d}→${r.dockIn3d}→${r.dockBack2d} | ${r.camera} | ${r.shotNote ?? 'no fallback'} | 4K button "${r.fourK}" | present ${JSON.stringify(r.present ?? null)} | trees fetched review ${r.treeFetchesInReview} → rendering ${r.treeFetchesInRendering} | fit ${JSON.stringify(r.fit ?? null)} previous "${r.previousLabel ?? ''}" | camera kept ${r.cameraKept} "${r.streetBasisInRendering ?? ''}" note "${r.sightNote ?? ''}" | timeline ${JSON.stringify(r.timeline)}${r.problem ? ` | ${r.problem}` : ''}`);
 }
 const failed = results.filter(r => r.problem);
 if (failed.length) { console.log(`${failed.length} of ${results.length} parcels failed`); process.exit(1); }
