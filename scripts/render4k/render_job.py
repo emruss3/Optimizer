@@ -133,21 +133,29 @@ def check_anchors(job, cams, report, failures):
     scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = 1920, 1080, 100
     bpy.context.view_layer.update()
     out = {}
+    live = {}
     for cid, cam in cams.items():
+        spec = next(c for c in job["cameras"] if c["id"] == cid)
+        w, h = spec["resolution"] if cid == "live-view" else (1920, 1080)
+        scene.render.resolution_x, scene.render.resolution_y = w, h
+        bpy.context.view_layer.update()
         worst, rows = 0.0, []
         for a in job["anchors"]:
             exp = a["expected_px"].get(cid)
             if exp is None:
                 continue
             ndc = world_to_camera_view(scene, cam, m(a["position_ft"]))
-            px = [ndc.x * 1920, (1 - ndc.y) * 1080]
+            px = [ndc.x * w, (1 - ndc.y) * h]
             err = math.hypot(px[0] - exp[0], px[1] - exp[1])
             worst = max(worst, err)
             rows.append({"id": a["id"], "browser_px": exp, "blender_px": [round(px[0], 2), round(px[1], 2)], "error_px": round(err, 3)})
-        out[cid] = {"points": len(rows), "worst_error_px": round(worst, 3), "tolerance_px": PIXEL_TOL, "rows": rows}
+        result = live if cid == "live-view" else out
+        result[cid] = {"resolution": [w, h], "points": len(rows), "worst_error_px": round(worst, 3), "tolerance_px": PIXEL_TOL, "rows": rows}
         if worst > PIXEL_TOL:
             failures.append(f"camera {cid}: an anchor lands {worst:.2f} px from where the browser puts it")
     report["camera_parity_at_1920x1080"] = out
+    if live:
+        report["live_view_camera_parity"] = live
 
 
 def gray_pass(job, meshes):

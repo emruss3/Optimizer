@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import type { DrawingScene } from '../scene/types';
 import type { MassingData } from '../ui/massingData';
-import type { RenderCameraId, RenderJob } from './exportJob';
+import type { JobCamera, RenderCameraId, RenderJob } from './exportJob';
 
 const service = (import.meta.env.VITE_RENDER_SERVICE_URL as string | undefined)?.replace(/\/+$/, '');
 const CAMERAS: Record<RenderCameraId, string> = { street: 'Street', drone: 'Aerial', approach: 'Entry' };
@@ -27,6 +27,8 @@ type Props = {
   savedPlanId?: string | undefined;
   camera: RenderCameraId;
   alleyPavers?: boolean | undefined;
+  captureComparison?: () => Promise<{ camera: JobCamera; image: Uint8Array }>;
+  comparisonBlocked?: string | undefined;
   onClose: () => void;
 };
 
@@ -58,7 +60,7 @@ const secondary = 'rounded-md border border-slate-300 px-2 py-1 hover:bg-slate-5
 const pending = (status?: JobStatus['status']) => status === 'queued' || status === 'running';
 const describeError = (error: unknown) => error instanceof Error ? error.message : 'The render request could not be completed.';
 
-export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, savedPlanId, camera, alleyPavers, onClose }: Props) {
+export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, savedPlanId, camera, alleyPavers, captureComparison, comparisonBlocked, onClose }: Props) {
   const [bundle, setBundle] = useState<Package | null>(null);
   const [choice, setChoice] = useState<RenderCameraId>(camera);
   const [job, setJob] = useState<JobStatus | null>(null);
@@ -143,16 +145,20 @@ export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, sa
     });
   }
 
-  function localExport() {
+  function localExport(compare = false) {
     if (!bundle) return;
     void run(async signal => {
+      const capture = compare && captureComparison ? await captureComparison() : null;
+      const job = capture ? (await import('./exportJob')).withLiveViewCamera(bundle.job, capture.camera) : bundle.job;
       const { zip, strToU8 } = await import('three/examples/jsm/libs/fflate.module.js');
       const contents = {
         'scene.glb': new Uint8Array(bundle.glb),
-        'render-job.json': strToU8(JSON.stringify(bundle.job, null, 2)),
+        'render-job.json': strToU8(JSON.stringify(job, null, 2)),
+        ...(capture ? {'browser-live.png': capture.image} : {}),
         'render.txt': strToU8(`Parcel ${scene.identity.parcelId} · Revision ${scene.identity.revision}\n` +
           `Open this package in Parcel Proforma's scripts/render4k renderer.\n\n` +
-          `blender --background --factory-startup --disable-autoexec --python-exit-code 1 --python scripts/render4k/render_job.py -- render-job.json --cameras ${choice}\n`),
+          (capture ? 'Compare browser-live.png with live-view.png. Camera and plan revision match. Lighting implementation, shader behavior and distant foliage can differ.\n\n' : '') +
+          `blender --background --factory-startup --disable-autoexec --python-exit-code 1 --python scripts/render4k/render_job.py -- render-job.json --cameras ${capture ? 'live-view' : choice}\n`),
       };
       const bytes = await new Promise<Uint8Array>((resolve, reject) =>
         zip(contents, { level: 4 }, (err, result) => err ? reject(err) : resolve(result)));
@@ -174,7 +180,7 @@ export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, sa
           <span>View</span>
           <select value={choice} className="rounded border border-slate-300 bg-white px-2 py-1"
             disabled={busy || pending(jobStatus)} onChange={e => { setChoice(e.target.value as RenderCameraId); setJob(null); setError(undefined); }}>
-            {bundle.job.cameras.map(c => <option key={c.id} value={c.id}>{CAMERAS[c.id]}</option>)}
+            {bundle.job.cameras.map(c => c.id !== 'live-view' && <option key={c.id} value={c.id}>{CAMERAS[c.id]}</option>)}
           </select>
         </label>
         {job && <p className="mt-3" role="status" data-testid="render-4k-status">
@@ -199,10 +205,15 @@ export function Render4kPanel({ data, scene, style, sunKey, sunHour, grossSf, sa
               const response = await request(`/${job.id}/retry`, signal, { method: 'POST' });
               setJob(await response.json());
             })}>Retry render</button>}
-          <button type="button" className={service ? secondary : action} disabled={busy} onClick={localExport} data-testid="render-4k-export">
+          <button type="button" className={service ? secondary : action} disabled={busy} onClick={() => localExport()} data-testid="render-4k-export">
             Export scene ZIP
           </button>
+          {captureComparison && <button type="button" className={secondary} disabled={busy || !!comparisonBlocked}
+            onClick={() => localExport(true)} data-testid="render-live-comparison-export">
+            Export live comparison
+          </button>}
         </div>
+        {!!comparisonBlocked && <p className="mt-2 text-slate-600">{comparisonBlocked}</p>}
         {!service && <p className="mt-2 text-slate-600" data-testid="render-4k-offline">No render service is connected, so no finished 4K image is made here. The ZIP holds this revision's scene, cameras and instructions; rendering it in Blender produces the 3840 × 2160 image.</p>}
       </>}
       {error && <div className="mt-3 space-y-2">
