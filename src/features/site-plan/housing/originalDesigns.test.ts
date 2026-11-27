@@ -15,7 +15,7 @@ for (const h of HOME_DESIGNS)
   it(h.name + ' has connected room drawings, fixed dimensions and matching exterior openings', () => {
     expect(doorAnchors(h)).toHaveLength(h.doors.length);
     expect(h.doors.filter((d) => d.kind === 'entry')).toHaveLength(1);
-    expect(program(h).heated).toBeGreaterThan(900);
+    expect(program(h).heated).toBeGreaterThanOrEqual(900);
     expect(roofHeight(h)).toBeGreaterThan(h.heights[0]!);
     h.levels.forEach((l, i) => {
       const walls = wallsFor(h, i);

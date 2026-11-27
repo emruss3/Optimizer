@@ -1,4 +1,5 @@
 import { WEST_HEIMAN_DESIGNS } from './westHeimanDesigns';
+import { MIDDLE_TENNESSEE_DESIGNS } from './middleTennesseeDesigns';
 
 // Original Middle Tennessee feasibility designs. Coordinates are outside-to-outside feet.
 // The front is y=0, x increases to the right and y runs towards the rear yard.
@@ -534,7 +535,7 @@ export const HOME_DESIGNS: HomeDesign[] = [
           room('Laundry', 52, 30, 12, 12),
           room('Garage', 64, 5, 24, 36),
         ],
-        'Foyer~Library;Foyer~Stair hall;Foyer~Dining;Dining~Kitchen;Stair hall~Gallery;Stair hall|Primary bedroom;Primary bedroom|Primary bath;Primary bedroom|Dressing;Gallery~Great room;Gallery|Powder;Dining~Great room;Kitchen~Mudroom;Mudroom|Garage;Kitchen|Pantry;Pantry|Mech / HVAC;Great room|Laundry',
+        'Foyer~Library;Foyer~Stair hall;Foyer~Dining;Dining~Kitchen;Dressing|Gallery;Primary bedroom|Primary bath;Primary bedroom|Dressing;Gallery~Great room;Gallery|Powder;Dining~Great room;Kitchen~Mudroom;Mudroom|Garage;Kitchen|Pantry;Pantry|Mech / HVAC;Great room|Laundry',
       ),
       level(
         'Upper',
@@ -542,17 +543,19 @@ export const HOME_DESIGNS: HomeDesign[] = [
           room('Bedroom 2', 20, 0, 16, 12),
           room('Bedroom 3', 36, 0, 16, 12),
           room('Stair hall', 20, 12, 8, 16),
-          room('Landing', 28, 12, 24, 5),
-          room('Bath', 28, 17, 12, 7),
-          room('Shower bath', 40, 17, 12, 7),
-          room('Upper hall', 28, 24, 24, 4),
-          room('Bedroom 4', 20, 28, 16, 18),
-          room('Loft', 36, 28, 16, 18),
+          room('Front landing', 28, 12, 24, 5),
+          room('Upper hall', 28, 17, 6, 11),
+          room('Bath', 34, 17, 9, 11),
+          room('Shower bath', 43, 17, 9, 11),
+          room('Rear landing', 20, 28, 32, 5),
+          room('Bedroom 4', 20, 33, 16, 13),
+          room('Loft', 36, 33, 16, 13),
         ],
-        'Stair hall~Landing;Landing|Bedroom 2;Landing|Bedroom 3;Landing|Bath;Landing|Shower bath;Stair hall|Bedroom 4;Stair hall~Upper hall;Upper hall~Loft',
+        'Bedroom 2|Front landing;Bedroom 3|Front landing;Stair hall~Rear landing;Front landing~Upper hall;Front landing|Bath;Upper hall~Rear landing;Shower bath|Rear landing;Rear landing|Bedroom 4;Rear landing~Loft',
       ),
     ],
   },
+  ...MIDDLE_TENNESSEE_DESIGNS,
   ...WEST_HEIMAN_DESIGNS,
 ];
 
