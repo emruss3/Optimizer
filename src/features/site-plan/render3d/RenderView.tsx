@@ -685,6 +685,20 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
     r.request();
   }, [selectedId, ready, built]);
 
+  async function captureComparison() {
+    const r = rig.current, cv = canvas.current;
+    if (!painted || !r || !cv) throw new Error('Wait for the live rendering before capturing a comparison.');
+    const { cameraFromLiveView } = await import('./exportJob');
+    if (rig.current !== r || canvas.current !== cv) throw new Error('The scene changed. Capture again from the current view.');
+    r.stage.render(r.camera);
+    const camera = cameraFromLiveView(r.camera, r.controls.target, cv.width, cv.height);
+    const png = cv.toDataURL('image/png');
+    if (!png.startsWith('data:image/png;base64,')) throw new Error('The renderer did not return an image.');
+    const image = Uint8Array.from(atob(png.split(',')[1]!), c => c.charCodeAt(0));
+    r.request();
+    return { camera, image };
+  }
+
   const snapshot = useCallback((fileName?: string) => {
     const r = rig.current, cv = canvas.current;
     if (!r || !cv) return;
@@ -862,7 +876,8 @@ export const RenderView: React.FC<RenderViewProps> = ({ elements, parcelRing, en
       {showy && renderCamera !== null && (
         <Render4kPanel key={JSON.stringify([scene.identity.key, scene.identity.revision, archStyle, sunKey, sunHour, savedPlanId])}
           data={data} scene={scene} style={archStyle} sunKey={sunKey} sunHour={sunHour} camera={renderCamera}
-          grossSf={grossSf} savedPlanId={savedPlanId} alleyPavers={usePavers} onClose={() => setRenderCamera(null)} />
+          grossSf={grossSf} savedPlanId={savedPlanId} alleyPavers={usePavers} captureComparison={captureComparison}
+          comparisonBlocked={planLines ? 'Turn off Plan lines for the comparison.' : selectedId ? 'Clear the building selection for the comparison.' : undefined} onClose={() => setRenderCamera(null)} />
       )}
       {photo.status === 'working' && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/35 text-white text-sm" role="status" data-testid="photoreal-working">

@@ -23,7 +23,7 @@ const SENSOR_MM = 36;
 export type RenderCameraId = 'street' | 'drone' | 'approach';
 
 export interface JobCamera {
-  id: RenderCameraId;
+  id: RenderCameraId | 'live-view';
   basis: string;
   position_ft: [number, number, number];
   target_ft: [number, number, number];
@@ -78,7 +78,7 @@ export interface RenderJob {
   } | null;
   cameras: JobCamera[];
   lighting: { sun_azimuth_deg: number; sun_altitude_deg: number; sun_date: string; solar_hour: number; exposure_ev: number; seed: number; sky: string; sky_rotation_deg: number };
-  /** Points on the main building, and where each camera must put them at 1920 by 1080. */
+  /** Points on the main building in each camera, normally at 1920 by 1080. Live comparison uses viewport dimensions. */
   anchors: Array<{ id: string; position_ft: [number, number, number]; expected_px: Record<string, [number, number]> }>;
   renderer: { preset: string; style: string; asset_version: string };
 }
@@ -87,7 +87,7 @@ const ft = (m: number) => Math.round((m / FT) * 1000) / 1000;
 const hex = (buf: ArrayBuffer) => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 const digest = async (value: unknown) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value))));
 
-/** The camera the live view would use for a job camera, at a fixed 16:9 picture: the browser side of the parity check. */
+/** Reconstruct a job camera in the browser for projection parity checks. */
 export function browserCamera(c: JobCamera, width = 1920, height = 1080): THREE.PerspectiveCamera {
   const hfov = 2 * Math.atan(c.sensor_width_mm / (2 * c.focal_length_mm));
   const vfov = 2 * Math.atan(Math.tan(hfov / 2) / c.aspect);
@@ -107,6 +107,33 @@ export function browserCamera(c: JobCamera, width = 1920, height = 1080): THREE.
 export function projectPx(cam: THREE.PerspectiveCamera, p_ft: [number, number, number], width = 1920, height = 1080): [number, number] {
   const v = new THREE.Vector3(p_ft[0] * FT, p_ft[2] * FT, -p_ft[1] * FT).project(cam);
   return [Math.round((v.x * 0.5 + 0.5) * width * 100) / 100, Math.round((0.5 - v.y * 0.5) * height * 100) / 100];
+}
+
+/** Local-only benchmark camera. Regular hosted requests do not change. */
+export function cameraFromLiveView(camera: THREE.PerspectiveCamera, target: THREE.Vector3, width: number, height: number): JobCamera {
+  if (width < 16 || height < 16 || !Number.isFinite(camera.fov) || camera.zoom !== 1 ||
+      camera.filmOffset !== 0 || camera.position.distanceToSquared(target) < 1e-10)
+    throw new Error('This viewport is not ready for an exact camera capture.');
+  const view = camera.view?.enabled ? camera.view : null;
+  if (view && (view.offsetX !== 0 || view.offsetY !== 0 || view.width !== view.fullWidth))
+    throw new Error('This camera uses a crop the local comparison does not support.');
+  const lift = view ? view.fullHeight / view.height : 1;
+  const aspect = width / height;
+  const tanV = Math.tan(camera.fov * Math.PI / 360) / lift;
+  const toFeet = ({x,y,z}: THREE.Vector3): [number, number, number] => [x / FT, -z / FT, y / FT];
+  return { id: 'live-view', basis: 'Captured live browser camera', position_ft: toFeet(camera.position), target_ft: toFeet(target),
+    focal_length_mm: SENSOR_MM / (2 * tanV * aspect), sensor_width_mm: SENSOR_MM,
+    shift_y: (lift - 1) / (2 * aspect), clip_ft:[camera.near / FT, camera.far / FT], aspect, resolution:[width,height] };
+}
+
+export function withLiveViewCamera(job: RenderJob, camera: JobCamera): RenderJob {
+  if (camera.id !== 'live-view') throw new Error('Expected the captured live camera.');
+  const [width, height] = camera.resolution;
+  const projected = browserCamera(camera, width, height);
+  return { ...job,
+    cameras: [...job.cameras.filter(c => c.id !== 'live-view'), camera],
+    anchors: job.anchors.map(anchor => ({...anchor, expected_px: {...anchor.expected_px, [camera.id]: projectPx(projected, anchor.position_ft, width, height)}})),
+  };
 }
 
 export async function buildRenderJob(

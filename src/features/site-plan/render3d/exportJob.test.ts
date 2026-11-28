@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { dissolveFlat, browserCamera, projectPx, type JobCamera } from './exportJob';
+import { dissolveFlat, browserCamera, cameraFromLiveView, projectPx, withLiveViewCamera, type JobCamera, type RenderJob } from './exportJob';
 
 const sheet = (x0: number, y0: number, x1: number, y1: number, z: number) => {
   const g = new THREE.BufferGeometry();
@@ -75,5 +75,42 @@ describe('job cameras', () => {
   it('east is to the right when looking north', () => {
     const [x] = projectPx(browserCamera(base), [10, 0, 5.5]);
     expect(x).toBeGreaterThan(960);
+  });
+});
+
+describe('live comparison camera', () => {
+  const target = new THREE.Vector3(6, 1.5, -4);
+  const points: [number, number, number][] = [[0, 0, 0], [24, -5, 13], [-12, 32, 28]];
+
+  it.each([[1280, 720, 1], [913, 694, 1.32], [768, 920, 1.25]])(
+    'matches the live browser projection at %i x %i with lift %f',
+    (width, height, lift) => {
+      const source = new THREE.PerspectiveCamera(48, width / height, 0.13, 1800);
+      if (lift > 1) source.setViewOffset(width, height * lift, 0, 0, width, height);
+      source.position.set(30, 12, 50);
+      source.lookAt(target);
+      source.updateMatrixWorld(true);
+      const live = cameraFromLiveView(source, target, width, height);
+      const restored = browserCamera(live, width, height);
+      expect(live.resolution).toEqual([width, height]);
+      expect(restored.near).toBeCloseTo(source.near);
+      expect(restored.far).toBeCloseTo(source.far);
+      for (const point of points) expect(projectPx(restored, point, width, height)).toEqual(projectPx(source, point, width, height));
+
+      const existing = { ...live, id: 'street' as const };
+      const job = { cameras: [existing], anchors: [{ id: 'roof', position_ft: points[1]!, expected_px: { street: [300, 200] as [number, number] } }] };
+      const result = withLiveViewCamera(job as RenderJob, live);
+      expect(result.cameras).toEqual([existing, live]);
+      expect(result.anchors[0]?.expected_px).toEqual({ street: [300, 200], 'live-view': projectPx(source, points[1]!, width, height) });
+      expect(job.cameras).toEqual([existing]);
+      expect(job.anchors[0]?.expected_px).toEqual({ street: [300, 200] });
+    },
+  );
+
+  it('rejects a horizontal camera crop', () => {
+    const source = new THREE.PerspectiveCamera();
+    source.position.set(20, 12, 50);
+    source.setViewOffset(1600, 700, 10, 0, 1200, 700);
+    expect(() => cameraFromLiveView(source, target, 1200, 700)).toThrow('crop');
   });
 });
